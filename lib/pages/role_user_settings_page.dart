@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import '../models/character_card.dart';
 import '../services/database_service.dart';
 import '../utils/protagonist_setting_utils.dart';
+import '../models/user_profile.dart';
+import '../services/user_service.dart';
 
 class RoleUserSettingsPage extends StatefulWidget {
   final CharacterCard character;
@@ -24,12 +26,22 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
   final ImagePicker _picker = ImagePicker();
   bool _usingOverride = false;
   String _sourceLabel = '';
+  UserProfile _globalUser = UserProfile();
+  bool _loaded = false;
 
   @override
   void initState() {
     super.initState();
+    _loadInitialSettings();
+  }
+
+  Future<void> _loadInitialSettings() async {
+    final globalUser = await UserService.getUser();
+
+    if (!mounted) return;
 
     final localName = widget.character.userName;
+    final localAvatar = widget.character.userAvatar;
     final localDetail = widget.character.userDetailSetting;
 
     final protagonistName =
@@ -38,23 +50,41 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
     final protagonistDetail =
     ProtagonistSettingUtils.formatProtagonistDetail(widget.character);
 
-    _usingOverride = localName.isNotEmpty || localDetail.isNotEmpty;
+    final hasOverride =
+        localName.isNotEmpty || localAvatar.isNotEmpty || localDetail.isNotEmpty;
 
-    _nameCtrl.text = localName.isNotEmpty
+    final hasProtagonistDefault =
+        protagonistName.isNotEmpty || protagonistDetail.isNotEmpty;
+
+    final effectiveName = localName.isNotEmpty
         ? localName
-        : protagonistName;
+        : protagonistName.isNotEmpty
+        ? protagonistName
+        : globalUser.name;
 
-    _detailCtrl.text = localDetail.isNotEmpty
+    final effectiveAvatar = localAvatar.isNotEmpty
+        ? localAvatar
+        : globalUser.avatarPath;
+
+    final effectiveDetail = localDetail.isNotEmpty
         ? localDetail
         : protagonistDetail;
 
-    _avatarPath = widget.character.userAvatar;
+    setState(() {
+      _globalUser = globalUser;
+      _usingOverride = hasOverride;
+      _loaded = true;
 
-    _sourceLabel = _usingOverride
-        ? '当前使用：本卡对话覆盖设定'
-        : protagonistName.isNotEmpty || protagonistDetail.isNotEmpty
-        ? '当前使用：角色卡默认主角设定'
-        : '当前使用：空设定/全局默认';
+      _nameCtrl.text = effectiveName;
+      _detailCtrl.text = effectiveDetail;
+      _avatarPath = effectiveAvatar;
+
+      _sourceLabel = hasOverride
+          ? '当前使用：本卡对话覆盖设定'
+          : hasProtagonistDefault
+          ? '当前使用：角色卡默认主角设定'
+          : '当前使用：全局用户设定';
+    });
   }
 
   Future<void> _pickAvatar() async {
@@ -126,12 +156,17 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
     Navigator.pop(context);
   }
 
-  Future<void> _resetToCardDefault() async {
+  Future<void> _resetToDefaultSetting() async {
+    final globalUser = await UserService.getUser();
+
     final protagonistName =
     ProtagonistSettingUtils.getProtagonistName(widget.character);
 
     final protagonistDetail =
     ProtagonistSettingUtils.formatProtagonistDetail(widget.character);
+
+    final hasProtagonistDefault =
+        protagonistName.isNotEmpty || protagonistDetail.isNotEmpty;
 
     await DatabaseService.updateCharacter({
       'id': widget.character.id,
@@ -144,28 +179,44 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
     widget.character.userAvatar = '';
     widget.character.userDetailSetting = '';
 
-    widget.character.userName = '';
-    widget.character.userDetailSetting = '';
-
     if (!mounted) return;
 
     setState(() {
+      _globalUser = globalUser;
       _usingOverride = false;
-      _sourceLabel = protagonistName.isNotEmpty || protagonistDetail.isNotEmpty
-          ? '当前使用：角色卡默认主角设定'
-          : '当前使用：空设定/全局默认';
 
-      _avatarPath = '';
-      _nameCtrl.text = protagonistName;
+      _nameCtrl.text =
+      protagonistName.isNotEmpty ? protagonistName : globalUser.name;
+
       _detailCtrl.text = protagonistDetail;
+
+      // 主角设定没有头像，所以恢复默认时头像回到全局头像
+      _avatarPath = globalUser.avatarPath;
+
+      _sourceLabel = hasProtagonistDefault
+          ? '当前使用：角色卡默认主角设定'
+          : '当前使用：全局用户设定';
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已恢复为角色卡默认主角设定')),
+      SnackBar(
+        content: Text(
+          hasProtagonistDefault
+              ? '已恢复为角色卡默认主角设定'
+              : '已恢复为全局用户设定',
+        ),
+      ),
     );
   }
 
   Future<void> _saveAsCardDefault() async {
+    if (widget.character.cardType != 'system') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('只有系统卡可以保存为主角默认设定')),
+      );
+      return;
+    }
+
     final name = _nameCtrl.text.trim();
     final detailText = _detailCtrl.text.trim();
 
@@ -184,18 +235,26 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
 
       // 当前内容已经保存为默认值，所以清空覆盖设定，避免两份数据不一致
       'user_name': '',
+      'user_avatar': '',
       'user_detail_setting': '',
     });
 
     widget.character.entriesJson = newEntriesJson;
     widget.character.userName = '';
+    widget.character.userAvatar = '';
     widget.character.userDetailSetting = '';
+
+    final globalUser = await UserService.getUser();
 
     if (!mounted) return;
 
     setState(() {
+      _globalUser = globalUser;
       _usingOverride = false;
       _sourceLabel = '当前使用：角色卡默认主角设定';
+
+      // 名称和详细设定已经写入角色卡默认值，所以界面继续显示当前内容
+      _avatarPath = globalUser.avatarPath;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -329,15 +388,18 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
               runSpacing: 8,
               children: [
                 OutlinedButton.icon(
-                  onPressed: _resetToCardDefault,
+                  onPressed: _resetToDefaultSetting,
                   icon: const Icon(Icons.restore, size: 16),
-                  label: const Text('恢复角色卡默认'),
+                  label: const Text('恢复默认设定'),
                 ),
-                OutlinedButton.icon(
-                  onPressed: _saveAsCardDefault,
-                  icon: const Icon(Icons.save_as, size: 16),
-                  label: const Text('保存为角色卡默认'),
-                ),
+
+                // 只有系统卡才显示“保存为角色卡默认”
+                if (widget.character.cardType == 'system')
+                  OutlinedButton.icon(
+                    onPressed: _saveAsCardDefault,
+                    icon: const Icon(Icons.save_as, size: 16),
+                    label: const Text('保存为角色卡默认'),
+                  ),
               ],
             ),
 
@@ -349,12 +411,17 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
                 color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Text(
-                '说明：\n'
+              child: Text(
+                widget.character.cardType == 'system'
+                    ? '说明：\n'
                     '1. 点击右上角“保存”会保存为当前卡的对话覆盖设定，不会修改角色卡默认主角设定。\n'
-                    '2. “恢复角色卡默认”会清空当前覆盖设定，并重新使用角色卡里的主角设定。\n'
-                    '3. “保存为角色卡默认”会把当前内容写回角色卡的主角设定，并清空覆盖设定。',
-                style: TextStyle(
+                    '2. “恢复默认设定”会清空当前覆盖设定，并重新使用角色卡主角设定；如果角色卡没有主角设定，则使用全局用户设定。\n'
+                    '3. “保存为角色卡默认”会把当前内容写回角色卡的主角设定，并清空覆盖设定。'
+                    : '说明：\n'
+                    '1. 点击右上角“保存”会保存为当前人物卡的用户覆盖设定。\n'
+                    '2. “恢复默认设定”会清空当前覆盖设定，并重新使用主菜单里的全局用户设定。\n'
+                    '3. 人物卡没有主角默认设定，因此不会显示“保存为角色卡默认”。',
+                style: const TextStyle(
                   fontSize: 12,
                   height: 1.45,
                   color: Colors.black54,

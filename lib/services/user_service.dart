@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 
 class UserService {
   static const String _key = 'user_profile';
+
+  static final ValueNotifier<int> versionNotifier = ValueNotifier<int>(0);
 
   static Future<UserProfile> getUser() async {
     final prefs = await SharedPreferences.getInstance();
@@ -15,5 +18,6 @@ class UserService {
   static Future<void> saveUser(UserProfile user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(user.toJson()));
+    versionNotifier.value++;
   }
 }
