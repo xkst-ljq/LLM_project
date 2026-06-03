@@ -11,7 +11,13 @@ class ProtagonistSettingUtils {
     'background': '背景',
   };
 
-  static Map<String, dynamic>? getProtagonistData(CharacterCard card) {
+  static Map<String, dynamic>? getProtagonistData(
+      CharacterCard card, {
+        bool requireEnabled = true,
+      }) {
+    // 只有系统卡才有“主角设定”语义
+    if (card.cardType != 'system') return null;
+
     try {
       final rawList = jsonDecode(
         card.entriesJson.isEmpty ? '[]' : card.entriesJson,
@@ -22,11 +28,16 @@ class ProtagonistSettingUtils {
         final entry = CharacterEntry.fromJson(map);
 
         if (entry.id == 'protagonist') {
+          // 默认要求条目启用
+          if (requireEnabled && !entry.enabled) return null;
+
           if (entry.content.trim().isEmpty) return null;
 
           final decoded = jsonDecode(entry.content);
           if (decoded is Map<String, dynamic>) return decoded;
           if (decoded is Map) return Map<String, dynamic>.from(decoded);
+
+          return null;
         }
       }
     } catch (_) {}
