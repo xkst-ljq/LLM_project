@@ -73,6 +73,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     });
   }
 
+  void _onGlobalUserChanged() {
+    if (!mounted) return;
+    _loadUser();
+  }
+
   Widget _buildBackground(BackgroundCard bg) {
     switch (bg.type) {
       case 'color':
@@ -824,7 +829,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    // ✅ 关键：必须等第一帧布局完成后执行，否则 Flutter 表面还没定好尺寸
+
+    UserService.versionNotifier.addListener(_onGlobalUserChanged);
 
     _animController = AnimationController(
       vsync: this,
@@ -1078,6 +1084,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    UserService.versionNotifier.removeListener(_onGlobalUserChanged);
     _scrollController.dispose();
     _inputAnimController.dispose();
     _animController.dispose();
@@ -1087,6 +1094,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _inertiaTicker?.dispose();
     _fanSnapController.dispose();
     super.dispose();
+
   }
 
   Future<Map<String, bool>?> _showClearHistoryDialog() {
