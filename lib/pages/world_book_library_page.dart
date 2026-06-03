@@ -68,15 +68,41 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     _loadWorldBooks();
   }
 
+  int _createdTimeOf(String id) {
+    return int.tryParse(id) ?? 0;
+  }
+
+  int _compareWorldBookByTime(WorldBook a, WorldBook b) {
+    final at = _createdTimeOf(a.id);
+    final bt = _createdTimeOf(b.id);
+
+    if (at != bt) {
+      return _sortAscending ? at.compareTo(bt) : bt.compareTo(at);
+    }
+
+    final nameCompare = a.name.compareTo(b.name);
+    if (nameCompare != 0) {
+      return _sortAscending ? nameCompare : -nameCompare;
+    }
+
+    return a.id.compareTo(b.id);
+  }
+
+  int _compareWorldBookByName(WorldBook a, WorldBook b) {
+    final nameCompare = a.name.trim().compareTo(b.name.trim());
+
+    if (nameCompare != 0) {
+      return _sortAscending ? nameCompare : -nameCompare;
+    }
+
+    return _compareWorldBookByTime(a, b);
+  }
+
   void _sortWorldBooks() {
     if (_sortBy == 'name') {
-      _worldBooks.sort((a, b) => _sortAscending
-          ? a.name.compareTo(b.name)
-          : b.name.compareTo(a.name));
+      _worldBooks.sort(_compareWorldBookByName);
     } else {
-      _worldBooks.sort((a, b) => _sortAscending
-          ? a.id.compareTo(b.id)
-          : b.id.compareTo(a.id));
+      _worldBooks.sort(_compareWorldBookByTime);
     }
   }
 

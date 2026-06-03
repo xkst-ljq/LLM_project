@@ -132,15 +132,41 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
   static const String _sortByKey = 'background_sort_by';
   static const String _sortAscendingKey = 'background_sort_ascending';
 
+  int _createdTimeOf(String id) {
+    return int.tryParse(id) ?? 0;
+  }
+
+  int _compareBackgroundByTime(BackgroundCard a, BackgroundCard b) {
+    final at = _createdTimeOf(a.id);
+    final bt = _createdTimeOf(b.id);
+
+    if (at != bt) {
+      return _sortAscending ? at.compareTo(bt) : bt.compareTo(at);
+    }
+
+    final nameCompare = a.name.compareTo(b.name);
+    if (nameCompare != 0) {
+      return _sortAscending ? nameCompare : -nameCompare;
+    }
+
+    return a.id.compareTo(b.id);
+  }
+
+  int _compareBackgroundByName(BackgroundCard a, BackgroundCard b) {
+    final nameCompare = a.name.trim().compareTo(b.name.trim());
+
+    if (nameCompare != 0) {
+      return _sortAscending ? nameCompare : -nameCompare;
+    }
+
+    return _compareBackgroundByTime(a, b);
+  }
+
   void _sortBackgrounds() {
     if (_sortBy == 'name') {
-      _backgrounds.sort((a, b) => _sortAscending
-          ? a.name.compareTo(b.name)
-          : b.name.compareTo(a.name));
+      _backgrounds.sort(_compareBackgroundByName);
     } else {
-      _backgrounds.sort((a, b) => _sortAscending
-          ? a.id.compareTo(b.id)
-          : b.id.compareTo(a.id));
+      _backgrounds.sort(_compareBackgroundByTime);
     }
   }
 

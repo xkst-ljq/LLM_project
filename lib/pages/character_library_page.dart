@@ -155,15 +155,43 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
   String _sortBy = 'time'; // 默认按创建时间
   bool _sortAscending = true;
 
-  void _sortCharacters() {  // 对应 _sortBackgrounds / _sortWorldBooks
+  int _createdTimeOf(String id) {
+    return int.tryParse(id) ?? 0;
+  }
+
+  int _compareCharacterByTime(CharacterCard a, CharacterCard b) {
+    final at = _createdTimeOf(a.id);
+    final bt = _createdTimeOf(b.id);
+
+    if (at != bt) {
+      return _sortAscending ? at.compareTo(bt) : bt.compareTo(at);
+    }
+
+    // 时间相同或都是非时间戳 id 时，用名称兜底，避免排序不稳定
+    final nameCompare = a.name.compareTo(b.name);
+    if (nameCompare != 0) {
+      return _sortAscending ? nameCompare : -nameCompare;
+    }
+
+    return a.id.compareTo(b.id);
+  }
+
+  int _compareCharacterByName(CharacterCard a, CharacterCard b) {
+    final nameCompare = a.name.trim().compareTo(b.name.trim());
+
+    if (nameCompare != 0) {
+      return _sortAscending ? nameCompare : -nameCompare;
+    }
+
+    // 名称相同，比如都是空名时，继续按创建时间排序
+    return _compareCharacterByTime(a, b);
+  }
+
+  void _sortCharacters() {
     if (_sortBy == 'name') {
-      _characters.sort((a, b) => _sortAscending
-          ? a.name.compareTo(b.name)
-          : b.name.compareTo(a.name));
+      _characters.sort(_compareCharacterByName);
     } else {
-      _characters.sort((a, b) => _sortAscending
-          ? a.id.compareTo(b.id)
-          : b.id.compareTo(a.id));
+      _characters.sort(_compareCharacterByTime);
     }
   }
 
