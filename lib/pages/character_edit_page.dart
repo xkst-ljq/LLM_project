@@ -28,6 +28,8 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   String _cardType = 'character';
   late List<CharacterEntry> _entries;
   final Set<String> _expandedEntryIds = {};
+  // 子级抽屉折叠状态：默认展开；加入集合表示该子级被折叠
+  final Set<String> _collapsedTreeNodeIds = {};
   late List<OpeningGreeting> _greetings;
   final ImagePicker _picker = ImagePicker();
   String? _worldBookId;
@@ -395,56 +397,421 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   }
 
   String _getEntryPreview(CharacterEntry entry) {
-    if (entry.content.isEmpty) return '未填写';
-    // 如果内容以 { 开头，按 JSON 解析
+    if (entry.content.trim().isEmpty) return '未填写';
+
+    final values = <String>[];
+    void collect(dynamic value) {
+      if (value is Map) {
+        for (final v in value.values) {
+          collect(v);
+        }
+      } else if (value is List) {
+        for (final v in value) {
+          collect(v);
+        }
+      } else {
+        final s = value?.toString().trim() ?? '';
+        if (s.isNotEmpty) values.add(s);
+      }
+    }
+
     if (entry.content.trimLeft().startsWith('{')) {
       try {
-        final fields = jsonDecode(entry.content) as Map<String, dynamic>;
-        final values = fields.values.where((v) => v.toString().isNotEmpty).toList();
+        collect(jsonDecode(entry.content));
         if (values.isEmpty) return '未填写';
-        return values.map((v) => '$v').join(', ');
+        final preview = values.join(', ');
+        return preview.length > 40 ? '${preview.substring(0, 40)}...' : preview;
       } catch (_) {
         return '格式错误';
       }
+    }
+
+    return entry.content.length > 40
+        ? '${entry.content.substring(0, 40)}...'
+        : entry.content;
+  }
+
+  Map<String, dynamic> _entryContentToMap(CharacterEntry entry) {
+    final raw = entry.content.trim();
+    if (raw.isEmpty) return {'内容': ''};
+
+    if (raw.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+
+    // 非 JSON 的纯文本条目，统一包装成一个“内容”字段来编辑
+    return {'内容': entry.content};
+  }
+
+  void _writeEntryContentFromMap(
+      CharacterEntry entry,
+      Map<String, dynamic> data,
+      ) {
+    if (data.keys.length == 1 && data.containsKey('内容')) {
+      entry.content = data['内容']?.toString() ?? '';
     } else {
-      // 纯文本
-      return entry.content.length > 40 ? '${entry.content.substring(0, 40)}...' : entry.content;
+      entry.content = jsonEncode(data);
     }
   }
 
-  Widget _buildSubFieldsPreview(CharacterEntry entry) {
-    if (entry.content.isEmpty) return const Text('无内容', style: TextStyle(fontSize: 13, color: Colors.grey));
-    // 如果内容以 { 开头，按 JSON 解析，否则当纯文本显示
-    if (entry.content.trimLeft().startsWith('{')) {
-      try {
-        final fields = jsonDecode(entry.content) as Map<String, dynamic>;
-        final children = <Widget>[];
-        for (final key in fields.keys) {
-          final value = fields[key].toString();
-          if (value.isNotEmpty) {
-            children.add(
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('${_fieldLabel(entry.id, key)}: ', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                    Expanded(child: Text(value, style: const TextStyle(fontSize: 13, color: Colors.black87))),
+  void _setNestedValue(
+      Map<String, dynamic> root,
+      List<String> path,
+      String value,
+      ) {
+    Map<String, dynamic> current = root;
+    for (int i = 0; i < path.length - 1; i++) {
+      final key = path[i];
+      final next = current[key];
+      if (next is Map<String, dynamic>) {
+        current = next;
+      } else if (next is Map) {
+        current[key] = Map<String, dynamic>.from(next);
+        current = current[key] as Map<String, dynamic>;
+      } else {
+        current[key] = <String, dynamic>{};
+        current = current[key] as Map<String, dynamic>;
+      }
+    }
+    current[path.last] = value;
+  }
+
+  String _treeFieldLabel(String entryId, List<String> path) {
+    final key = path.last;
+
+    // protagonist.detail 下的字段属于“主角详细设定”，不能再按 protagonist 顶层字段显示
+    if (entryId == 'protagonist' && path.length >= 2 && path.first == 'detail') {
+      const detailMap = {
+        'race': '种族',
+        'gender': '性别',
+        'age': '年龄',
+        'body': '身体数据',
+        'background': '背景',
+      };
+      return detailMap[key] ?? key;
+    }
+
+    return _fieldLabel(entryId, key);
+  }
+
+  int _suggestMaxLines(String entryId, List<String> path) {
+    final key = path.last;
+    const longKeys = {
+      '内容',
+      'other',
+      'background',
+      'origin',
+      'experiences',
+      'current',
+      'personality',
+      'thoughts',
+      'interests',
+      'world_setting',
+      'worldview',
+      'system_mechanism',
+      'events',
+      'possible_endings',
+      'body',
+    };
+    return longKeys.contains(key) ? 4 : 2;
+  }
+
+  String _treeNodeId(CharacterEntry entry, List<String> path) {
+    return '${entry.id}:${path.join('.')}';
+  }
+
+  void _toggleTreeNode(CharacterEntry entry, List<String> path) {
+    final id = _treeNodeId(entry, path);
+    setState(() {
+      if (_collapsedTreeNodeIds.contains(id)) {
+        _collapsedTreeNodeIds.remove(id);
+      } else {
+        _collapsedTreeNodeIds.add(id);
+      }
+    });
+  }
+
+  Widget _buildEntryInlineDrawerEditor(CharacterEntry entry) {
+    final data = _entryContentToMap(entry);
+    final primaryColor = Theme.of(context).primaryColor;
+
+    return GestureDetector(
+      // 防止点击输入框时触发外层卡片手势
+      behavior: HitTestBehavior.translucent,
+      onTap: () {},
+      child: Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: primaryColor.withValues(alpha: 0.035),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.14)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.edit_note_rounded, size: 16, color: primaryColor),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '编辑',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: primaryColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ..._buildDrawerNodes(
+              entry: entry,
+              root: data,
+              current: data,
+              path: const [],
+              depth: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildDrawerNodes({
+    required CharacterEntry entry,
+    required Map<String, dynamic> root,
+    required Map<String, dynamic> current,
+    required List<String> path,
+    required int depth,
+  }) {
+    final widgets = <Widget>[];
+
+    for (final key in current.keys) {
+      final value = current[key];
+      final childPath = [...path, key];
+
+      if (value is Map) {
+        final childMap = value is Map<String, dynamic>
+            ? value
+            : Map<String, dynamic>.from(value);
+        current[key] = childMap;
+
+        final nodeId = _treeNodeId(entry, childPath);
+        final expanded = !_collapsedTreeNodeIds.contains(nodeId);
+
+        widgets.add(
+          _buildDrawerGroupHeader(
+            entry: entry,
+            path: childPath,
+            depth: depth,
+            expanded: expanded,
+          ),
+        );
+
+        if (expanded) {
+          widgets.addAll(
+            _buildDrawerNodes(
+              entry: entry,
+              root: root,
+              current: childMap,
+              path: childPath,
+              depth: depth + 1,
+            ),
+          );
+        }
+      } else {
+        widgets.add(
+          _buildDrawerFieldEditor(
+            entry: entry,
+            root: root,
+            path: childPath,
+            value: value?.toString() ?? '',
+            depth: depth,
+          ),
+        );
+      }
+    }
+
+    if (widgets.isEmpty) {
+      widgets.add(
+        const Text('未填写', style: TextStyle(fontSize: 13, color: Colors.grey)),
+      );
+    }
+
+    return widgets;
+  }
+
+  Widget _buildDrawerGroupHeader({
+    required CharacterEntry entry,
+    required List<String> path,
+    required int depth,
+    required bool expanded,
+  }) {
+    final primaryColor = Theme.of(context).primaryColor;
+    final isChild = depth > 0;
+
+    return Padding(
+      padding: EdgeInsets.only(left: isChild ? 10.0 : 0, bottom: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(11),
+        onTap: () => _toggleTreeNode(entry, path),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: isChild
+                ? Colors.grey.shade100
+                : primaryColor.withValues(alpha: 0.09),
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(
+              color: isChild
+                  ? Colors.grey.shade300
+                  : primaryColor.withValues(alpha: 0.22),
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 80;
+
+              return Row(
+                children: [
+                  if (!compact) ...[
+                    Icon(
+                      expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+                      size: 16,
+                      color: isChild ? Colors.grey.shade700 : primaryColor,
+                    ),
+                    const SizedBox(width: 6),
                   ],
+                  Expanded(
+                    child: Text(
+                      _treeFieldLabel(entry.id, path),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isChild ? Colors.black87 : primaryColor,
+                      ),
+                    ),
+                  ),
+                  if (!compact)
+                    Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 17,
+                      color: Colors.grey.shade700,
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawerFieldEditor({
+    required CharacterEntry entry,
+    required Map<String, dynamic> root,
+    required List<String> path,
+    required String value,
+    required int depth,
+  }) {
+    final primaryColor = Theme.of(context).primaryColor;
+    final isChild = depth > 0;
+
+    return Container(
+      margin: EdgeInsets.only(left: isChild ? 10.0 : 0, bottom: 10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      decoration: BoxDecoration(
+        color: isChild ? Colors.white : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isChild
+              ? primaryColor.withValues(alpha: 0.12)
+              : Colors.grey.shade200,
+        ),
+        boxShadow: isChild
+            ? [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.025),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ]
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: isChild
+                      ? primaryColor.withValues(alpha: 0.58)
+                      : Colors.grey.shade500,
+                  shape: BoxShape.circle,
                 ),
               ),
-            );
-          }
-        }
-        if (children.isEmpty) return const Text('未填写', style: TextStyle(fontSize: 13, color: Colors.grey));
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: children);
-      } catch (_) {
-        return const Text('数据错误', style: TextStyle(fontSize: 13, color: Colors.red));
-      }
-    } else {
-      // 纯文本显示
-      return Text(entry.content, style: const TextStyle(fontSize: 13, color: Colors.black87));
-    }
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _treeFieldLabel(entry.id, path),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          TextFormField(
+            key: ValueKey('${entry.id}:${path.join('.')}'),
+            initialValue: value,
+            minLines: 1,
+            maxLines: _suggestMaxLines(entry.id, path),
+            style: const TextStyle(fontSize: 13),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: '请输入${_treeFieldLabel(entry.id, path)}',
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: primaryColor, width: 1.4),
+              ),
+            ),
+            onChanged: (text) {
+              _setNestedValue(root, path, text.trim());
+              _writeEntryContentFromMap(entry, root);
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -559,7 +926,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
       color: enabled ? null : Colors.grey.shade100,
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
-        onTap: enabled ? () => _toggleExpand(entry.id) : null,
+        onTap: null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -589,15 +956,16 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  // 编辑按钮（直接使用 Icon + GestureDetector）
-                  GestureDetector(
-                    onTap: enabled ? () => _editEntry(entry) : null,
-                    child: Icon(
-                      Icons.edit,
-                      size: 16,
-                      color: enabled ? Colors.grey : Colors.grey.shade400,
+                  // 自定义条目仍保留独立编辑按钮；固定条目展开后直接在卡片内编辑
+                  if (entry.isCustom)
+                    GestureDetector(
+                      onTap: enabled ? () => _editEntry(entry) : null,
+                      child: Icon(
+                        Icons.edit,
+                        size: 16,
+                        color: enabled ? Colors.grey : Colors.grey.shade400,
+                      ),
                     ),
-                  ),
                   // 删除按钮（仅自定义条目显示）
                   if (entry.isCustom) ...[
                     const SizedBox(width: 4),
@@ -628,7 +996,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
               if (enabled && isExpanded)
                 Padding(
                   padding: const EdgeInsets.only(top: 8, left: 26),
-                  child: _buildSubFieldsPreview(entry),
+                  child: _buildEntryInlineDrawerEditor(entry),
                 ),
             ],
           ),
@@ -684,7 +1052,7 @@ String _fieldLabel(String entryId, String fieldKey) {
     'psychology': {'personality': '性格', 'thoughts': '思想', 'interests': '兴趣/爱好/癖好'},
     'background': {'origin': '出身背景', 'experiences': '经历事件', 'current': '当前背景'},
     'system_details': {'world_setting': '世界设定', 'worldview': '世界观设定', 'system_mechanism': '系统机制设定'},
-    'protagonist': {'name': '主角名称', 'detail': '主角详细设定(JSON)'},
+    'protagonist': {'name': '主角名称', 'detail': '主角详细设定'},
     'plot': {'cause': '起因', 'events': '中途特定触发事件', 'goal': '目标', 'possible_endings': '可能结局设定'},
   };
   return map[entryId]?[fieldKey] ?? fieldKey;

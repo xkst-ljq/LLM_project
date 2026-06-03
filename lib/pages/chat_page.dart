@@ -20,6 +20,7 @@ import '../services/background_service.dart';
 import '../models/background_card.dart';
 import 'package:markdown/markdown.dart' as md hide Text;
 import 'package:flutter_markdown/flutter_markdown.dart';
+import '../utils/protagonist_setting_utils.dart';
 
 class ChatPage extends StatefulWidget {
   final CharacterCard? character;
@@ -758,19 +759,37 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       final localAvatar = _currentCharacter!.userAvatar;
       final localDetail = _currentCharacter!.userDetailSetting;
 
-      if (localName.isNotEmpty ||
-          localAvatar.isNotEmpty ||
-          localDetail.isNotEmpty) {
-        _currentUser = UserProfile(
-          name: localName.isNotEmpty ? localName : globalUser.name,
-          avatarPath: localAvatar.isNotEmpty
-              ? localAvatar
-              : globalUser.avatarPath,
-        );
-        _dynamicUserDetail = localDetail.isNotEmpty ? localDetail : null;
-        setState(() {});
-        return;
-      }
+      final protagonistName =
+      ProtagonistSettingUtils.getProtagonistName(_currentCharacter!);
+
+      final protagonistDetail =
+      ProtagonistSettingUtils.formatProtagonistDetail(_currentCharacter!);
+
+      final effectiveName = localName.isNotEmpty
+          ? localName
+          : protagonistName.isNotEmpty
+          ? protagonistName
+          : globalUser.name;
+
+      final effectiveAvatar = localAvatar.isNotEmpty
+          ? localAvatar
+          : globalUser.avatarPath;
+
+      final effectiveDetail = localDetail.isNotEmpty
+          ? localDetail
+          : protagonistDetail.isNotEmpty
+          ? protagonistDetail
+          : '';
+
+      _currentUser = UserProfile(
+        name: effectiveName,
+        avatarPath: effectiveAvatar,
+      );
+
+      _dynamicUserDetail = effectiveDetail.isNotEmpty ? effectiveDetail : null;
+
+      setState(() {});
+      return;
     }
     _currentUser = globalUser;
     _dynamicUserDetail = null;
@@ -1020,7 +1039,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 as List;
         final enabledEntries = entriesList
             .map((e) => CharacterEntry.fromJson(e))
-            .where((e) => e.enabled && e.content.isNotEmpty)
+            .where((e) {
+          if (!e.enabled || e.content.isEmpty) return false;
+
+          // 系统卡的主角设定已经作为用户设定注入，避免重复塞进角色设定
+          if (_currentCharacter?.cardType == 'system' && e.id == 'protagonist') {
+            return false;
+          }
+
+          return true;
+        })
             .toList();
         if (enabledEntries.isNotEmpty) {
           final entryText = enabledEntries
@@ -1059,6 +1087,124 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _inertiaTicker?.dispose();
     _fanSnapController.dispose();
     super.dispose();
+  }
+
+  Future<Map<String, bool>?> _showClearHistoryDialog() {
+    bool resetUserSetting = false;
+
+    return showDialog<Map<String, bool>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('清空历史'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('确定要清空当前角色的聊天记录吗？'),
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    value: resetUserSetting,
+                    onChanged: (v) {
+                      setDialogState(() {
+                        resetUserSetting = v ?? false;
+                      });
+                    },
+                    title: const Text('同时重置用户设定为角色卡默认'),
+                    subtitle: const Text(
+                      '勾选后会清空当前卡的用户覆盖设定，重新使用角色卡中的主角设定。',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, {
+                    'clear': true,
+                    'resetUserSetting': resetUserSetting,
+                  }),
+                  child: const Text('清空'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _clearHistoryWithOptions() async {
+    if (_currentCharacter == null) return;
+
+    final result = await _showClearHistoryDialog();
+    if (result == null || result['clear'] != true) return;
+
+    final resetUserSetting = result['resetUserSetting'] == true;
+
+    await DatabaseService.deleteMessagesByCharacterId(_currentCharacter!.id);
+
+    if (resetUserSetting) {
+      await DatabaseService.updateCharacter({
+        'id': _currentCharacter!.id,
+        'user_name': '',
+        'user_avatar': '',
+        'user_detail_setting': '',
+      });
+
+      _currentCharacter!.userName = '';
+      _currentCharacter!.userAvatar = '';
+      _currentCharacter!.userDetailSetting = '';
+
+      await _loadUser();
+    }
+
+    setState(() {
+      _messages.clear();
+    });
+
+    // 立即尝试插入开场白（如果存在）
+    try {
+      final greetings =
+      (jsonDecode(
+        _currentCharacter!.openingGreetings.isEmpty
+            ? '[]'
+            : _currentCharacter!.openingGreetings,
+      )
+      as List)
+          .map(
+            (g) => OpeningGreeting.fromJson(g),
+      )
+          .toList();
+
+      if (greetings.isNotEmpty) {
+        final firstGreeting = greetings.first.content;
+        if (firstGreeting.isNotEmpty) {
+          setState(() {
+            _messages.add({
+              'role': 'assistant',
+              'content': firstGreeting,
+            });
+          });
+
+          DatabaseService.insertMessage(
+            characterId: _currentCharacter!.id,
+            role: 'assistant',
+            content: firstGreeting,
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -1826,55 +1972,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                         ListTile(
                                           leading: const Icon(Icons.clear_all),
                                           title: const Text('清空历史'),
-                                          onTap: () async {
-                                            if (_currentCharacter != null) {
-                                              await DatabaseService.deleteMessagesByCharacterId(
-                                                _currentCharacter!.id,
-                                              );
-                                              setState(() {
-                                                _messages.clear();
-                                              });
-
-                                              // 立即尝试插入开场白（如果存在）
-                                              try {
-                                                final greetings =
-                                                (jsonDecode(
-                                                  _currentCharacter!
-                                                      .openingGreetings
-                                                      .isEmpty
-                                                      ? '[]'
-                                                      : _currentCharacter!
-                                                      .openingGreetings,
-                                                )
-                                                as List)
-                                                    .map(
-                                                      (g) =>
-                                                      OpeningGreeting.fromJson(
-                                                        g,
-                                                      ),
-                                                )
-                                                    .toList();
-                                                if (greetings.isNotEmpty) {
-                                                  final firstGreeting =
-                                                      greetings.first.content;
-                                                  if (firstGreeting.isNotEmpty) {
-                                                    setState(() {
-                                                      _messages.add({
-                                                        'role': 'assistant',
-                                                        'content': firstGreeting,
-                                                      });
-                                                    });
-                                                    DatabaseService.insertMessage(
-                                                      characterId:
-                                                      _currentCharacter!.id,
-                                                      role: 'assistant',
-                                                      content: firstGreeting,
-                                                    );
-                                                  }
-                                                }
-                                              } catch (_) {}
-                                            }
-                                          },
+                                          onTap: _clearHistoryWithOptions,
                                         ),
                                       ],
                                     ),
