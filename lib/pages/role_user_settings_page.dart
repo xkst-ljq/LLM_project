@@ -7,7 +7,6 @@ import 'package:path/path.dart' as p;
 import '../models/character_card.dart';
 import '../services/database_service.dart';
 import '../utils/protagonist_setting_utils.dart';
-import '../models/user_profile.dart';
 import '../services/user_service.dart';
 
 class RoleUserSettingsPage extends StatefulWidget {
@@ -26,8 +25,6 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
   final ImagePicker _picker = ImagePicker();
   bool _usingOverride = false;
   String _sourceLabel = '';
-  UserProfile _globalUser = UserProfile();
-  bool _loaded = false;
 
   @override
   void initState() {
@@ -71,9 +68,7 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
         : protagonistDetail;
 
     setState(() {
-      _globalUser = globalUser;
       _usingOverride = hasOverride;
-      _loaded = true;
 
       _nameCtrl.text = effectiveName;
       _detailCtrl.text = effectiveDetail;
@@ -182,7 +177,6 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
     if (!mounted) return;
 
     setState(() {
-      _globalUser = globalUser;
       _usingOverride = false;
 
       _nameCtrl.text =
@@ -249,7 +243,6 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
     if (!mounted) return;
 
     setState(() {
-      _globalUser = globalUser;
       _usingOverride = false;
       _sourceLabel = '当前使用：角色卡默认主角设定';
 
