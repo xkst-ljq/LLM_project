@@ -535,6 +535,127 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     });
   }
 
+  Widget _buildCardImagePreview() {
+    return AspectRatio(
+      aspectRatio: 2 / 3,
+      child: GestureDetector(
+        onTap: () => _pickImage(false),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(14),
+              image: _cardImagePath.isNotEmpty
+                  ? DecorationImage(
+                image: FileImage(File(_cardImagePath)),
+                fit: BoxFit.cover,
+              )
+                  : null,
+            ),
+            child: _cardImagePath.isEmpty
+                ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.photo, size: 34, color: Colors.grey.shade600),
+                const SizedBox(height: 6),
+                Text(
+                  '卡片封面\n2:3',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            )
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorldBookBindPanel() {
+    final bound = _worldBookId != null && _worldBookId!.isNotEmpty;
+    final primaryColor = Theme.of(context).primaryColor;
+
+    return GestureDetector(
+      onTap: _pickWorldBook,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.book,
+                  size: 20,
+                  color: bound ? primaryColor : Colors.grey,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '绑定世界书',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: bound ? Colors.black87 : Colors.grey.shade700,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.chevron_right, size: 20),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              bound ? _worldBookName : '未绑定世界书',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: bound ? Colors.black87 : Colors.grey,
+              ),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: bound
+                    ? primaryColor.withValues(alpha: 0.10)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: bound
+                      ? primaryColor.withValues(alpha: 0.25)
+                      : Colors.grey.shade300,
+                ),
+              ),
+              child: Text(
+                bound ? '点击更换' : '点击绑定',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: bound ? primaryColor : Colors.grey.shade700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEntryInlineDrawerEditor(CharacterEntry entry) {
     final data = _entryContentToMap(entry);
     final primaryColor = Theme.of(context).primaryColor;
@@ -880,10 +1001,50 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                                     Row(children: [Expanded(child: _buildTypeButton('人物卡', 'character')), const SizedBox(width: 8), Expanded(child: _buildTypeButton('系统卡', 'system'))]),
                                   ])),
                                 ]),
-                                const SizedBox(height: 8),
-                                GestureDetector(onTap: () => _pickImage(false), child: Container(height: 120, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(12), image: _cardImagePath.isNotEmpty ? DecorationImage(image: FileImage(File(_cardImagePath)), fit: BoxFit.cover) : null), child: _cardImagePath.isEmpty ? Center(child: Icon(Icons.photo, size: 40, color: Colors.grey.shade600)) : null)),
-                                const SizedBox(height: 8),
-                                ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.book, color: Colors.grey), title: Text(_worldBookId != null && _worldBookId!.isNotEmpty ? _worldBookName : '绑定世界书', style: TextStyle(color: _worldBookId?.isNotEmpty == true ? Colors.black87 : Colors.grey)), trailing: const Icon(Icons.chevron_right), onTap: _pickWorldBook),
+                                const SizedBox(height: 12),
+
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final maxW = constraints.maxWidth;
+
+                                    // 宽度太窄时，不做左右布局，改成上下布局
+                                    if (maxW < 300) {
+                                      return Column(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          Center(
+                                            child: SizedBox(
+                                              width: 120,
+                                              child: _buildCardImagePreview(),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                          SizedBox(
+                                            height: 120,
+                                            child: _buildWorldBookBindPanel(),
+                                          ),
+                                        ],
+                                      );
+                                    }
+
+                                    // 正常宽度下使用左右布局
+                                    final previewHeight = maxW < 380 ? 160.0 : 180.0;
+
+                                    return SizedBox(
+                                      height: previewHeight,
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          _buildCardImagePreview(),
+                                          const SizedBox(width: 12),
+                                          Expanded(child: _buildWorldBookBindPanel()),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+
+                                const SizedBox(height: 12),
                                 const Divider(),
                                 _buildSectionHeader('简单介绍'),
                                 ..._entries.where((e) { if (_cardType == 'system') return ['system_name', 'system_summary'].contains(e.id); return ['name_entry', 'relationship'].contains(e.id); }).map((e) => _buildEntryCard(e)),
