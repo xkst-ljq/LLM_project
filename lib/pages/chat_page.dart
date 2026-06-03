@@ -274,6 +274,318 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     };
   }
 
+  String _detailFieldLabel(
+      String entryId,
+      String fieldKey, {
+        String? parentKey,
+      }) {
+    const map = {
+      'name_entry': {
+        'last_name': '姓',
+        'first_name': '名',
+        'other': '其他',
+      },
+      'body': {
+        'race': '种族',
+        'gender': '性别',
+        'age': '年龄',
+        'height': '身高',
+        'weight': '体重',
+        'measurements': '三围',
+        'other': '其他数据',
+      },
+      'psychology': {
+        'personality': '性格',
+        'thoughts': '思想',
+        'interests': '兴趣/爱好/癖好',
+      },
+      'background': {
+        'origin': '出身背景',
+        'experiences': '经历事件',
+        'current': '当前背景',
+      },
+      'system_details': {
+        'world_setting': '世界设定',
+        'worldview': '世界观设定',
+        'system_mechanism': '系统机制设定',
+      },
+      'protagonist': {
+        'name': '主角名称',
+        'detail': '主角详细设定',
+      },
+      'plot': {
+        'cause': '起因',
+        'events': '中途特定触发事件',
+        'goal': '目标',
+        'possible_endings': '可能结局设定',
+      },
+    };
+
+    // 系统卡 protagonist.detail 下的字段
+    if (entryId == 'protagonist' && parentKey == 'detail') {
+      const detailMap = {
+        'race': '种族',
+        'gender': '性别',
+        'age': '年龄',
+        'body': '身体',
+        'background': '背景',
+      };
+      return detailMap[fieldKey] ?? fieldKey;
+    }
+
+    return map[entryId]?[fieldKey] ?? fieldKey;
+  }
+
+  String _indentDetailLines(String text) {
+    return text
+        .split('\n')
+        .map((line) => line.trim().isEmpty ? line : '  $line')
+        .join('\n');
+  }
+
+  String _formatEntryValueForDetail(
+      String entryId,
+      dynamic value, {
+        String? parentKey,
+      }) {
+    if (value == null) return '';
+
+    if (value is Map) {
+      final lines = <String>[];
+
+      for (final rawKey in value.keys) {
+        final key = rawKey.toString();
+        final childValue = value[rawKey];
+
+        final label = _detailFieldLabel(
+          entryId,
+          key,
+          parentKey: parentKey,
+        );
+
+        final formatted = _formatEntryValueForDetail(
+          entryId,
+          childValue,
+          parentKey: key,
+        ).trim();
+
+        if (formatted.isEmpty) continue;
+
+        if (childValue is Map) {
+          lines.add('$label：\n${_indentDetailLines(formatted)}');
+        } else {
+          lines.add('$label：$formatted');
+        }
+      }
+
+      return lines.join('\n');
+    }
+
+    if (value is List) {
+      return value
+          .map((e) => _formatEntryValueForDetail(entryId, e).trim())
+          .where((e) => e.isNotEmpty)
+          .join('、');
+    }
+
+    return value.toString().trim();
+  }
+
+  String _formatEntryForDetailPanel(CharacterEntry entry) {
+    final raw = entry.content.trim();
+    if (raw.isEmpty) return '';
+
+    if (raw.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(raw);
+        final formatted = _formatEntryValueForDetail(entry.id, decoded).trim();
+        if (formatted.isNotEmpty) return formatted;
+      } catch (_) {
+        return raw;
+      }
+    }
+
+    return raw;
+  }
+
+  String _buildCharacterDetailText(CharacterCard card) {
+    try {
+      final rawList = jsonDecode(
+        card.entriesJson.isEmpty ? '[]' : card.entriesJson,
+      ) as List;
+
+      final entries = rawList
+          .map(
+            (e) => CharacterEntry.fromJson(
+          Map<String, dynamic>.from(e as Map),
+        ),
+      )
+          .toList();
+
+      final detailIds = card.cardType == 'system'
+          ? {
+        'system_details',
+        'protagonist',
+        'plot',
+      }
+          : {
+        'body',
+        'psychology',
+        'background',
+      };
+
+      final detailEntries = entries.where((entry) {
+        if (entry.content.trim().isEmpty) return false;
+
+        // 详情展示页用于查看角色卡信息，不一定只显示启用条目。
+        // 如果你只想显示启用条目，可以取消下一行注释：
+        // if (!entry.enabled) return false;
+
+        return detailIds.contains(entry.id) || entry.isCustom;
+      }).toList();
+
+      if (detailEntries.isEmpty) {
+        return '暂无详细设定';
+      }
+
+      final sections = <String>[];
+
+      for (final entry in detailEntries) {
+        final content = _formatEntryForDetailPanel(entry).trim();
+        if (content.isEmpty) continue;
+
+        sections.add('【${entry.title}】\n$content');
+      }
+
+      if (sections.isEmpty) return '暂无详细设定';
+
+      return sections.join('\n\n');
+    } catch (_) {
+      return '暂无详细设定';
+    }
+  }
+
+  Widget _buildDetailSettingPanel(CharacterCard card) {
+    final detailText = _buildCharacterDetailText(card);
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    // 固定高度，但根据屏幕大小略微自适应
+    final panelHeight = (screenHeight * 0.13).clamp(96.0, 135.0).toDouble();
+
+    final hasImage =
+        card.cardImagePath.isNotEmpty && File(card.cardImagePath).existsSync();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          height: panelHeight,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 背景：优先使用角色卡封面高斯模糊
+              if (hasImage)
+                ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Transform.scale(
+                    scale: 1.06,
+                    child: Image.file(
+                      File(card.cardImagePath),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.22),
+                        Colors.white.withValues(alpha: 0.10),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // 遮罩：保证文字可读性
+              Container(
+                color: hasImage
+                    ? Colors.black.withValues(alpha: 0.52)
+                    : Colors.black.withValues(alpha: 0.18),
+              ),
+
+              // 边框
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.22),
+                  ),
+                ),
+              ),
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 标题栏
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.article_outlined,
+                          size: 16,
+                          color: Colors.white.withValues(alpha: 0.92),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '详细设定',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.94),
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    // 内容区：固定框内滚动
+                    Expanded(
+                      child: Scrollbar(
+                        thumbVisibility: false,
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          child: Text(
+                            detailText,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              fontSize: 12,
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 惯性结束后吸附到最近卡片
   void _snapFanOffset() {
     final maxOffset = (_cardCount - 1) / 2.0 * _cardDs;
@@ -598,6 +910,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                               ),
                             ),
                           ),
+                          _buildDetailSettingPanel(card),
                           // 放大卡片 + 播放按钮
                           Expanded(
                             child: Center(
@@ -693,7 +1006,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 50),
+                          const SizedBox(height: 32),
                         ],
                       ),
                     ),
