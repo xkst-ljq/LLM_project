@@ -912,81 +912,77 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         }
       });
     } else {
-      _setCurrentCharacter(widget.character);
-      _loadHistory();
-      // 若无历史消息且有开场白，自动发送第一条
-      if (_messages.isEmpty && _currentCharacter != null) {
-        try {
-          final greetings =
-              (jsonDecode(
-                        _currentCharacter!.openingGreetings.isEmpty
-                            ? '[]'
-                            : _currentCharacter!.openingGreetings,
-                      )
-                      as List)
-                  .map((g) => OpeningGreeting.fromJson(g))
-                  .toList();
-          if (greetings.isNotEmpty) {
-            final firstGreeting = greetings.first.content;
-            if (firstGreeting.isNotEmpty) {
-              setState(() {
-                _messages.add({'role': 'assistant', 'content': firstGreeting});
-              });
-              // 保存到数据库
-              DatabaseService.insertMessage(
-                characterId: _currentCharacter!.id,
-                role: 'assistant',
-                content: firstGreeting,
-              );
-            }
-          }
-        } catch (_) {}
-      }
-      _loadUser();
+      Future.microtask(() async {
+        await _setCurrentCharacter(widget.character);
+      });
     }
   }
 
+  Future<void> _ensureOpeningGreetingForEmptyHistory() async {
+    if (_currentCharacter == null) return;
+
+    // 以数据库为准，避免 UI 状态误判
+    final existingMessages =
+    await DatabaseService.getMessages(_currentCharacter!.id);
+    debugPrint('检查开场白: ${_currentCharacter?.openingGreetings}');
+    debugPrint('当前历史数量: ${existingMessages.length}');
+    // 只在完全没有历史消息时插入开场白
+    if (existingMessages.isNotEmpty) return;
+
+    final greetings = _getCurrentGreetings();
+    if (greetings.isEmpty) return;
+
+    final firstGreeting = greetings.first.content.trim();
+    if (firstGreeting.isEmpty) return;
+
+    final newId = await DatabaseService.insertMessage(
+      characterId: _currentCharacter!.id,
+      role: 'assistant',
+      content: firstGreeting,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _messages.clear();
+      _messages.add({
+        'id': newId.toString(),
+        'role': 'assistant',
+        'content': firstGreeting,
+        'version': 1,
+      });
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottomWhenReady();
+    });
+  }
 
   Future<void> _setCurrentCharacter(CharacterCard? char) async {
     debugPrint('=== 加载角色卡 ===');
     debugPrint('opening_greetings: ${char?.openingGreetings}');
     debugPrint('entries_json: ${char?.entriesJson}');
-    if (char == null) return;
-    _currentCharacter = char;
-    _messages.clear();
-    setState(() {});
-    await _loadHistory();
-    _loadUser();
 
-    // 检查数据库是否有历史消息（避免重复插入开场白）
-    final existingMessages = await DatabaseService.getMessages(char.id);
-    if (existingMessages.isEmpty && _currentCharacter != null) {
-      try {
-        final greetings =
-            (jsonDecode(
-                      _currentCharacter!.openingGreetings.isEmpty
-                          ? '[]'
-                          : _currentCharacter!.openingGreetings,
-                    )
-                    as List)
-                .map((g) => OpeningGreeting.fromJson(g))
-                .toList();
-        if (greetings.isNotEmpty) {
-          final firstGreeting = greetings.first.content;
-          if (firstGreeting.isNotEmpty) {
-            setState(() {
-              _messages.add({'role': 'assistant', 'content': firstGreeting});
-            });
-            DatabaseService.insertMessage(
-              characterId: _currentCharacter!.id,
-              role: 'assistant',
-              content: firstGreeting,
-            );
-          }
-        }
-      } catch (_) {}
-    }
-    setState(() {});
+    if (char == null) return;
+
+    _currentCharacter = char;
+
+    setState(() {
+      _messages.clear();
+    });
+
+    // 先加载历史
+    await _loadHistory();
+
+    // 这里一定要 await。
+    // 因为 _loadUser() 里会重新从数据库刷新 _currentCharacter，
+    // 包括 openingGreetings、entriesJson 等最新字段。
+    await _loadUser();
+
+    // 如果没有历史记录，则自动插入开场白
+    await _ensureOpeningGreetingForEmptyHistory();
+
+    if (mounted) setState(() {});
   }
 
   Future<String> _buildFinalSystemPrompt() async {
@@ -1181,38 +1177,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       _messages.clear();
     });
 
-    // 立即尝试插入开场白（如果存在）
-    try {
-      final greetings =
-      (jsonDecode(
-        _currentCharacter!.openingGreetings.isEmpty
-            ? '[]'
-            : _currentCharacter!.openingGreetings,
-      )
-      as List)
-          .map(
-            (g) => OpeningGreeting.fromJson(g),
-      )
-          .toList();
-
-      if (greetings.isNotEmpty) {
-        final firstGreeting = greetings.first.content;
-        if (firstGreeting.isNotEmpty) {
-          setState(() {
-            _messages.add({
-              'role': 'assistant',
-              'content': firstGreeting,
-            });
-          });
-
-          DatabaseService.insertMessage(
-            characterId: _currentCharacter!.id,
-            role: 'assistant',
-            content: firstGreeting,
-          );
-        }
-      }
-    } catch (_) {}
+    await _ensureOpeningGreetingForEmptyHistory();
   }
 
   @override
