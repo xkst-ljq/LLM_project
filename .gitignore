@@ -62,3 +62,21 @@ ios/.symlinks/
 # Flutter 
 .flutter-plugins
 .packages
+
+# Local config
+android/local.properties
+
+# Secrets
+.env
+.env.*
+secrets.json
+api_keys.json
+
+# Local database / user data
+*.db
+*.sqlite
+*.sqlite3
+
+# Release artifacts
+*.apk
+*.aab
