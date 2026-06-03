@@ -30,3 +30,4 @@ API Key 使用 flutter_secure_storage 保存在本地，不会上传到服务器
 ```bash
 flutter pub get
 flutter build apk --release --target-platform android-arm64
+```
