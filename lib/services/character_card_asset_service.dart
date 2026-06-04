@@ -4,7 +4,6 @@ import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:sqflite/sqflite.dart';
 
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
@@ -55,12 +54,53 @@ class CharacterCardAssetService {
     }
   }
 
+  static Future<Map<String, dynamic>?> _findWorldBookRaw(String id) async {
+    if (id.trim().isEmpty) return null;
+
+    final all = await DatabaseService.getAllWorldBooks();
+    for (final wb in all) {
+      if (wb['id'] == id) {
+        return Map<String, dynamic>.from(wb);
+      }
+    }
+    return null;
+  }
+
+  static Future<String> _uniqueCharacterName(String baseName) async {
+    final all = await DatabaseService.getAllCharacters();
+    final names = all.map((e) => (e['name'] as String? ?? '').trim()).toSet();
+
+    final normalized = baseName.trim().isEmpty ? '导入角色卡' : baseName.trim();
+    if (!names.contains(normalized)) return normalized;
+
+    var index = 1;
+    while (names.contains('$normalized ($index)')) {
+      index++;
+    }
+    return '$normalized ($index)';
+  }
+
+  static Future<String> _uniqueWorldBookName(String baseName) async {
+    final all = await DatabaseService.getAllWorldBooks();
+    final names = all.map((e) => (e['name'] as String? ?? '').trim()).toSet();
+
+    final normalized = baseName.trim().isEmpty ? '导入世界书' : baseName.trim();
+    if (!names.contains(normalized)) return normalized;
+
+    var index = 1;
+    while (names.contains('$normalized ($index)')) {
+      index++;
+    }
+    return '$normalized ($index)';
+  }
+
   static Map<String, dynamic> _characterToExportMap(
       CharacterCard character, {
         required String avatarAssetPath,
         required String cardImageAssetPath,
-        bool includeUserOverride = false,
-        String userAvatarAssetPath = '',
+        required bool includeUserOverride,
+        required String userAvatarAssetPath,
+        required bool includeBoundWorldBook,
       }) {
     return {
       'id': character.id,
@@ -69,8 +109,14 @@ class CharacterCardAssetService {
       'card_image_path': cardImageAssetPath,
       'description': character.description,
       'system_prompt': character.systemPrompt,
-      'world_book_id': character.worldBookId,
-      'background_id': character.backgroundId,
+
+      // 如果不包含世界书依赖，就不要保留 world_book_id，避免导入后出现无效绑定
+      'world_book_id':
+      includeBoundWorldBook ? character.worldBookId : '',
+
+      // 背景是本地环境资源，角色卡分享第一版先不绑定背景
+      'background_id': '',
+
       'card_type': character.cardType,
       'entries_json': character.entriesJson,
       'opening_greetings': character.openingGreetings,
@@ -86,6 +132,7 @@ class CharacterCardAssetService {
   static Future<File> exportCharacterCard({
     required CharacterCard character,
     bool includeUserOverride = false,
+    bool includeBoundWorldBook = false,
   }) async {
     final archive = Archive();
 
@@ -95,29 +142,64 @@ class CharacterCardAssetService {
       'format_version': formatVersion,
       'exported_at': DateTime.now().toIso8601String(),
       'app': 'LLM Project',
+      'contains': {
+        'user_override': includeUserOverride,
+        'world_book': includeBoundWorldBook &&
+            character.worldBookId.trim().isNotEmpty,
+      },
     };
 
     _addText(archive, 'manifest.json', manifest);
 
+    final cardImageExt = p.extension(character.cardImagePath).isEmpty
+        ? '.png'
+        : p.extension(character.cardImagePath);
+
     final cardImageAssetPath = await _addAssetIfExists(
       archive: archive,
       sourcePath: character.cardImagePath,
-      archivePath: 'assets/card_image${p.extension(character.cardImagePath).isEmpty ? '.png' : p.extension(character.cardImagePath)}',
+      archivePath: 'assets/card_image$cardImageExt',
     );
+
+    final avatarExt = p.extension(character.avatar).isEmpty
+        ? '.png'
+        : p.extension(character.avatar);
 
     final avatarAssetPath = await _addAssetIfExists(
       archive: archive,
       sourcePath: character.avatar,
-      archivePath: 'assets/avatar${p.extension(character.avatar).isEmpty ? '.png' : p.extension(character.avatar)}',
+      archivePath: 'assets/avatar$avatarExt',
     );
 
     String userAvatarAssetPath = '';
     if (includeUserOverride) {
+      final userAvatarExt = p.extension(character.userAvatar).isEmpty
+          ? '.png'
+          : p.extension(character.userAvatar);
+
       userAvatarAssetPath = await _addAssetIfExists(
         archive: archive,
         sourcePath: character.userAvatar,
-        archivePath: 'assets/user_avatar${p.extension(character.userAvatar).isEmpty ? '.png' : p.extension(character.userAvatar)}',
+        archivePath: 'assets/user_avatar$userAvatarExt',
       );
+    }
+
+    final shouldIncludeWorldBook =
+        includeBoundWorldBook && character.worldBookId.trim().isNotEmpty;
+
+    if (shouldIncludeWorldBook) {
+      final wb = await _findWorldBookRaw(character.worldBookId);
+      if (wb != null) {
+        // 世界书目前无图形资产，直接 JSON 内嵌
+        wb['cover_image_path'] = '';
+        wb['is_preset'] = 0;
+
+        _addText(
+          archive,
+          'data/dependencies/world_books.json',
+          [wb],
+        );
+      }
     }
 
     final characterJson = _characterToExportMap(
@@ -126,6 +208,7 @@ class CharacterCardAssetService {
       cardImageAssetPath: cardImageAssetPath,
       includeUserOverride: includeUserOverride,
       userAvatarAssetPath: userAvatarAssetPath,
+      includeBoundWorldBook: shouldIncludeWorldBook,
     );
 
     _addText(archive, 'data/character.json', characterJson);
@@ -183,8 +266,14 @@ class CharacterCardAssetService {
       ) async {
     final docs = await getApplicationDocumentsDirectory();
     final root = Directory(
-      p.join(docs.path, 'imported_assets', 'characters', _timestampForFile()),
+      p.join(
+        docs.path,
+        'imported_assets',
+        'characters',
+        _timestampForFile(),
+      ),
     );
+
     await root.create(recursive: true);
 
     final pathMap = <String, String>{};
@@ -211,6 +300,39 @@ class CharacterCardAssetService {
     return s;
   }
 
+  static Future<Map<String, String>> _importWorldBookDependencies(
+      Map<String, List<int>> files,
+      ) async {
+    final idMap = <String, String>{};
+
+    final raw = _readJson(files, 'data/dependencies/world_books.json');
+    if (raw is! List) return idMap;
+
+    for (int i = 0; i < raw.length; i++) {
+      final wb = Map<String, dynamic>.from(raw[i] as Map);
+
+      final oldId = wb['id']?.toString() ?? '';
+      if (oldId.isEmpty) continue;
+
+      final newId =
+          '${DateTime.now().millisecondsSinceEpoch}_${i}_wb';
+
+      final oldName = wb['name']?.toString() ?? '导入世界书';
+      final newName = await _uniqueWorldBookName(oldName);
+
+      wb['id'] = newId;
+      wb['name'] = newName;
+      wb['cover_image_path'] = '';
+      wb['is_preset'] = 0;
+
+      await DatabaseService.insertWorldBook(wb);
+
+      idMap[oldId] = newId;
+    }
+
+    return idMap;
+  }
+
   static Future<void> importCharacterCard(File file) async {
     final files = await _extractArchive(file);
 
@@ -233,20 +355,28 @@ class CharacterCardAssetService {
       throw Exception('角色卡数据缺失或损坏');
     }
 
+    final worldBookIdMap = await _importWorldBookDependencies(files);
     final pathMap = await _restoreAssets(files);
+
     final c = Map<String, dynamic>.from(rawCharacter);
 
-    // 导入时生成新 ID，避免覆盖已有角色
+    final oldWorldBookId = c['world_book_id']?.toString() ?? '';
+
     final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newName = await _uniqueCharacterName(c['name']?.toString() ?? '');
 
     c['id'] = newId;
-    c['name'] = (c['name']?.toString().trim().isEmpty ?? true)
-        ? '导入角色卡'
-        : c['name'].toString();
+    c['name'] = newName;
 
     c['avatar'] = _restorePath(c['avatar'], pathMap);
     c['card_image_path'] = _restorePath(c['card_image_path'], pathMap);
     c['user_avatar'] = _restorePath(c['user_avatar'], pathMap);
+
+    // 如果包内包含世界书，则绑定新世界书 ID；否则清空，避免无效绑定
+    c['world_book_id'] = worldBookIdMap[oldWorldBookId] ?? '';
+
+    // 背景绑定是本机环境资源，导入角色卡时默认清空
+    c['background_id'] = '';
 
     await DatabaseService.insertCharacter(c);
   }

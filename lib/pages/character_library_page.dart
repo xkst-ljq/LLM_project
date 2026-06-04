@@ -57,33 +57,78 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
     final expandedId = _expandedIds.first;
     final character = _characters.firstWhere((c) => c.id == expandedId);
 
-    final includeUserOverride = await showDialog<bool>(
+    bool includeUserOverride = false;
+    bool includeBoundWorldBook = character.worldBookId.trim().isNotEmpty;
+
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('导出角色卡'),
-        content: const Text(
-          '是否包含当前角色的用户覆盖设定？\n\n'
-              '通常不建议分享该内容，因为它可能包含你的个人设定。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('不包含'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('包含'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('导出角色卡'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CheckboxListTile(
+                    value: includeUserOverride,
+                    onChanged: (v) {
+                      setDialogState(() {
+                        includeUserOverride = v ?? false;
+                      });
+                    },
+                    title: const Text('包含当前角色用户覆盖设定'),
+                    subtitle: const Text(
+                      '通常不建议分享，可能包含你的个人设定。',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  CheckboxListTile(
+                    value: includeBoundWorldBook,
+                    onChanged: character.worldBookId.trim().isEmpty
+                        ? null
+                        : (v) {
+                      setDialogState(() {
+                        includeBoundWorldBook = v ?? false;
+                      });
+                    },
+                    title: const Text('包含绑定世界书'),
+                    subtitle: Text(
+                      character.worldBookId.trim().isEmpty
+                          ? '当前角色没有绑定世界书。'
+                          : '导入角色卡时会自动新建世界书并重新绑定。',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('导出'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
-    if (includeUserOverride == null) return;
+    if (confirmed != true) return;
 
     try {
       final file = await CharacterCardAssetService.exportCharacterCard(
         character: character,
         includeUserOverride: includeUserOverride,
+        includeBoundWorldBook: includeBoundWorldBook,
       );
 
       final downloadsPath =
