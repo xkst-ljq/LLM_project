@@ -302,26 +302,49 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     return result == true;
   }
 
-  Future<void> _importWorldBook() async {
+  Future<void> _importWorldBookWithPreview() async {
     final picked = await FilePicker.platform.pickFiles(
       dialogTitle: '选择 LLM Project 世界书文件',
       type: FileType.any,
       allowMultiple: false,
     );
 
+    if (!mounted) return;
+
     if (picked == null || picked.files.isEmpty) return;
 
     final path = picked.files.single.path;
     if (path == null) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('无法读取该文件')),
       );
       return;
     }
 
+    final file = File(path);
+    late WorldBookImportPreview preview;
+
     try {
-      await WorldBookAssetService.importWorldBook(File(path));
+      preview = await _buildWorldBookImportPreview(file);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '读取失败：$e\n请选择由 LLM Project 导出的世界书文件。',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final confirmed = await _showWorldBookImportPreview(preview);
+    if (!confirmed) return;
+
+    try {
+      await WorldBookAssetService.importWorldBook(file);
       await _loadWorldBooks();
 
       if (!mounted) return;
@@ -333,11 +356,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '导入失败：$e\n请选择由 LLM Project 导出的世界书文件。',
-          ),
-        ),
+        SnackBar(content: Text('导入失败：$e')),
       );
     }
   }
