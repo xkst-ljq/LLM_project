@@ -422,8 +422,6 @@ Failed host lookup
 
 ```text
 始终显示
-或
-自动适配
 ```
 
 ---
