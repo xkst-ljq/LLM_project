@@ -12,6 +12,22 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/background_asset_service.dart';
 
+class BackgroundImportPreview {
+  final File file;
+  final String name;
+  final String type;
+  final String sceneSetting;
+  final List<String> checks;
+
+  BackgroundImportPreview({
+    required this.file,
+    required this.name,
+    required this.type,
+    required this.sceneSetting,
+    required this.checks,
+  });
+}
+
 class BackgroundLibraryPage extends StatefulWidget {
   const BackgroundLibraryPage({super.key});
 
@@ -29,6 +45,181 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     super.initState();
     _loadSortPreference();
     _loadBackgrounds();
+  }
+
+  Widget _buildSortButton() {
+    return GestureDetector(
+      onLongPress: () {
+        final newAscending = !_sortAscending;
+        _updateSort(null, newAscending);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(newAscending ? '已切换为正序' : '已切换为倒序'),
+            duration: const Duration(milliseconds: 800),
+          ),
+        );
+      },
+      child: PopupMenuButton<String>(
+        icon: const Icon(Icons.sort),
+        tooltip: '排序方式，长按切换正序/倒序',
+        onSelected: (value) {
+          if (value == 'toggle_order') {
+            _updateSort(null, !_sortAscending);
+          } else {
+            _updateSort(value, null);
+          }
+        },
+        itemBuilder: (context) => [
+          CheckedPopupMenuItem(
+            value: 'time',
+            checked: _sortBy == 'time',
+            child: const Text('默认顺序 / 创建时间'),
+          ),
+          CheckedPopupMenuItem(
+            value: 'name',
+            checked: _sortBy == 'name',
+            child: const Text('按名称排序'),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'toggle_order',
+            child: Row(
+              children: [
+                Icon(
+                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _sortAscending
+                        ? '当前：正序，点击切换倒序'
+                        : '当前：倒序，点击切换正序',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateOrImportSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add_photo_alternate),
+              title: const Text('新建图片背景'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _addBackground();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_download),
+              title: const Text('导入背景卡'),
+              subtitle: const Text('导入 LLM Project 图片背景卡'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importBackgroundCardWithPreview();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<BackgroundImportPreview> _buildBackgroundImportPreview(File file) async {
+    final bg = await BackgroundAssetService.readBackgroundAsset(file);
+
+    return BackgroundImportPreview(
+      file: file,
+      name: bg.name,
+      type: bg.type,
+      sceneSetting: bg.sceneSetting,
+      checks: const [
+        '内部识别标识完整',
+        '背景卡数据完整',
+        '原图数据完整',
+      ],
+    );
+  }
+
+  Future<bool> _showBackgroundImportPreview(
+      BackgroundImportPreview preview,
+      ) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认导入背景卡'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                preview.name,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('类型：${preview.type == 'image' ? '图片背景' : preview.type}'),
+              if (preview.sceneSetting.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  '场景设定：',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  preview.sceneSetting,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 8),
+              const Text(
+                '完整性检查：',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              ...preview.checks.map(
+                    (e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(e)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认导入'),
+          ),
+        ],
+      ),
+    );
+
+    return result == true;
   }
 
   Future<void> _exportBackgroundCard(BackgroundCard bg) async {
@@ -83,7 +274,48 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     }
   }
 
-  Future<void> _importBackgroundCard() async {
+  void _showBackgroundActions(BackgroundCard bg) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.file_upload),
+              title: const Text('导出背景卡'),
+              subtitle: Text(
+                bg.type == 'image'
+                    ? '以原图比例导出，导入时可自动恢复背景设定'
+                    : '当前仅图片背景支持背景卡导出',
+              ),
+              enabled: bg.type == 'image',
+              onTap: bg.type != 'image'
+                  ? null
+                  : () {
+                Navigator.pop(ctx);
+                _exportBackgroundCard(bg);
+              },
+            ),
+            if (!bg.isPreset)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text(
+                  '删除背景',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _deleteBackground(bg);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importBackgroundCardWithPreview() async {
     final picked = await FilePicker.platform.pickFiles(
       dialogTitle: '选择 LLM Project 背景卡文件',
       type: FileType.any,
@@ -101,12 +333,35 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
       return;
     }
 
+    final file = File(path);
+    late BackgroundImportPreview preview;
+
     try {
-      await BackgroundAssetService.importBackgroundCard(File(path));
+      preview = await _buildBackgroundImportPreview(file);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '读取失败：$e\n'
+                '请选择由 LLM Project 导出的背景卡文件。'
+                '如果这是聊天软件转发的图片，请确认对方发送的是原图或完整文件。',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final confirmed = await _showBackgroundImportPreview(preview);
+    if (!confirmed) return;
+
+    try {
+      await BackgroundAssetService.importBackgroundCard(file);
       await _loadBackgrounds();
 
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('背景卡导入成功')),
       );
@@ -114,11 +369,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '导入失败：$e\n如果这是聊天软件转发的图片，请确认对方发送的是原图或完整文件。',
-          ),
-        ),
+        SnackBar(content: Text('导入失败：$e')),
       );
     }
   }
@@ -265,74 +516,17 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     }
   }
 
-  void _showBackgroundActions(BackgroundCard bg) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.file_upload),
-              title: const Text('导出背景卡'),
-              subtitle: Text(
-                bg.type == 'image'
-                    ? '以原图比例导出，导入时可自动恢复背景设定'
-                    : '当前仅图片背景支持背景卡导出',
-              ),
-              enabled: bg.type == 'image',
-              onTap: bg.type != 'image'
-                  ? null
-                  : () {
-                Navigator.pop(ctx);
-                _exportBackgroundCard(bg);
-              },
-            ),
-            if (!bg.isPreset)
-              ListTile(
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('删除背景', style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _deleteBackground(bg);
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('背景图库'),
         actions: [
-          // 排序按钮
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort),
-            tooltip: '排序方式',
-            onSelected: (value) => _updateSort(value, null),
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'name', child: Text('按名称排序')),
-              const PopupMenuItem(value: 'time', child: Text('按创建时间排序')),
-            ],
-          ),
-          // 升序/降序切换
-          IconButton(
-            icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
-            tooltip: _sortAscending ? '升序' : '降序',
-            onPressed: () => _updateSort(null, !_sortAscending),
-          ),
-          IconButton(
-            icon: const Icon(Icons.file_download),
-            tooltip: '导入背景卡',
-            onPressed: _importBackgroundCard,
-          ),
+          _buildSortButton(),
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: _addBackground,
+            tooltip: '新建或导入',
+            onPressed: _showCreateOrImportSheet,
           ),
         ],
       ),

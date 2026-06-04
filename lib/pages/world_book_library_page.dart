@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,22 @@ import '../services/database_service.dart';
 import '../services/world_book_asset_service.dart';
 import 'world_book_edit_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class WorldBookImportPreview {
+  final File file;
+  final String name;
+  final String description;
+  final int entryCount;
+  final List<String> checks;
+
+  WorldBookImportPreview({
+    required this.file,
+    required this.name,
+    required this.description,
+    required this.entryCount,
+    required this.checks,
+  });
+}
 
 class WorldBookLibraryPage extends StatefulWidget {
   const WorldBookLibraryPage({super.key});
@@ -27,6 +44,95 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     super.initState();
     _loadSortPreference();
     _loadWorldBooks();
+  }
+
+  Widget _buildSortButton() {
+    return GestureDetector(
+      onLongPress: () {
+        final newAscending = !_sortAscending;
+        _updateSort(null, newAscending);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(newAscending ? '已切换为正序' : '已切换为倒序'),
+            duration: const Duration(milliseconds: 800),
+          ),
+        );
+      },
+      child: PopupMenuButton<String>(
+        icon: const Icon(Icons.sort),
+        tooltip: '排序方式，长按切换正序/倒序',
+        onSelected: (value) {
+          if (value == 'toggle_order') {
+            _updateSort(null, !_sortAscending);
+          } else {
+            _updateSort(value, null);
+          }
+        },
+        itemBuilder: (context) => [
+          CheckedPopupMenuItem(
+            value: 'time',
+            checked: _sortBy == 'time',
+            child: const Text('默认顺序 / 创建时间'),
+          ),
+          CheckedPopupMenuItem(
+            value: 'name',
+            checked: _sortBy == 'name',
+            child: const Text('按名称排序'),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'toggle_order',
+            child: Row(
+              children: [
+                Icon(
+                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _sortAscending
+                        ? '当前：正序，点击切换倒序'
+                        : '当前：倒序，点击切换正序',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateOrImportSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('新建世界书'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _addWorldBook();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_download),
+              title: const Text('导入世界书'),
+              subtitle: const Text('导入 LLM Project 世界书 JSON'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importWorldBookWithPreview();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _exportWorldBook(WorldBook wb) async {
@@ -72,6 +178,128 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
         SnackBar(content: Text('导出失败：$e')),
       );
     }
+  }
+
+  void _showWorldBookActions(WorldBook wb) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.file_upload),
+              title: const Text('导出世界书'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportWorldBook(wb);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text(
+                '删除世界书',
+                style: TextStyle(color: Colors.red),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deleteWorldBook(wb);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<WorldBookImportPreview> _buildWorldBookImportPreview(File file) async {
+    final wb = await WorldBookAssetService.readWorldBookAsset(file);
+
+    int entryCount = 0;
+    try {
+      entryCount = (jsonDecode(wb.entriesJson) as List).length;
+    } catch (_) {}
+
+    return WorldBookImportPreview(
+      file: file,
+      name: wb.name,
+      description: wb.description,
+      entryCount: entryCount,
+      checks: const [
+        '内部识别标识完整',
+        '世界书数据完整',
+      ],
+    );
+  }
+
+  Future<bool> _showWorldBookImportPreview(
+      WorldBookImportPreview preview,
+      ) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认导入世界书'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                preview.name,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('条目数量：${preview.entryCount} 个'),
+              if (preview.description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  '描述：',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  preview.description,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 8),
+              const Text(
+                '完整性检查：',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              ...preview.checks.map(
+                    (e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(e)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认导入'),
+          ),
+        ],
+      ),
+    );
+
+    return result == true;
   }
 
   Future<void> _importWorldBook() async {
@@ -249,63 +477,18 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
   String _sortBy = 'time'; // 默认按创建时间
 
-  void _showWorldBookActions(WorldBook wb) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.file_upload),
-              title: const Text('导出世界书'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _exportWorldBook(wb);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('删除世界书', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _deleteWorldBook(wb);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('世界书库'),
         actions: [
-          // 排序按钮
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort),
-            tooltip: '排序方式',
-            onSelected: (value) => _updateSort(value, null),
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'name', child: Text('按名称排序')),
-              const PopupMenuItem(value: 'time', child: Text('按创建时间排序')),
-            ],
-          ),
-          // 升序/降序切换
+          _buildSortButton(),
           IconButton(
-            icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
-            tooltip: _sortAscending ? '升序' : '降序',
-            onPressed: () => _updateSort(null, !_sortAscending),
+            icon: const Icon(Icons.add),
+            tooltip: '新建或导入',
+            onPressed: _showCreateOrImportSheet,
           ),
-          IconButton(
-            icon: const Icon(Icons.file_download),
-            tooltip: '导入世界书',
-            onPressed: _importWorldBook,
-          ),
-          IconButton(icon: const Icon(Icons.add), onPressed: _addWorldBook),
         ],
       ),
       body: _worldBooks.isEmpty

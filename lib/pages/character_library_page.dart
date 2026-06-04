@@ -1,4 +1,5 @@
 // ignore_for_file: use_build_context_synchronously
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -17,6 +18,34 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/character_card_asset_service.dart';
 import '../services/character_card_png_asset_service.dart';
+
+class CharacterImportPreview {
+  final File file;
+  final String sourceType; // llmcard / png_card
+  final String name;
+  final String cardType;
+  final String description;
+  final int entryCount;
+  final int greetingCount;
+  final bool hasWorldBook;
+  final List<String> worldBookNames;
+  final bool hasUserOverride;
+  final List<String> checks;
+
+  CharacterImportPreview({
+    required this.file,
+    required this.sourceType,
+    required this.name,
+    required this.cardType,
+    required this.description,
+    required this.entryCount,
+    required this.greetingCount,
+    required this.hasWorldBook,
+    required this.worldBookNames,
+    required this.hasUserOverride,
+    required this.checks,
+  });
+}
 
 class CharacterLibraryPage extends StatefulWidget {
   const CharacterLibraryPage({super.key});
@@ -172,7 +201,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
     }
   }
 
-  Future<void> _importCharacterCard() async {
+  Future<void> _importCharacterCardWithPreview() async {
     final picked = await FilePicker.platform.pickFiles(
       dialogTitle: '选择 LLM Project 角色卡文件或角色卡图片',
       type: FileType.any,
@@ -191,34 +220,48 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
     }
 
     final file = File(filePath);
+    late CharacterImportPreview preview;
 
     try {
-      // 先尝试稳定文件包 .llmcard
-      await CharacterCardAssetService.importCharacterCard(file);
-    } catch (_) {
-      try {
-        // 再尝试图片角色卡 .llmchar.png
-        await CharacterCardPngAssetService.importCharacterCardPng(file);
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '导入失败：$e\n'
-                  '如果这是聊天软件转发的角色卡图片，请确认对方发送的是原图或完整文件。',
-            ),
+      preview = await _buildCharacterImportPreview(file);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '读取失败：$e\n'
+                '请选择由 LLM Project 导出的角色卡文件。'
+                '如果是图片角色卡，请确认发送时使用了原图或文件方式。',
           ),
-        );
-        return;
-      }
+        ),
+      );
+      return;
     }
 
-    await _loadCharacters();
-
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('角色卡导入成功')),
-    );
+
+    final confirmed = await _showCharacterImportPreview(preview);
+    if (!confirmed) return;
+
+    try {
+      if (preview.sourceType == 'png_card') {
+        await CharacterCardPngAssetService.importCharacterCardPng(file);
+      } else {
+        await CharacterCardAssetService.importCharacterCard(file);
+      }
+
+      await _loadCharacters();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('角色卡导入成功')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入失败：$e')),
+      );
+    }
   }
 
   Future<void> _exportSelectedCharacterCardPng() async {
@@ -377,6 +420,162 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
     });
   }
 
+  Future<CharacterImportPreview> _buildCharacterImportPreview(File file) async {
+    try {
+      final data = await CharacterCardAssetService.readCharacterCardData(file);
+      return _previewFromCharacterData(file, data);
+    } catch (_) {
+      final data =
+      await CharacterCardPngAssetService.readCharacterCardPngData(file);
+      return _previewFromCharacterData(file, data);
+    }
+  }
+
+  CharacterImportPreview _previewFromCharacterData(
+      File file,
+      Map<String, dynamic> data,
+      ) {
+    final character = Map<String, dynamic>.from(data['character'] as Map);
+
+    final worldBooks = (data['world_books'] as List? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    int entryCount = 0;
+    int greetingCount = 0;
+
+    try {
+      entryCount =
+          (jsonDecode(character['entries_json'] as String? ?? '[]') as List)
+              .length;
+    } catch (_) {}
+
+    try {
+      greetingCount =
+          (jsonDecode(character['opening_greetings'] as String? ?? '[]') as List)
+              .length;
+    } catch (_) {}
+
+    final hasUserOverride =
+        (character['user_name']?.toString().isNotEmpty ?? false) ||
+            (character['user_detail_setting']?.toString().isNotEmpty ?? false);
+
+    final sourceType = data['container']?.toString() ?? 'unknown';
+
+    return CharacterImportPreview(
+      file: file,
+      sourceType: sourceType,
+      name: character['name']?.toString() ?? '未命名角色卡',
+      cardType: character['card_type']?.toString() ?? 'character',
+      description: character['description']?.toString() ?? '',
+      entryCount: entryCount,
+      greetingCount: greetingCount,
+      hasWorldBook: worldBooks.isNotEmpty,
+      worldBookNames: worldBooks
+          .map((e) => e['name']?.toString() ?? '未命名世界书')
+          .toList(),
+      hasUserOverride: hasUserOverride,
+      checks: [
+        '内部识别标识完整',
+        '角色卡数据完整',
+        if (sourceType == 'png_card') '图片角色卡数据完整',
+        if (worldBooks.isNotEmpty) '包含世界书依赖',
+      ],
+    );
+  }
+
+  Future<bool> _showCharacterImportPreview(
+      CharacterImportPreview preview,
+      ) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认导入角色卡'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                preview.name,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '来源类型：${preview.sourceType == 'png_card' ? '角色卡图片' : '完整角色卡文件'}',
+              ),
+              Text('卡片类型：${preview.cardType == 'system' ? '系统卡' : '人物卡'}'),
+              Text('设定条目：${preview.entryCount} 个'),
+              Text('开场白：${preview.greetingCount} 条'),
+              const SizedBox(height: 8),
+
+              if (preview.description.isNotEmpty) ...[
+                const Text('简短描述：',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  preview.description,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+              ],
+
+              if (preview.hasWorldBook) ...[
+                const Text('包含世界书：',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                ...preview.worldBookNames.map((name) => Text('• $name')),
+                const SizedBox(height: 8),
+              ],
+
+              if (preview.hasUserOverride) ...[
+                const Text(
+                  '包含当前用户覆盖设定',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+
+              const Text('完整性检查：',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              ...preview.checks.map(
+                    (e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle,
+                          color: Colors.green, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(e)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认导入'),
+          ),
+        ],
+      ),
+    );
+
+    return result == true;
+  }
+
   Future<void> _updateSort(String? sortBy, bool? ascending) async {
     final prefs = await SharedPreferences.getInstance();
     if (sortBy != null) {
@@ -390,6 +589,161 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
     setState(() {
       _sortCharacters();
     });
+  }
+
+  CharacterCard? _getSelectedCharacter() {
+    if (_expandedIds.isEmpty) return null;
+    final id = _expandedIds.first;
+    try {
+      return _characters.firstWhere((c) => c.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _openSelectedCharacterChat() {
+    final character = _getSelectedCharacter();
+
+    if (character == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先点击一个角色卡片')),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ChatPage(character: character)),
+    );
+  }
+
+  void _showCreateOrImportSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('新建角色卡'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _addCharacter();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_download),
+              title: const Text('导入角色卡'),
+              subtitle: const Text('支持 .llmcard 和 LLM Project 角色卡图片'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importCharacterCardWithPreview();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showExportCharacterSheet() {
+    final character = _getSelectedCharacter();
+
+    if (character == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先点击一个角色卡片')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.archive_outlined),
+              title: const Text('导出完整角色卡文件'),
+              subtitle: const Text('稳定格式，推荐迁移或正式分享'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportSelectedCharacterCard();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('导出角色卡图片'),
+              subtitle: const Text('适合展示分享，发送时请使用原图或文件'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportSelectedCharacterCardPng();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortButton() {
+    return GestureDetector(
+      onLongPress: () {
+        final newAscending = !_sortAscending;
+        _updateSort(null, newAscending);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(newAscending ? '已切换为正序' : '已切换为倒序'),
+            duration: const Duration(milliseconds: 800),
+          ),
+        );
+      },
+      child: PopupMenuButton<String>(
+        icon: const Icon(Icons.sort),
+        tooltip: '排序方式，长按切换正序/倒序',
+        onSelected: (value) {
+          if (value == 'toggle_order') {
+            _updateSort(null, !_sortAscending);
+          } else {
+            _updateSort(value, null);
+          }
+        },
+        itemBuilder: (context) => [
+          CheckedPopupMenuItem(
+            value: 'time',
+            checked: _sortBy == 'time',
+            child: const Text('默认顺序 / 创建时间'),
+          ),
+          CheckedPopupMenuItem(
+            value: 'name',
+            checked: _sortBy == 'name',
+            child: const Text('按名称排序'),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'toggle_order',
+            child: Row(
+              children: [
+                Icon(
+                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _sortAscending
+                        ? '当前：正序，点击切换倒序'
+                        : '当前：倒序，点击切换正序',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _addCharacter() async {
@@ -510,60 +864,30 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
       appBar: AppBar(
         title: const Text('角色库'),
         actions: [
-          // 排序按钮
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort),
-            tooltip: '排序方式',
-            onSelected: (value) => _updateSort(value, null),
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'name', child: Text('按名称排序')),
-              const PopupMenuItem(value: 'time', child: Text('按创建时间排序')),
-            ],
-          ),
-          // 升序/降序切换
-          IconButton(
-            icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
-            tooltip: _sortAscending ? '升序' : '降序',
-            onPressed: () => _updateSort(null, !_sortAscending),
-          ),
-          IconButton(
-            icon: const Icon(Icons.file_download),
-            tooltip: '导入角色卡',
-            onPressed: _importCharacterCard,
-          ),
+          _buildSortButton(),
           IconButton(
             icon: const Icon(Icons.ios_share),
-            tooltip: '导出选中角色卡',
-            onPressed: _exportSelectedCharacterCard,
-          ),
-          IconButton(
-            icon: const Icon(Icons.image_outlined),
-            tooltip: '导出选中角色卡图片',
-            onPressed: _exportSelectedCharacterCardPng,
-          ),
-          IconButton(
-            icon: const Icon(Icons.play_arrow),
-            onPressed: () {
-              if (_expandedIds.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请先点击一个角色卡片')),
-                );
-                return;
-              }
-              final expandedId = _expandedIds.first;
-              final character = _characters.firstWhere((c) => c.id == expandedId);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => ChatPage(character: character)),
-              );
-            },
+            tooltip: '导出角色卡',
+            onPressed: _showExportCharacterSheet,
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: _addCharacter,
+            tooltip: '新建或导入',
+            onPressed: _showCreateOrImportSheet,
           ),
         ],
       ),
+
+      floatingActionButton: SizedBox(
+        width: 54,
+        height: 54,
+        child: FloatingActionButton(
+          onPressed: _openSelectedCharacterChat,
+          backgroundColor: Theme.of(context).primaryColor,
+          child: const Icon(Icons.play_arrow_rounded, color: Colors.white),
+        ),
+      ),
+
       body: NotificationListener<ScrollUpdateNotification>(
         onNotification: (notification) {
           if (_deletingIds.isNotEmpty || _expandedIds.isNotEmpty) {

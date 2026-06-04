@@ -34,6 +34,40 @@ class CharacterCardAssetService {
     archive.addFile(ArchiveFile(path, bytes.length, bytes));
   }
 
+  static Future<Map<String, dynamic>> readCharacterCardData(File file) async {
+    final files = await _extractArchive(file);
+
+    final manifest = _readJson(files, 'manifest.json');
+    if (manifest is! Map) {
+      throw Exception('未识别到角色卡标识');
+    }
+
+    if (manifest['magic'] != magic || manifest['asset_type'] != assetType) {
+      throw Exception('这不是 LLM Project 角色卡文件');
+    }
+
+    final version = manifest['format_version'];
+    if (version is! int || version > formatVersion) {
+      throw Exception('角色卡版本过高，请升级 App 后再导入');
+    }
+
+    final rawCharacter = _readJson(files, 'data/character.json');
+    if (rawCharacter is! Map) {
+      throw Exception('角色卡数据缺失或损坏');
+    }
+
+    final worldBooks = _readJson(files, 'data/dependencies/world_books.json');
+
+    return {
+      'container': 'llmcard',
+      'manifest': Map<String, dynamic>.from(manifest),
+      'character': Map<String, dynamic>.from(rawCharacter),
+      'world_books': worldBooks is List
+          ? worldBooks.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+          : <Map<String, dynamic>>[],
+    };
+  }
+
   static Future<String> _addAssetIfExists({
     required Archive archive,
     required String sourcePath,

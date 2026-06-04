@@ -69,6 +69,67 @@ class CharacterCardPngAssetService {
     return -1;
   }
 
+  static Future<Map<String, dynamic>> readCharacterCardPngData(File file) async {
+    final bytes = await file.readAsBytes();
+
+    final start = _lastIndexOfBytes(bytes, _startMarker);
+    if (start == -1) {
+      throw Exception('未识别到 LLM Project 角色卡图片标识');
+    }
+
+    final payloadStart = start + _startMarker.length;
+    final end = _indexOfBytes(bytes, _endMarker, payloadStart);
+
+    if (end == -1 || end <= payloadStart) {
+      throw Exception('角色卡图片数据不完整或已损坏');
+    }
+
+    final payloadBase64 = utf8.decode(bytes.sublist(payloadStart, end)).trim();
+
+    Map<String, dynamic> root;
+    try {
+      final jsonText = utf8.decode(base64Decode(payloadBase64));
+      root = Map<String, dynamic>.from(jsonDecode(jsonText) as Map);
+    } catch (_) {
+      throw Exception('角色卡图片数据解析失败');
+    }
+
+    if (root['magic'] != magic ||
+        root['asset_type'] != assetType ||
+        root['container'] != container) {
+      throw Exception('这不是 LLM Project 角色卡图片');
+    }
+
+    final version = root['format_version'];
+    if (version is! int || version > formatVersion) {
+      throw Exception('角色卡图片版本过高，请升级 App 后再导入');
+    }
+
+    final payload = root['payload'];
+    if (payload is! Map) {
+      throw Exception('角色卡图片载荷缺失');
+    }
+
+    final rawCharacter = payload['character'];
+    if (rawCharacter is! Map) {
+      throw Exception('角色卡数据缺失');
+    }
+
+    final dependencies = payload['dependencies'];
+    final worldBooks = dependencies is Map && dependencies['world_books'] is List
+        ? (dependencies['world_books'] as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList()
+        : <Map<String, dynamic>>[];
+
+    return {
+      'container': 'png_card',
+      'manifest': root,
+      'character': Map<String, dynamic>.from(rawCharacter),
+      'world_books': worldBooks,
+    };
+  }
+
   static Future<Map<String, dynamic>?> _findWorldBookRaw(String id) async {
     if (id.trim().isEmpty) return null;
 
