@@ -1041,6 +1041,19 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return (totalChars / 2).ceil();
   }
 
+  String _displayCharacterName(String? name) {
+    final raw = name?.trim() ?? '';
+    if (raw.isEmpty) return '聊天';
+
+    // 控制最大显示字符数，避免极长名字影响布局。
+    // 中文、英文都按字符数简单截断。
+    const maxChars = 10;
+
+    if (raw.characters.length <= maxChars) return raw;
+
+    return '${raw.characters.take(maxChars).toString()}…';
+  }
+
   UserProfile _currentUser = UserProfile();
 
   Future<void> _loadUser() async {
@@ -2374,55 +2387,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-
-                  // 5. 角色名（悬浮，居中）
-                  Positioned(
-                    top: MediaQuery.of(context).padding.top + 28 + 10,
-                    left: 60,
-                    right: 60,
-                    child: IgnorePointer(
-                      ignoring: _showFanPanel || _animController.value > 0.5,
-                      child: Opacity(
-                        opacity: (_showFanPanel || _showCardDetail)
-                            ? 0.0
-                            : (1.0 - _animController.value),
-                        child: Center(
-                          child: GestureDetector(
-                            onTap: () {
-                              if (!_showFanPanel) {
-                                _loadSelectableCharacters();
-                              }
-                              setState(() => _showFanPanel = !_showFanPanel);
-                            },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(20),
-                              child: BackdropFilter(
-                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withAlpha(80),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    _currentCharacter?.name ?? '聊天',
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
                   // 悬浮毛玻璃输入栏（最上层）
                   if (_animController.value < 0.1 && !_showFanPanel)
                     Positioned(
@@ -2453,6 +2417,79 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                       ),
                                     ),
                                   ),
+                                // 底部角色名胶囊：输入框未展开时显示，展开时渐隐
+                                AnimatedBuilder(
+                                  animation: _inputAnimController,
+                                  builder: (context, child) {
+                                    final opacity = (1.0 - _inputExpandAnimation.value).clamp(0.0, 1.0);
+
+                                    return Positioned(
+                                      left: 66,
+                                      right: 66,
+                                      top: 16,
+                                      height: 36,
+                                      child: IgnorePointer(
+                                        ignoring: opacity < 0.5 || _showFanPanel,
+                                        child: Opacity(
+                                          opacity: opacity,
+                                          child: Center(
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                if (!_showFanPanel) {
+                                                  _loadSelectableCharacters();
+                                                }
+                                                setState(() => _showFanPanel = !_showFanPanel);
+                                              },
+                                              child: ClipRRect(
+                                                borderRadius: BorderRadius.circular(18),
+                                                child: BackdropFilter(
+                                                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                                                  child: Container(
+                                                    constraints: const BoxConstraints(
+                                                      minWidth: 72,
+                                                      maxWidth: 180,
+                                                    ),
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 14,
+                                                      vertical: 7,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white.withAlpha(95),
+                                                      borderRadius: BorderRadius.circular(18),
+                                                      border: Border.all(
+                                                        color: Colors.white.withAlpha(80),
+                                                      ),
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: Colors.black.withAlpha(14),
+                                                          blurRadius: 10,
+                                                          offset: const Offset(0, 3),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    child: Text(
+                                                      _displayCharacterName(_currentCharacter?.name),
+                                                      maxLines: 1,
+                                                      softWrap: false,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      textAlign: TextAlign.center,
+                                                      style: const TextStyle(
+                                                        fontSize: 14,
+                                                        height: 1.0,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.black87,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                                 AnimatedBuilder(
                                   animation: _inputAnimController,
                                   builder: (context, child) {
