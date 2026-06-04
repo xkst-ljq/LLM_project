@@ -47,60 +47,74 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
   }
 
   Widget _buildSortButton() {
-    return GestureDetector(
-      onLongPress: () {
-        final newAscending = !_sortAscending;
-        _updateSort(null, newAscending);
+    return Builder(
+      builder: (buttonContext) {
+        return InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: () async {
+            final renderObject = buttonContext.findRenderObject();
+            if (renderObject is! RenderBox) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(newAscending ? '已切换为正序' : '已切换为倒序'),
-            duration: const Duration(milliseconds: 800),
+            final overlay = Overlay.of(buttonContext).context.findRenderObject();
+            if (overlay is! RenderBox) return;
+
+            final offset = renderObject.localToGlobal(
+              Offset.zero,
+              ancestor: overlay,
+            );
+
+            final rect = Rect.fromLTWH(
+              offset.dx,
+              offset.dy,
+              renderObject.size.width,
+              renderObject.size.height,
+            );
+
+            final selected = await showMenu<String>(
+              context: buttonContext,
+              position: RelativeRect.fromRect(
+                rect,
+                Offset.zero & overlay.size,
+              ),
+              items: [
+                CheckedPopupMenuItem(
+                  value: 'time',
+                  checked: _sortBy == 'time',
+                  child: const Text('默认顺序 / 创建时间'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'name',
+                  checked: _sortBy == 'name',
+                  child: const Text('按名称排序'),
+                ),
+              ],
+            );
+
+            if (!mounted || selected == null) return;
+            await _updateSort(selected, null);
+          },
+          onLongPress: _toggleSortOrder,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Icon(Icons.sort),
           ),
         );
       },
-      child: PopupMenuButton<String>(
-        icon: const Icon(Icons.sort),
-        tooltip: '排序方式，长按切换正序/倒序',
-        onSelected: (value) {
-          if (value == 'toggle_order') {
-            _updateSort(null, !_sortAscending);
-          } else {
-            _updateSort(value, null);
-          }
-        },
-        itemBuilder: (context) => [
-          CheckedPopupMenuItem(
-            value: 'time',
-            checked: _sortBy == 'time',
-            child: const Text('默认顺序 / 创建时间'),
-          ),
-          CheckedPopupMenuItem(
-            value: 'name',
-            checked: _sortBy == 'name',
-            child: const Text('按名称排序'),
-          ),
-          const PopupMenuDivider(),
-          PopupMenuItem(
-            value: 'toggle_order',
-            child: Row(
-              children: [
-                Icon(
-                  _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                  size: 18,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _sortAscending
-                        ? '当前：正序，点击切换倒序'
-                        : '当前：倒序，点击切换正序',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+    );
+  }
+
+  Future<void> _toggleSortOrder() async {
+    final newAscending = !_sortAscending;
+
+    await _updateSort(null, newAscending);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(newAscending ? '已切换为正序' : '已切换为倒序'),
+        duration: const Duration(milliseconds: 800),
       ),
     );
   }
@@ -302,26 +316,49 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     return result == true;
   }
 
-  Future<void> _importWorldBook() async {
+  Future<void> _importWorldBookWithPreview() async {
     final picked = await FilePicker.platform.pickFiles(
       dialogTitle: '选择 LLM Project 世界书文件',
       type: FileType.any,
       allowMultiple: false,
     );
 
+    if (!mounted) return;
+
     if (picked == null || picked.files.isEmpty) return;
 
     final path = picked.files.single.path;
     if (path == null) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('无法读取该文件')),
       );
       return;
     }
 
+    final file = File(path);
+    late WorldBookImportPreview preview;
+
     try {
-      await WorldBookAssetService.importWorldBook(File(path));
+      preview = await _buildWorldBookImportPreview(file);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '读取失败：$e\n请选择由 LLM Project 导出的世界书文件。',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final confirmed = await _showWorldBookImportPreview(preview);
+    if (!confirmed) return;
+
+    try {
+      await WorldBookAssetService.importWorldBook(file);
       await _loadWorldBooks();
 
       if (!mounted) return;
@@ -333,11 +370,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '导入失败：$e\n请选择由 LLM Project 导出的世界书文件。',
-          ),
-        ),
+        SnackBar(content: Text('导入失败：$e')),
       );
     }
   }
