@@ -456,6 +456,285 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     }
   }
 
+  Color _worldBookColor(String seed) {
+    const colors = [
+      Color(0xFF6D5DF6), // 紫
+      Color(0xFF00A7A7), // 青
+      Color(0xFFE57373), // 红
+      Color(0xFFFFB74D), // 橙
+      Color(0xFF81C784), // 绿
+      Color(0xFF64B5F6), // 蓝
+      Color(0xFFBA68C8), // 紫粉
+      Color(0xFF4DB6AC), // 蓝绿
+      Color(0xFF9575CD), // 深紫
+      Color(0xFFFF8A65), // 暖橙
+    ];
+
+    final source = seed.trim().isEmpty ? 'world_book' : seed.trim();
+    final index = source.hashCode.abs() % colors.length;
+    return colors[index];
+  }
+
+  String _worldBookInitial(WorldBook wb) {
+    final name = wb.name.trim();
+    if (name.isEmpty) return '书';
+
+    // 用 runes 避免 emoji / 部分特殊字符截断
+    return String.fromCharCode(name.runes.first);
+  }
+
+  List<String> _worldBookTags(WorldBook wb) {
+    final tags = <String>[];
+
+    for (final entry in wb.entries) {
+      final keyword = entry.keyword.trim();
+      if (keyword.isEmpty) continue;
+
+      final parts = keyword
+          .split(RegExp(r'[,，、\s]+'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty);
+
+      for (final part in parts) {
+        if (!tags.contains(part)) {
+          tags.add(part);
+        }
+
+        if (tags.length >= 4) {
+          return tags;
+        }
+      }
+    }
+
+    return tags;
+  }
+
+  Widget _buildWorldBookCover(WorldBook wb) {
+    final color = _worldBookColor(wb.name.isNotEmpty ? wb.name : wb.id);
+    final entries = wb.entries;
+
+    final entryCount = entries.length;
+    final alwaysActiveCount = entries.where((e) => e.alwaysActive).length;
+    final keywordCount =
+        entries.where((e) => e.keyword.trim().isNotEmpty).length;
+
+    final tags = _worldBookTags(wb);
+    final initial = _worldBookInitial(wb);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            color.withValues(alpha: 0.95),
+            color.withValues(alpha: 0.58),
+          ],
+        ),
+      ),
+      child: Stack(
+        children: [
+          // 背景装饰圆
+          Positioned(
+            right: -36,
+            top: -28,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.10),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -28,
+            bottom: -34,
+            child: Container(
+              width: 110,
+              height: 110,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.black.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 顶部类型标识
+                Row(
+                  children: [
+                    Icon(
+                      Icons.auto_stories_rounded,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.76),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'WORLD BOOK',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const Spacer(),
+
+                // 中间首字标识
+                Center(
+                  child: Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.26),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Text(
+                        initial,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 30,
+                          fontWeight: FontWeight.bold,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const Spacer(),
+
+                // 名称
+                Text(
+                  wb.name.trim().isEmpty ? '未命名世界书' : wb.name.trim(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    height: 1.2,
+                  ),
+                ),
+
+                const SizedBox(height: 4),
+
+                // 描述
+                if (wb.description.trim().isNotEmpty)
+                  Text(
+                    wb.description.trim(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.80),
+                      fontSize: 11,
+                      height: 1.25,
+                    ),
+                  )
+                else
+                  Text(
+                    '暂无描述',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 11,
+                      height: 1.25,
+                    ),
+                  ),
+
+                const SizedBox(height: 8),
+
+                // 关键词标签
+                if (tags.isNotEmpty)
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: tags.take(3).map((tag) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.10),
+                          ),
+                        ),
+                        child: Text(
+                          '#$tag',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.90),
+                            fontSize: 9,
+                            height: 1.1,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      '无关键词',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.60),
+                        fontSize: 9,
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(height: 8),
+
+                // 底部统计
+                Text(
+                  '条目 $entryCount · 关键词 $keywordCount · 常驻 $alwaysActiveCount',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.72),
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _deleteWorldBook(WorldBook wb) {
     showDialog(
       context: context,
@@ -549,12 +828,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
                   // 纯封面图（暂时用灰色背景 + 世界书图标）
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      color: Colors.grey[300],
-                      child: const Center(
-                        child: Icon(Icons.book, size: 60, color: Colors.white54),
-                      ),
-                    ),
+                    child: _buildWorldBookCover(wb),
                   ),
                   // 名称彩带
                   if (isExpanded)
@@ -569,14 +843,6 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
                           borderRadius: const BorderRadius.only(
                             bottomLeft: Radius.circular(12),
                             bottomRight: Radius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          wb.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
