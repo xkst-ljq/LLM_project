@@ -11,7 +11,6 @@ import '../models/user_profile.dart';
 import '../services/api_config_service.dart';
 import '../services/background_service.dart';
 import '../services/database_service.dart';
-import '../services/export_path_service.dart';
 import '../services/user_service.dart';
 
 class BackupOptions {
@@ -55,25 +54,9 @@ class BackupOptions {
 
 class BackupExportResult {
   final File file;
-  final bool usedCustomDirectory;
-  final String? requestedDirectory;
 
   const BackupExportResult({
     required this.file,
-    required this.usedCustomDirectory,
-    this.requestedDirectory,
-  });
-}
-
-class _ResolvedExportDirectory {
-  final Directory directory;
-  final bool usedCustomDirectory;
-  final String? requestedDirectory;
-
-  const _ResolvedExportDirectory({
-    required this.directory,
-    required this.usedCustomDirectory,
-    this.requestedDirectory,
   });
 }
 
@@ -122,64 +105,6 @@ class BackupService {
       debugPrint('添加资源失败: $sourcePath $e');
       return '';
     }
-  }
-
-  static Future<bool> _canWriteToDirectory(Directory dir) async {
-    try {
-      if (!dir.existsSync()) {
-        await dir.create(recursive: true);
-      }
-
-      final testFile = File(
-        p.join(
-          dir.path,
-          '.write_test_${DateTime.now().millisecondsSinceEpoch}.tmp',
-        ),
-      );
-
-      await testFile.writeAsString('test', flush: true);
-
-      if (await testFile.exists()) {
-        await testFile.delete();
-      }
-
-      return true;
-    } catch (e) {
-      debugPrint('目录不可写: ${dir.path}, $e');
-      return false;
-    }
-  }
-
-  static Future<_ResolvedExportDirectory> _resolveExportDirectory() async {
-    final custom = await ExportPathService.getPath(ExportTargetType.backup);
-
-    if (custom != null && custom.isNotEmpty) {
-      final dir = Directory(custom);
-      final canWrite = await _canWriteToDirectory(dir);
-
-      if (canWrite) {
-        return _ResolvedExportDirectory(
-          directory: dir,
-          usedCustomDirectory: true,
-          requestedDirectory: custom,
-        );
-      }
-
-      debugPrint('自定义备份目录不可写，回退到应用目录: $custom');
-    }
-
-    final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.join(docs.path, 'exports', 'backups'));
-
-    if (!dir.existsSync()) {
-      await dir.create(recursive: true);
-    }
-
-    return _ResolvedExportDirectory(
-      directory: dir,
-      usedCustomDirectory: false,
-      requestedDirectory: custom,
-    );
   }
 
   static Future<BackupExportResult> exportBackup(BackupOptions options) async {
@@ -351,21 +276,23 @@ class BackupService {
     final bytes = ZipEncoder().encode(archive);
     if (bytes == null) throw Exception('备份压缩失败');
 
-    final resolved = await _resolveExportDirectory();
+    final docs = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(docs.path, 'exports', 'backups'));
+
+    if (!dir.existsSync()) {
+      await dir.create(recursive: true);
+    }
+
     final file = File(
       p.join(
-        resolved.directory.path,
+        dir.path,
         'LLM_Project_Backup_${_timestampForFile()}.llmbak',
       ),
     );
 
     await file.writeAsBytes(bytes, flush: true);
 
-    return BackupExportResult(
-      file: file,
-      usedCustomDirectory: resolved.usedCustomDirectory,
-      requestedDirectory: resolved.requestedDirectory,
-    );
+    return BackupExportResult(file: file);
   }
 
   static Future<Map<String, List<int>>> _extractArchive(File backupFile) async {

@@ -3,7 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/backup_service.dart';
-import '../services/export_path_service.dart';
+import '../services/android_download_service.dart';
 
 class BackupRestorePage extends StatefulWidget {
   const BackupRestorePage({super.key});
@@ -46,18 +46,23 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
 
       _lastExportPath = file.path;
 
-      if (!mounted) return;
+      final fileName = file.uri.pathSegments.last;
 
-      final usedFallback = result.requestedDirectory != null &&
-          result.requestedDirectory!.isNotEmpty &&
-          !result.usedCustomDirectory;
+      final downloadsPath = await AndroidDownloadService.saveFileToDownloads(
+        sourcePath: file.path,
+        fileName: fileName,
+        subDir: 'LLM Project/Backups',
+        mimeType: 'application/octet-stream',
+      );
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            usedFallback
-                ? '自定义目录不可写，已导出到应用目录'
-                : '备份已导出',
+            downloadsPath != null
+                ? '备份已保存到 Download/LLM Project/Backups'
+                : '备份已导出到应用目录，可点击分享/保存',
           ),
         ),
       );
@@ -70,24 +75,31 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (usedFallback) ...[
-                const Text(
-                  '你设置的自定义导出目录当前不可写，备份已自动保存到应用目录。',
-                  style: TextStyle(color: Colors.orange),
-                ),
+              if (downloadsPath != null) ...[
+                const Text('备份已保存到系统下载目录：'),
                 const SizedBox(height: 8),
-                const Text(
-                  '你可以点击“分享/保存”，通过系统面板保存到文件管理器、网盘或其他位置。',
+                SelectableText(
+                  downloadsPath,
+                  style: const TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 12),
+                const Text(
+                  '你可以在文件管理器的 Download / LLM Project / Backups 中找到它。',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ] else ...[
-                const Text('备份文件已生成：'),
+                const Text('备份已生成到应用目录：'),
                 const SizedBox(height: 8),
+                SelectableText(
+                  file.path,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '如果你找不到该文件，请点击“分享/保存”导出到其他位置。',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ],
-              SelectableText(
-                file.path,
-                style: const TextStyle(fontSize: 12),
-              ),
             ],
           ),
           actions: [
@@ -148,6 +160,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       );
       return;
     }
+
+    if (!mounted) return;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -309,17 +323,21 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                 Text('上次导出：$_lastExportPath', style: const TextStyle(fontSize: 12, color: Colors.grey)),
               ],
               const SizedBox(height: 24),
-              FutureBuilder<String?>(
-                future: ExportPathService.getPath(ExportTargetType.backup),
-                builder: (context, snapshot) {
-                  final path = snapshot.data;
-                  return Text(
-                    path == null || path.isEmpty
-                        ? '当前未设置完整备份导出位置，将使用应用默认目录。'
-                        : '完整备份导出位置：$path',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  );
-                },
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  '备份会自动保存到：Download / LLM Project / Backups。\n'
+                      '如果系统下载目录保存失败，可在导出完成后点击“分享/保存”手动保存到其他位置。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                    height: 1.4,
+                  ),
+                ),
               ),
             ],
           ),

@@ -17,6 +17,10 @@
     <!-- Android 13+ 读取图片权限，某些场景可能需要 -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <application
         android:label="llm_project"
         android:name="${applicationName}"
