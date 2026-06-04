@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'api_config_page.dart';  // 新增导入
+import 'api_config_page.dart';
 import 'user_settings_page.dart';
+import 'backup_restore_page.dart';
+import 'export_path_settings_page.dart';
 
 class SettingsMenuPage extends StatelessWidget {
   const SettingsMenuPage({super.key});
@@ -36,6 +38,26 @@ class SettingsMenuPage extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const UserSettingsPage()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.backup),
+            title: const Text('备份与恢复'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BackupRestorePage()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.folder),
+            title: const Text('导出位置设置'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ExportPathSettingsPage()),
               );
             },
           ),

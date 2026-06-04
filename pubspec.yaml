@@ -48,6 +48,9 @@ dependencies:
   flutter_colorpicker: ^1.0.0
   flutter_html: ^3.0.0
   markdown: ^7.3.1
+  archive: ^3.6.1
+  file_picker: ^8.0.0
+  share_plus: ^10.0.0
 
 dev_dependencies:
   flutter_test:

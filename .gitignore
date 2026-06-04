@@ -80,3 +80,4 @@ api_keys.json
 # Release artifacts
 *.apk
 *.aab
+*.llmbak
