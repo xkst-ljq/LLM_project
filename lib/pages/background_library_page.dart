@@ -8,6 +8,9 @@ import 'package:path/path.dart' as p;
 import '../models/background_card.dart';
 import '../services/background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
+import '../services/background_asset_service.dart';
 
 class BackgroundLibraryPage extends StatefulWidget {
   const BackgroundLibraryPage({super.key});
@@ -26,6 +29,98 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     super.initState();
     _loadSortPreference();
     _loadBackgrounds();
+  }
+
+  Future<void> _exportBackgroundCard(BackgroundCard bg) async {
+    try {
+      if (bg.type != 'image') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前仅支持导出图片背景卡')),
+        );
+        return;
+      }
+
+      final file = await BackgroundAssetService.exportBackgroundCard(bg);
+
+      final downloadsPath =
+      await BackgroundAssetService.saveBackgroundCardToDownloads(file);
+
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('导出完成'),
+          content: Text(
+            downloadsPath != null
+                ? '背景卡已保存到：\n$downloadsPath'
+                : '背景卡已导出到应用目录：\n${file.path}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('关闭'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Share.shareXFiles(
+                  [XFile(file.path)],
+                  text: 'LLM Project 背景卡',
+                );
+              },
+              child: const Text('分享'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出失败：$e')),
+      );
+    }
+  }
+
+  Future<void> _importBackgroundCard() async {
+    final picked = await FilePicker.platform.pickFiles(
+      dialogTitle: '选择 LLM Project 背景卡文件',
+      type: FileType.any,
+      allowMultiple: false,
+    );
+
+    if (picked == null || picked.files.isEmpty) return;
+
+    final path = picked.files.single.path;
+    if (path == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法读取该文件')),
+      );
+      return;
+    }
+
+    try {
+      await BackgroundAssetService.importBackgroundCard(File(path));
+      await _loadBackgrounds();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('背景卡导入成功')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '导入失败：$e\n如果这是聊天软件转发的图片，请确认对方发送的是原图或完整文件。',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _loadSortPreference() async {
@@ -170,6 +265,44 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     }
   }
 
+  void _showBackgroundActions(BackgroundCard bg) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.file_upload),
+              title: const Text('导出背景卡'),
+              subtitle: Text(
+                bg.type == 'image'
+                    ? '以原图比例导出，导入时可自动恢复背景设定'
+                    : '当前仅图片背景支持背景卡导出',
+              ),
+              enabled: bg.type == 'image',
+              onTap: bg.type != 'image'
+                  ? null
+                  : () {
+                Navigator.pop(ctx);
+                _exportBackgroundCard(bg);
+              },
+            ),
+            if (!bg.isPreset)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('删除背景', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _deleteBackground(bg);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -192,7 +325,15 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
             tooltip: _sortAscending ? '升序' : '降序',
             onPressed: () => _updateSort(null, !_sortAscending),
           ),
-          IconButton(icon: const Icon(Icons.add), onPressed: _addBackground),
+          IconButton(
+            icon: const Icon(Icons.file_download),
+            tooltip: '导入背景卡',
+            onPressed: _importBackgroundCard,
+          ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _addBackground,
+          ),
         ],
       ),
       body: _backgrounds.isEmpty
@@ -222,11 +363,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
                 });
               }
             },
-            onLongPress: () {
-              if (!bg.isPreset) {
-                _deleteBackground(bg);
-              }
-            },
+            onLongPress: () => _showBackgroundActions(bg),
             child: AspectRatio(
               aspectRatio: 2 / 3,
               child: Stack(
