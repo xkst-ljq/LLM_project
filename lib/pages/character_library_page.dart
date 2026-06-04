@@ -16,6 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/character_card_asset_service.dart';
+import '../services/character_card_png_asset_service.dart';
 
 class CharacterLibraryPage extends StatefulWidget {
   const CharacterLibraryPage({super.key});
@@ -173,7 +174,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
 
   Future<void> _importCharacterCard() async {
     final picked = await FilePicker.platform.pickFiles(
-      dialogTitle: '选择 LLM Project 角色卡文件',
+      dialogTitle: '选择 LLM Project 角色卡文件或角色卡图片',
       type: FileType.any,
       allowMultiple: false,
     );
@@ -189,22 +190,164 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
       return;
     }
 
+    final file = File(filePath);
+
     try {
-      await CharacterCardAssetService.importCharacterCard(File(filePath));
-      await _loadCharacters();
+      // 先尝试稳定文件包 .llmcard
+      await CharacterCardAssetService.importCharacterCard(file);
+    } catch (_) {
+      try {
+        // 再尝试图片角色卡 .llmchar.png
+        await CharacterCardPngAssetService.importCharacterCardPng(file);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '导入失败：$e\n'
+                  '如果这是聊天软件转发的角色卡图片，请确认对方发送的是原图或完整文件。',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    await _loadCharacters();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('角色卡导入成功')),
+    );
+  }
+
+  Future<void> _exportSelectedCharacterCardPng() async {
+    if (_expandedIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先点击一个角色卡片')),
+      );
+      return;
+    }
+
+    final expandedId = _expandedIds.first;
+    final character = _characters.firstWhere((c) => c.id == expandedId);
+
+    bool includeUserOverride = false;
+    bool includeBoundWorldBook = character.worldBookId.trim().isNotEmpty;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('导出角色卡图片'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '图片角色卡适合展示和分享。\n'
+                        '通过聊天软件发送时请使用“原图”或“文件”方式，否则内部数据可能丢失。',
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    value: includeUserOverride,
+                    onChanged: (v) {
+                      setDialogState(() {
+                        includeUserOverride = v ?? false;
+                      });
+                    },
+                    title: const Text('包含当前角色用户覆盖设定'),
+                    subtitle: const Text(
+                      '通常不建议分享，可能包含你的个人设定。',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  CheckboxListTile(
+                    value: includeBoundWorldBook,
+                    onChanged: character.worldBookId.trim().isEmpty
+                        ? null
+                        : (v) {
+                      setDialogState(() {
+                        includeBoundWorldBook = v ?? false;
+                      });
+                    },
+                    title: const Text('包含绑定世界书'),
+                    subtitle: Text(
+                      character.worldBookId.trim().isEmpty
+                          ? '当前角色没有绑定世界书。'
+                          : '导入角色卡图片时会自动新建世界书并重新绑定。',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('导出'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final file = await CharacterCardPngAssetService.exportCharacterCardPng(
+        character: character,
+        includeUserOverride: includeUserOverride,
+        includeBoundWorldBook: includeBoundWorldBook,
+      );
+
+      final downloadsPath =
+      await CharacterCardPngAssetService.saveCharacterPngToDownloads(file);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('角色卡导入成功')),
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('导出完成'),
+          content: Text(
+            downloadsPath != null
+                ? '角色卡图片已保存到：\n$downloadsPath\n\n发送给别人时请使用“原图”或“文件”方式。'
+                : '角色卡图片已导出到应用目录：\n${file.path}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('关闭'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Share.shareXFiles(
+                  [XFile(file.path)],
+                  text: 'LLM Project 角色卡图片',
+                );
+              },
+              child: const Text('分享'),
+            ),
+          ],
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '导入失败：$e\n如果这是聊天软件转发的文件，请确认对方发送的是完整角色卡文件。',
-          ),
-        ),
+        SnackBar(content: Text('导出失败：$e')),
       );
     }
   }
@@ -392,6 +535,11 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
             icon: const Icon(Icons.ios_share),
             tooltip: '导出选中角色卡',
             onPressed: _exportSelectedCharacterCard,
+          ),
+          IconButton(
+            icon: const Icon(Icons.image_outlined),
+            tooltip: '导出选中角色卡图片',
+            onPressed: _exportSelectedCharacterCardPng,
           ),
           IconButton(
             icon: const Icon(Icons.play_arrow),
