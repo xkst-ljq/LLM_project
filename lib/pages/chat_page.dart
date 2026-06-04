@@ -1024,6 +1024,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       MediaQuery.of(context).size.width * _panelWidthFraction;
   bool _isLoading = false;
   bool _showFanPanel = false;
+  late AnimationController _fanPanelAnimController;
+  late Animation<double> _fanPanelFadeAnim;
+  late Animation<Offset> _fanPanelSlideAnim;
   late AnimationController _inputAnimController;
   late Animation<double> _inputExpandAnimation;
   late CharacterCard? _currentCharacter;
@@ -1192,6 +1195,28 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
+    _fanPanelAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+      reverseDuration: const Duration(milliseconds: 260),
+    );
+
+    _fanPanelFadeAnim = CurvedAnimation(
+      parent: _fanPanelAnimController,
+      curve: Curves.easeOut,
+      reverseCurve: Curves.easeIn,
+    );
+
+    _fanPanelSlideAnim = Tween<Offset>(
+      begin: const Offset(0, 1.0),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _fanPanelAnimController,
+        curve: Curves.easeOutBack,
+        reverseCurve: Curves.easeInCubic,
+      ),
+    );
     _fanSnapController.addListener(() {
       if (!mounted) return;
       setState(() {
@@ -1281,6 +1306,32 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottomWhenReady();
+    });
+  }
+
+  void _openFanPanel() {
+    if (_showFanPanel) return;
+
+    _loadSelectableCharacters();
+
+    setState(() {
+      _showFanPanel = true;
+    });
+
+    _fanPanelAnimController.forward(from: 0);
+  }
+
+  Future<void> _closeFanPanel() async {
+    if (!_showFanPanel) return;
+
+    await _fanPanelAnimController.reverse();
+
+    if (!mounted) return;
+
+    setState(() {
+      _showFanPanel = false;
+      _showCardDetail = false;
+      _detailCard = null;
     });
   }
 
@@ -1415,6 +1466,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _inertiaTicker?.stop();
     _inertiaTicker?.dispose();
     _fanSnapController.dispose();
+    _fanPanelAnimController.dispose();
     super.dispose();
 
   }
@@ -2287,38 +2339,57 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   //扇形面板
                   if (_showFanPanel)
                     Positioned.fill(
-                      child: Stack(
-                        children: [
-                          // 轮盘层（不显示详情时可交互）
-                          if (!_showCardDetail)
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => setState(() => _showFanPanel = false),
-                              onHorizontalDragUpdate: (details) {
-                                _inertiaTicker?.stop();
-                                _inertiaTicker?.dispose();
-                                _inertiaTicker = null;
-                                _fanSnapController.stop();
-                                final maxOff =
-                                    _halfArcLen + (_cardCount - 1) / 2.0 * _cardDs;
-                                setState(() {
-                                  // 向右拖(delta.dx>0) → fanOffset减少 → 弧长减小 → 卡片向右移
-                                  _fanOffset += details.delta.dx;
-                                  _fanOffset = _fanOffset.clamp(-maxOff, maxOff);
-                                });
-                              },
-                              onHorizontalDragEnd: (details) {
-                                _startInertia(details.velocity.pixelsPerSecond.dx);
-                              },
-                              child: Container(
-                                color: Colors.black54,
-                                child: _buildFanCards(),
+                      child: AnimatedBuilder(
+                        animation: _fanPanelAnimController,
+                        builder: (context, child) {
+                          final fade = _fanPanelFadeAnim.value;
+
+                          return Stack(
+                            children: [
+                              // 背景遮罩渐变
+                              Positioned.fill(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _showCardDetail ? null : _closeFanPanel,
+                                  child: Container(
+                                    color: Colors.black.withValues(alpha: 0.54 * fade),
+                                  ),
+                                ),
                               ),
-                            ),
-                          // 详情弹窗层
-                          if (_showCardDetail && _detailCard != null)
-                            _buildCardDetailOverlay(_detailCard!),
-                        ],
+
+                              // 轮盘从底部升起
+                              if (!_showCardDetail)
+                                SlideTransition(
+                                  position: _fanPanelSlideAnim,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.translucent,
+                                    onHorizontalDragUpdate: (details) {
+                                      _inertiaTicker?.stop();
+                                      _inertiaTicker?.dispose();
+                                      _inertiaTicker = null;
+                                      _fanSnapController.stop();
+
+                                      final maxOff =
+                                          _halfArcLen + (_cardCount - 1) / 2.0 * _cardDs;
+
+                                      setState(() {
+                                        _fanOffset += details.delta.dx;
+                                        _fanOffset = _fanOffset.clamp(-maxOff, maxOff);
+                                      });
+                                    },
+                                    onHorizontalDragEnd: (details) {
+                                      _startInertia(details.velocity.pixelsPerSecond.dx);
+                                    },
+                                    child: _buildFanCards(),
+                                  ),
+                                ),
+
+                              // 详情弹窗层
+                              if (_showCardDetail && _detailCard != null)
+                                _buildCardDetailOverlay(_detailCard!),
+                            ],
+                          );
+                        },
                       ),
                     ),
 
@@ -2435,10 +2506,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                           child: Center(
                                             child: GestureDetector(
                                               onTap: () {
-                                                if (!_showFanPanel) {
-                                                  _loadSelectableCharacters();
+                                                if (_showFanPanel) {
+                                                  _closeFanPanel();
+                                                } else {
+                                                  _openFanPanel();
                                                 }
-                                                setState(() => _showFanPanel = !_showFanPanel);
                                               },
                                               child: ClipRRect(
                                                 borderRadius: BorderRadius.circular(18),
