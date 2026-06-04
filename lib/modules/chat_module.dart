@@ -82,18 +82,29 @@ class ChatModule extends AppModule {
         responseType: ResponseType.stream,
       ),
     );
-    await for (final chunk in response.data.stream) {
-      final lines = utf8.decode(chunk).split('\n');
-      for (var line in lines) {
-        if (line.startsWith('data: ')) {
-          final data = line.substring(6);
-          if (data == '[DONE]') return;
-          try {
-            final parsed = jsonDecode(data);
-            final content = parsed['choices'][0]['delta']['content'];
-            if (content != null) yield content;
-          } catch (_) {}
+    final lineStream = response.data.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+
+    await for (final rawLine in lineStream) {
+      final line = rawLine.trim();
+
+      if (line.isEmpty) continue;
+      if (!line.startsWith('data:')) continue;
+
+      final data = line.substring(5).trim();
+
+      if (data == '[DONE]') return;
+
+      try {
+        final parsed = jsonDecode(data);
+        final content = parsed['choices']?[0]?['delta']?['content'];
+        if (content != null) {
+          yield content.toString();
         }
+      } catch (e) {
+        // 这里不要静默丢太多，调试时可以打开
+        // debugPrint('SSE 解析失败: $data');
       }
     }
   }

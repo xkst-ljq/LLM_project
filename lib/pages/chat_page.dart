@@ -49,6 +49,39 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return index == _messages.length - 1 && !_isLoading;
   }
 
+  String _buildRoleplayRules() {
+    if (_currentCharacter == null) return '';
+
+    final name = _currentCharacter!.name.isNotEmpty
+        ? _currentCharacter!.name
+        : '当前角色';
+
+    if (_currentCharacter!.cardType == 'character') {
+      return '''
+你正在扮演角色“$name”。
+
+【人物卡扮演规则】
+1. 你只能扮演“$name”，使用第一人称“我”表达自己的语言、动作、感受和想法。
+2. 不要代替用户说话、行动、思考、感受或做决定。
+3. 不要描写用户没有明确输入的动作，例如“你拉住我”“你低下头”“你露出表情”等，除非用户已经明确这样做。
+4. 可以对用户已经明确做出的行为作出反应，也可以请求用户配合，例如“你低一点”“让我够一下”。
+5. 涉及动作、距离、触摸、身体互动时，应自然考虑角色和用户的身高、体型、关系、状态等设定。
+6. 非语言动作可以使用括号或星号描写，但括号、引号必须成对闭合。
+7. 回复要紧接上下文，不要突然跳跃，不要出现缺字、断句或未完成的动作描写。
+8. 除非用户明确要求，否则不要跳出角色，不要声明自己是 AI。
+''';
+    }
+
+    return '''
+【系统卡叙事规则】
+1. 可以以旁白或系统视角推进情境，但不得代替用户做决定。
+2. 不要替用户说话、行动、思考或感受。
+3. 涉及主角/用户行动时，只能基于用户已明确输入的内容进行回应。
+4. 非语言动作、括号、引号必须成对闭合。
+5. 回复要保持上下文连贯，不要突然缺字或中断。
+''';
+  }
+
   List<CharacterCard> _selectableCharacters = [];
 
   Future<void> _loadSelectableCharacters() async {
@@ -1364,6 +1397,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   Future<String> _buildFinalSystemPrompt() async {
     String systemPrompt = _currentCharacter?.systemPrompt ?? '你是忠于用户的助手。';
+    final roleplayRules = _buildRoleplayRules();
+    if (roleplayRules.isNotEmpty) {
+      systemPrompt += '\n\n$roleplayRules';
+    }
 
     // 注入世界书设定
     if (_currentCharacter?.worldBookId != null &&
@@ -3137,7 +3174,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 as List;
         final enabledEntries = entriesList
             .map((e) => CharacterEntry.fromJson(e))
-            .where((e) => e.enabled && e.content.isNotEmpty)
+            .where((e) {
+          if (!e.enabled || e.content.isEmpty) return false;
+
+          // 系统卡的主角设定已经作为用户设定注入，避免重复塞进角色设定
+          if (_currentCharacter?.cardType == 'system' && e.id == 'protagonist') {
+            return false;
+          }
+
+          return true;
+        })
             .toList();
         if (enabledEntries.isNotEmpty) {
           final entryText = enabledEntries
@@ -3148,7 +3194,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         }
       } catch (_) {}
     }
-
+    
     String aiResponseContent = '';
     setState(() => _isLoading = true);
 
@@ -3285,10 +3331,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   Future<void> _regenerateMessage(int aiIndex) async {
     if (aiIndex <= 0 || aiIndex >= _messages.length) return;
+
     final prevMsg = _messages[aiIndex - 1];
     if (prevMsg['role'] != 'user') return;
 
     final oldAiMsg = _messages[aiIndex];
+
     int newVersion = 2;
     if (oldAiMsg.containsKey('versions')) {
       final versions = oldAiMsg['versions'] as List<String>;
@@ -3296,65 +3344,71 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
 
     final module = context.read<ChatModule>();
-    final systemPrompt = _currentCharacter?.systemPrompt ?? '你是忠于用户的助手。';
 
+    // 关键：重新生成也必须使用完整系统提示词
+    final systemPrompt = await _buildFinalSystemPrompt();
+
+    // 关键：只取旧 AI 回复之前的上下文，保留之前的 assistant 历史
     final requestMessages = _messages
-        .where((m) => m['role'] != null && m['role'] != 'assistant')
+        .take(aiIndex)
+        .where((m) => m['role'] != null)
         .map(
           (m) => {
-            'role': m['role'] as String,
-            'content': m['content'] as String,
-          },
-        )
+        'role': m['role'] as String,
+        'content': m['content'] as String,
+      },
+    )
         .toList();
 
     String aiResponseContent = '';
     setState(() => _isLoading = true);
 
-    module
-        .sendMessage(systemPrompt, requestMessages)
-        .listen(
+    module.sendMessage(systemPrompt, requestMessages).listen(
           (chunk) {
-            aiResponseContent += chunk;
-            setState(() {});
-          },
-          onDone: () async {
-            if (aiResponseContent.isEmpty) {
-              setState(() => _isLoading = false);
-              return;
-            }
-            // ✅ 修复：使用 _currentCharacter
-            int? newMsgId;
-            if (_currentCharacter != null) {
-              newMsgId = await DatabaseService.insertMessage(
-                characterId: _currentCharacter!.id,
-                role: 'assistant',
-                content: aiResponseContent,
-                version: newVersion,
-              );
-            }
-            setState(() {
-              if (oldAiMsg['versions'] == null) {
-                oldAiMsg['versions'] = <String>[oldAiMsg['content']];
-                oldAiMsg['versionIds'] = <String>[oldAiMsg['id'].toString()];
-              }
-              (oldAiMsg['versions'] as List<String>).add(aiResponseContent);
-              (oldAiMsg['versionIds'] as List<String>).add(
-                newMsgId?.toString() ?? '',
-              );
-              oldAiMsg['content'] = aiResponseContent;
-              oldAiMsg['id'] = newMsgId?.toString() ?? '';
-              oldAiMsg['currentVersionIndex'] =
-                  (oldAiMsg['versions'] as List<String>).length - 1;
-              _isLoading = false;
-            });
-          },
-          onError: (e) {
-            setState(() {
-              _isLoading = false;
-            });
-          },
-        );
+        aiResponseContent += chunk;
+        setState(() {});
+      },
+      onDone: () async {
+        if (aiResponseContent.isEmpty) {
+          setState(() => _isLoading = false);
+          return;
+        }
+
+        int? newMsgId;
+        if (_currentCharacter != null) {
+          newMsgId = await DatabaseService.insertMessage(
+            characterId: _currentCharacter!.id,
+            role: 'assistant',
+            content: aiResponseContent,
+            version: newVersion,
+          );
+        }
+
+        setState(() {
+          if (oldAiMsg['versions'] == null) {
+            oldAiMsg['versions'] = <String>[oldAiMsg['content']];
+            oldAiMsg['versionIds'] = <String>[oldAiMsg['id'].toString()];
+          }
+
+          (oldAiMsg['versions'] as List<String>).add(aiResponseContent);
+          (oldAiMsg['versionIds'] as List<String>).add(
+            newMsgId?.toString() ?? '',
+          );
+
+          oldAiMsg['content'] = aiResponseContent;
+          oldAiMsg['id'] = newMsgId?.toString() ?? '';
+          oldAiMsg['currentVersionIndex'] =
+              (oldAiMsg['versions'] as List<String>).length - 1;
+
+          _isLoading = false;
+        });
+      },
+      onError: (e) {
+        setState(() {
+          _isLoading = false;
+        });
+      },
+    );
   }
 
   Future<void> _continueMessage(int aiIndex) async {

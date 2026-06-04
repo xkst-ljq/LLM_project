@@ -182,8 +182,6 @@ API Key 使用 `flutter_secure_storage` 保存在本地设备中。
 
 ```text
 始终显示
-或
-自动适配
 ```
 
 ### 备份迁移
