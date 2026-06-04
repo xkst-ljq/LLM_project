@@ -123,10 +123,31 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
 
     final picked = await FilePicker.platform.pickFiles(
       dialogTitle: '选择备份文件',
-      type: FileType.custom,
-      allowedExtensions: ['llmbak', 'zip'],
+      type: FileType.any,
+      allowMultiple: false,
     );
-    if (picked == null || picked.files.single.path == null) return;
+
+    if (picked == null || picked.files.isEmpty) return;
+
+    final pickedFile = picked.files.single;
+    final filePath = pickedFile.path;
+    final fileName = pickedFile.name.toLowerCase();
+
+    if (filePath == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法读取该文件路径，请尝试将备份文件移动到下载目录后再导入')),
+      );
+      return;
+    }
+
+    if (!fileName.endsWith('.llmbak') && !fileName.endsWith('.zip')) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请选择 .llmbak 备份文件')),
+      );
+      return;
+    }
 
     final ok = await showDialog<bool>(
       context: context,
@@ -146,7 +167,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
 
     setState(() => _busy = true);
     try {
-      await BackupService.importBackup(File(picked.files.single.path!));
+      await BackupService.importBackup(File(filePath));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('导入完成，建议返回主菜单后重新进入相关页面刷新数据')),
