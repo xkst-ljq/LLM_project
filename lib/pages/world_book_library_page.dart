@@ -1,6 +1,10 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/world_book.dart';
 import '../services/database_service.dart';
+import '../services/world_book_asset_service.dart';
 import 'world_book_edit_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -23,6 +27,91 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     super.initState();
     _loadSortPreference();
     _loadWorldBooks();
+  }
+
+  Future<void> _exportWorldBook(WorldBook wb) async {
+    try {
+      final file = await WorldBookAssetService.exportWorldBook(wb);
+
+      final downloadsPath =
+      await WorldBookAssetService.saveWorldBookToDownloads(file);
+
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('导出完成'),
+          content: Text(
+            downloadsPath != null
+                ? '世界书已保存到：\n$downloadsPath'
+                : '世界书已导出到应用目录：\n${file.path}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('关闭'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Share.shareXFiles(
+                  [XFile(file.path)],
+                  text: 'LLM Project 世界书',
+                );
+              },
+              child: const Text('分享'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出失败：$e')),
+      );
+    }
+  }
+
+  Future<void> _importWorldBook() async {
+    final picked = await FilePicker.platform.pickFiles(
+      dialogTitle: '选择 LLM Project 世界书文件',
+      type: FileType.any,
+      allowMultiple: false,
+    );
+
+    if (picked == null || picked.files.isEmpty) return;
+
+    final path = picked.files.single.path;
+    if (path == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法读取该文件')),
+      );
+      return;
+    }
+
+    try {
+      await WorldBookAssetService.importWorldBook(File(path));
+      await _loadWorldBooks();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('世界书导入成功')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '导入失败：$e\n请选择由 LLM Project 导出的世界书文件。',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _loadSortPreference() async {
@@ -160,6 +249,35 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
   String _sortBy = 'time'; // 默认按创建时间
 
+  void _showWorldBookActions(WorldBook wb) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.file_upload),
+              title: const Text('导出世界书'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportWorldBook(wb);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('删除世界书', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deleteWorldBook(wb);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -182,6 +300,11 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
             tooltip: _sortAscending ? '升序' : '降序',
             onPressed: () => _updateSort(null, !_sortAscending),
           ),
+          IconButton(
+            icon: const Icon(Icons.file_download),
+            tooltip: '导入世界书',
+            onPressed: _importWorldBook,
+          ),
           IconButton(icon: const Icon(Icons.add), onPressed: _addWorldBook),
         ],
       ),
@@ -202,7 +325,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
           return GestureDetector(
             onTap: () => _openWorldBookEdit(wb, index),
-            onLongPress: () => _deleteWorldBook(wb),
+            onLongPress: () => _showWorldBookActions(wb),
             child: AspectRatio(
               aspectRatio: 2 / 3,
               child: Stack(

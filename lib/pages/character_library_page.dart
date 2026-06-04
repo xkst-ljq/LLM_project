@@ -13,6 +13,9 @@ import 'package:path_provider/path_provider.dart';
 import '../utils/default_image.dart';
 import 'chat_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
+import '../services/character_card_asset_service.dart';
 
 class CharacterLibraryPage extends StatefulWidget {
   const CharacterLibraryPage({super.key});
@@ -41,6 +44,124 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
       _sortBy = prefs.getString(_sortByKey) ?? 'time';
       _sortAscending = prefs.getBool(_sortAscendingKey) ?? true;
     });
+  }
+
+  Future<void> _exportSelectedCharacterCard() async {
+    if (_expandedIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先点击一个角色卡片')),
+      );
+      return;
+    }
+
+    final expandedId = _expandedIds.first;
+    final character = _characters.firstWhere((c) => c.id == expandedId);
+
+    final includeUserOverride = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('导出角色卡'),
+        content: const Text(
+          '是否包含当前角色的用户覆盖设定？\n\n'
+              '通常不建议分享该内容，因为它可能包含你的个人设定。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('不包含'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('包含'),
+          ),
+        ],
+      ),
+    );
+
+    if (includeUserOverride == null) return;
+
+    try {
+      final file = await CharacterCardAssetService.exportCharacterCard(
+        character: character,
+        includeUserOverride: includeUserOverride,
+      );
+
+      final downloadsPath =
+      await CharacterCardAssetService.saveCharacterCardToDownloads(file);
+
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('导出完成'),
+          content: Text(
+            downloadsPath != null
+                ? '角色卡已保存到：\n$downloadsPath'
+                : '角色卡已导出到应用目录：\n${file.path}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('关闭'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Share.shareXFiles(
+                  [XFile(file.path)],
+                  text: 'LLM Project 角色卡',
+                );
+              },
+              child: const Text('分享'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出失败：$e')),
+      );
+    }
+  }
+
+  Future<void> _importCharacterCard() async {
+    final picked = await FilePicker.platform.pickFiles(
+      dialogTitle: '选择 LLM Project 角色卡文件',
+      type: FileType.any,
+      allowMultiple: false,
+    );
+
+    if (picked == null || picked.files.isEmpty) return;
+
+    final filePath = picked.files.single.path;
+    if (filePath == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法读取该文件')),
+      );
+      return;
+    }
+
+    try {
+      await CharacterCardAssetService.importCharacterCard(File(filePath));
+      await _loadCharacters();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('角色卡导入成功')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '导入失败：$e\n如果这是聊天软件转发的文件，请确认对方发送的是完整角色卡文件。',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _loadCharacters() async {
@@ -216,6 +337,16 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
             icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
             tooltip: _sortAscending ? '升序' : '降序',
             onPressed: () => _updateSort(null, !_sortAscending),
+          ),
+          IconButton(
+            icon: const Icon(Icons.file_download),
+            tooltip: '导入角色卡',
+            onPressed: _importCharacterCard,
+          ),
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: '导出选中角色卡',
+            onPressed: _exportSelectedCharacterCard,
           ),
           IconButton(
             icon: const Icon(Icons.play_arrow),
