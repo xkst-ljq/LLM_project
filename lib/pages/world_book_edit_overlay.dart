@@ -70,7 +70,11 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
       height: 0,
     );
     _rectAnimation = RectTween(begin: beginRect, end: targetRect).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOutBack),
+      CurvedAnimation(
+        parent: _animController,
+        curve: Curves.easeOutBack,
+        reverseCurve: Curves.easeInCubic,
+      ),
     );
     _animController.forward();
   }
@@ -86,11 +90,13 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
   Future<void> _closeWithAnimation() async {
     if (_isClosing || !mounted) return;
 
-    _isClosing = true;
+    FocusScope.of(context).unfocus();
 
-    try {
-      await _animController.reverse();
-    } catch (_) {}
+    setState(() {
+      _isClosing = true;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 220));
 
     if (mounted) {
       Navigator.pop(context);
@@ -182,211 +188,216 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
         if (didPop) return;
         _closeWithAnimation();
       },
-      child: Stack(
-        children: [
-          // 半透明背景（点击关闭）
-          AnimatedBuilder(
-            animation: _animController,
-            builder: (context, child) {
-              return GestureDetector(
-                onTap: _closeWithAnimation,
-                child: Container(
-                  color: Colors.black.withValues(
-                    alpha: 0.54 * _animController.value,
+      child: AnimatedOpacity(
+        opacity: _isClosing ? 0.0 : 1.0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        child: Stack(
+          children: [
+            // 半透明背景（点击关闭）
+            AnimatedBuilder(
+              animation: _animController,
+              builder: (context, child) {
+                return GestureDetector(
+                  onTap: _closeWithAnimation,
+                  child: Container(
+                    color: Colors.black.withValues(
+                      alpha: 0.54 * _animController.value,
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          // 带动画的编辑窗口
-          AnimatedBuilder(
-            animation: _rectAnimation!,
-            builder: (context, child) {
-              final rect = _rectAnimation!.value!;
-              return Positioned(
-                left: rect.left,
-                top: rect.top,
-                width: rect.width,
-                height: rect.height,
-                child: GestureDetector(
-                  onTap: () {}, // 阻止点击穿透
-                  child: Material(
-                    borderRadius: BorderRadius.circular(20),
-                    elevation: 16,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Column(
-                        children: [
-                          Expanded(
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // 名称行
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Text('世界书名称', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                                      if (_showNameError)
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 4),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.red.withAlpha(25),
-                                              borderRadius: BorderRadius.circular(4),
+                );
+              },
+            ),
+            // 带动画的编辑窗口
+            AnimatedBuilder(
+              animation: _rectAnimation!,
+              builder: (context, child) {
+                final rect = _rectAnimation!.value!;
+                return Positioned(
+                  left: rect.left,
+                  top: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                  child: GestureDetector(
+                    onTap: () {}, // 阻止点击穿透
+                    child: Material(
+                      borderRadius: BorderRadius.circular(20),
+                      elevation: 16,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // 名称行
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Text('世界书名称', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                        if (_showNameError)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.red.withAlpha(25),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(_nameErrorText, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
                                             ),
-                                            child: Text(_nameErrorText, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
                                           ),
+                                        const SizedBox(width: 6),
+                                        GestureDetector(
+                                          onTap: () => setState(() => _editingName = !_editingName),
+                                          child: Icon(_editingName ? Icons.check : Icons.edit, size: 16, color: Colors.grey),
                                         ),
-                                      const SizedBox(width: 6),
-                                      GestureDetector(
-                                        onTap: () => setState(() => _editingName = !_editingName),
-                                        child: Icon(_editingName ? Icons.check : Icons.edit, size: 16, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  _editingName
-                                      ? TextField(
-                                    controller: _nameCtrl,
-                                    autofocus: true,
-                                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                                  )
-                                      : Center(
-                                    child: Text(
-                                      _nameCtrl.text.isEmpty ? '未命名' : _nameCtrl.text,
-                                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                      textAlign: TextAlign.center,
+                                      ],
                                     ),
-                                  ),
-                                  const SizedBox(height: 16),
-
-                                  // 描述行
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Text('简短描述', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                                      const SizedBox(width: 6),
-                                      GestureDetector(
-                                        onTap: () => setState(() => _editingDesc = !_editingDesc),
-                                        child: Icon(_editingDesc ? Icons.check : Icons.edit, size: 16, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  _editingDesc
-                                      ? TextField(
-                                    controller: _descCtrl,
-                                    autofocus: true,
-                                    maxLines: 2,
-                                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                                  )
-                                      : Center(
-                                    child: Text(
-                                      _descCtrl.text.isEmpty ? '暂无描述' : _descCtrl.text,
-                                      style: const TextStyle(fontSize: 14, color: Colors.grey),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-
-                                  // 条目列表标题
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text('设定条目', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                                      IconButton(
-                                        icon: const Icon(Icons.add_circle, color: Colors.blue),
-                                        onPressed: _addEntry,
-                                        tooltip: '添加条目',
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-
-                                  // 条目列表
-                                  if (_entries.isEmpty)
-                                    const Padding(
-                                      padding: EdgeInsets.all(16),
-                                      child: Text('暂无条目，点击 + 添加', style: TextStyle(color: Colors.grey)),
+                                    const SizedBox(height: 6),
+                                    _editingName
+                                        ? TextField(
+                                      controller: _nameCtrl,
+                                      autofocus: true,
+                                      decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
                                     )
-                                  else
-                                    ListView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      itemCount: _entries.length,
-                                      itemBuilder: (ctx, i) {
-                                        final entry = _entries[i];
-                                        return Card(
-                                          margin: const EdgeInsets.only(bottom: 8),
-                                          child: ListTile(
-                                            title: Text(entry.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                            subtitle: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                if (entry.keyword.isNotEmpty)
-                                                  Padding(
-                                                    padding: const EdgeInsets.only(bottom: 4),
-                                                    child: Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.blue.shade50,
-                                                        borderRadius: BorderRadius.circular(4),
-                                                      ),
-                                                      child: Text(
-                                                        entry.keyword,
-                                                        style: TextStyle(fontSize: 10, color: Colors.blue.shade700),
+                                        : Center(
+                                      child: Text(
+                                        _nameCtrl.text.isEmpty ? '未命名' : _nameCtrl.text,
+                                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+
+                                    // 描述行
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Text('简短描述', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                        const SizedBox(width: 6),
+                                        GestureDetector(
+                                          onTap: () => setState(() => _editingDesc = !_editingDesc),
+                                          child: Icon(_editingDesc ? Icons.check : Icons.edit, size: 16, color: Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    _editingDesc
+                                        ? TextField(
+                                      controller: _descCtrl,
+                                      autofocus: true,
+                                      maxLines: 2,
+                                      decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                                    )
+                                        : Center(
+                                      child: Text(
+                                        _descCtrl.text.isEmpty ? '暂无描述' : _descCtrl.text,
+                                        style: const TextStyle(fontSize: 14, color: Colors.grey),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+
+                                    // 条目列表标题
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text('设定条目', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                        IconButton(
+                                          icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                          onPressed: _addEntry,
+                                          tooltip: '添加条目',
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+
+                                    // 条目列表
+                                    if (_entries.isEmpty)
+                                      const Padding(
+                                        padding: EdgeInsets.all(16),
+                                        child: Text('暂无条目，点击 + 添加', style: TextStyle(color: Colors.grey)),
+                                      )
+                                    else
+                                      ListView.builder(
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        itemCount: _entries.length,
+                                        itemBuilder: (ctx, i) {
+                                          final entry = _entries[i];
+                                          return Card(
+                                            margin: const EdgeInsets.only(bottom: 8),
+                                            child: ListTile(
+                                              title: Text(entry.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                              subtitle: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (entry.keyword.isNotEmpty)
+                                                    Padding(
+                                                      padding: const EdgeInsets.only(bottom: 4),
+                                                      child: Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.blue.shade50,
+                                                          borderRadius: BorderRadius.circular(4),
+                                                        ),
+                                                        child: Text(
+                                                          entry.keyword,
+                                                          style: TextStyle(fontSize: 10, color: Colors.blue.shade700),
+                                                        ),
                                                       ),
                                                     ),
+                                                  Text(
+                                                    entry.content.isEmpty ? '无内容' : entry.content,
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                                                   ),
-                                                Text(
-                                                  entry.content.isEmpty ? '无内容' : entry.content,
-                                                  maxLines: 2,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
+                                              trailing: IconButton(
+                                                icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                                onPressed: () => _deleteEntry(entry),
+                                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                                padding: EdgeInsets.zero,
+                                              ),
+                                              onTap: () => _editEntry(entry),
                                             ),
-                                            trailing: IconButton(
-                                              icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                              onPressed: () => _deleteEntry(entry),
-                                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                              padding: EdgeInsets.zero,
-                                            ),
-                                            onTap: () => _editEntry(entry),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  const SizedBox(height: 16),
-                                ],
+                                          );
+                                        },
+                                      ),
+                                    const SizedBox(height: 16),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                          const Divider(height: 1),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: FilledButton(onPressed: _save, child: const Text('保存')),
+                            const Divider(height: 1),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: FilledButton(onPressed: _save, child: const Text('保存')),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-        ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
