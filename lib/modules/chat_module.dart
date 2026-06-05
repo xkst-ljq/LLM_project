@@ -83,6 +83,7 @@ class ChatModule extends AppModule {
       ),
     );
     final lineStream = response.data.stream
+        .map<List<int>>((chunk) => List<int>.from(chunk))
         .transform(utf8.decoder)
         .transform(const LineSplitter());
 
@@ -99,11 +100,12 @@ class ChatModule extends AppModule {
       try {
         final parsed = jsonDecode(data);
         final content = parsed['choices']?[0]?['delta']?['content'];
+
         if (content != null) {
           yield content.toString();
         }
-      } catch (e) {
-        // 这里不要静默丢太多，调试时可以打开
+      } catch (_) {
+        // 可选：调试时再打开
         // debugPrint('SSE 解析失败: $data');
       }
     }
