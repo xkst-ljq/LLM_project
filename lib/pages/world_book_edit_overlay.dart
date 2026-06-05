@@ -90,17 +90,10 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
   Future<void> _closeWithAnimation() async {
     if (_isClosing || !mounted) return;
 
+    _isClosing = true;
     FocusScope.of(context).unfocus();
 
-    setState(() {
-      _isClosing = true;
-    });
-
-    await Future.delayed(const Duration(milliseconds: 220));
-
-    if (mounted) {
-      Navigator.pop(context);
-    }
+    Navigator.pop(context);
   }
 
   Future<void> _save() async {
@@ -195,18 +188,9 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
         child: Stack(
           children: [
             // 半透明背景（点击关闭）
-            AnimatedBuilder(
-              animation: _animController,
-              builder: (context, child) {
-                return GestureDetector(
-                  onTap: _closeWithAnimation,
-                  child: Container(
-                    color: Colors.black.withValues(
-                      alpha: 0.54 * _animController.value,
-                    ),
-                  ),
-                );
-              },
+            GestureDetector(
+              onTap: _closeWithAnimation,
+              child: const SizedBox.expand(),
             ),
             // 带动画的编辑窗口
             AnimatedBuilder(

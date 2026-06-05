@@ -161,17 +161,10 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   Future<void> _closeWithAnimation() async {
     if (_isClosing || !mounted) return;
 
+    _isClosing = true;
     FocusScope.of(context).unfocus();
 
-    setState(() {
-      _isClosing = true;
-    });
-
-    await Future.delayed(const Duration(milliseconds: 220));
-
-    if (mounted) {
-      Navigator.pop(context);
-    }
+    Navigator.pop(context);
   }
 
   Future<void> _save() async {
@@ -977,18 +970,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
         curve: Curves.easeOutCubic,
         child: Stack(
             children: [
-              AnimatedBuilder(
-                animation: _animController,
-                builder: (context, child) {
-                  return GestureDetector(
-                    onTap: _closeWithAnimation,
-                    child: Container(
-                      color: Colors.black.withValues(
-                        alpha: 0.54 * _animController.value,
-                      ),
-                    ),
-                  );
-                },
+              GestureDetector(
+                onTap: _closeWithAnimation,
+                child: const SizedBox.expand(),
               ),
               AnimatedBuilder(
                 animation: _rectAnimation!,

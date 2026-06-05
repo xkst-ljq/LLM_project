@@ -777,11 +777,21 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
         .push(
       PageRouteBuilder(
         opaque: false,
-        transitionDuration: Duration.zero,
+        barrierDismissible: true,
+        barrierColor: Colors.black54,
+        barrierLabel: '关闭',
+        transitionDuration: const Duration(milliseconds: 350),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (_, _, _) => WorldBookEditOverlay(
           worldBook: wb,
           cardRect: Rect.fromLTWH(cardLeft, cardTop, cardWidth, cardHeight),
         ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
       ),
     )
         .then((_) => _loadWorldBooks());
