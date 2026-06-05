@@ -2920,6 +2920,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   Widget _buildMarkdownWidget(String text) {
+    if (!_looksLikeComplexMarkdown(text)) {
+      return _buildStyledRoleplayText(text);
+    }
+
     return MarkdownBody(
       data: text,
       selectable: true,
@@ -2930,6 +2934,111 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           _handleMarkdownAction(action);
         }
       },
+    );
+  }
+
+  bool _looksLikeComplexMarkdown(String text) {
+    final trimmed = text.trim();
+
+    return trimmed.contains('|') ||
+        trimmed.contains('```') ||
+        trimmed.contains(RegExp(r'^\s*[-*+]\s+', multiLine: true)) ||
+        trimmed.contains(RegExp(r'^\s*#{1,6}\s+', multiLine: true)) ||
+        trimmed.contains(RegExp(r'\[[^\]]+\]\([^)]+\)'));
+  }
+
+  Widget _buildStyledRoleplayText(String text) {
+    final baseStyle = const TextStyle(
+      fontSize: 14,
+      height: 1.45,
+      color: Colors.black87,
+      decoration: TextDecoration.none,
+    );
+
+    final spans = <TextSpan>[];
+
+    final pattern = RegExp(
+      r'(（[^（）]*）|\([^()]*\)|“[^”]*”|"[^"]*"|《[^》]*》|【[^】]*】)',
+    );
+
+    int last = 0;
+
+    for (final match in pattern.allMatches(text)) {
+      if (match.start > last) {
+        spans.add(
+          TextSpan(
+            text: text.substring(last, match.start),
+            style: baseStyle,
+          ),
+        );
+      }
+
+      final token = match.group(0)!;
+      spans.add(
+        TextSpan(
+          text: token,
+          style: _styleForRoleplayToken(token, baseStyle),
+        ),
+      );
+
+      last = match.end;
+    }
+
+    if (last < text.length) {
+      spans.add(
+        TextSpan(
+          text: text.substring(last),
+          style: baseStyle,
+        ),
+      );
+    }
+
+    return SelectableText.rich(
+      TextSpan(
+        style: baseStyle,
+        children: spans,
+      ),
+    );
+  }
+
+  TextStyle _styleForRoleplayToken(String token, TextStyle baseStyle) {
+    if ((token.startsWith('（') && token.endsWith('）')) ||
+        (token.startsWith('(') && token.endsWith(')'))) {
+      return baseStyle.copyWith(
+        color: const Color(0xFF6A5A78),
+        fontStyle: FontStyle.italic,
+        fontWeight: FontWeight.w500,
+        decoration: TextDecoration.none,
+      );
+    }
+
+    if ((token.startsWith('“') && token.endsWith('”')) ||
+        (token.startsWith('"') && token.endsWith('"'))) {
+      return baseStyle.copyWith(
+        color: Colors.black,
+        fontWeight: FontWeight.w600,
+        decoration: TextDecoration.none,
+      );
+    }
+
+    if (token.startsWith('《') && token.endsWith('》')) {
+      return baseStyle.copyWith(
+        color: const Color(0xFF4E6FAE),
+        fontWeight: FontWeight.w600,
+        decoration: TextDecoration.none,
+      );
+    }
+
+    if (token.startsWith('【') && token.endsWith('】')) {
+      return baseStyle.copyWith(
+        color: Theme.of(context).primaryColor,
+        fontWeight: FontWeight.bold,
+        decoration: TextDecoration.none,
+      );
+    }
+
+    return baseStyle.copyWith(
+      decoration: TextDecoration.none,
     );
   }
 
