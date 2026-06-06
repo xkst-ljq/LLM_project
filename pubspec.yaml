@@ -45,6 +45,7 @@ dependencies:
   flutter_markdown: ^0.7.1
   shared_preferences: ^2.2.2
   image: ^4.0.0
+  crop_your_image: ^2.0.0
   flutter_colorpicker: ^1.0.0
   flutter_html: ^3.0.0
   markdown: ^7.3.1

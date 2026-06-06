@@ -1,16 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../utils/id_utils.dart';
-
-enum PickImageType {
-  avatar,
-  characterCard,
-  background,
-}
+import '../widgets/image_crop_page.dart';
 
 class ImagePickService {
   static final ImagePicker _picker = ImagePicker();
@@ -42,28 +38,24 @@ class ImagePickService {
   static Future<String?> pickAvatar(BuildContext context) async {
     return _pickCropAndSave(
       context,
-      type: PickImageType.avatar,
       title: '选择头像来源',
       filePrefix: 'avatar',
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      maxWidth: 512,
-      maxHeight: 512,
+      aspectRatio: 1.0,
       pickMaxWidth: 1024,
       cropTitle: '裁剪头像',
+      guideText: '拖动或缩放图片，将头像主体放入裁剪区域。',
     );
   }
 
   static Future<String?> pickCharacterCard(BuildContext context) async {
     return _pickCropAndSave(
       context,
-      type: PickImageType.characterCard,
       title: '选择卡片来源',
       filePrefix: 'card',
-      aspectRatio: const CropAspectRatio(ratioX: 2, ratioY: 3),
-      maxWidth: 1200,
-      maxHeight: 1800,
+      aspectRatio: 2 / 3,
       pickMaxWidth: 2048,
-      cropTitle: '裁剪卡片',
+      cropTitle: '裁剪角色卡封面',
+      guideText: '角色卡封面将保存为 2:3 竖卡比例。拖动或缩放图片调整构图。',
     );
   }
 
@@ -85,7 +77,7 @@ class ImagePickService {
 
       if (picked == null) return null;
 
-      return _saveImageToLocal(
+      return _saveFileToLocal(
         sourcePath: picked.path,
         filePrefix: 'background_original',
         extension: p.extension(picked.path).isEmpty
@@ -101,14 +93,12 @@ class ImagePickService {
 
   static Future<String?> _pickCropAndSave(
       BuildContext context, {
-        required PickImageType type,
         required String title,
         required String filePrefix,
-        required CropAspectRatio aspectRatio,
-        required int maxWidth,
-        required int maxHeight,
+        required double aspectRatio,
         required double pickMaxWidth,
         required String cropTitle,
+        required String guideText,
       }) async {
     try {
       final source = await _showSourceDialog(
@@ -121,44 +111,33 @@ class ImagePickService {
 
       final picked = await _picker.pickImage(
         source: source,
-        imageQuality: 90,
+        imageQuality: 95,
         maxWidth: pickMaxWidth,
       );
 
       if (picked == null) return null;
 
-      CroppedFile? cropped;
+      final originalBytes = await File(picked.path).readAsBytes();
 
-      try {
-        cropped = await ImageCropper().cropImage(
-          sourcePath: picked.path,
-          aspectRatio: aspectRatio,
-          maxWidth: maxWidth,
-          maxHeight: maxHeight,
-          compressQuality: 90,
-          compressFormat: ImageCompressFormat.jpg,
-          uiSettings: [
-            AndroidUiSettings(
-              toolbarTitle: cropTitle,
-              toolbarColor: Colors.blue,
-              toolbarWidgetColor: Colors.white,
-              lockAspectRatio: true,
-            ),
-            IOSUiSettings(title: cropTitle),
-          ],
-        );
-      } catch (e, s) {
-        debugPrint('裁剪失败，使用原图: $e');
-        debugPrint('$s');
-      }
+      if (!context.mounted) return null;
 
-      final sourcePath = cropped?.path ?? picked.path;
+      final croppedBytes = await Navigator.push<Uint8List>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageCropPage(
+            imageBytes: originalBytes,
+            aspectRatio: aspectRatio,
+            title: cropTitle,
+            guideText: guideText,
+          ),
+        ),
+      );
 
-      // 裁剪输出指定为 jpg，因此保存扩展名统一为 .jpg
-      return _saveImageToLocal(
-        sourcePath: sourcePath,
+      if (croppedBytes == null) return null;
+
+      return _saveCroppedJpgToLocal(
+        imageBytes: croppedBytes,
         filePrefix: filePrefix,
-        extension: '.jpg',
       );
     } catch (e, s) {
       debugPrint('选择图片失败: $e');
@@ -167,7 +146,36 @@ class ImagePickService {
     }
   }
 
-  static Future<String?> _saveImageToLocal({
+  static Future<String?> _saveCroppedJpgToLocal({
+    required Uint8List imageBytes,
+    required String filePrefix,
+  }) async {
+    try {
+      final decoded = img.decodeImage(imageBytes);
+
+      final Uint8List outputBytes;
+
+      if (decoded != null) {
+        outputBytes = Uint8List.fromList(
+          img.encodeJpg(decoded, quality: 92),
+        );
+      } else {
+        outputBytes = imageBytes;
+      }
+
+      return _saveBytesToLocal(
+        bytes: outputBytes,
+        filePrefix: filePrefix,
+        extension: '.jpg',
+      );
+    } catch (e, s) {
+      debugPrint('保存裁剪图片失败: $e');
+      debugPrint('$s');
+      return null;
+    }
+  }
+
+  static Future<String?> _saveFileToLocal({
     required String sourcePath,
     required String filePrefix,
     required String extension,
@@ -179,6 +187,27 @@ class ImagePickService {
       final destPath = p.join(dir.path, fileName);
 
       await File(sourcePath).copy(destPath);
+
+      return destPath;
+    } catch (e, s) {
+      debugPrint('保存图片失败: $e');
+      debugPrint('$s');
+      return null;
+    }
+  }
+
+  static Future<String?> _saveBytesToLocal({
+    required Uint8List bytes,
+    required String filePrefix,
+    required String extension,
+  }) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final safeExt = extension.startsWith('.') ? extension : '.$extension';
+      final fileName = '${filePrefix}_${IdUtils.timestampId()}$safeExt';
+      final destPath = p.join(dir.path, fileName);
+
+      await File(destPath).writeAsBytes(bytes, flush: true);
 
       return destPath;
     } catch (e, s) {
