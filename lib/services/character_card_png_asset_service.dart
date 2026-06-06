@@ -355,7 +355,7 @@ class CharacterCardPngAssetService {
       throw Exception('角色卡图片数据解析失败');
     }
 
-    if (root['magic'] != magic ||
+    if (!AssetMagic.isSupportedAssetMagic(root['magic']?.toString()) ||
         root['asset_type'] != assetType ||
         root['container'] != container) {
       throw Exception('这不是 LLM Project 角色卡图片');
