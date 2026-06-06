@@ -1,12 +1,10 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/character_card.dart';
 import '../services/database_service.dart';
 import 'character_edit_page.dart';
-import 'package:image_picker/image_picker.dart';
 import '../utils/default_image.dart';
 import 'chat_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';

@@ -193,13 +193,19 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   }
 
   Future<void> _pickImage(bool isAvatar) async {
-    final savedPath = isAvatar
-        ? await ImagePickService.pickAvatar(context)
-        : await ImagePickService.pickCharacterCard(context);
+    String? savedPath;
+
+    if (isAvatar) {
+      savedPath = await ImagePickService.pickAvatar(context);
+    } else {
+      savedPath = await ImagePickService.pickCharacterCard(context);
+    }
 
     if (!mounted) return;
 
-    if (savedPath == null) {
+    final path = savedPath;
+
+    if (path == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('未选择图片或图片保存失败')),
       );
@@ -208,9 +214,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
 
     setState(() {
       if (isAvatar) {
-        _avatarPath = savedPath;
+        _avatarPath = path;
       } else {
-        _cardImagePath = savedPath;
+        _cardImagePath = path;
       }
     });
   }
