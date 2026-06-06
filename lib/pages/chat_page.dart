@@ -1545,6 +1545,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     if (mounted) setState(() {});
   }
 
+  String _buildBehaviorUseReminderPrompt() {
+    return '涉及动作、距离、触摸、身体互动、语气、情绪和关系推进时，必须自然考虑角色与用户的身体差异、性格、关系、状态和背景设定。';
+  }
+
   Future<String> _buildFinalSystemPrompt() async {
     String systemPrompt = _currentCharacter?.systemPrompt ?? '你是忠于用户的助手。';
     final roleplayRules = _buildRoleplayRules();
@@ -1606,8 +1610,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       systemPrompt += '\n\n[连续性提醒]\n$continuityReminder';
     }
 
-// 小周期注入摘要设定
-    if (_shouldInjectSummaryPrompt()) {
+    final shouldInjectFullDetail = _shouldInjectFullDetailPrompt();
+    final shouldInjectSummary = _shouldInjectSummaryPrompt();
+
+// 小周期注入摘要设定。
+// 如果本轮已经注入完整详细设定，则跳过摘要，避免重复。
+    if (shouldInjectSummary && !shouldInjectFullDetail) {
       final summaryPrompt = _buildPeriodicSummaryPrompt();
       if (summaryPrompt.isNotEmpty) {
         systemPrompt += '\n\n[周期性摘要设定]\n$summaryPrompt';
@@ -1615,12 +1623,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
 
 // 大周期注入完整详细设定
-    if (_shouldInjectFullDetailPrompt()) {
+    if (shouldInjectFullDetail) {
       final detailEntries = _getEnabledPromptEntries(includeDetailed: true);
       final detailPrompt = _buildEntriesPrompt(detailEntries);
 
       if (detailPrompt.isNotEmpty) {
         systemPrompt += '\n\n[周期性完整设定]\n$detailPrompt';
+      }
+
+      final behaviorReminder = _buildBehaviorUseReminderPrompt();
+      if (behaviorReminder.isNotEmpty) {
+        systemPrompt += '\n\n[行为使用提醒]\n$behaviorReminder';
       }
     }
 
