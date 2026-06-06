@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/backup_service.dart';
 import '../services/android_download_service.dart';
+import '../utils/app_feedback.dart';
 
 class BackupRestorePage extends StatefulWidget {
   const BackupRestorePage({super.key});
@@ -122,8 +123,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '导出失败',
+        error: e,
+        message: '备份导出过程中出现错误。',
+        suggestion: '请检查剩余存储空间，或尝试重新导出。',
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -244,8 +249,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：$e')),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '导入失败',
+        error: e,
+        message: '备份导入过程中出现错误。',
+        suggestion: '请确认选择的是 LLM Project 导出的完整备份文件。如果文件来自聊天软件，请确认它没有被改名、截断或损坏。',
       );
     } finally {
       if (mounted) setState(() => _busy = false);

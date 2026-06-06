@@ -19,6 +19,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/character_card_asset_service.dart';
 import '../services/character_card_png_asset_service.dart';
 import '../utils/id_utils.dart';
+import '../utils/app_feedback.dart';
 
 class CharacterImportPreview {
   final File file;
@@ -227,14 +228,12 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
       preview = await _buildCharacterImportPreview(file);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '读取失败：$e\n'
-                '请选择由 LLM Project 导出的角色卡文件。'
-                '如果是图片角色卡，请确认发送时使用了原图或文件方式。',
-          ),
-        ),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '读取角色卡失败',
+        error: e,
+        message: '无法识别该角色卡文件。',
+        suggestion: '请选择由 LLM Project 导出的 .llmcard 文件或角色卡图片。如果图片来自聊天软件，请确认发送时使用了“原图”或“文件”方式。',
       );
       return;
     }
@@ -259,8 +258,12 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：$e')),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '导入角色卡失败',
+        error: e,
+        message: '角色卡数据读取成功，但写入本地数据库时失败。',
+        suggestion: '可以尝试重新导入，或先导出完整备份后重启应用再试。',
       );
     }
   }

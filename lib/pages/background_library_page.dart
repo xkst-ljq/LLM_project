@@ -12,6 +12,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/background_asset_service.dart';
 import '../utils/id_utils.dart';
+import '../utils/app_feedback.dart';
 
 class BackgroundImportPreview {
   final File file;
@@ -283,8 +284,11 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '导出背景卡失败',
+        error: e,
+        message: '背景卡导出过程中出现错误。',
       );
     }
   }
@@ -355,14 +359,12 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
       preview = await _buildBackgroundImportPreview(file);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '读取失败：$e\n'
-                '请选择由 LLM Project 导出的背景卡文件。'
-                '如果这是聊天软件转发的图片，请确认对方发送的是原图或完整文件。',
-          ),
-        ),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '读取背景卡失败',
+        error: e,
+        message: '无法识别该背景卡文件。',
+        suggestion: '请选择由 LLM Project 导出的背景卡文件。如果图片来自聊天软件，请确认发送时使用了“原图”或“文件”方式。',
       );
       return;
     }
@@ -383,8 +385,11 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：$e')),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '导入背景卡失败',
+        error: e,
+        message: '背景卡数据读取成功，但写入本地数据库时失败。',
       );
     }
   }

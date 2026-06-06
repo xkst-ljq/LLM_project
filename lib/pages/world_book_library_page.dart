@@ -9,6 +9,7 @@ import '../services/world_book_asset_service.dart';
 import 'world_book_edit_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/id_utils.dart';
+import '../utils/app_feedback.dart';
 
 class WorldBookImportPreview {
   final File file;
@@ -189,8 +190,11 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '导出世界书失败',
+        error: e,
+        message: '世界书导出过程中出现错误。',
       );
     }
   }
@@ -343,12 +347,12 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
       preview = await _buildWorldBookImportPreview(file);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '读取失败：$e\n请选择由 LLM Project 导出的世界书文件。',
-          ),
-        ),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '读取世界书失败',
+        error: e,
+        message: '无法识别该世界书文件。',
+        suggestion: '请选择由 LLM Project 导出的 .llmworld.json 文件。不要直接导入其他软件的世界书 JSON。',
       );
       return;
     }
@@ -370,8 +374,11 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入失败：$e')),
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '导入世界书失败',
+        error: e,
+        message: '世界书数据读取成功，但写入本地数据库时失败。',
       );
     }
   }
