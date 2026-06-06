@@ -182,7 +182,7 @@ class BackupService {
       final exported = <Map<String, dynamic>>[];
       for (final raw in worldBooks) {
         final wb = Map<String, dynamic>.from(raw);
-        final id = wb['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+        final id = wb['id']?.toString() ?? IdUtils.timestampId();
         if (wb.containsKey('cover_image_path')) {
           wb['cover_image_path'] = await _addAssetIfNeeded(
             archive: archive,
@@ -203,7 +203,7 @@ class BackupService {
       final exported = <Map<String, dynamic>>[];
       for (final bg in backgrounds) {
         final b = bg.toDb();
-        final id = b['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+        final id = b['id']?.toString() ?? IdUtils.timestampId();
         b['original_image_path'] = await _addAssetIfNeeded(
           archive: archive,
           sourcePath: b['original_image_path'] as String?,

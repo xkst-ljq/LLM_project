@@ -1554,11 +1554,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final roleplayRules = _buildRoleplayRules();
     if (roleplayRules.isNotEmpty) {
       systemPrompt += '\n\n$roleplayRules';
-      debugPrint(
-        'Prompt注入周期: turn=${_getUserTurnCount()}, '
-            'summary=${_shouldInjectSummaryPrompt()}, '
-            'detail=${_shouldInjectFullDetailPrompt()}',
-      );
     }
 
     // 注入世界书设定
