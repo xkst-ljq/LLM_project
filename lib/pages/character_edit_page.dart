@@ -1,14 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import '../models/character_card.dart';
 import '../models/character_entry.dart';
 import '../services/database_service.dart';
 import '../utils/id_utils.dart';
+import '../services/image_pick_service.dart';
 
 class CharacterEditOverlay extends StatefulWidget {
   final CharacterCard character;
@@ -32,7 +29,6 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   // 子级抽屉折叠状态：默认展开；加入集合表示该子级被折叠
   final Set<String> _collapsedTreeNodeIds = {};
   late List<OpeningGreeting> _greetings;
-  final ImagePicker _picker = ImagePicker();
   String? _worldBookId;
   String _worldBookName = '';
   bool _showNameError = false;
@@ -146,19 +142,6 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     if (mounted) setState(() => _worldBookName = book['name'] as String? ?? '');
   }
 
-  Future<String?> _saveImageToLocal(String sourcePath) async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName = 'card_${DateTime.now().millisecondsSinceEpoch}.png';
-      final destPath = p.join(dir.path, fileName);
-      await File(sourcePath).copy(destPath);
-      return destPath;
-    } catch (e) {
-      debugPrint('保存图片失败: $e');
-      return null;
-    }
-  }
-
   Future<void> _closeWithAnimation() async {
     if (_isClosing || !mounted) return;
 
@@ -210,93 +193,26 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   }
 
   Future<void> _pickImage(bool isAvatar) async {
-    final source = await showDialog<ImageSource>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(isAvatar ? '选择头像来源' : '选择卡片来源'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, ImageSource.gallery),
-            child: const Text('从相册选择'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, ImageSource.camera),
-            child: const Text('拍照'),
-          ),
-        ],
-      ),
-    );
+    final savedPath = isAvatar
+        ? await ImagePickService.pickAvatar(context)
+        : await ImagePickService.pickCharacterCard(context);
 
-    if (source == null || !mounted) return;
+    if (!mounted) return;
 
-    try {
-      final XFile? pickedFile = await _picker.pickImage(
-        source: source,
-        imageQuality: 90,
-        maxWidth: isAvatar ? 1024 : 2048,
-      );
-
-      if (pickedFile == null || !mounted) return;
-
-      CroppedFile? croppedFile;
-
-      try {
-        croppedFile = await ImageCropper().cropImage(
-          sourcePath: pickedFile.path,
-          aspectRatio: isAvatar
-              ? const CropAspectRatio(ratioX: 1, ratioY: 1)
-              : const CropAspectRatio(ratioX: 2, ratioY: 3),
-          maxWidth: isAvatar ? 512 : 1200,
-          maxHeight: isAvatar ? 512 : 1800,
-          compressQuality: 90,
-          compressFormat: ImageCompressFormat.jpg,
-          uiSettings: [
-            AndroidUiSettings(
-              toolbarTitle: isAvatar ? '裁剪头像' : '裁剪卡片',
-              toolbarColor: Colors.blue,
-              toolbarWidgetColor: Colors.white,
-              lockAspectRatio: true,
-            ),
-            IOSUiSettings(
-              title: isAvatar ? '裁剪头像' : '裁剪卡片',
-            ),
-          ],
-        );
-      } catch (e, s) {
-        debugPrint('裁剪失败，使用原图: $e');
-        debugPrint('$s');
-      }
-
-      if (!mounted) return;
-
-      final String sourcePath = croppedFile?.path ?? pickedFile.path;
-      final savedPath = await _saveImageToLocal(sourcePath);
-
-      if (!mounted) return;
-
-      if (savedPath != null) {
-        setState(() {
-          if (isAvatar) {
-            _avatarPath = savedPath;
-          } else {
-            _cardImagePath = savedPath;
-          }
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('图片保存失败')),
-        );
-      }
-    } catch (e, s) {
-      debugPrint('选择图片失败: $e');
-      debugPrint('$s');
-
-      if (!mounted) return;
-
+    if (savedPath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('选择图片失败: $e')),
+        const SnackBar(content: Text('未选择图片或图片保存失败')),
       );
+      return;
     }
+
+    setState(() {
+      if (isAvatar) {
+        _avatarPath = savedPath;
+      } else {
+        _cardImagePath = savedPath;
+      }
+    });
   }
 
   void _toggleExpand(String id) => setState(() { if (_expandedEntryIds.contains(id)) { _expandedEntryIds.remove(id); } else { _expandedEntryIds.add(id); } });

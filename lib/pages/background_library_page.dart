@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/background_asset_service.dart';
 import '../utils/id_utils.dart';
 import '../utils/app_feedback.dart';
+import '../services/image_pick_service.dart';
 
 class BackgroundImportPreview {
   final File file;
@@ -40,7 +41,6 @@ class BackgroundLibraryPage extends StatefulWidget {
 class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
   List<BackgroundCard> _backgrounds = [];
   final Set<String> _expandedIds = {};
-  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -450,13 +450,18 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
   }
 
   Future<void> _addBackground() async {
-    final XFile? picked = await _picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
+    final originalPath = await ImagePickService.pickBackgroundImage(context);
 
-    final dir = await getApplicationDocumentsDirectory();
+    if (!mounted) return;
+
+    if (originalPath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未选择背景图片或保存失败')),
+      );
+      return;
+    }
+
     final id = IdUtils.timestampId();
-    final originalPath = p.join(dir.path, 'bg_original_$id.png');
-    await File(picked.path).copy(originalPath);
 
     final bg = BackgroundCard(
       id: id,
@@ -465,8 +470,9 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
       originalImagePath: originalPath,
       isPreset: false,
     );
+
     await BackgroundService.insert(bg);
-    _loadBackgrounds();
+    await _loadBackgrounds();
   }
 
   void _deleteBackground(BackgroundCard bg) {

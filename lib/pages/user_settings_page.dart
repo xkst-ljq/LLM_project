@@ -1,11 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import '../models/user_profile.dart';
 import '../services/user_service.dart';
+import '../services/image_pick_service.dart';
 
 class UserSettingsPage extends StatefulWidget {
   const UserSettingsPage({super.key});
@@ -17,7 +14,6 @@ class UserSettingsPage extends StatefulWidget {
 class _UserSettingsPageState extends State<UserSettingsPage> {
   final _nameCtrl = TextEditingController();
   String _avatarPath = '';
-  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -33,43 +29,18 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
   }
 
   Future<void> _pickAvatar() async {
-    final source = await showDialog<ImageSource>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('选择头像来源'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, ImageSource.gallery),
-            child: const Text('从相册选择'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, ImageSource.camera),
-            child: const Text('拍照'),
-          ),
-        ],
-      ),
-    );
-    if (source == null) return;
+    final savedPath = await ImagePickService.pickAvatar(context);
 
-    final XFile? picked = await _picker.pickImage(source: source);
-    if (picked == null) return;
+    if (!mounted) return;
 
-    final CroppedFile? cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      uiSettings: [
-        AndroidUiSettings(toolbarTitle: '裁剪头像', toolbarColor: Colors.blue, lockAspectRatio: true),
-        IOSUiSettings(title: '裁剪头像'),
-      ],
-    );
-    if (cropped == null) return;
+    if (savedPath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未选择头像或头像保存失败')),
+      );
+      return;
+    }
 
-    final dir = await getApplicationDocumentsDirectory();
-    final filename = 'user_avatar_${DateTime.now().millisecondsSinceEpoch}.png';
-    final dest = p.join(dir.path, filename);
-    await File(cropped.path).copy(dest);
-
-    setState(() => _avatarPath = dest);
+    setState(() => _avatarPath = savedPath);
   }
 
   Future<void> _save() async {
