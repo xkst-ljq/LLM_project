@@ -250,6 +250,10 @@ Demo 1.3.x 计划重点包括：
 
 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 
+如果想从其他角色卡格式手动迁移，请查看：
+
+[从其他角色卡格式迁移到 LLM Project](docs/MIGRATION_GUIDE.md)
+
 ---
 
 ## 🧩 构建方式
