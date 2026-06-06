@@ -38,7 +38,6 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   provider: ^6.1.1
   image_picker: ^1.0.7
-  image_cropper: ^12.2.1
   path_provider: ^2.1.2   # 用于获取应用目录
   path: ^1.9.0      # 用于路径操作
   sqflite: ^2.3.0

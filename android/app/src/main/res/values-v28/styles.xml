@@ -30,14 +30,4 @@
         <!-- 关键：允许 Flutter 内容进入刘海区域 -->
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
-
-    <!-- 可选：裁剪页主题，保持普通非全屏 -->
-    <style name="Ucrop.CropTheme" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="android:windowFullscreen">false</item>
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:windowActionBar">false</item>
-        <item name="android:statusBarColor">@android:color/black</item>
-        <item name="android:navigationBarColor">@android:color/black</item>
-    </style>
-
 </resources>

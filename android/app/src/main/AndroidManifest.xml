@@ -56,12 +56,6 @@
             </intent-filter>
         </activity>
 
-        <!-- image_cropper 需要注册这个裁剪 Activity -->
-        <activity
-            android:name="com.yalantis.ucrop.UCropActivity"
-            android:screenOrientation="portrait"
-            android:theme="@style/Ucrop.CropTheme" />
-
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
