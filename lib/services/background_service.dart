@@ -55,35 +55,29 @@ class BackgroundService {
   /// 确保预设背景存在（如果没有，自动插入）
   static Future<void> ensurePresetsExist() async {
     try {
+      await DatabaseService.ensureBackgroundsTable();
+
       final all = await getAll();
-      if (all.isEmpty) {
+      final hasDefault = all.any((b) => b.id == 'default');
+
+      if (!hasDefault) {
         final defaultBg = BackgroundCard(
           id: 'default',
           name: '默认背景',
           type: 'gradient',
-          colorValue: '{"colors":["#E3F2FD","#F3E5F5"],"begin":"topCenter","end":"bottomCenter"}',
+          colorValue:
+          '{"colors":["#E3F2FD","#F3E5F5"],"begin":"topCenter","end":"bottomCenter"}',
           sceneSetting: '默认聊天背景',
           isPreset: true,
         );
+
         await insert(defaultBg);
+        _versionNotifier.value++;
       }
     } catch (e) {
-      debugPrint('数据库异常，强制重建: $e');
-      await DatabaseService.resetDatabase(); // 删除文件并重置缓存
-      _versionNotifier.value++; // 通知UI刷新
-      // 重新获取数据库（此时会触发 onCreate）
-      final all = await getAll(); // 这会调用 _initDb 并执行 onCreate
-      if (all.isEmpty) {
-        final defaultBg = BackgroundCard(
-          id: 'default',
-          name: '默认背景',
-          type: 'gradient',
-          colorValue: '{"colors":["#E3F2FD","#F3E5F5"],"begin":"topCenter","end":"bottomCenter"}',
-          sceneSetting: '默认聊天背景',
-          isPreset: true,
-        );
-        await insert(defaultBg);
-      }
+      // 绝对不要在这里 resetDatabase。
+      // 预设背景修复失败不应该导致用户角色卡、世界书、聊天记录被清空。
+      debugPrint('确保预设背景存在失败: $e');
     }
   }
 }

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-
+import '../utils/id_utils.dart';
 import '../models/background_card.dart';
 import '../services/android_download_service.dart';
 import '../services/background_service.dart';
@@ -242,7 +242,7 @@ class BackgroundAssetService {
     final imageFile = File(p.join(dir.path, 'original$ext'));
     await imageFile.writeAsBytes(imageBytes, flush: true);
 
-    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newId = IdUtils.timestampId();
     final newName = await _uniqueBackgroundName(bg.name);
 
     final imported = BackgroundCard(

@@ -35,12 +35,22 @@ class ApiConfigService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = configs.map((c) => c.toJson()).toList();
+
       await prefs.setString(_configsKey, jsonEncode(jsonList));
+
       for (final config in configs) {
+        final keyName = 'api_key_${config.id}';
+
         if (config.apiKey.isNotEmpty) {
-          await _secureStorage.write(key: 'api_key_${config.id}', value: config.apiKey);
+          await _secureStorage.write(
+            key: keyName,
+            value: config.apiKey,
+          );
+        } else {
+          await _secureStorage.delete(key: keyName);
         }
       }
+
       debugPrint('API 配置已保存，共 ${configs.length} 条');
     } catch (e) {
       debugPrint('保存 API 配置失败: $e');

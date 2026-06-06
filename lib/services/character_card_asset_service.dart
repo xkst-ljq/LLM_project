@@ -4,7 +4,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-
+import '../utils/id_utils.dart';
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
@@ -348,8 +348,7 @@ class CharacterCardAssetService {
       final oldId = wb['id']?.toString() ?? '';
       if (oldId.isEmpty) continue;
 
-      final newId =
-          '${DateTime.now().millisecondsSinceEpoch}_${i}_wb';
+      final newId = IdUtils.timestampId(i);
 
       final oldName = wb['name']?.toString() ?? '导入世界书';
       final newName = await _uniqueWorldBookName(oldName);
@@ -396,7 +395,7 @@ class CharacterCardAssetService {
 
     final oldWorldBookId = c['world_book_id']?.toString() ?? '';
 
-    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newId = IdUtils.timestampId();
     final newName = await _uniqueCharacterName(c['name']?.toString() ?? '');
 
     c['id'] = newId;
