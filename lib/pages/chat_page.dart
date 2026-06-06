@@ -49,6 +49,146 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   bool _isLastMessage(int index) {
     return index == _messages.length - 1 && !_isLoading;
   }
+  static const int _summaryPromptInterval = 3;
+  static const int _fullDetailPromptInterval = 12;
+  int _getUserTurnCount() {
+    return _messages.where((m) => m['role'] == 'user').length;
+  }
+
+  bool _shouldInjectSummaryPrompt() {
+    final turn = _getUserTurnCount();
+
+    // 第一轮强制注入摘要，保证开局设定充分
+    if (turn <= 1) return true;
+
+    return _summaryPromptInterval > 0 &&
+        turn % _summaryPromptInterval == 0;
+  }
+  bool _shouldInjectFullDetailPrompt() {
+    final turn = _getUserTurnCount();
+
+    // 第一轮强制注入完整详细设定
+    if (turn <= 1) return true;
+
+    return _fullDetailPromptInterval > 0 &&
+        turn % _fullDetailPromptInterval == 0;
+  }
+  String _truncatePromptText(String text, int maxChars) {
+    final raw = text.trim();
+    if (raw.length <= maxChars) return raw;
+    return '${raw.substring(0, maxChars)}…';
+  }
+  bool _isCorePromptEntry(CharacterEntry entry) {
+    if (_currentCharacter == null) return false;
+
+    if (_currentCharacter!.cardType == 'system') {
+      return {
+        'system_name',
+        'system_summary',
+      }.contains(entry.id);
+    }
+
+    return {
+      'name_entry',
+      'relationship',
+    }.contains(entry.id);
+  }
+
+  List<CharacterEntry> _getEnabledPromptEntries({
+    required bool includeDetailed,
+  }) {
+    if (_currentCharacter == null) return [];
+
+    try {
+      final entriesList = jsonDecode(
+        _currentCharacter!.entriesJson.isEmpty
+            ? '[]'
+            : _currentCharacter!.entriesJson,
+      ) as List;
+
+      final entries = entriesList
+          .map((e) => CharacterEntry.fromJson(e))
+          .where((entry) {
+        if (!entry.enabled || entry.content.trim().isEmpty) return false;
+
+        // 系统卡主角设定已经作为用户/主角设定处理，避免重复注入
+        if (_currentCharacter?.cardType == 'system' &&
+            entry.id == 'protagonist') {
+          return false;
+        }
+
+        final isCore = _isCorePromptEntry(entry);
+
+        if (includeDetailed) {
+          return !isCore;
+        } else {
+          return isCore;
+        }
+      }).toList();
+
+      return entries;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  String _buildEntriesPrompt(List<CharacterEntry> entries) {
+    if (entries.isEmpty) return '';
+
+    return entries
+        .map((e) => '【${e.title}】\n${e.content}')
+        .join('\n\n');
+  }
+
+  String _buildPeriodicSummaryPrompt() {
+    final lines = <String>[];
+
+    if (_dynamicUserDetail != null && _dynamicUserDetail!.trim().isNotEmpty) {
+      lines.add('当前用户/主角设定：');
+      lines.add(_truncatePromptText(_dynamicUserDetail!, 500));
+    }
+
+    final detailEntries = _getEnabledPromptEntries(includeDetailed: true);
+
+    if (detailEntries.isNotEmpty) {
+      lines.add('角色行为相关摘要：');
+
+      for (final entry in detailEntries.take(4)) {
+        final formatted = _formatEntryForDetailPanel(entry).trim();
+        if (formatted.isEmpty) continue;
+
+        lines.add(
+          '【${entry.title}】${_truncatePromptText(formatted, 260)}',
+        );
+      }
+    }
+
+    lines.add(
+      '涉及动作、距离、触摸、身体互动、语气、情绪和关系推进时，必须自然考虑上述设定，而不是只在用户直接询问时才使用。',
+    );
+
+    return lines.join('\n');
+  }
+
+  String _buildContinuityReminderPrompt() {
+    if (_currentCharacter == null) return '';
+
+    final lines = <String>[];
+
+    final name = _currentCharacter!.name.trim().isEmpty
+        ? '当前角色'
+        : _currentCharacter!.name.trim();
+
+    lines.add('持续保持“$name”的身份、语气、性格和行为逻辑。');
+
+    if (_currentUser.name.isNotEmpty && _currentUser.name != '我') {
+      lines.add('当前用户名称是“${_currentUser.name}”。');
+    }
+
+    lines.add('不要遗忘已经给出的角色设定、用户设定、世界书和当前对话事实。');
+
+    return lines.join('\n');
+  }
 
   String _buildRoleplayRules() {
     if (_currentCharacter == null) return '';
@@ -1410,6 +1550,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final roleplayRules = _buildRoleplayRules();
     if (roleplayRules.isNotEmpty) {
       systemPrompt += '\n\n$roleplayRules';
+      debugPrint(
+        'Prompt注入周期: turn=${_getUserTurnCount()}, '
+            'summary=${_shouldInjectSummaryPrompt()}, '
+            'detail=${_shouldInjectFullDetailPrompt()}',
+      );
     }
 
     // 注入世界书设定
@@ -1443,46 +1588,40 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       }
     }
 
-    // 注入用户详细设定
-    if (_dynamicUserDetail != null && _dynamicUserDetail!.isNotEmpty) {
-      systemPrompt += '\n\n[用户详细设定]\n$_dynamicUserDetail';
-    }
-
     // 注入用户名称
     if (_currentUser.name.isNotEmpty && _currentUser.name != '我') {
       systemPrompt += '\n\n[当前用户名称]\n${_currentUser.name}';
     }
 
-    // 注入角色卡条目
-    if (_currentCharacter != null) {
-      try {
-        final entriesList =
-            jsonDecode(
-                  _currentCharacter!.entriesJson.isEmpty
-                      ? '[]'
-                      : _currentCharacter!.entriesJson,
-                )
-                as List;
-        final enabledEntries = entriesList
-            .map((e) => CharacterEntry.fromJson(e))
-            .where((e) {
-          if (!e.enabled || e.content.isEmpty) return false;
+    // 每轮注入核心条目
+    final coreEntries = _getEnabledPromptEntries(includeDetailed: false);
+    final coreEntryPrompt = _buildEntriesPrompt(coreEntries);
+    if (coreEntryPrompt.isNotEmpty) {
+      systemPrompt += '\n\n[核心角色设定]\n$coreEntryPrompt';
+    }
 
-          // 系统卡的主角设定已经作为用户设定注入，避免重复塞进角色设定
-          if (_currentCharacter?.cardType == 'system' && e.id == 'protagonist') {
-            return false;
-          }
+// 每轮注入极短连续性提醒
+    final continuityReminder = _buildContinuityReminderPrompt();
+    if (continuityReminder.isNotEmpty) {
+      systemPrompt += '\n\n[连续性提醒]\n$continuityReminder';
+    }
 
-          return true;
-        })
-            .toList();
-        if (enabledEntries.isNotEmpty) {
-          final entryText = enabledEntries
-              .map((e) => '【${e.title}】\n${e.content}')
-              .join('\n\n');
-          systemPrompt += '\n\n[角色设定]\n$entryText';
-        }
-      } catch (_) {}
+// 小周期注入摘要设定
+    if (_shouldInjectSummaryPrompt()) {
+      final summaryPrompt = _buildPeriodicSummaryPrompt();
+      if (summaryPrompt.isNotEmpty) {
+        systemPrompt += '\n\n[周期性摘要设定]\n$summaryPrompt';
+      }
+    }
+
+// 大周期注入完整详细设定
+    if (_shouldInjectFullDetailPrompt()) {
+      final detailEntries = _getEnabledPromptEntries(includeDetailed: true);
+      final detailPrompt = _buildEntriesPrompt(detailEntries);
+
+      if (detailPrompt.isNotEmpty) {
+        systemPrompt += '\n\n[周期性完整设定]\n$detailPrompt';
+      }
     }
 
     return systemPrompt;
@@ -3256,77 +3395,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         .toList();
 
     String finalSystemPrompt = await _buildFinalSystemPrompt();
-    if (_currentCharacter?.worldBookId != null &&
-        _currentCharacter!.worldBookId.isNotEmpty) {
-      // 延迟加载并缓存
-      if (_cachedWorldBookId != _currentCharacter!.worldBookId) {
-        final worldBooks = await DatabaseService.getAllWorldBooks();
-        final worldBook = worldBooks.firstWhere(
-          (wb) => wb['id'] == _currentCharacter!.worldBookId,
-          orElse: () => <String, dynamic>{},
-        );
-        if (worldBook.isNotEmpty) {
-          final entriesJson = worldBook['entries_json'] as String? ?? '[]';
-          try {
-            final list = jsonDecode(entriesJson) as List;
-            _cacheWorldBookEntries(
-              list.map((e) => WorldBookEntry.fromJson(e)).toList(),
-            );
-          } catch (_) {
-            _cacheWorldBookEntries([]);
-          }
-        }
-      }
 
-      final activeEntries = _getActiveWorldBookEntries(4);
-      if (activeEntries.isNotEmpty) {
-        final entryText = activeEntries
-            .map((e) => '【${e.title}】\n${e.content}')
-            .join('\n\n');
-        finalSystemPrompt += '\n\n[世界设定]\n$entryText';
-      }
-    }
-    // 新增：注入用户详细设定
-    if (_dynamicUserDetail != null && _dynamicUserDetail!.isNotEmpty) {
-      finalSystemPrompt += '\n\n[用户详细设定]\n$_dynamicUserDetail';
-    }
-    // 注入用户名称（跳过默认值"我"，避免无效注入）
-    if (_currentUser.name.isNotEmpty && _currentUser.name != '我') {
-      finalSystemPrompt += '\n\n[当前用户名称]\n${_currentUser.name}';
-    }
-    // 注入角色卡条目
-    if (_currentCharacter != null) {
-      try {
-        final entriesList =
-            jsonDecode(
-                  _currentCharacter!.entriesJson.isEmpty
-                      ? '[]'
-                      : _currentCharacter!.entriesJson,
-                )
-                as List;
-        final enabledEntries = entriesList
-            .map((e) => CharacterEntry.fromJson(e))
-            .where((e) {
-          if (!e.enabled || e.content.isEmpty) return false;
-
-          // 系统卡的主角设定已经作为用户设定注入，避免重复塞进角色设定
-          if (_currentCharacter?.cardType == 'system' && e.id == 'protagonist') {
-            return false;
-          }
-
-          return true;
-        })
-            .toList();
-        if (enabledEntries.isNotEmpty) {
-          final entryText = enabledEntries
-              .map((e) => '【${e.title}】\n${e.content}')
-              .join('\n\n');
-          // 用条目构建角色画像，替代原有的简单 systemPrompt
-          finalSystemPrompt = '$finalSystemPrompt\n\n[角色设定]\n$entryText';
-        }
-      } catch (_) {}
-    }
-    
     String aiResponseContent = '';
     setState(() => _isLoading = true);
 
