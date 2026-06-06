@@ -376,7 +376,8 @@ class CharacterCardAssetService {
       throw Exception('未识别到角色卡标识');
     }
 
-    if (manifest['magic'] != magic || manifest['asset_type'] != assetType) {
+    if (!AssetMagic.isSupportedAssetMagic(manifest['magic']?.toString()) ||
+        manifest['asset_type'] != assetType) {
       throw Exception('这不是 LLM Project 角色卡文件');
     }
 

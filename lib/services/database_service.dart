@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 
 class DatabaseService {
   static Database? _db;
+  static int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
   static Future<Database> get database async {
     if (_db != null) return _db!;
@@ -15,7 +16,7 @@ class DatabaseService {
     final path = p.join(dbPath, 'chat_history.db');
     return await openDatabase(
       path,
-      version: 1, // 升级版本号
+      version: 2, // 升级版本号
       onCreate: (db, version) async {
         // 消息表
         await db.execute('''
@@ -30,34 +31,39 @@ class DatabaseService {
         ''');
         await db.execute('''
   CREATE TABLE characters (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    avatar TEXT DEFAULT '',
-    card_image_path TEXT DEFAULT '',
-    description TEXT DEFAULT '',
-    system_prompt TEXT DEFAULT '',
-    world_book_id TEXT DEFAULT '',
-    background_id TEXT DEFAULT '',
-    user_name TEXT DEFAULT '',
-    user_avatar TEXT DEFAULT '',
-    user_detail_setting TEXT DEFAULT '',
-    card_type TEXT DEFAULT 'character',
-    entries_json TEXT DEFAULT '[]',
-    opening_greetings TEXT DEFAULT '[]'
-  )
+ id TEXT PRIMARY KEY,
+ name TEXT NOT NULL,
+ avatar TEXT DEFAULT '',
+ card_image_path TEXT DEFAULT '',
+ description TEXT DEFAULT '',
+ system_prompt TEXT DEFAULT '',
+ world_book_id TEXT DEFAULT '',
+ background_id TEXT DEFAULT '',
+ user_name TEXT DEFAULT '',
+ user_avatar TEXT DEFAULT '',
+ user_detail_setting TEXT DEFAULT '',
+ card_type TEXT DEFAULT 'character',
+ entries_json TEXT DEFAULT '[]',
+ opening_greetings TEXT DEFAULT '[]',
+ state_json TEXT DEFAULT '{}',
+ created_at INTEGER DEFAULT 0,
+ updated_at INTEGER DEFAULT 0
+ )
 ''');
         await db.execute('''
     CREATE TABLE backgrounds (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      color_value TEXT DEFAULT '',
-      original_image_path TEXT DEFAULT '',
-      portrait_crop_path TEXT DEFAULT '',
-      landscape_crop_path TEXT DEFAULT '',
-      scene_setting TEXT DEFAULT '',
-      is_preset INTEGER DEFAULT 0
-    )
+ id TEXT PRIMARY KEY,
+ name TEXT NOT NULL,
+ type TEXT NOT NULL,
+ color_value TEXT DEFAULT '',
+ original_image_path TEXT DEFAULT '',
+ portrait_crop_path TEXT DEFAULT '',
+ landscape_crop_path TEXT DEFAULT '',
+ scene_setting TEXT DEFAULT '',
+ is_preset INTEGER DEFAULT 0,
+ created_at INTEGER DEFAULT 0,
+ updated_at INTEGER DEFAULT 0
+ )
   ''');
         await db.insert('backgrounds', {
           'id': 'default',
@@ -73,14 +79,16 @@ class DatabaseService {
         });
         await db.execute('''
           CREATE TABLE world_books (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            detailed_setting TEXT DEFAULT '',
-            entries_json TEXT DEFAULT '[]',
-            cover_image_path TEXT DEFAULT '',
-            is_preset INTEGER DEFAULT 0
-          )
+ id TEXT PRIMARY KEY,
+ name TEXT NOT NULL,
+ description TEXT DEFAULT '',
+ detailed_setting TEXT DEFAULT '',
+ entries_json TEXT DEFAULT '[]',
+ cover_image_path TEXT DEFAULT '',
+ is_preset INTEGER DEFAULT 0,
+ created_at INTEGER DEFAULT 0,
+ updated_at INTEGER DEFAULT 0
+ )
         ''');
         // 插入默认角色
         await db.insert('characters', {
@@ -101,8 +109,68 @@ class DatabaseService {
         });
       },
       onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _safeAddColumn(
+            db,
+            'characters',
+            'state_json',
+            "TEXT DEFAULT '{}'",
+          );
+          await _safeAddColumn(
+            db,
+            'characters',
+            'created_at',
+            'INTEGER DEFAULT 0',
+          );
+          await _safeAddColumn(
+            db,
+            'characters',
+            'updated_at',
+            'INTEGER DEFAULT 0',
+          );
+
+          await _safeAddColumn(
+            db,
+            'backgrounds',
+            'created_at',
+            'INTEGER DEFAULT 0',
+          );
+          await _safeAddColumn(
+            db,
+            'backgrounds',
+            'updated_at',
+            'INTEGER DEFAULT 0',
+          );
+
+          await _safeAddColumn(
+            db,
+            'world_books',
+            'created_at',
+            'INTEGER DEFAULT 0',
+          );
+          await _safeAddColumn(
+            db,
+            'world_books',
+            'updated_at',
+            'INTEGER DEFAULT 0',
+          );
+        }
       },
     );
+  }
+
+  static Future<void> _safeAddColumn(
+      Database db,
+      String table,
+      String column,
+      String definition,
+      ) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    final exists = columns.any((c) => c['name'] == column);
+
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
   }
 
   /// 确保 backgrounds 表存在（用于旧版本升级）
@@ -190,9 +258,9 @@ class DatabaseService {
   }
 
   static Future<int> deleteMessagesAfter(
-    int characterId,
-    int afterTimestamp,
-  ) async {
+      String characterId,
+      int afterTimestamp,
+      ) async {
     final db = await database;
     return await db.delete(
       'messages',
@@ -220,16 +288,29 @@ class DatabaseService {
 
   static Future<void> insertWorldBook(Map<String, dynamic> worldBook) async {
     final db = await database;
-    await db.insert('world_books', worldBook);
+    final data = Map<String, dynamic>.from(worldBook);
+    final now = _nowMs();
+
+    data.putIfAbsent('created_at', () => now);
+    data['updated_at'] = now;
+
+    await db.insert(
+      'world_books',
+      data,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   static Future<void> updateWorldBook(Map<String, dynamic> worldBook) async {
     final db = await database;
+    final data = Map<String, dynamic>.from(worldBook);
+    data['updated_at'] = _nowMs();
+
     await db.update(
       'world_books',
-      worldBook,
+      data,
       where: 'id = ?',
-      whereArgs: [worldBook['id']],
+      whereArgs: [data['id']],
     );
   }
 
@@ -247,20 +328,29 @@ class DatabaseService {
 
   static Future<void> insertCharacter(Map<String, dynamic> character) async {
     final db = await database;
+    final data = Map<String, dynamic>.from(character);
+    final now = _nowMs();
+
+    data.putIfAbsent('created_at', () => now);
+    data['updated_at'] = now;
+
     await db.insert(
       'characters',
-      character,
+      data,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
   static Future<void> updateCharacter(Map<String, dynamic> character) async {
     final db = await database;
+    final data = Map<String, dynamic>.from(character);
+    data['updated_at'] = _nowMs();
+
     await db.update(
       'characters',
-      character,
+      data,
       where: 'id = ?',
-      whereArgs: [character['id']],
+      whereArgs: [data['id']],
     );
   }
 
