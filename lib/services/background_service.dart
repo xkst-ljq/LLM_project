@@ -18,20 +18,62 @@ class BackgroundService {
   }
 
   /// 获取当前使用的背景
+  static BackgroundCard? _findDefaultBackground(List<BackgroundCard> all) {
+    if (all.isEmpty) return null;
+
+    for (final bg in all) {
+      if (bg.id == 'default') return bg;
+    }
+
+    for (final bg in all) {
+      if (bg.isPreset) return bg;
+    }
+
+    return all.first;
+  }
+
+  static Future<BackgroundCard?> getDefault() async {
+    await ensurePresetsExist();
+
+    final all = await getAll();
+    return _findDefaultBackground(all);
+  }
+
+  /// 获取当前使用的背景
   static Future<BackgroundCard?> getCurrent() async {
     final prefs = await SharedPreferences.getInstance();
     final id = prefs.getString(_currentBackgroundKey);
     final all = await getAll();
-    if (id != null) {
-      return all.firstWhere((b) => b.id == id, orElse: () => all.first);
+
+    if (all.isEmpty) return null;
+
+    final defaultBg = _findDefaultBackground(all);
+
+    if (id != null && id.isNotEmpty) {
+      for (final bg in all) {
+        if (bg.id == id) return bg;
+      }
+
+      // 当前记录的背景 ID 已失效，回退默认背景
+      if (defaultBg != null) {
+        await prefs.setString(_currentBackgroundKey, defaultBg.id);
+      }
+      return defaultBg;
     }
-    return all.isNotEmpty ? all.first : null;
+
+    // 没有设置过当前背景时，优先使用 default
+    if (defaultBg != null) {
+      await prefs.setString(_currentBackgroundKey, defaultBg.id);
+    }
+
+    return defaultBg;
   }
 
   /// 设置当前背景
   static Future<void> setCurrent(String id) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_currentBackgroundKey, id);
+    _versionNotifier.value++;
   }
 
   /// 插入背景

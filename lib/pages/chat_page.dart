@@ -1645,11 +1645,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     if (_currentCharacter?.backgroundId != null &&
         _currentCharacter!.backgroundId.isNotEmpty) {
       final all = await BackgroundService.getAll();
-      return all.firstWhere(
-        (b) => b.id == _currentCharacter!.backgroundId,
-        orElse: () => BackgroundCard(id: '', name: '', type: ''),
-      );
+
+      for (final bg in all) {
+        if (bg.id == _currentCharacter!.backgroundId) {
+          return bg;
+        }
+      }
+
+      // 如果角色绑定的背景不存在，回退到全局背景
+      return BackgroundService.getCurrent();
     }
+
     // 否则使用全局背景
     return BackgroundService.getCurrent();
   }
