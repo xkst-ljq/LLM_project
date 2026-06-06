@@ -62,6 +62,14 @@ class BackupExportResult {
   });
 }
 
+enum BackupImportMode {
+  /// 合并导入：生成新 ID，不覆盖当前资源。
+  merge,
+
+  /// 恢复导入：保留原 ID，同 ID 数据会被覆盖。
+  restore,
+}
+
 class BackupService {
   static const String format = 'llm_project_backup';
   static const int formatVersion = 1;
@@ -338,7 +346,37 @@ class BackupService {
     return s;
   }
 
-  static Future<void> importBackup(File backupFile) async {
+  static Future<String> _uniqueName(
+      Database db,
+      String table,
+      String baseName,
+      ) async {
+    final normalized = baseName.trim().isEmpty ? '导入项目' : baseName.trim();
+
+    final rows = await db.query(
+      table,
+      columns: ['name'],
+    );
+
+    final names = rows
+        .map((e) => (e['name'] as String? ?? '').trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+
+    if (!names.contains(normalized)) return normalized;
+
+    var index = 1;
+    while (names.contains('$normalized ($index)')) {
+      index++;
+    }
+
+    return '$normalized ($index)';
+  }
+
+  static Future<void> importBackup(
+      File backupFile, {
+        BackupImportMode mode = BackupImportMode.merge,
+      }) async {
     final files = await _extractArchive(backupFile);
     final manifest = _readJson(files, 'manifest.json');
     if (manifest is! Map) {
@@ -362,67 +400,147 @@ class BackupService {
 
     final pathMap = await _restoreAssets(files);
     final db = await DatabaseService.database;
+    final isMergeMode = mode == BackupImportMode.merge;
+
+    final worldBookIdMap = <String, String>{};
+    final backgroundIdMap = <String, String>{};
+    final characterIdMap = <String, String>{};
 
     final characters = _readJson(files, 'data/characters.json');
     if (characters is List) {
-      for (final raw in characters) {
-        final c = Map<String, dynamic>.from(raw as Map);
+      for (int i = 0; i < characters.length; i++) {
+        final c = Map<String, dynamic>.from(characters[i] as Map);
+
+        final oldId = c['id']?.toString() ?? '';
+        final oldWorldBookId = c['world_book_id']?.toString() ?? '';
+        final oldBackgroundId = c['background_id']?.toString() ?? '';
+
         c['avatar'] = _restorePath(c['avatar'], pathMap);
         c['card_image_path'] = _restorePath(c['card_image_path'], pathMap);
         c['user_avatar'] = _restorePath(c['user_avatar'], pathMap);
-        await db.insert('characters', c, conflictAlgorithm: ConflictAlgorithm.replace);
+
+        if (isMergeMode) {
+          final newId = IdUtils.timestampId(20000 + i);
+          characterIdMap[oldId] = newId;
+
+          c['id'] = newId;
+          c['name'] = await _uniqueName(
+            db,
+            'characters',
+            c['name']?.toString() ?? '导入角色卡',
+          );
+
+          c['world_book_id'] = worldBookIdMap[oldWorldBookId] ?? '';
+          c['background_id'] = backgroundIdMap[oldBackgroundId] ?? '';
+        }
+
+        await db.insert(
+          'characters',
+          c,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
     }
 
     final worldBooks = _readJson(files, 'data/world_books.json');
     if (worldBooks is List) {
-      for (final raw in worldBooks) {
-        final wb = Map<String, dynamic>.from(raw as Map);
+      for (int i = 0; i < worldBooks.length; i++) {
+        final wb = Map<String, dynamic>.from(worldBooks[i] as Map);
+
+        final oldId = wb['id']?.toString() ?? '';
+
         if (wb.containsKey('cover_image_path')) {
           wb['cover_image_path'] = _restorePath(wb['cover_image_path'], pathMap);
         }
-        await db.insert('world_books', wb, conflictAlgorithm: ConflictAlgorithm.replace);
+
+        if (isMergeMode) {
+          final newId = IdUtils.timestampId(i);
+          worldBookIdMap[oldId] = newId;
+
+          wb['id'] = newId;
+          wb['name'] = await _uniqueName(
+            db,
+            'world_books',
+            wb['name']?.toString() ?? '导入世界书',
+          );
+          wb['is_preset'] = 0;
+        }
+
+        await db.insert(
+          'world_books',
+          wb,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
     }
 
     final backgrounds = _readJson(files, 'data/backgrounds.json');
     if (backgrounds is List) {
-      for (final raw in backgrounds) {
-        final b = Map<String, dynamic>.from(raw as Map);
+      for (int i = 0; i < backgrounds.length; i++) {
+        final b = Map<String, dynamic>.from(backgrounds[i] as Map);
+
+        final oldId = b['id']?.toString() ?? '';
+
         b['original_image_path'] = _restorePath(b['original_image_path'], pathMap);
+
         if (b.containsKey('portrait_crop_path')) {
           b['portrait_crop_path'] = _restorePath(b['portrait_crop_path'], pathMap);
         }
+
         if (b.containsKey('landscape_crop_path')) {
           b['landscape_crop_path'] = _restorePath(b['landscape_crop_path'], pathMap);
         }
-        await db.insert('backgrounds', b, conflictAlgorithm: ConflictAlgorithm.replace);
+
+        if (isMergeMode) {
+          final newId = IdUtils.timestampId(10000 + i);
+          backgroundIdMap[oldId] = newId;
+
+          b['id'] = newId;
+          b['name'] = await _uniqueName(
+            db,
+            'backgrounds',
+            b['name']?.toString() ?? '导入背景',
+          );
+          b['is_preset'] = 0;
+        }
+
+        await db.insert(
+          'backgrounds',
+          b,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
+
       BackgroundService.versionNotifier.value++;
     }
 
-    final userProfile = _readJson(files, 'data/user_profile.json');
-    if (userProfile is Map) {
-      final data = Map<String, dynamic>.from(userProfile);
-      data['avatar_path'] = _restorePath(data['avatar_path'], pathMap);
-      await UserService.saveUser(UserProfile.fromJson(data));
+    if (!isMergeMode) {
+      final userProfile = _readJson(files, 'data/user_profile.json');
+      if (userProfile is Map) {
+        final data = Map<String, dynamic>.from(userProfile);
+        data['avatar_path'] = _restorePath(data['avatar_path'], pathMap);
+        await UserService.saveUser(UserProfile.fromJson(data));
+      }
     }
 
-    final apiData = _readJson(files, 'data/api_configs.json');
-    if (apiData is Map) {
-      final list = apiData['configs'];
-      if (list is List) {
-        final configs = list.map((raw) {
-          final map = Map<String, dynamic>.from(raw as Map);
-          final config = ApiConfig.fromJson(map);
-          config.apiKey = map['api_key']?.toString() ?? '';
-          return config;
-        }).toList();
-        await ApiConfigService.saveAllConfigs(configs);
-      }
-      final activeId = apiData['active_config_id']?.toString();
-      if (activeId != null && activeId.isNotEmpty) {
-        await ApiConfigService.setActiveConfigId(activeId);
+    if (!isMergeMode) {
+      final apiData = _readJson(files, 'data/api_configs.json');
+      if (apiData is Map) {
+        final list = apiData['configs'];
+        if (list is List) {
+          final configs = list.map((raw) {
+            final map = Map<String, dynamic>.from(raw as Map);
+            final config = ApiConfig.fromJson(map);
+            config.apiKey = map['api_key']?.toString() ?? '';
+            return config;
+          }).toList();
+          await ApiConfigService.saveAllConfigs(configs);
+        }
+
+        final activeId = apiData['active_config_id']?.toString();
+        if (activeId != null && activeId.isNotEmpty) {
+          await ApiConfigService.setActiveConfigId(activeId);
+        }
       }
     }
 
@@ -430,21 +548,43 @@ class BackupService {
     if (messages is List) {
       for (final raw in messages) {
         final m = Map<String, dynamic>.from(raw as Map);
-        await db.insert('messages', m, conflictAlgorithm: ConflictAlgorithm.replace);
+
+        if (isMergeMode) {
+          final oldCharacterId = m['character_id']?.toString() ?? '';
+          final newCharacterId = characterIdMap[oldCharacterId];
+
+          // 合并模式下，如果对应角色没有被导入，则跳过该消息
+          if (newCharacterId == null || newCharacterId.isEmpty) {
+            continue;
+          }
+
+          m.remove('id');
+          m['character_id'] = newCharacterId;
+        }
+
+        await db.insert(
+          'messages',
+          m,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
     }
 
-    final preferences = _readJson(files, 'data/preferences.json');
-    if (preferences is Map) {
-      final prefs = await SharedPreferences.getInstance();
-      for (final entry in preferences.entries) {
-        final key = entry.key.toString();
-        final value = entry.value;
-        if (value is bool) await prefs.setBool(key, value);
-        if (value is int) await prefs.setInt(key, value);
-        if (value is double) await prefs.setDouble(key, value);
-        if (value is String) await prefs.setString(key, value);
-        if (value is List<String>) await prefs.setStringList(key, value);
+    if (!isMergeMode) {
+      final preferences = _readJson(files, 'data/preferences.json');
+      if (preferences is Map) {
+        final prefs = await SharedPreferences.getInstance();
+
+        for (final entry in preferences.entries) {
+          final key = entry.key.toString();
+          final value = entry.value;
+
+          if (value is bool) await prefs.setBool(key, value);
+          if (value is int) await prefs.setInt(key, value);
+          if (value is double) await prefs.setDouble(key, value);
+          if (value is String) await prefs.setString(key, value);
+          if (value is List<String>) await prefs.setStringList(key, value);
+        }
       }
     }
   }

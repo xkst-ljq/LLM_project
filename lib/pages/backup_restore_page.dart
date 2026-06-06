@@ -162,29 +162,85 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     }
 
     if (!mounted) return;
+    BackupImportMode selectedMode = BackupImportMode.merge;
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('确认导入'),
-        content: const Text(
-          '当前版本采用“同 ID 覆盖 / 不同 ID 合并”的导入策略。\n\n'
-          '导入前建议先导出一次当前数据备份。是否继续？',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('导入')),
-        ],
-      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('选择导入方式'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RadioGroup<BackupImportMode>(
+                    groupValue: selectedMode,
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() {
+                        selectedMode = value;
+                      });
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RadioListTile<BackupImportMode>(
+                          value: BackupImportMode.merge,
+                          title: const Text('合并导入（推荐）'),
+                          subtitle: const Text(
+                            '生成新 ID，不覆盖当前数据。适合导入别人分享的备份或部分资源。',
+                          ),
+                        ),
+                        RadioListTile<BackupImportMode>(
+                          value: BackupImportMode.restore,
+                          title: const Text('恢复导入'),
+                          subtitle: const Text(
+                            '保留原 ID，同 ID 数据会被覆盖。适合迁移自己的完整数据。',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '导入前建议先导出一次当前数据备份。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('继续'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
     if (ok != true) return;
 
     setState(() => _busy = true);
     try {
-      await BackupService.importBackup(File(filePath));
+      await BackupService.importBackup(
+        File(filePath),
+        mode: selectedMode,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('导入完成，建议返回主菜单后重新进入相关页面刷新数据')),
+        SnackBar(
+          content: Text(
+            selectedMode == BackupImportMode.merge
+                ? '合并导入完成'
+                : '恢复导入完成，建议返回主菜单后重新进入相关页面刷新数据',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
