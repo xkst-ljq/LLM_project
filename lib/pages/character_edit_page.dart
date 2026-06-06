@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../models/character_card.dart';
 import '../models/character_entry.dart';
 import '../services/database_service.dart';
+import '../utils/id_utils.dart';
 
 class CharacterEditOverlay extends StatefulWidget {
   final CharacterCard character;
@@ -343,7 +344,8 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   }
 
   void _addCustomEntry() {
-    final newEntry = CharacterEntry(id: DateTime.now().millisecondsSinceEpoch.toString(), title: '新条目', content: '', enabled: false, isCustom: true, sortOrder: _entries.where((e) => e.isCustom).length);
+    final newEntry = CharacterEntry(
+        id: IdUtils.timestampId(), title: '新条目', content: '', enabled: false, isCustom: true, sortOrder: _entries.where((e) => e.isCustom).length);
     setState(() => _entries.add(newEntry));
   }
 
@@ -354,7 +356,12 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     ]));
   }
 
-  void _addGreeting() => setState(() => _greetings.add(OpeningGreeting(id: DateTime.now().millisecondsSinceEpoch.toString(), content: '')));
+  void _addGreeting() => setState(() => _greetings.add(
+    OpeningGreeting(
+      id: IdUtils.timestampId(),
+      content: '',
+    ),
+  ));
 
   void _editGreeting(OpeningGreeting greeting) async {
     final controller = TextEditingController(text: greeting.content);

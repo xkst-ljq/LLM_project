@@ -18,6 +18,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/character_card_asset_service.dart';
 import '../services/character_card_png_asset_service.dart';
+import '../utils/id_utils.dart';
 
 class CharacterImportPreview {
   final File file;
@@ -761,7 +762,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
   }
 
   void _addCharacter() async {
-    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newId = IdUtils.timestampId();
     await DatabaseService.insertCharacter({
       'id': newId,
       'name': '',

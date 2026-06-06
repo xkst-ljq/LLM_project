@@ -8,6 +8,7 @@ import '../services/database_service.dart';
 import '../services/world_book_asset_service.dart';
 import 'world_book_edit_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/id_utils.dart';
 
 class WorldBookImportPreview {
   final File file;
@@ -407,7 +408,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
   }
 
   void _addWorldBook() async {
-    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newId = IdUtils.timestampId();
     await DatabaseService.insertWorldBook({
       'id': newId,
       'name': '新世界书 ${_worldBooks.length + 1}',

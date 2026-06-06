@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/background_asset_service.dart';
+import '../utils/id_utils.dart';
 
 class BackgroundImportPreview {
   final File file;
@@ -448,7 +449,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     if (picked == null) return;
 
     final dir = await getApplicationDocumentsDirectory();
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final id = IdUtils.timestampId();
     final originalPath = p.join(dir.path, 'bg_original_$id.png');
     await File(picked.path).copy(originalPath);
 
@@ -1464,7 +1465,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
     final XFile? picked = await _picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
     final dir = await getApplicationDocumentsDirectory();
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final id = IdUtils.timestampId();
     final originalPath = p.join(dir.path, 'preset_original_$id.png');
     await File(picked.path).copy(originalPath);
     setState(() {

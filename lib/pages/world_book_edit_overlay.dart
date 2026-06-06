@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/world_book.dart';
 import '../models/world_book_entry.dart';
 import '../services/database_service.dart';
+import '../utils/id_utils.dart';
 
 class WorldBookEditOverlay extends StatefulWidget {
   final WorldBook worldBook;
@@ -130,7 +131,7 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
 
   void _addEntry() {
     final newEntry = WorldBookEntry(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: IdUtils.timestampId(),
       title: '新条目 ${_entries.length + 1}',
       sortOrder: _entries.length,
     );

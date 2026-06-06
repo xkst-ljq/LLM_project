@@ -7,6 +7,7 @@ class BackgroundService {
   static const String _currentBackgroundKey = 'current_background_id';
   static final ValueNotifier<int> _versionNotifier = ValueNotifier<int>(0);
   static ValueNotifier<int> get versionNotifier => _versionNotifier;
+  static int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
   /// 获取所有背景
   static Future<List<BackgroundCard>> getAll() async {
@@ -35,21 +36,43 @@ class BackgroundService {
 
   /// 插入背景
   static Future<void> insert(BackgroundCard bg) async {
+    await DatabaseService.ensureBackgroundsTable();
+
     final db = await DatabaseService.database;
-    await db.insert('backgrounds', bg.toDb());
+    final data = bg.toDb();
+    final now = _nowMs();
+
+    data.putIfAbsent('created_at', () => now);
+    data['updated_at'] = now;
+
+    await db.insert('backgrounds', data);
+    _versionNotifier.value++;
   }
 
   /// 更新背景
   static Future<void> update(BackgroundCard bg) async {
+    await DatabaseService.ensureBackgroundsTable();
+
     final db = await DatabaseService.database;
-    await db.update('backgrounds', bg.toDb(), where: 'id = ?', whereArgs: [bg.id]);
-    _versionNotifier.value++; // 通知聊天页刷新
+    final data = bg.toDb();
+
+    data['updated_at'] = _nowMs();
+
+    await db.update(
+      'backgrounds',
+      data,
+      where: 'id = ?',
+      whereArgs: [bg.id],
+    );
+
+    _versionNotifier.value++;
   }
 
   /// 删除背景（预设不可删）
   static Future<void> delete(String id) async {
     final db = await DatabaseService.database;
     await db.delete('backgrounds', where: 'id = ?', whereArgs: [id]);
+    _versionNotifier.value++;
   }
 
   /// 确保预设背景存在（如果没有，自动插入）

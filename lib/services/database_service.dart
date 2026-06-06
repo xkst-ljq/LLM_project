@@ -176,33 +176,54 @@ class DatabaseService {
   /// 确保 backgrounds 表存在（用于旧版本升级）
   static Future<void> ensureBackgroundsTable() async {
     final db = await database;
-    // 检查表是否存在
+
     final result = await db.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='backgrounds'",
     );
+
     if (result.isEmpty) {
       await db.execute('''
-        CREATE TABLE backgrounds (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          type TEXT NOT NULL,
-          color_value TEXT DEFAULT '',
-          original_image_path TEXT DEFAULT '',
-          portrait_crop_path TEXT DEFAULT '',
-          landscape_crop_path TEXT DEFAULT '',
-          scene_setting TEXT DEFAULT '',
-          is_preset INTEGER DEFAULT 0
-        )
-      ''');
+      CREATE TABLE backgrounds (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        color_value TEXT DEFAULT '',
+        original_image_path TEXT DEFAULT '',
+        portrait_crop_path TEXT DEFAULT '',
+        landscape_crop_path TEXT DEFAULT '',
+        scene_setting TEXT DEFAULT '',
+        is_preset INTEGER DEFAULT 0,
+        created_at INTEGER DEFAULT 0,
+        updated_at INTEGER DEFAULT 0
+      )
+    ''');
+
+      final now = _nowMs();
+
       await db.insert('backgrounds', {
         'id': 'default',
         'name': '默认背景',
         'type': 'gradient',
         'color_value':
-            '{"colors":["#E3F2FD","#F3E5F5"],"begin":"topCenter","end":"bottomCenter"}',
+        '{"colors":["#E3F2FD","#F3E5F5"],"begin":"topCenter","end":"bottomCenter"}',
         'scene_setting': '默认聊天背景',
         'is_preset': 1,
+        'created_at': now,
+        'updated_at': now,
       });
+    } else {
+      await _safeAddColumn(
+        db,
+        'backgrounds',
+        'created_at',
+        'INTEGER DEFAULT 0',
+      );
+      await _safeAddColumn(
+        db,
+        'backgrounds',
+        'updated_at',
+        'INTEGER DEFAULT 0',
+      );
     }
   }
 

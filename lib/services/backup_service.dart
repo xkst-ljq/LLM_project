@@ -13,6 +13,7 @@ import '../services/background_service.dart';
 import '../services/database_service.dart';
 import '../services/user_service.dart';
 import '../utils/asset_magic.dart';
+import '../utils/id_utils.dart';
 
 class BackupOptions {
   bool includeCharacters;
@@ -129,7 +130,7 @@ class BackupService {
       final exported = <Map<String, dynamic>>[];
       for (final raw in characters) {
         final c = Map<String, dynamic>.from(raw);
-        final id = c['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+        final id = c['id']?.toString() ?? IdUtils.timestampId();
 
         c['avatar'] = await _addAssetIfNeeded(
           archive: archive,

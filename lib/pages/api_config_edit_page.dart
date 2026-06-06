@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/api_config.dart';
 import '../services/api_config_service.dart';
+import '../utils/id_utils.dart';
 
 class ApiConfigEditPage extends StatefulWidget {
   final ApiConfig? config;
@@ -154,7 +155,7 @@ class _ApiConfigEditPageState extends State<ApiConfigEditPage> {
       return;
     }
     final config = ApiConfig(
-      id: widget.config?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      id: widget.config?.id ?? IdUtils.timestampId(),
       name: name,
       baseUrl: _urlCtrl.text.trim(),
       apiKey: _keyCtrl.text.trim(),
