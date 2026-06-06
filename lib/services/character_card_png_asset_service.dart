@@ -7,10 +7,11 @@ import '../utils/id_utils.dart';
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
+import '../utils/asset_magic.dart';
 
 class CharacterCardPngAssetService {
-  static const String magic = 'LLM_PROJECT_ASSET_V1';
-  static const String assetType = 'character_card';
+  static const String magic = AssetMagic.assetV1;
+  static const String assetType = AssetMagic.characterCard;
   static const String container = 'png_card';
   static const int formatVersion = 1;
 
@@ -93,7 +94,7 @@ class CharacterCardPngAssetService {
       throw Exception('角色卡图片数据解析失败');
     }
 
-    if (root['magic'] != magic ||
+    if (!AssetMagic.isSupportedAssetMagic(root['magic']?.toString()) ||
         root['asset_type'] != assetType ||
         root['container'] != container) {
       throw Exception('这不是 LLM Project 角色卡图片');

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'dart:math';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
@@ -1056,6 +1057,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   double get panelWidth =>
       MediaQuery.of(context).size.width * _panelWidthFraction;
   bool _isLoading = false;
+  StreamSubscription<String>? _aiReplySub;
   bool _showFanPanel = false;
   late AnimationController _fanPanelAnimController;
   late Animation<double> _fanPanelFadeAnim;
@@ -1091,6 +1093,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   UserProfile _currentUser = UserProfile();
+
+  Future<void> _cancelAiReply({bool updateState = true}) async {
+    await _aiReplySub?.cancel();
+    _aiReplySub = null;
+
+    if (updateState && mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   Future<void> _loadUser() async {
     final globalUser = await UserService.getUser();
@@ -1308,8 +1321,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 以数据库为准，避免 UI 状态误判
     final existingMessages =
     await DatabaseService.getMessages(_currentCharacter!.id);
-    debugPrint('检查开场白: ${_currentCharacter?.openingGreetings}');
-    debugPrint('当前历史数量: ${existingMessages.length}');
     // 只在完全没有历史消息时插入开场白
     if (existingMessages.isNotEmpty) return;
 
@@ -1369,9 +1380,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   Future<void> _setCurrentCharacter(CharacterCard? char) async {
-    debugPrint('=== 加载角色卡 ===');
-    debugPrint('opening_greetings: ${char?.openingGreetings}');
-    debugPrint('entries_json: ${char?.entriesJson}');
+    await _cancelAiReply(updateState: false);
+    _isLoading = false;
 
     if (char == null) return;
 
@@ -1494,6 +1504,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _aiReplySub?.cancel();
     UserService.versionNotifier.removeListener(_onGlobalUserChanged);
     _scrollController.dispose();
     _inputAnimController.dispose();
@@ -1503,7 +1514,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _inertiaTicker?.stop();
     _inertiaTicker?.dispose();
     _fanSnapController.dispose();
-    _fanPanelAnimController.dispose();
     super.dispose();
 
   }
@@ -3125,6 +3135,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   Future<void> _saveEdit() async {
+    if (_isLoading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('正在生成回复，请稍候')),
+      );
+      return;
+    }
     if (_editingIndex == -1) return;
     final newText = _msgController.text.trim();
     if (newText.isEmpty) return;
@@ -3182,6 +3198,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   Future<void> _sendMessage() async {
+    if (_isLoading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('正在生成回复，请稍候')),
+      );
+      return;
+    }
+
     if (_editingIndex != -1) {
       _saveEdit();
       return;
@@ -3307,41 +3330,55 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     String aiResponseContent = '';
     setState(() => _isLoading = true);
 
-    module
-        .sendMessage(finalSystemPrompt, requestMessages)
-        .listen(
-          (chunk) {
-            aiResponseContent += chunk;
-            setState(() {});
-          },
-          onDone: () {
-            setState(() {
-              _messages.add({
-                'role': 'assistant',
-                'content': aiResponseContent,
-              });
-              _isLoading = false;
-            });
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _scrollToBottom();
-            });
+    await _aiReplySub?.cancel();
+    _aiReplySub = null;
 
-            // ✅ 修复：使用 _currentCharacter
-            if (_currentCharacter != null && aiResponseContent.isNotEmpty) {
-              DatabaseService.insertMessage(
-                characterId: _currentCharacter!.id,
-                role: 'assistant',
-                content: aiResponseContent,
-              );
-            }
-          },
-          onError: (e) {
-            setState(() {
-              _messages.add({'role': 'assistant', 'content': '错误: $e'});
-              _isLoading = false;
-            });
-          },
-        );
+    _aiReplySub = module.sendMessage(finalSystemPrompt, requestMessages).listen(
+          (chunk) {
+        if (!mounted) return;
+
+        aiResponseContent += chunk;
+        setState(() {});
+      },
+      onDone: () {
+        if (!mounted) return;
+
+        _aiReplySub = null;
+
+        setState(() {
+          _messages.add({
+            'role': 'assistant',
+            'content': aiResponseContent,
+          });
+          _isLoading = false;
+        });
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToBottom();
+        });
+
+        if (_currentCharacter != null && aiResponseContent.isNotEmpty) {
+          DatabaseService.insertMessage(
+            characterId: _currentCharacter!.id,
+            role: 'assistant',
+            content: aiResponseContent,
+          );
+        }
+      },
+      onError: (e) {
+        if (!mounted) return;
+
+        _aiReplySub = null;
+
+        setState(() {
+          _messages.add({
+            'role': 'assistant',
+            'content': '错误: $e',
+          });
+          _isLoading = false;
+        });
+      },
+    );
   }
 
   Future<void> _scrollToBottomWhenReady() async {

@@ -6,10 +6,11 @@ import '../utils/id_utils.dart';
 import '../models/background_card.dart';
 import '../services/android_download_service.dart';
 import '../services/background_service.dart';
+import '../utils/asset_magic.dart';
 
 class BackgroundAssetService {
-  static const String magic = 'LLM_PROJECT_ASSET_V1';
-  static const String assetType = 'background_card';
+  static const String magic = AssetMagic.assetV1;
+  static const String assetType = AssetMagic.backgroundCard;
   static const int formatVersion = 1;
 
   static final List<int> _startMarker =
@@ -193,7 +194,8 @@ class BackgroundAssetService {
       throw Exception('背景卡数据解析失败');
     }
 
-    if (root['magic'] != magic || root['asset_type'] != assetType) {
+    if (!AssetMagic.isSupportedAssetMagic(root['magic']?.toString()) ||
+        root['asset_type'] != assetType) {
       throw Exception('这不是 LLM Project 背景卡文件');
     }
 

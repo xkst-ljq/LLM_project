@@ -8,10 +8,11 @@ import '../utils/id_utils.dart';
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
+import '../utils/asset_magic.dart';
 
 class CharacterCardAssetService {
-  static const String magic = 'LLM_PROJECT_ASSET_V1';
-  static const String assetType = 'character_card';
+  static const String magic = AssetMagic.assetV1;
+  static const String assetType = AssetMagic.characterCard;
   static const int formatVersion = 1;
 
   static String _safeFileName(String input) {
@@ -42,7 +43,8 @@ class CharacterCardAssetService {
       throw Exception('未识别到角色卡标识');
     }
 
-    if (manifest['magic'] != magic || manifest['asset_type'] != assetType) {
+    if (!AssetMagic.isSupportedAssetMagic(manifest['magic']?.toString()) ||
+        manifest['asset_type'] != assetType) {
       throw Exception('这不是 LLM Project 角色卡文件');
     }
 

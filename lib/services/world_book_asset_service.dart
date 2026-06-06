@@ -6,10 +6,11 @@ import '../models/world_book.dart';
 import '../utils/id_utils.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
+import '../utils/asset_magic.dart';
 
 class WorldBookAssetService {
-  static const String magic = 'LLM_PROJECT_ASSET_V1';
-  static const String assetType = 'world_book';
+  static const String magic = AssetMagic.assetV1;
+  static const String assetType = AssetMagic.worldBook;
   static const int formatVersion = 1;
 
   static String _safeFileName(String input) {
@@ -87,7 +88,8 @@ class WorldBookAssetService {
     }
     final root = Map<String, dynamic>.from(decoded);
 
-    if (root['magic'] != magic || root['asset_type'] != assetType) {
+    if (!AssetMagic.isSupportedAssetMagic(root['magic']?.toString()) ||
+        root['asset_type'] != assetType) {
       throw Exception('未识别到 LLM Project 世界书标识');
     }
 

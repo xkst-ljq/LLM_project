@@ -12,6 +12,7 @@ import '../services/api_config_service.dart';
 import '../services/background_service.dart';
 import '../services/database_service.dart';
 import '../services/user_service.dart';
+import '../utils/asset_magic.dart';
 
 class BackupOptions {
   bool includeCharacters;
@@ -113,6 +114,7 @@ class BackupService {
     final contains = options.toJson();
 
     final manifest = {
+      'magic': AssetMagic.backupV1,
       'format': format,
       'format_version': formatVersion,
       'exported_at': DateTime.now().toIso8601String(),
@@ -338,8 +340,23 @@ class BackupService {
   static Future<void> importBackup(File backupFile) async {
     final files = await _extractArchive(backupFile);
     final manifest = _readJson(files, 'manifest.json');
-    if (manifest is! Map || manifest['format'] != format) {
+    if (manifest is! Map) {
       throw Exception('不是有效的 LLM Project 备份文件');
+    }
+
+    final manifestMap = Map<String, dynamic>.from(manifest);
+
+    final magic = manifestMap['magic']?.toString();
+    final formatValue = manifestMap['format']?.toString();
+
+// 兼容旧备份：旧版本可能没有 magic，但有 format = llm_project_backup
+    final isOldBackup = magic == null && formatValue == format;
+
+    final isSupportedBackup =
+        AssetMagic.isSupportedBackupMagic(magic) || isOldBackup;
+
+    if (!isSupportedBackup) {
+      throw Exception('未识别到 LLM Project 备份标识');
     }
 
     final pathMap = await _restoreAssets(files);
