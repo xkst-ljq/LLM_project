@@ -22,6 +22,10 @@ import '../models/background_card.dart';
 import 'package:markdown/markdown.dart' as md hide Text;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../utils/protagonist_setting_utils.dart';
+import '../models/prompt_settings.dart';
+import '../services/prompt_settings_service.dart';
+import 'prompt_settings_page.dart';
+import 'prompt_preview_page.dart';
 
 class ChatPage extends StatefulWidget {
   final CharacterCard? character;
@@ -41,6 +45,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   double _panelStartValue = 0.0;
   String? _dynamicUserDetail;
   List<WorldBookEntry>? _cachedWorldBookEntries;
+  PromptSettings _promptSettings = PromptSettings();
   String? _cachedWorldBookId;
   late AnimationController _fanSnapController;
   double _fanSnapStart = 0.0;
@@ -49,29 +54,27 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   bool _isLastMessage(int index) {
     return index == _messages.length - 1 && !_isLoading;
   }
-  static const int _summaryPromptInterval = 3;
-  static const int _fullDetailPromptInterval = 12;
   int _getUserTurnCount() {
     return _messages.where((m) => m['role'] == 'user').length;
   }
 
   bool _shouldInjectSummaryPrompt() {
     final turn = _getUserTurnCount();
+    final interval = _promptSettings.summaryInterval;
 
-    // 第一轮强制注入摘要，保证开局设定充分
+    if (interval <= 0) return false;
     if (turn <= 1) return true;
 
-    return _summaryPromptInterval > 0 &&
-        turn % _summaryPromptInterval == 0;
+    return turn % interval == 0;
   }
   bool _shouldInjectFullDetailPrompt() {
     final turn = _getUserTurnCount();
+    final interval = _promptSettings.fullDetailInterval;
 
-    // 第一轮强制注入完整详细设定
+    if (interval <= 0) return false;
     if (turn <= 1) return true;
 
-    return _fullDetailPromptInterval > 0 &&
-        turn % _fullDetailPromptInterval == 0;
+    return turn % interval == 0;
   }
   String _truncatePromptText(String text, int maxChars) {
     final raw = text.trim();
@@ -171,59 +174,73 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   String _buildContinuityReminderPrompt() {
-    if (_currentCharacter == null) return '';
-
-    final lines = <String>[];
-
-    final name = _currentCharacter!.name.trim().isEmpty
-        ? '当前角色'
-        : _currentCharacter!.name.trim();
-
-    lines.add('持续保持“$name”的身份、语气、性格和行为逻辑。');
-
-    if (_currentUser.name.isNotEmpty && _currentUser.name != '我') {
-      lines.add('当前用户名称是“${_currentUser.name}”。');
-    }
-
-    lines.add('不要遗忘已经给出的角色设定、用户设定、世界书和当前对话事实。');
-
-    return lines.join('\n');
+    return _renderPromptTemplate(_promptSettings.continuityReminder).trim();
   }
 
   String _buildRoleplayRules() {
     if (_currentCharacter == null) return '';
 
-    final name = _currentCharacter!.name.isNotEmpty
-        ? _currentCharacter!.name
+    final template = _currentCharacter!.cardType == 'character'
+        ? _promptSettings.characterRoleplayRules
+        : _promptSettings.systemRoleplayRules;
+
+    return _renderPromptTemplate(template).trim();
+  }
+
+  String _renderPromptTemplate(String template) {
+    final charName = _currentCharacter?.name.trim().isNotEmpty == true
+        ? _currentCharacter!.name.trim()
         : '当前角色';
 
-    if (_currentCharacter!.cardType == 'character') {
-      return '''
-你正在扮演角色“$name”。
+    final userName = _currentUser.name.trim().isNotEmpty
+        ? _currentUser.name.trim()
+        : '用户';
 
-【人物卡扮演规则】
-1. 你只能扮演“$name”，使用第一人称“我”表达自己的语言、动作、感受和想法。
-2. 不要代替用户说话、行动、思考、感受或做决定。
-3. 不要描写用户没有明确输入的动作，例如“你拉住我”“你低下头”“你露出表情”等，除非用户已经明确这样做。
-4. 可以对用户已经明确做出的行为作出反应，也可以请求用户配合，例如“你低一点”“让我够一下”。
-5. 涉及动作、距离、触摸、身体互动时，应自然考虑角色和用户的身高、体型、关系、状态等设定。
-6. 非语言动作可以使用括号或星号描写，但括号、引号必须成对闭合。
-7. 回复要紧接上下文，不要突然跳跃，不要出现缺字、断句或未完成的动作描写。
-8. 除非用户明确要求，否则不要跳出角色，不要声明自己是 AI。
-''';
-    }
-
-    return '''
-【系统卡叙事规则】
-1. 可以以旁白或系统视角推进情境，但不得代替用户做决定。
-2. 不要替用户说话、行动、思考或感受。
-3. 涉及主角/用户行动时，只能基于用户已明确输入的内容进行回应。
-4. 非语言动作、括号、引号必须成对闭合。
-5. 回复要保持上下文连贯，不要突然缺字或中断。
-''';
+    return template
+        .replaceAll('{{char}}', charName)
+        .replaceAll('{{user}}', userName);
   }
 
   List<CharacterCard> _selectableCharacters = [];
+
+  Future<PromptPreviewData> _buildPromptPreviewData(
+      PromptSettings previewSettings,
+      ) async {
+    final oldSettings = _promptSettings;
+
+    _promptSettings = previewSettings;
+
+    try {
+      final systemPrompt = await _buildFinalSystemPrompt();
+
+      final requestMessages = _messages
+          .map(
+            (m) => {
+          'role': (m['role'] as String?) ?? '',
+          'content': (m['content'] as String?) ?? '',
+        },
+      )
+          .toList();
+
+      int totalChars = systemPrompt.length;
+      for (final msg in requestMessages) {
+        totalChars += (msg['content'] ?? '').length;
+      }
+
+      final estimatedTokens = (totalChars / 2).ceil();
+
+      return PromptPreviewData(
+        userTurnCount: _getUserTurnCount(),
+        injectedSummary: _shouldInjectSummaryPrompt(),
+        injectedFullDetail: _shouldInjectFullDetailPrompt(),
+        estimatedTokens: estimatedTokens,
+        systemPrompt: systemPrompt,
+        messages: requestMessages,
+      );
+    } finally {
+      _promptSettings = oldSettings;
+    }
+  }
 
   Future<void> _loadSelectableCharacters() async {
     final all = await DatabaseService.getAllCharacters();
@@ -250,6 +267,23 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   void _onGlobalUserChanged() {
     if (!mounted) return;
     _loadUser();
+  }
+
+  void _onPromptSettingsChanged() {
+    if (!mounted) return;
+    _loadPromptSettings();
+  }
+
+  Future<void> _loadPromptSettings() async {
+    final settings = await PromptSettingsService.getEffectiveSettings(
+      _currentCharacter?.id,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _promptSettings = settings;
+    });
   }
 
   Widget _buildBackground(BackgroundCard bg) {
@@ -1346,6 +1380,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     super.initState();
 
     UserService.versionNotifier.addListener(_onGlobalUserChanged);
+    PromptSettingsService.versionNotifier.addListener(_onPromptSettingsChanged);
+    _loadPromptSettings();
 
     _animController = AnimationController(
       vsync: this,
@@ -1527,6 +1563,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     _currentCharacter = char;
 
+    await _loadPromptSettings();
+
     setState(() {
       _messages.clear();
     });
@@ -1550,12 +1588,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   Future<String> _buildFinalSystemPrompt() async {
-    String systemPrompt = _currentCharacter?.systemPrompt ?? '你是忠于用户的助手。';
-    final roleplayRules = _buildRoleplayRules();
-    if (roleplayRules.isNotEmpty) {
-      systemPrompt += '\n\n$roleplayRules';
-    }
+    String systemPrompt =
+        _currentCharacter?.systemPrompt ?? '你是忠于用户的助手。';
 
+    if (_promptSettings.injectRoleplayRules) {
+      final roleplayRules = _buildRoleplayRules();
+      if (roleplayRules.isNotEmpty) {
+        systemPrompt += '\n\n[角色扮演规则]\n$roleplayRules';
+      }
+    }
     // 注入世界书设定
     if (_currentCharacter?.worldBookId != null &&
         _currentCharacter!.worldBookId.isNotEmpty) {
@@ -1578,7 +1619,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         }
       }
 
-      final activeEntries = _getActiveWorldBookEntries(4);
+      final activeEntries =
+      _getActiveWorldBookEntries(_promptSettings.worldBookScanDepth);
       if (activeEntries.isNotEmpty) {
         final entryText = activeEntries
             .map((e) => '【${e.title}】\n${e.content}')
@@ -1600,9 +1642,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
 
 // 每轮注入极短连续性提醒
-    final continuityReminder = _buildContinuityReminderPrompt();
-    if (continuityReminder.isNotEmpty) {
-      systemPrompt += '\n\n[连续性提醒]\n$continuityReminder';
+    if (_promptSettings.injectContinuityReminder) {
+      final continuityReminder = _buildContinuityReminderPrompt();
+      if (continuityReminder.isNotEmpty) {
+        systemPrompt += '\n\n[连续性提醒]\n$continuityReminder';
+      }
     }
 
     final shouldInjectFullDetail = _shouldInjectFullDetailPrompt();
@@ -1659,6 +1703,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   void dispose() {
     _aiReplySub?.cancel();
     UserService.versionNotifier.removeListener(_onGlobalUserChanged);
+    PromptSettingsService.versionNotifier.removeListener(_onPromptSettingsChanged);
     _scrollController.dispose();
     _inputAnimController.dispose();
     _animController.dispose();
@@ -2499,6 +2544,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                     ),
                                               ),
                                             ).then((_) => _loadUser()); // 返回后刷新
+                                          },
+                                        ),
+                                        ListTile(
+                                          leading: const Icon(Icons.tune),
+                                          title: const Text('Prompt 策略'),
+                                          onTap: () {
+                                            if (_currentCharacter == null) return;
+
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => PromptSettingsPage(
+                                                  characterId: _currentCharacter!.id,
+                                                  characterName: _currentCharacter!.name,
+                                                  buildPreview: _buildPromptPreviewData,
+                                                ),
+                                              ),
+                                            ).then((_) => _loadPromptSettings());
                                           },
                                         ),
                                         ListTile(

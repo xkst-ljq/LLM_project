@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'api_config_page.dart';
 import 'user_settings_page.dart';
 import 'backup_restore_page.dart';
+import 'prompt_settings_page.dart';
 
 class SettingsMenuPage extends StatelessWidget {
   const SettingsMenuPage({super.key});
@@ -37,6 +38,16 @@ class SettingsMenuPage extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const UserSettingsPage()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.tune),
+            title: const Text('Prompt 策略'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PromptSettingsPage()),
               );
             },
           ),
