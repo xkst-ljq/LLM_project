@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-
+import 'dart:math' as math;
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import '../services/background_service.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/simple_page_guide_scope.dart';
@@ -184,16 +186,70 @@ class _MainMenuPageState extends State<MainMenuPage>
   }
 
   Rect? _textHighlightRectForKey(GlobalKey key) {
-    final rect = _rectForKey(key);
-    if (rect == null) return null;
+    final context = key.currentContext;
+    if (context == null) return null;
+
+    final renderObject = context.findRenderObject();
 
     const height = 30.0;
     const horizontalPadding = 16.0;
+
+    // 优先读取 Text 实际绘制出来的文字范围，而不是 Text 组件被父级撑开的布局宽度。
+    if (renderObject is RenderParagraph && renderObject.hasSize) {
+      final plainText = renderObject.text.toPlainText();
+
+      if (plainText.isNotEmpty) {
+        final boxes = renderObject.getBoxesForSelection(
+          TextSelection(
+            baseOffset: 0,
+            extentOffset: plainText.length,
+          ),
+        );
+
+        if (boxes.isNotEmpty) {
+          var left = boxes.first.left;
+          var top = boxes.first.top;
+          var right = boxes.first.right;
+          var bottom = boxes.first.bottom;
+
+          for (final box in boxes.skip(1)) {
+            left = math.min(left, box.left);
+            top = math.min(top, box.top);
+            right = math.max(right, box.right);
+            bottom = math.max(bottom, box.bottom);
+          }
+
+          final globalTopLeft = renderObject.localToGlobal(Offset(left, top));
+          final globalBottomRight =
+          renderObject.localToGlobal(Offset(right, bottom));
+
+          final textRect = Rect.fromLTRB(
+            globalTopLeft.dx,
+            globalTopLeft.dy,
+            globalBottomRight.dx,
+            globalBottomRight.dy,
+          );
+
+          return Rect.fromLTWH(
+            textRect.left - horizontalPadding,
+            textRect.center.dy - height / 2,
+            textRect.width + horizontalPadding * 2,
+            height,
+          );
+        }
+      }
+    }
+
+    // 兜底：如果不是 Text 渲染对象，则使用组件区域，但限制最大宽度，避免变成长条。
+    final rect = _rectForKey(key);
+    if (rect == null) return null;
+
     final top = rect.top + (rect.height - height) / 2;
+
     return Rect.fromLTWH(
       rect.left - horizontalPadding,
       top,
-      rect.width + horizontalPadding * 2,
+      math.min(rect.width + horizontalPadding * 2, 180),
       height,
     );
   }
