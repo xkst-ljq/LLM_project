@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
-import 'package:flutter/rendering.dart';
+
 import '../services/background_service.dart';
 import '../widgets/page_guide_overlay.dart';
+import '../widgets/simple_page_guide_scope.dart';
 import 'api_config_page.dart';
 import 'background_library_page.dart';
 import 'character_library_page.dart';
@@ -153,6 +153,25 @@ class _MainMenuPageState extends State<MainMenuPage>
     });
   }
 
+  void _pushGuidedPage({
+    required Widget page,
+    required String pageName,
+    required String pageDescription,
+  }) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SimplePageGuideScope(
+          startGuide: true,
+          pageName: pageName,
+          pageDescription: pageDescription,
+          onExitGuide: _finishGuide,
+          child: page,
+        ),
+      ),
+    );
+  }
+
   Rect? _rectForKey(GlobalKey key) {
     final context = key.currentContext;
     if (context == null) return null;
@@ -165,65 +184,16 @@ class _MainMenuPageState extends State<MainMenuPage>
   }
 
   Rect? _textHighlightRectForKey(GlobalKey key) {
-    final context = key.currentContext;
-    if (context == null) return null;
-
-    final renderObject = context.findRenderObject();
-    const height = 30.0;
-    const horizontalPadding = 16.0;
-
-    if (renderObject is RenderParagraph && renderObject.hasSize) {
-      final plainText = renderObject.text.toPlainText();
-
-      if (plainText.isNotEmpty) {
-        final boxes = renderObject.getBoxesForSelection(
-          TextSelection(
-            baseOffset: 0,
-            extentOffset: plainText.length,
-          ),
-        );
-
-        if (boxes.isNotEmpty) {
-          var left = boxes.first.left;
-          var top = boxes.first.top;
-          var right = boxes.first.right;
-          var bottom = boxes.first.bottom;
-
-          for (final box in boxes.skip(1)) {
-            left = math.min(left, box.left);
-            top = math.min(top, box.top);
-            right = math.max(right, box.right);
-            bottom = math.max(bottom, box.bottom);
-          }
-
-          final globalTopLeft = renderObject.localToGlobal(Offset(left, top));
-          final globalBottomRight =
-          renderObject.localToGlobal(Offset(right, bottom));
-          final textRect = Rect.fromLTRB(
-            globalTopLeft.dx,
-            globalTopLeft.dy,
-            globalBottomRight.dx,
-            globalBottomRight.dy,
-          );
-
-          return Rect.fromLTWH(
-            textRect.left - horizontalPadding,
-            textRect.center.dy - height / 2,
-            textRect.width + horizontalPadding * 2,
-            height,
-          );
-        }
-      }
-    }
-
     final rect = _rectForKey(key);
     if (rect == null) return null;
 
+    const height = 30.0;
+    const horizontalPadding = 16.0;
     final top = rect.top + (rect.height - height) / 2;
     return Rect.fromLTWH(
       rect.left - horizontalPadding,
       top,
-      math.min(rect.width + horizontalPadding * 2, 220),
+      rect.width + horizontalPadding * 2,
       height,
     );
   }
@@ -284,10 +254,10 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里可以进入聊天页。配置好 API 并选择角色后，就可以从这里开始对话。',
       actionLabel: '进入聊天页',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ChatPage()),
+        _pushGuidedPage(
+          page: const ChatPage(),
+          pageName: '聊天页',
+          pageDescription: '这里用于和当前角色对话。后续会继续补充输入框、发送按钮、角色切换等详细导览。',
         );
       },
     );
@@ -299,10 +269,10 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里用于创建、编辑、导入和管理角色。如果想和自定义角色聊天，可以先从这里新建角色。',
       actionLabel: '进入角色库',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const CharacterLibraryPage()),
+        _pushGuidedPage(
+          page: const CharacterLibraryPage(),
+          pageName: '角色库',
+          pageDescription: '这里用于创建、编辑、导入和管理角色。后续会继续补充新建角色和导入导出的详细导览。',
         );
       },
     );
@@ -314,10 +284,10 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '世界书用于保存背景设定、地点、组织、术语等资料。刚开始使用时可以先不用管，熟悉聊天后再学习。',
       actionLabel: '进入世界书库',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const WorldBookLibraryPage()),
+        _pushGuidedPage(
+          page: const WorldBookLibraryPage(),
+          pageName: '世界书库',
+          pageDescription: '这里用于管理世界书。世界书可以保存背景设定、地点、组织、术语等资料。',
         );
       },
     );
@@ -329,10 +299,10 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '背景图库用于管理聊天背景和页面背景。它属于外观相关功能，不影响基础聊天流程。',
       actionLabel: '进入背景图库',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const BackgroundLibraryPage()),
+        _pushGuidedPage(
+          page: const BackgroundLibraryPage(),
+          pageName: '背景图库',
+          pageDescription: '这里用于管理背景图片和背景卡。后续会继续补充导入、编辑和选择背景的导览。',
         );
       },
     );
@@ -386,10 +356,10 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里用于填写 API Key、服务地址和模型。没有 API 配置时，聊天通常无法正常回复。',
       actionLabel: '进入 API 配置',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ApiConfigPage()),
+        _pushGuidedPage(
+          page: const ApiConfigPage(),
+          pageName: 'API 配置页',
+          pageDescription: '这里用于管理模型服务配置。第一次使用时通常需要先新增配置、填写 Key、测试连接并选择模型。',
         );
       },
     );
@@ -401,10 +371,10 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里用于设置“你是谁”。角色会参考这些信息与你互动。新手可以先跳过，等开始聊天后再完善。',
       actionLabel: '进入用户设定',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const UserSettingsPage()),
+        _pushGuidedPage(
+          page: const UserSettingsPage(),
+          pageName: '用户设定页',
+          pageDescription: '这里用于设置你的昵称、头像等基础信息。角色会参考这些信息与你互动。',
         );
       },
     );
@@ -416,10 +386,10 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里是全局默认 Prompt 策略。它属于进阶功能，熟悉基础聊天后再调整会更稳。',
       actionLabel: '进入 Prompt 策略',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const PromptSettingsPage()),
+        _pushGuidedPage(
+          page: const PromptSettingsPage(),
+          pageName: 'Prompt 策略页',
+          pageDescription: '这里用于调整全局默认 Prompt 策略。它属于进阶功能，熟悉基础聊天后再调整会更稳。',
         );
       },
     );
@@ -431,10 +401,10 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里用于备份和恢复应用数据。大量编辑角色或升级应用前，建议先备份。',
       actionLabel: '进入备份与恢复',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const BackupRestorePage()),
+        _pushGuidedPage(
+          page: const BackupRestorePage(),
+          pageName: '备份与恢复页',
+          pageDescription: '这里用于导出完整备份或导入备份。大量编辑角色或升级应用前，建议先备份。',
         );
       },
     );
@@ -446,15 +416,13 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '以后如果忘记某个操作，可以从这里重新打开页面导览和推荐路线。',
       actionLabel: '进入教程中心',
       onAction: () {
-        _finishGuide();
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TutorialHomePage(
-              onStartNewUserGuide: _startNewUserGuide,
-              onStartSettingsGuide: _startSettingsGuide,
-            ),
+        _pushGuidedPage(
+          page: TutorialHomePage(
+            onStartNewUserGuide: _startNewUserGuide,
+            onStartSettingsGuide: _startSettingsGuide,
           ),
+          pageName: '教程与导览页',
+          pageDescription: '这里可以重新开始新用户快速导览，也可以查看各页面导览入口。',
         );
       },
     );
@@ -507,8 +475,18 @@ class _MainMenuPageState extends State<MainMenuPage>
     final panelW = panelWidth;
     final leftOffset = -panelW * _animationController.value;
 
-    return Scaffold(
-      body: GestureDetector(
+    return PopScope(
+      canPop: _guidePhase == _MainGuidePhase.none,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        if (_guidePhase != _MainGuidePhase.none) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('教程模式中，请点击顶部“退出”结束教程。')),
+          );
+        }
+      },
+      child: Scaffold(
+        body: GestureDetector(
         onHorizontalDragStart: _guidePhase == _MainGuidePhase.none
             ? _onHorizontalDragStart
             : null,
@@ -649,6 +627,7 @@ class _MainMenuPageState extends State<MainMenuPage>
           ],
         ),
       ),
+    ),
     );
   }
 }
