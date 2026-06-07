@@ -195,14 +195,22 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
     final screenHeight = MediaQuery.of(context).size.height;
     final rect = target.rect;
 
+    const gap = 8.0;
+
     final placeRight = rect.center.dx < screenWidth / 2;
-    final rawLeft = placeRight ? rect.right + 8 : rect.left - _badgeSize - 8;
-    final left = rawLeft.clamp(8.0, screenWidth - _badgeSize - 8).toDouble();
+    final rawLeft = placeRight
+        ? rect.right + gap
+        : rect.left - _badgeSize - gap;
+
+    final left = rawLeft
+        .clamp(8.0, screenWidth - _badgeSize - 8)
+        .toDouble();
+
     final top = (rect.center.dy - _badgeSize / 2)
         .clamp(
-          MediaQuery.of(context).padding.top + 56.0,
-          screenHeight - _badgeSize - 56.0,
-        )
+      MediaQuery.of(context).padding.top + 56.0,
+      screenHeight - _badgeSize - 56.0,
+    )
         .toDouble();
 
     return Rect.fromLTWH(left, top, _badgeSize, _badgeSize);
@@ -295,26 +303,27 @@ class _ExpandedBadgeInfo extends StatelessWidget {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     final estimatedHeight = target.actionLabel == null ? 150.0 : 196.0;
 
-    // 说明框固定放在序号上方，水平中心对齐序号。
-    // 如果顶部空间不足，再自动放到序号下方，避免被顶部导览栏挡住。
-    final centeredLeft = badgeRect.center.dx -
-        _PageGuideOverlayState._expandedCardWidth / 2;
-    final left = centeredLeft
+// 从点击的序号位置展开。
+// 序号在屏幕左侧时，说明框向右展开；
+// 序号在屏幕右侧时，说明框向左展开。
+    final expandToRight = badgeRect.center.dx < screenSize.width / 2;
+    final rawLeft = expandToRight
+        ? badgeRect.left
+        : badgeRect.right - _PageGuideOverlayState._expandedCardWidth;
+
+    final left = rawLeft
         .clamp(
-          12.0,
-          screenSize.width - _PageGuideOverlayState._expandedCardWidth - 12,
-        )
+      12.0,
+      screenSize.width - _PageGuideOverlayState._expandedCardWidth - 12,
+    )
         .toDouble();
 
-    final topAbove = badgeRect.top - estimatedHeight - 10;
-    final topBelow = badgeRect.bottom + 10;
-    final hasEnoughSpaceAbove = topAbove >= safeTop + 62;
-    final rawTop = hasEnoughSpaceAbove ? topAbove : topBelow;
+    final rawTop = badgeRect.top - 6;
     final top = rawTop
         .clamp(
-          safeTop + 62.0,
-          screenSize.height - safeBottom - estimatedHeight - 16,
-        )
+      safeTop + 62.0,
+      screenSize.height - safeBottom - estimatedHeight - 16,
+    )
         .toDouble();
 
     return Positioned(
