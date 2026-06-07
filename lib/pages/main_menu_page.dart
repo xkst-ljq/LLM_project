@@ -9,6 +9,9 @@ import 'chat_page.dart';
 import 'settings_menu_page.dart';
 import 'tutorial_home_page.dart';
 import 'world_book_library_page.dart';
+import 'backup_restore_page.dart';
+import 'prompt_settings_page.dart';
+import 'user_settings_page.dart';
 
 enum _MainGuidePhase { none, home, settings }
 
@@ -70,8 +73,8 @@ class _MainMenuPageState extends State<MainMenuPage>
           title: const Text('欢迎使用 LLM Project'),
           content: const Text(
             '是否开启新用户快速导览？\n\n'
-                '导览会在页面上标出可交互区域。你可以点击高亮区域查看说明，也可以进入对应页面继续了解。\n\n'
-                '当前测试阶段：每次启动都会显示这个弹窗，方便反复调试。',
+            '导览会在页面上标出可交互区域。你可以点击高亮区域查看说明，也可以进入对应页面继续了解。\n\n'
+            '当前测试阶段：每次启动都会显示这个弹窗，方便反复调试。',
           ),
           actions: [
             TextButton(
@@ -141,9 +144,18 @@ class _MainMenuPageState extends State<MainMenuPage>
     return offset & renderObject.size;
   }
 
+  Rect? _touchRectForKey(GlobalKey key) {
+    final rect = _rectForKey(key);
+    if (rect == null) return null;
+
+    final touchSize = rect.height.clamp(48.0, 64.0).toDouble();
+    final top = rect.top + (rect.height - touchSize) / 2;
+    return Rect.fromLTWH(rect.left + 12, top, touchSize, touchSize);
+  }
+
   Rect _settingsSwipeRect(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    return Rect.fromLTWH(size.width - 58, 0, 58, size.height);
+    return Rect.fromLTWH(size.width - 64, size.height * 0.36, 56, 112);
   }
 
   List<PageGuideTarget> _homeGuideTargets(BuildContext context) {
@@ -158,7 +170,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       String? actionLabel,
       VoidCallback? onAction,
     }) {
-      final rect = _rectForKey(key);
+      final rect = _touchRectForKey(key);
       if (rect == null) return;
       targets.add(
         PageGuideTarget(
@@ -245,7 +257,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       String? actionLabel,
       VoidCallback? onAction,
     }) {
-      final rect = _rectForKey(key);
+      final rect = _touchRectForKey(key);
       if (rect == null) return;
       targets.add(
         PageGuideTarget(
@@ -260,22 +272,9 @@ class _MainMenuPageState extends State<MainMenuPage>
       );
     }
 
-    final panelRect = _rectForKey(_settingsPanelKey);
-    if (panelRect != null) {
-      targets.add(
-        PageGuideTarget(
-          id: 'settings_panel',
-          order: 1,
-          rect: panelRect,
-          title: '设置页',
-          description: '这里是设置页。应用配置、教程入口和数据管理都集中在这里。第一次使用时，最重要的是先完成 API 配置。',
-        ),
-      );
-    }
-
     addTarget(
       key: _apiConfigTileKey,
-      order: 2,
+      order: 1,
       id: 'settings_api_config',
       title: 'API 配置',
       description: '这里用于填写 API Key、服务地址和模型。没有 API 配置时，聊天通常无法正常回复。',
@@ -290,28 +289,52 @@ class _MainMenuPageState extends State<MainMenuPage>
     );
     addTarget(
       key: _userSettingsTileKey,
-      order: 3,
+      order: 2,
       id: 'settings_user',
       title: '用户设定',
       description: '这里用于设置“你是谁”。角色会参考这些信息与你互动。新手可以先跳过，等开始聊天后再完善。',
+      actionLabel: '进入用户设定',
+      onAction: () {
+        _finishGuide();
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const UserSettingsPage()),
+        );
+      },
     );
     addTarget(
       key: _promptSettingsTileKey,
-      order: 4,
+      order: 3,
       id: 'settings_prompt',
       title: 'Prompt 策略',
       description: '这里是全局默认 Prompt 策略。它属于进阶功能，熟悉基础聊天后再调整会更稳。',
+      actionLabel: '进入 Prompt 策略',
+      onAction: () {
+        _finishGuide();
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const PromptSettingsPage()),
+        );
+      },
     );
     addTarget(
       key: _backupTileKey,
-      order: 5,
+      order: 4,
       id: 'settings_backup',
       title: '备份与恢复',
       description: '这里用于备份和恢复应用数据。大量编辑角色或升级应用前，建议先备份。',
+      actionLabel: '进入备份与恢复',
+      onAction: () {
+        _finishGuide();
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const BackupRestorePage()),
+        );
+      },
     );
     addTarget(
       key: _tutorialTileKey,
-      order: 6,
+      order: 5,
       id: 'settings_tutorial',
       title: '教程与导览',
       description: '以后如果忘记某个操作，可以从这里重新打开页面导览和推荐路线。',
@@ -351,7 +374,8 @@ class _MainMenuPageState extends State<MainMenuPage>
   void _onHorizontalDragEnd(DragEndDetails details) {
     if (details.primaryVelocity != null && details.primaryVelocity! < -300) {
       _openPanel();
-    } else if (details.primaryVelocity != null && details.primaryVelocity! > 300) {
+    } else if (details.primaryVelocity != null &&
+        details.primaryVelocity! > 300) {
       _closePanel();
     } else if (_animationController.value > 0.3) {
       _openPanel();
@@ -374,8 +398,9 @@ class _MainMenuPageState extends State<MainMenuPage>
         onHorizontalDragUpdate: _guidePhase == _MainGuidePhase.none
             ? _onHorizontalDragUpdate
             : null,
-        onHorizontalDragEnd:
-        _guidePhase == _MainGuidePhase.none ? _onHorizontalDragEnd : null,
+        onHorizontalDragEnd: _guidePhase == _MainGuidePhase.none
+            ? _onHorizontalDragEnd
+            : null,
         child: Stack(
           children: [
             Positioned(
@@ -422,7 +447,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) =>
-                                        const CharacterLibraryPage(),
+                                            const CharacterLibraryPage(),
                                       ),
                                     );
                                   },
@@ -438,7 +463,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) =>
-                                        const WorldBookLibraryPage(),
+                                            const WorldBookLibraryPage(),
                                       ),
                                     );
                                   },
@@ -454,7 +479,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) =>
-                                        const BackgroundLibraryPage(),
+                                            const BackgroundLibraryPage(),
                                       ),
                                     );
                                   },

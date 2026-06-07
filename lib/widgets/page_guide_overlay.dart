@@ -8,6 +8,7 @@ class PageGuideTarget {
   final String description;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final VoidCallback? onSwipeLeft;
 
   const PageGuideTarget({
     required this.id,
@@ -17,6 +18,7 @@ class PageGuideTarget {
     required this.description,
     this.actionLabel,
     this.onAction,
+    this.onSwipeLeft,
   });
 }
 
@@ -73,12 +75,40 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
   }
 
   void _handleTargetTap(PageGuideTarget target) {
+    if (target.onSwipeLeft != null) {
+      _showTarget(target);
+      return;
+    }
+
     if (target.onAction != null) {
       target.onAction!();
       return;
     }
 
     _showTarget(target);
+  }
+
+  double _dragDx = 0.0;
+
+  void _handleDragStart(PageGuideTarget target) {
+    if (target.onSwipeLeft == null) return;
+    _dragDx = 0.0;
+  }
+
+  void _handleDragUpdate(PageGuideTarget target, DragUpdateDetails details) {
+    if (target.onSwipeLeft == null) return;
+    _dragDx += details.delta.dx;
+  }
+
+  void _handleDragEnd(PageGuideTarget target, DragEndDetails details) {
+    if (target.onSwipeLeft == null) return;
+
+    final velocity = details.primaryVelocity ?? 0.0;
+    if (_dragDx < -36 || velocity < -260) {
+      target.onSwipeLeft!();
+    } else {
+      _showTarget(target);
+    }
   }
 
   @override
@@ -106,10 +136,7 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
             left: 16,
             right: 16,
             top: MediaQuery.of(context).padding.top + 8,
-            child: _GuideTopBar(
-              title: widget.title,
-              onExit: widget.onExit,
-            ),
+            child: _GuideTopBar(title: widget.title, onExit: widget.onExit),
           ),
           for (final target in targets) ...[
             Positioned.fromRect(
@@ -154,10 +181,7 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
   double _badgeTop(BuildContext context, Rect rect) {
     final height = MediaQuery.of(context).size.height;
     return (rect.top - 12)
-        .clamp(
-      MediaQuery.of(context).padding.top + 58.0,
-      height - 64.0,
-    )
+        .clamp(MediaQuery.of(context).padding.top + 58.0, height - 64.0)
         .toDouble();
   }
 }
@@ -166,10 +190,7 @@ class _GuideTopBar extends StatelessWidget {
   final String title;
   final VoidCallback onExit;
 
-  const _GuideTopBar({
-    required this.title,
-    required this.onExit,
-  });
+  const _GuideTopBar({required this.title, required this.onExit});
 
   @override
   Widget build(BuildContext context) {
@@ -224,12 +245,7 @@ class _GuideHintCard extends StatelessWidget {
           children: [
             const Icon(Icons.touch_app_outlined),
             const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                hint,
-                style: const TextStyle(height: 1.35),
-              ),
-            ),
+            Expanded(child: Text(hint, style: const TextStyle(height: 1.35))),
           ],
         ),
       ),
@@ -241,10 +257,7 @@ class _PositionedTargetCard extends StatelessWidget {
   final PageGuideTarget target;
   final VoidCallback onClose;
 
-  const _PositionedTargetCard({
-    required this.target,
-    required this.onClose,
-  });
+  const _PositionedTargetCard({required this.target, required this.onClose});
 
   @override
   Widget build(BuildContext context) {
@@ -268,10 +281,7 @@ class _PositionedTargetCard extends StatelessWidget {
       left: left,
       top: top,
       width: cardWidth,
-      child: _GuideTargetCard(
-        target: target,
-        onClose: onClose,
-      ),
+      child: _GuideTargetCard(target: target, onClose: onClose),
     );
   }
 }
@@ -280,10 +290,7 @@ class _GuideTargetCard extends StatelessWidget {
   final PageGuideTarget target;
   final VoidCallback onClose;
 
-  const _GuideTargetCard({
-    required this.target,
-    required this.onClose,
-  });
+  const _GuideTargetCard({required this.target, required this.onClose});
 
   @override
   Widget build(BuildContext context) {
@@ -339,10 +346,7 @@ class _GuideNumberBadge extends StatelessWidget {
   final int number;
   final bool small;
 
-  const _GuideNumberBadge({
-    required this.number,
-    this.small = false,
-  });
+  const _GuideNumberBadge({required this.number, this.small = false});
 
   @override
   Widget build(BuildContext context) {
@@ -355,11 +359,7 @@ class _GuideNumberBadge extends StatelessWidget {
         color: Theme.of(context).colorScheme.primary,
         shape: BoxShape.circle,
         boxShadow: const [
-          BoxShadow(
-            color: Colors.black38,
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 2)),
         ],
       ),
       child: Text(
@@ -378,10 +378,7 @@ class _GuideMaskPainter extends CustomPainter {
   final List<Rect> targets;
   final double pulseValue;
 
-  const _GuideMaskPainter({
-    required this.targets,
-    required this.pulseValue,
-  });
+  const _GuideMaskPainter({required this.targets, required this.pulseValue});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -415,6 +412,7 @@ class _GuideMaskPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _GuideMaskPainter oldDelegate) {
-    return oldDelegate.targets != targets || oldDelegate.pulseValue != pulseValue;
+    return oldDelegate.targets != targets ||
+        oldDelegate.pulseValue != pulseValue;
   }
 }
