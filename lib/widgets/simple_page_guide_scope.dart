@@ -59,18 +59,6 @@ class _SimplePageGuideScopeState extends State<SimplePageGuideScope> {
     );
   }
 
-  Rect _pageInfoRect(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final top = MediaQuery.of(context).padding.top;
-
-    return Rect.fromLTWH(
-      80,
-      top + 14,
-      size.width - 160,
-      32,
-    );
-  }
-
   List<PageGuideTarget> _targets(BuildContext context) {
     return [
       PageGuideTarget(
@@ -81,13 +69,6 @@ class _SimplePageGuideScopeState extends State<SimplePageGuideScope> {
         description: '点击这里返回上一页。返回只会切换页面，不会关闭教程模式。',
         actionLabel: '返回上一页',
         onAction: () => Navigator.of(context).maybePop(),
-      ),
-      PageGuideTarget(
-        id: 'page_info',
-        order: 2,
-        rect: _pageInfoRect(context),
-        title: widget.pageName,
-        description: widget.pageDescription,
       ),
     ];
   }
@@ -106,7 +87,8 @@ class _SimplePageGuideScopeState extends State<SimplePageGuideScope> {
             Positioned.fill(
               child: PageGuideOverlay(
                 title: '${widget.pageName}导览',
-                hint: '点击高光区域执行对应操作；点击紫色编号展开说明。点击系统返回键或高亮返回按钮可返回上一页；顶部“退出”才会结束教程。',
+                hint: '${widget.pageDescription}\n\n'
+                    '点击高亮返回按钮或系统返回键可返回上一页；顶部“退出”才会结束教程。',
                 targets: _targets(context),
                 onExit: _exitGuide,
               ),
