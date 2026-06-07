@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-
+import 'dart:math' as math;
+import 'package:flutter/rendering.dart';
 import '../services/background_service.dart';
 import '../widgets/page_guide_overlay.dart';
 import 'api_config_page.dart';
@@ -164,16 +165,65 @@ class _MainMenuPageState extends State<MainMenuPage>
   }
 
   Rect? _textHighlightRectForKey(GlobalKey key) {
+    final context = key.currentContext;
+    if (context == null) return null;
+
+    final renderObject = context.findRenderObject();
+    const height = 30.0;
+    const horizontalPadding = 16.0;
+
+    if (renderObject is RenderParagraph && renderObject.hasSize) {
+      final plainText = renderObject.text.toPlainText();
+
+      if (plainText.isNotEmpty) {
+        final boxes = renderObject.getBoxesForSelection(
+          TextSelection(
+            baseOffset: 0,
+            extentOffset: plainText.length,
+          ),
+        );
+
+        if (boxes.isNotEmpty) {
+          var left = boxes.first.left;
+          var top = boxes.first.top;
+          var right = boxes.first.right;
+          var bottom = boxes.first.bottom;
+
+          for (final box in boxes.skip(1)) {
+            left = math.min(left, box.left);
+            top = math.min(top, box.top);
+            right = math.max(right, box.right);
+            bottom = math.max(bottom, box.bottom);
+          }
+
+          final globalTopLeft = renderObject.localToGlobal(Offset(left, top));
+          final globalBottomRight =
+          renderObject.localToGlobal(Offset(right, bottom));
+          final textRect = Rect.fromLTRB(
+            globalTopLeft.dx,
+            globalTopLeft.dy,
+            globalBottomRight.dx,
+            globalBottomRight.dy,
+          );
+
+          return Rect.fromLTWH(
+            textRect.left - horizontalPadding,
+            textRect.center.dy - height / 2,
+            textRect.width + horizontalPadding * 2,
+            height,
+          );
+        }
+      }
+    }
+
     final rect = _rectForKey(key);
     if (rect == null) return null;
 
-    const height = 30.0;
-    const horizontalPadding = 16.0;
     final top = rect.top + (rect.height - height) / 2;
     return Rect.fromLTWH(
       rect.left - horizontalPadding,
       top,
-      rect.width + horizontalPadding * 2,
+      math.min(rect.width + horizontalPadding * 2, 220),
       height,
     );
   }
