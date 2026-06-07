@@ -49,6 +49,10 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
   static const double _badgeSize = 30.0;
   static const double _expandedCardWidth = 260.0;
 
+  /// 本次 App 运行期间记住提示图标位置。
+  /// 这样进入不同页面时，提示图标不会每页乱跳。
+  static Offset? _rememberedPanelOffset;
+
   PageGuideTarget? _selectedTarget;
   late final AnimationController _pulseController;
   double _dragDx = 0.0;
@@ -111,14 +115,19 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
       final size = MediaQuery.of(context).size;
       final padding = MediaQuery.of(context).padding;
 
+      final defaultOffset = Offset(
+        size.width - 58,
+        (size.height * 0.58).clamp(
+          padding.top + 16,
+          size.height - padding.bottom - 58,
+        ),
+      );
+
+      final initialOffset = _rememberedPanelOffset ?? defaultOffset;
+
       setState(() {
-        _panelOffset = Offset(
-          size.width - 58,
-          (size.height * 0.58).clamp(
-            padding.top + 16,
-            size.height - padding.bottom - 58,
-          ),
-        );
+        _panelOffset = _clampPanelOffset(initialOffset);
+        _rememberedPanelOffset = _panelOffset;
         _panelPositionInitialized = true;
       });
     });
@@ -136,15 +145,22 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
 
     final snapLeft = leftDistance <= rightDistance;
 
+    final nextOffset = Offset(
+      snapLeft ? 8 : size.width - panelWidth - 8,
+      _panelOffset.dy
+          .clamp(
+        padding.top + 8,
+        size.height - padding.bottom - panelHeight - 8,
+      )
+          .toDouble(),
+    );
+
     setState(() {
-      _panelOffset = Offset(
-        snapLeft ? 8 : size.width - panelWidth - 8,
-        _panelOffset.dy.clamp(
-          padding.top + 8,
-          size.height - padding.bottom - panelHeight - 8,
-        ),
-      );
+      _panelOffset = nextOffset;
     });
+
+    // 记住吸附后的稳定位置。
+    _rememberedPanelOffset = nextOffset;
   }
 
   void _handleDragStart(PageGuideTarget target) {
@@ -274,9 +290,15 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
             },
             onExit: widget.onExit,
             onDragUpdate: (delta) {
+              final nextOffset = _clampPanelOffset(_panelOffset + delta);
+
               setState(() {
-                _panelOffset = _clampPanelOffset(_panelOffset + delta);
+                _panelOffset = nextOffset;
               });
+
+              // 拖动过程中也记录当前位置。
+              // 松手后 _snapPanelToEdge 会再记录最终吸附位置。
+              _rememberedPanelOffset = nextOffset;
             },
           ),
         ],
