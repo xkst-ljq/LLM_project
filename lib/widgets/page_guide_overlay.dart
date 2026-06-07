@@ -256,9 +256,21 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
             offset: _panelOffset,
             onDragEnd: _snapPanelToEdge,
             onToggle: () {
-              setState(() {
-                _panelExpanded = !_panelExpanded;
-              });
+              if (_panelExpanded) {
+                setState(() {
+                  _panelExpanded = false;
+                });
+
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _snapPanelToEdge();
+                });
+              } else {
+                _snapPanelToEdge();
+
+                setState(() {
+                  _panelExpanded = true;
+                });
+              }
             },
             onExit: widget.onExit,
             onDragUpdate: (delta) {
@@ -345,8 +357,10 @@ class _DraggableGuidePanel extends StatelessWidget {
       left: left,
       top: top,
       child: GestureDetector(
-        onPanUpdate: (details) => onDragUpdate(details.delta),
-        onPanEnd: (_) => onDragEnd(),
+        onPanUpdate: expanded
+            ? null
+            : (details) => onDragUpdate(details.delta),
+        onPanEnd: expanded ? null : (_) => onDragEnd(),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
           child: expanded
