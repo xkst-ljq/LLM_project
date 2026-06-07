@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import '../services/background_service.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/simple_page_guide_scope.dart';
@@ -533,7 +532,7 @@ class _MainMenuPageState extends State<MainMenuPage>
 
     return PopScope(
       canPop: _guidePhase == _MainGuidePhase.none,
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         if (_guidePhase != _MainGuidePhase.none) {
           ScaffoldMessenger.of(context).showSnackBar(
