@@ -148,14 +148,19 @@ class _MainMenuPageState extends State<MainMenuPage>
     final rect = _rectForKey(key);
     if (rect == null) return null;
 
-    final touchSize = rect.height.clamp(48.0, 64.0).toDouble();
+    final touchSize = rect.height.clamp(44.0, 52.0).toDouble();
     final top = rect.top + (rect.height - touchSize) / 2;
-    return Rect.fromLTWH(rect.left + 12, top, touchSize, touchSize);
+    return Rect.fromLTWH(rect.left + 22, top, touchSize, touchSize);
   }
 
   Rect _settingsSwipeRect(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    return Rect.fromLTWH(size.width - 64, size.height * 0.36, 56, 112);
+    return Rect.fromLTWH(
+      size.width * 0.46,
+      size.height * 0.54,
+      size.width * 0.42,
+      30,
+    );
   }
 
   List<PageGuideTarget> _homeGuideTargets(BuildContext context) {
@@ -221,6 +226,14 @@ class _MainMenuPageState extends State<MainMenuPage>
       id: 'home_world_book',
       title: '世界书库',
       description: '世界书用于保存背景设定、地点、组织、术语等资料。刚开始使用时可以先不用管，熟悉聊天后再学习。',
+      actionLabel: '进入世界书库',
+      onAction: () {
+        _finishGuide();
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const WorldBookLibraryPage()),
+        );
+      },
     );
     addTarget(
       key: _backgroundTileKey,
@@ -228,6 +241,14 @@ class _MainMenuPageState extends State<MainMenuPage>
       id: 'home_background',
       title: '背景图库',
       description: '背景图库用于管理聊天背景和页面背景。它属于外观相关功能，不影响基础聊天流程。',
+      actionLabel: '进入背景图库',
+      onAction: () {
+        _finishGuide();
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const BackgroundLibraryPage()),
+        );
+      },
     );
 
     targets.add(
@@ -236,9 +257,8 @@ class _MainMenuPageState extends State<MainMenuPage>
         order: 5,
         rect: _settingsSwipeRect(context),
         title: '侧滑打开设置页',
-        description: '在主页向左滑动，可以打开右侧设置页。API 配置、用户设定、Prompt 策略、备份和教程入口都在设置页中。',
-        actionLabel: '演示打开设置页',
-        onAction: _startSettingsGuide,
+        description: '请按住这个细长高光框向左滑动，来打开右侧设置页。API 配置、用户设定、Prompt 策略、备份和教程入口都在设置页中。',
+        onSwipeLeft: _startSettingsGuide,
       ),
     );
 
@@ -513,14 +533,14 @@ class _MainMenuPageState extends State<MainMenuPage>
             if (_guidePhase == _MainGuidePhase.home)
               PageGuideOverlay(
                 title: '主页导览',
-                hint: '点击高亮区域查看说明。推荐先了解“聊天”“角色库”，再通过右侧边缘的侧滑导览打开设置页。',
+                hint: '点击 1-4 的高光区域会进入对应页面；点击紫色编号查看说明。第 5 项请在细长高光框内向左滑动来打开设置页。',
                 targets: _homeGuideTargets(context),
                 onExit: _finishGuide,
               ),
             if (_guidePhase == _MainGuidePhase.settings)
               PageGuideOverlay(
                 title: '设置页导览',
-                hint: '点击高亮区域查看说明。第一次使用时，建议先了解 API 配置和教程与导览入口。',
+                hint: '点击高光区域会进入对应页面；点击紫色编号查看说明。第一次使用时，建议先了解 API 配置和教程与导览入口。',
                 targets: _settingsGuideTargets(context),
                 onExit: _finishGuide,
               ),

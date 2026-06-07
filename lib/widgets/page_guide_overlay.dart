@@ -140,16 +140,25 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
           ),
           for (final target in targets) ...[
             Positioned.fromRect(
-              rect: target.rect.inflate(4),
+              rect: target.rect.inflate(3),
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => _handleTargetTap(target),
+                onHorizontalDragStart: target.onSwipeLeft == null
+                    ? null
+                    : (_) => _handleDragStart(target),
+                onHorizontalDragUpdate: target.onSwipeLeft == null
+                    ? null
+                    : (details) => _handleDragUpdate(target, details),
+                onHorizontalDragEnd: target.onSwipeLeft == null
+                    ? null
+                    : (details) => _handleDragEnd(target, details),
                 child: const SizedBox.expand(),
               ),
             ),
             Positioned(
-              left: _badgeLeft(context, target.rect),
-              top: _badgeTop(context, target.rect),
+              left: _badgeLeft(context, target),
+              top: _badgeTop(context, target),
               child: GestureDetector(
                 onTap: () => _showTarget(target),
                 child: _GuideNumberBadge(number: target.order),
@@ -173,15 +182,22 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
     );
   }
 
-  double _badgeLeft(BuildContext context, Rect rect) {
+  double _badgeLeft(BuildContext context, PageGuideTarget target) {
     final width = MediaQuery.of(context).size.width;
-    return (rect.left - 12).clamp(8.0, width - 48.0).toDouble();
+    final rect = target.rect;
+
+    if (target.onSwipeLeft != null) {
+      return (rect.left - 10).clamp(8.0, width - 40.0).toDouble();
+    }
+
+    final stairOffset = ((target.order - 1) % 4) * 14.0;
+    return (rect.left - 10 + stairOffset).clamp(8.0, width - 40.0).toDouble();
   }
 
-  double _badgeTop(BuildContext context, Rect rect) {
+  double _badgeTop(BuildContext context, PageGuideTarget target) {
     final height = MediaQuery.of(context).size.height;
-    return (rect.top - 12)
-        .clamp(MediaQuery.of(context).padding.top + 58.0, height - 64.0)
+    return (target.rect.top - 10)
+        .clamp(MediaQuery.of(context).padding.top + 56.0, height - 56.0)
         .toDouble();
   }
 }
@@ -238,6 +254,7 @@ class _GuideHintCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 8,
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.86),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -296,6 +313,7 @@ class _GuideTargetCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 12,
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.88),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -350,7 +368,7 @@ class _GuideNumberBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = small ? 30.0 : 40.0;
+    final size = small ? 24.0 : 30.0;
     return Container(
       width: size,
       height: size,
@@ -359,7 +377,7 @@ class _GuideNumberBadge extends StatelessWidget {
         color: Theme.of(context).colorScheme.primary,
         shape: BoxShape.circle,
         boxShadow: const [
-          BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 2)),
+          BoxShadow(color: Colors.black38, blurRadius: 7, offset: Offset(0, 2)),
         ],
       ),
       child: Text(
@@ -367,7 +385,7 @@ class _GuideNumberBadge extends StatelessWidget {
         style: TextStyle(
           color: Theme.of(context).colorScheme.onPrimary,
           fontWeight: FontWeight.bold,
-          fontSize: small ? 13 : 17,
+          fontSize: small ? 11 : 13,
         ),
       ),
     );
@@ -388,7 +406,7 @@ class _GuideMaskPainter extends CustomPainter {
 
     for (final rect in targets) {
       overlayPath.addRRect(
-        RRect.fromRectAndRadius(rect.inflate(4), const Radius.circular(14)),
+        RRect.fromRectAndRadius(rect.inflate(3), const Radius.circular(14)),
       );
     }
 
@@ -399,12 +417,12 @@ class _GuideMaskPainter extends CustomPainter {
 
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6 + pulseValue * 1.2
+      ..strokeWidth = 1.4 + pulseValue * 1.1
       ..color = Colors.white.withValues(alpha: 0.9);
 
     for (final rect in targets) {
       canvas.drawRRect(
-        RRect.fromRectAndRadius(rect.inflate(4), const Radius.circular(14)),
+        RRect.fromRectAndRadius(rect.inflate(3), const Radius.circular(14)),
         borderPaint,
       );
     }
