@@ -53,6 +53,10 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
   late final AnimationController _pulseController;
   double _dragDx = 0.0;
 
+  bool _panelExpanded = false;
+  bool _panelPositionInitialized = false;
+  Offset _panelOffset = Offset.zero;
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +66,14 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
       lowerBound: 0.0,
       upperBound: 1.0,
     )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final size = MediaQuery.of(context).size;
+      setState(() {
+        _panelOffset = Offset(size.width - 64, size.height * 0.62);
+      });
+    });
   }
 
   @override
@@ -88,6 +100,51 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
     }
 
     _toggleTarget(target);
+  }
+
+  void _ensurePanelPosition() {
+    if (_panelPositionInitialized) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _panelPositionInitialized) return;
+
+      final size = MediaQuery.of(context).size;
+      final padding = MediaQuery.of(context).padding;
+
+      setState(() {
+        _panelOffset = Offset(
+          size.width - 58,
+          (size.height * 0.58).clamp(
+            padding.top + 16,
+            size.height - padding.bottom - 58,
+          ),
+        );
+        _panelPositionInitialized = true;
+      });
+    });
+  }
+
+  void _snapPanelToEdge() {
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+
+    final panelWidth = _panelExpanded ? 284.0 : 46.0;
+    final panelHeight = _panelExpanded ? 190.0 : 46.0;
+
+    final leftDistance = _panelOffset.dx;
+    final rightDistance = size.width - (_panelOffset.dx + panelWidth);
+
+    final snapLeft = leftDistance <= rightDistance;
+
+    setState(() {
+      _panelOffset = Offset(
+        snapLeft ? 8 : size.width - panelWidth - 8,
+        _panelOffset.dy.clamp(
+          padding.top + 8,
+          size.height - padding.bottom - panelHeight - 8,
+        ),
+      );
+    });
   }
 
   void _handleDragStart(PageGuideTarget target) {
@@ -117,8 +174,28 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
     _toggleTarget(target);
   }
 
+  Offset _clampPanelOffset(Offset offset) {
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+
+    final panelWidth = _panelExpanded ? 284.0 : 46.0;
+    final panelHeight = _panelExpanded ? 190.0 : 46.0;
+
+    return Offset(
+      offset.dx.clamp(8.0, size.width - panelWidth - 8).toDouble(),
+      offset.dy
+          .clamp(
+        padding.top + 8,
+        size.height - padding.bottom - panelHeight - 8,
+      )
+          .toDouble(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensurePanelPosition();
+
     final targets = widget.targets;
 
     return Material(
@@ -137,12 +214,6 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
                 );
               },
             ),
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            top: MediaQuery.of(context).padding.top + 8,
-            child: _GuideTopBar(title: widget.title, onExit: widget.onExit),
           ),
           for (final target in targets)
             Positioned.fromRect(
@@ -178,13 +249,24 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
               badgeRect: _badgeRect(context, _selectedTarget!),
               onClose: () => _toggleTarget(_selectedTarget!),
             ),
-          if (_selectedTarget == null)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 16 + MediaQuery.of(context).padding.bottom,
-              child: _GuideHintCard(hint: widget.hint),
-            ),
+          _DraggableGuidePanel(
+            title: widget.title,
+            hint: widget.hint,
+            expanded: _panelExpanded,
+            offset: _panelOffset,
+            onDragEnd: _snapPanelToEdge,
+            onToggle: () {
+              setState(() {
+                _panelExpanded = !_panelExpanded;
+              });
+            },
+            onExit: widget.onExit,
+            onDragUpdate: (delta) {
+              setState(() {
+                _panelOffset = _clampPanelOffset(_panelOffset + delta);
+              });
+            },
+          ),
         ],
       ),
     );
@@ -217,67 +299,154 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
   }
 }
 
-class _GuideTopBar extends StatelessWidget {
+class _DraggableGuidePanel extends StatelessWidget {
   final String title;
+  final String hint;
+  final bool expanded;
+  final Offset offset;
+  final VoidCallback onToggle;
   final VoidCallback onExit;
+  final ValueChanged<Offset> onDragUpdate;
+  final VoidCallback onDragEnd;
 
-  const _GuideTopBar({required this.title, required this.onExit});
+  const _DraggableGuidePanel({
+    required this.title,
+    required this.hint,
+    required this.expanded,
+    required this.offset,
+    required this.onToggle,
+    required this.onExit,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.tips_and_updates_outlined,
-              color: Colors.white,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: onExit,
-              child: const Text('退出', style: TextStyle(color: Colors.white)),
-            ),
-          ],
+    final screenSize = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    const expandedWidth = 284.0;
+    const expandedHeight = 190.0;
+
+    final attachedLeft = offset.dx < screenSize.width / 2;
+
+    final left = expanded
+        ? (attachedLeft ? 8.0 : screenSize.width - expandedWidth - 8)
+        : offset.dx;
+
+    final top = expanded
+        ? offset.dy
+        .clamp(
+      padding.top + 8,
+      screenSize.height - padding.bottom - expandedHeight - 8,
+    )
+        .toDouble()
+        : offset.dy;
+    return Positioned(
+      left: left,
+      top: top,
+      child: GestureDetector(
+        onPanUpdate: (details) => onDragUpdate(details.delta),
+        onPanEnd: (_) => onDragEnd(),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: expanded
+              ? _buildExpanded(context)
+              : _buildCollapsed(context),
         ),
       ),
     );
   }
-}
 
-class _GuideHintCard extends StatelessWidget {
-  final String hint;
+  Widget _buildCollapsed(BuildContext context) {
+    return GestureDetector(
+      key: const ValueKey('guide_collapsed'),
+      onTap: onToggle,
+      child: Material(
+        elevation: 10,
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.76),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.20),
+            ),
+          ),
+          child: const Icon(
+            Icons.tips_and_updates_outlined,
+            color: Colors.white,
+            size: 24,
+          ),
+        ),
+      ),
+    );
+  }
 
-  const _GuideHintCard({required this.hint});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 8,
-      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.86),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
+  Widget _buildExpanded(BuildContext context) {
+    return Material(
+      key: const ValueKey('guide_expanded'),
+      elevation: 12,
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: 284,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.90),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.18),
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black38,
+              blurRadius: 14,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.touch_app_outlined),
-            const SizedBox(width: 10),
-            Expanded(child: Text(hint, style: const TextStyle(height: 1.35))),
+            Row(
+              children: [
+                const Icon(Icons.tips_and_updates_outlined, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '缩小',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onToggle,
+                  icon: const Icon(Icons.remove),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              hint,
+              style: const TextStyle(fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onExit,
+                icon: const Icon(Icons.close, size: 16),
+                label: const Text('退出教程'),
+              ),
+            ),
           ],
         ),
       ),
