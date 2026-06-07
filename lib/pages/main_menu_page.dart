@@ -37,6 +37,10 @@ class _MainMenuPageState extends State<MainMenuPage>
   final _characterTileKey = GlobalKey();
   final _worldBookTileKey = GlobalKey();
   final _backgroundTileKey = GlobalKey();
+  final _chatTextKey = GlobalKey();
+  final _characterTextKey = GlobalKey();
+  final _worldBookTextKey = GlobalKey();
+  final _backgroundTextKey = GlobalKey();
 
   final _settingsPanelKey = GlobalKey();
   final _apiConfigTileKey = GlobalKey();
@@ -44,6 +48,11 @@ class _MainMenuPageState extends State<MainMenuPage>
   final _promptSettingsTileKey = GlobalKey();
   final _backupTileKey = GlobalKey();
   final _tutorialTileKey = GlobalKey();
+  final _apiConfigTextKey = GlobalKey();
+  final _userSettingsTextKey = GlobalKey();
+  final _promptSettingsTextKey = GlobalKey();
+  final _backupTextKey = GlobalKey();
+  final _tutorialTextKey = GlobalKey();
 
   @override
   void initState() {
@@ -154,17 +163,19 @@ class _MainMenuPageState extends State<MainMenuPage>
     return offset & renderObject.size;
   }
 
-  Rect? _textRectForKey(
-    GlobalKey key, {
-    required double leftInset,
-    required double width,
-  }) {
+  Rect? _textHighlightRectForKey(GlobalKey key) {
     final rect = _rectForKey(key);
     if (rect == null) return null;
 
     const height = 30.0;
+    const horizontalPadding = 16.0;
     final top = rect.top + (rect.height - height) / 2;
-    return Rect.fromLTWH(rect.left + leftInset, top, width, height);
+    return Rect.fromLTWH(
+      rect.left - horizontalPadding,
+      top,
+      rect.width + horizontalPadding * 2,
+      height,
+    );
   }
 
 
@@ -200,7 +211,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       String? actionLabel,
       VoidCallback? onAction,
     }) {
-      final rect = _textRectForKey(key, leftInset: 118, width: 150);
+      final rect = _textHighlightRectForKey(key);
       if (rect == null) return;
       targets.add(
         PageGuideTarget(
@@ -216,7 +227,7 @@ class _MainMenuPageState extends State<MainMenuPage>
     }
 
     addTarget(
-      key: _chatTileKey,
+      key: _chatTextKey,
       order: 1,
       id: 'home_chat',
       title: '聊天',
@@ -231,7 +242,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       },
     );
     addTarget(
-      key: _characterTileKey,
+      key: _characterTextKey,
       order: 2,
       id: 'home_character_library',
       title: '角色库',
@@ -246,7 +257,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       },
     );
     addTarget(
-      key: _worldBookTileKey,
+      key: _worldBookTextKey,
       order: 3,
       id: 'home_world_book',
       title: '世界书库',
@@ -261,7 +272,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       },
     );
     addTarget(
-      key: _backgroundTileKey,
+      key: _backgroundTextKey,
       order: 4,
       id: 'home_background',
       title: '背景图库',
@@ -302,7 +313,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       String? actionLabel,
       VoidCallback? onAction,
     }) {
-      final rect = _textRectForKey(key, leftInset: 92, width: 180);
+      final rect = _textHighlightRectForKey(key);
       if (rect == null) return;
       targets.add(
         PageGuideTarget(
@@ -318,7 +329,7 @@ class _MainMenuPageState extends State<MainMenuPage>
     }
 
     addTarget(
-      key: _apiConfigTileKey,
+      key: _apiConfigTextKey,
       order: 1,
       id: 'settings_api_config',
       title: 'API 配置',
@@ -333,7 +344,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       },
     );
     addTarget(
-      key: _userSettingsTileKey,
+      key: _userSettingsTextKey,
       order: 2,
       id: 'settings_user',
       title: '用户设定',
@@ -348,7 +359,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       },
     );
     addTarget(
-      key: _promptSettingsTileKey,
+      key: _promptSettingsTextKey,
       order: 3,
       id: 'settings_prompt',
       title: 'Prompt 策略',
@@ -363,7 +374,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       },
     );
     addTarget(
-      key: _backupTileKey,
+      key: _backupTextKey,
       order: 4,
       id: 'settings_backup',
       title: '备份与恢复',
@@ -378,7 +389,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       },
     );
     addTarget(
-      key: _tutorialTileKey,
+      key: _tutorialTextKey,
       order: 5,
       id: 'settings_tutorial',
       title: '教程与导览',
@@ -482,7 +493,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                                 key: _chatTileKey,
                                 child: ListTile(
                                   leading: const Icon(Icons.chat),
-                                  title: const Text('聊天'),
+                                  title: Text('聊天', key: _chatTextKey),
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -497,7 +508,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                                 key: _characterTileKey,
                                 child: ListTile(
                                   leading: const Icon(Icons.people),
-                                  title: const Text('角色库'),
+                                  title: Text('角色库', key: _characterTextKey),
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -513,7 +524,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                                 key: _worldBookTileKey,
                                 child: ListTile(
                                   leading: const Icon(Icons.book),
-                                  title: const Text('世界书库'),
+                                  title: Text('世界书库', key: _worldBookTextKey),
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -529,7 +540,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                                 key: _backgroundTileKey,
                                 child: ListTile(
                                   leading: const Icon(Icons.image),
-                                  title: const Text('背景图库'),
+                                  title: Text('背景图库', key: _backgroundTextKey),
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -560,6 +571,11 @@ class _MainMenuPageState extends State<MainMenuPage>
                         promptSettingsTileKey: _promptSettingsTileKey,
                         backupTileKey: _backupTileKey,
                         tutorialTileKey: _tutorialTileKey,
+                        apiConfigTextKey: _apiConfigTextKey,
+                        userSettingsTextKey: _userSettingsTextKey,
+                        promptSettingsTextKey: _promptSettingsTextKey,
+                        backupTextKey: _backupTextKey,
+                        tutorialTextKey: _tutorialTextKey,
                       ),
                     ),
                   ),

@@ -14,6 +14,11 @@ class SettingsMenuPage extends StatelessWidget {
   final GlobalKey? promptSettingsTileKey;
   final GlobalKey? backupTileKey;
   final GlobalKey? tutorialTileKey;
+  final GlobalKey? apiConfigTextKey;
+  final GlobalKey? userSettingsTextKey;
+  final GlobalKey? promptSettingsTextKey;
+  final GlobalKey? backupTextKey;
+  final GlobalKey? tutorialTextKey;
 
   const SettingsMenuPage({
     super.key,
@@ -24,6 +29,11 @@ class SettingsMenuPage extends StatelessWidget {
     this.promptSettingsTileKey,
     this.backupTileKey,
     this.tutorialTileKey,
+    this.apiConfigTextKey,
+    this.userSettingsTextKey,
+    this.promptSettingsTextKey,
+    this.backupTextKey,
+    this.tutorialTextKey,
   });
 
   @override
@@ -44,7 +54,7 @@ class SettingsMenuPage extends StatelessWidget {
             key: apiConfigTileKey,
             child: ListTile(
               leading: const Icon(Icons.api),
-              title: const Text('API 配置'),
+              title: Text('API 配置', key: apiConfigTextKey),
               onTap: () {
                 Navigator.push(
                   context,
@@ -57,7 +67,7 @@ class SettingsMenuPage extends StatelessWidget {
             key: userSettingsTileKey,
             child: ListTile(
               leading: const Icon(Icons.person),
-              title: const Text('用户设定'),
+              title: Text('用户设定', key: userSettingsTextKey),
               onTap: () {
                 Navigator.push(
                   context,
@@ -70,7 +80,7 @@ class SettingsMenuPage extends StatelessWidget {
             key: promptSettingsTileKey,
             child: ListTile(
               leading: const Icon(Icons.tune),
-              title: const Text('Prompt 策略'),
+              title: Text('Prompt 策略', key: promptSettingsTextKey),
               onTap: () {
                 Navigator.push(
                   context,
@@ -83,7 +93,7 @@ class SettingsMenuPage extends StatelessWidget {
             key: backupTileKey,
             child: ListTile(
               leading: const Icon(Icons.backup),
-              title: const Text('备份与恢复'),
+              title: Text('备份与恢复', key: backupTextKey),
               onTap: () {
                 Navigator.push(
                   context,
@@ -96,8 +106,7 @@ class SettingsMenuPage extends StatelessWidget {
             key: tutorialTileKey,
             child: ListTile(
               leading: const Icon(Icons.school_outlined),
-              title: const Text('教程与导览'),
-              subtitle: const Text('页面导览、推荐路线与后续帮助内容'),
+              title: Text('教程与导览', key: tutorialTextKey),
               onTap: () {
                 Navigator.push(
                   context,

@@ -293,16 +293,18 @@ class _ExpandedBadgeInfo extends StatelessWidget {
     final safeTop = MediaQuery.of(context).padding.top;
     final safeBottom = MediaQuery.of(context).padding.bottom;
 
-    final placeRight = badgeRect.center.dx < screenSize.width / 2;
-    final rawLeft = placeRight
-        ? badgeRect.left
-        : badgeRect.right - _PageGuideOverlayState._expandedCardWidth;
-    final left = rawLeft
-        .clamp(12.0, screenSize.width - _PageGuideOverlayState._expandedCardWidth - 12)
-        .toDouble();
+    final targetIsLeft = target.rect.center.dx < screenSize.width / 2;
+    var rawLeft = targetIsLeft
+        ? target.rect.right + 14
+        : target.rect.left - _PageGuideOverlayState._expandedCardWidth - 14;
+    rawLeft = rawLeft.clamp(
+      12.0,
+      screenSize.width - _PageGuideOverlayState._expandedCardWidth - 12,
+    );
+    final left = rawLeft.toDouble();
 
     final estimatedHeight = target.actionLabel == null ? 150.0 : 196.0;
-    final top = (badgeRect.top - 8)
+    final top = (target.rect.top - 10)
         .clamp(safeTop + 62.0, screenSize.height - safeBottom - estimatedHeight - 16)
         .toDouble();
 
