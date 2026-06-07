@@ -34,6 +34,7 @@ class _SimplePageGuideScopeState extends State<SimplePageGuideScope> {
   @override
   void didUpdateWidget(covariant SimplePageGuideScope oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     if (!oldWidget.startGuide && widget.startGuide) {
       _showGuide = true;
     }
@@ -43,26 +44,31 @@ class _SimplePageGuideScopeState extends State<SimplePageGuideScope> {
     setState(() {
       _showGuide = false;
     });
-    widget.onExitGuide?.call();
-  }
 
-  void _showBackBlockedTip() {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(
-        content: Text('教程模式中，请使用高亮的返回按钮，或点击顶部“退出”结束教程。'),
-      ),
-    );
+    widget.onExitGuide?.call();
   }
 
   Rect _backButtonRect(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
-    return Rect.fromLTWH(6, top + 2, 56, kToolbarHeight);
+
+    return Rect.fromLTWH(
+      4,
+      top + 2,
+      58,
+      kToolbarHeight,
+    );
   }
 
   Rect _pageInfoRect(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final top = MediaQuery.of(context).padding.top;
-    return Rect.fromLTWH(76, top + 14, size.width - 152, 32);
+
+    return Rect.fromLTWH(
+      80,
+      top + 14,
+      size.width - 160,
+      32,
+    );
   }
 
   List<PageGuideTarget> _targets(BuildContext context) {
@@ -89,20 +95,21 @@ class _SimplePageGuideScopeState extends State<SimplePageGuideScope> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_showGuide,
-      onPopInvoked: (didPop) {
-        if (didPop) return;
-        if (_showGuide) _showBackBlockedTip();
-      },
+      // 子页面允许系统返回键返回上一页。
+      // 这只是页面导航，不代表关闭教程模式。
+      canPop: true,
       child: Stack(
+        fit: StackFit.expand,
         children: [
           widget.child,
           if (_showGuide)
-            PageGuideOverlay(
-              title: '${widget.pageName}导览',
-              hint: '点击高光区域执行对应操作；点击紫色编号展开说明。教程模式只能通过顶部“退出”关闭。',
-              targets: _targets(context),
-              onExit: _exitGuide,
+            Positioned.fill(
+              child: PageGuideOverlay(
+                title: '${widget.pageName}导览',
+                hint: '点击高光区域执行对应操作；点击紫色编号展开说明。点击系统返回键或高亮返回按钮可返回上一页；顶部“退出”才会结束教程。',
+                targets: _targets(context),
+                onExit: _exitGuide,
+              ),
             ),
         ],
       ),
