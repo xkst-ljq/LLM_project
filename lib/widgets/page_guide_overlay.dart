@@ -9,6 +9,7 @@ class PageGuideTarget {
   final String? actionLabel;
   final VoidCallback? onAction;
   final VoidCallback? onSwipeLeft;
+  final VoidCallback? onSwipeRight;
 
   const PageGuideTarget({
     required this.id,
@@ -19,7 +20,10 @@ class PageGuideTarget {
     this.actionLabel,
     this.onAction,
     this.onSwipeLeft,
+    this.onSwipeRight,
   });
+
+  bool get isGestureTarget => onSwipeLeft != null || onSwipeRight != null;
 }
 
 class PageGuideOverlay extends StatefulWidget {
@@ -42,8 +46,12 @@ class PageGuideOverlay extends StatefulWidget {
 
 class _PageGuideOverlayState extends State<PageGuideOverlay>
     with SingleTickerProviderStateMixin {
+  static const double _badgeSize = 30.0;
+  static const double _expandedCardWidth = 260.0;
+
   PageGuideTarget? _selectedTarget;
   late final AnimationController _pulseController;
+  double _dragDx = 0.0;
 
   @override
   void initState() {
@@ -62,21 +70,15 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
     super.dispose();
   }
 
-  void _showTarget(PageGuideTarget target) {
+  void _toggleTarget(PageGuideTarget target) {
     setState(() {
-      _selectedTarget = target;
-    });
-  }
-
-  void _hideTargetCard() {
-    setState(() {
-      _selectedTarget = null;
+      _selectedTarget = _selectedTarget?.id == target.id ? null : target;
     });
   }
 
   void _handleTargetTap(PageGuideTarget target) {
-    if (target.onSwipeLeft != null) {
-      _showTarget(target);
+    if (target.isGestureTarget) {
+      _toggleTarget(target);
       return;
     }
 
@@ -85,30 +87,34 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
       return;
     }
 
-    _showTarget(target);
+    _toggleTarget(target);
   }
 
-  double _dragDx = 0.0;
-
   void _handleDragStart(PageGuideTarget target) {
-    if (target.onSwipeLeft == null) return;
+    if (!target.isGestureTarget) return;
     _dragDx = 0.0;
   }
 
   void _handleDragUpdate(PageGuideTarget target, DragUpdateDetails details) {
-    if (target.onSwipeLeft == null) return;
+    if (!target.isGestureTarget) return;
     _dragDx += details.delta.dx;
   }
 
   void _handleDragEnd(PageGuideTarget target, DragEndDetails details) {
-    if (target.onSwipeLeft == null) return;
+    if (!target.isGestureTarget) return;
 
     final velocity = details.primaryVelocity ?? 0.0;
-    if (_dragDx < -36 || velocity < -260) {
+    if ((_dragDx < -36 || velocity < -260) && target.onSwipeLeft != null) {
       target.onSwipeLeft!();
-    } else {
-      _showTarget(target);
+      return;
     }
+
+    if ((_dragDx > 36 || velocity > 260) && target.onSwipeRight != null) {
+      target.onSwipeRight!();
+      return;
+    }
+
+    _toggleTarget(target);
   }
 
   @override
@@ -144,26 +150,32 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => _handleTargetTap(target),
-                onHorizontalDragStart: target.onSwipeLeft == null
-                    ? null
-                    : (_) => _handleDragStart(target),
-                onHorizontalDragUpdate: target.onSwipeLeft == null
-                    ? null
-                    : (details) => _handleDragUpdate(target, details),
-                onHorizontalDragEnd: target.onSwipeLeft == null
-                    ? null
-                    : (details) => _handleDragEnd(target, details),
+                onHorizontalDragStart: target.isGestureTarget
+                    ? (_) => _handleDragStart(target)
+                    : null,
+                onHorizontalDragUpdate: target.isGestureTarget
+                    ? (details) => _handleDragUpdate(target, details)
+                    : null,
+                onHorizontalDragEnd: target.isGestureTarget
+                    ? (details) => _handleDragEnd(target, details)
+                    : null,
                 child: const SizedBox.expand(),
               ),
             ),
-            Positioned(
-              left: _badgeLeft(context, target),
-              top: _badgeTop(context, target),
-              child: GestureDetector(
-                onTap: () => _showTarget(target),
-                child: _GuideNumberBadge(number: target.order),
+            if (_selectedTarget?.id == target.id)
+              _ExpandedBadgeInfo(
+                target: target,
+                badgeRect: _badgeRect(context, target),
+                onClose: () => _toggleTarget(target),
+              )
+            else
+              Positioned.fromRect(
+                rect: _badgeRect(context, target),
+                child: GestureDetector(
+                  onTap: () => _toggleTarget(target),
+                  child: _GuideNumberBadge(number: target.order),
+                ),
               ),
-            ),
           ],
           if (_selectedTarget == null)
             Positioned(
@@ -171,34 +183,28 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
               right: 16,
               bottom: 16 + MediaQuery.of(context).padding.bottom,
               child: _GuideHintCard(hint: widget.hint),
-            )
-          else
-            _PositionedTargetCard(
-              target: _selectedTarget!,
-              onClose: _hideTargetCard,
             ),
         ],
       ),
     );
   }
 
-  double _badgeLeft(BuildContext context, PageGuideTarget target) {
-    final width = MediaQuery.of(context).size.width;
+  Rect _badgeRect(BuildContext context, PageGuideTarget target) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     final rect = target.rect;
 
-    if (target.onSwipeLeft != null) {
-      return (rect.left - 10).clamp(8.0, width - 40.0).toDouble();
-    }
-
-    final stairOffset = ((target.order - 1) % 4) * 14.0;
-    return (rect.left - 10 + stairOffset).clamp(8.0, width - 40.0).toDouble();
-  }
-
-  double _badgeTop(BuildContext context, PageGuideTarget target) {
-    final height = MediaQuery.of(context).size.height;
-    return (target.rect.top - 10)
-        .clamp(MediaQuery.of(context).padding.top + 56.0, height - 56.0)
+    final placeRight = rect.center.dx < screenWidth / 2;
+    final rawLeft = placeRight ? rect.right + 8 : rect.left - _badgeSize - 8;
+    final left = rawLeft.clamp(8.0, screenWidth - _badgeSize - 8).toDouble();
+    final top = (rect.center.dy - _badgeSize / 2)
+        .clamp(
+          MediaQuery.of(context).padding.top + 56.0,
+          screenHeight - _badgeSize - 56.0,
+        )
         .toDouble();
+
+    return Rect.fromLTWH(left, top, _badgeSize, _badgeSize);
   }
 }
 
@@ -270,90 +276,89 @@ class _GuideHintCard extends StatelessWidget {
   }
 }
 
-class _PositionedTargetCard extends StatelessWidget {
+class _ExpandedBadgeInfo extends StatelessWidget {
   final PageGuideTarget target;
+  final Rect badgeRect;
   final VoidCallback onClose;
 
-  const _PositionedTargetCard({required this.target, required this.onClose});
+  const _ExpandedBadgeInfo({
+    required this.target,
+    required this.badgeRect,
+    required this.onClose,
+  });
 
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final safeTop = MediaQuery.of(context).padding.top;
     final safeBottom = MediaQuery.of(context).padding.bottom;
-    final cardWidth = screenSize.width - 32;
-    const estimatedCardHeight = 210.0;
 
-    final preferBelow = target.rect.center.dy < screenSize.height * 0.48;
-    final left = 16.0;
-    final topIfBelow = target.rect.bottom + 14;
-    final topIfAbove = target.rect.top - estimatedCardHeight - 14;
-    final minTop = safeTop + 70;
-    final maxTop = screenSize.height - safeBottom - estimatedCardHeight - 16;
-    final top = (preferBelow ? topIfBelow : topIfAbove)
-        .clamp(minTop, maxTop)
+    final placeRight = badgeRect.center.dx < screenSize.width / 2;
+    final rawLeft = placeRight
+        ? badgeRect.left
+        : badgeRect.right - _PageGuideOverlayState._expandedCardWidth;
+    final left = rawLeft
+        .clamp(12.0, screenSize.width - _PageGuideOverlayState._expandedCardWidth - 12)
+        .toDouble();
+
+    final estimatedHeight = target.actionLabel == null ? 150.0 : 196.0;
+    final top = (badgeRect.top - 8)
+        .clamp(safeTop + 62.0, screenSize.height - safeBottom - estimatedHeight - 16)
         .toDouble();
 
     return Positioned(
       left: left,
       top: top,
-      width: cardWidth,
-      child: _GuideTargetCard(target: target, onClose: onClose),
-    );
-  }
-}
-
-class _GuideTargetCard extends StatelessWidget {
-  final PageGuideTarget target;
-  final VoidCallback onClose;
-
-  const _GuideTargetCard({required this.target, required this.onClose});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 12,
-      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.88),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _GuideNumberBadge(number: target.order, small: true),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    target.title,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: '关闭说明',
-                  onPressed: onClose,
-                  icon: const Icon(Icons.close),
-                ),
-              ],
+      width: _PageGuideOverlayState._expandedCardWidth,
+      child: GestureDetector(
+        onTap: onClose,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: Card(
+            key: ValueKey(target.id),
+            elevation: 12,
+            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.90),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
             ),
-            const SizedBox(height: 8),
-            Text(target.description, style: const TextStyle(height: 1.45)),
-            if (target.actionLabel != null && target.onAction != null) ...[
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  onPressed: target.onAction,
-                  child: Text(target.actionLabel!),
-                ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _GuideNumberBadge(number: target.order, small: true),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          target.title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.close, size: 18),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(target.description, style: const TextStyle(height: 1.4)),
+                  if (target.actionLabel != null && target.onAction != null) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton(
+                        onPressed: target.onAction,
+                        child: Text(target.actionLabel!),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ],
+            ),
+          ),
         ),
       ),
     );

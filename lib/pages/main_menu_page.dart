@@ -127,6 +127,16 @@ class _MainMenuPageState extends State<MainMenuPage>
     });
   }
 
+  void _returnToHomeGuide() {
+    _closePanel();
+    Future.delayed(const Duration(milliseconds: 320), () {
+      if (!mounted) return;
+      setState(() {
+        _guidePhase = _MainGuidePhase.home;
+      });
+    });
+  }
+
   void _finishGuide() {
     setState(() {
       _guidePhase = _MainGuidePhase.none;
@@ -144,21 +154,36 @@ class _MainMenuPageState extends State<MainMenuPage>
     return offset & renderObject.size;
   }
 
-  Rect? _touchRectForKey(GlobalKey key) {
+  Rect? _textRectForKey(
+    GlobalKey key, {
+    required double leftInset,
+    required double width,
+  }) {
     final rect = _rectForKey(key);
     if (rect == null) return null;
 
-    final touchSize = rect.height.clamp(44.0, 52.0).toDouble();
-    final top = rect.top + (rect.height - touchSize) / 2;
-    return Rect.fromLTWH(rect.left + 22, top, touchSize, touchSize);
+    const height = 30.0;
+    final top = rect.top + (rect.height - height) / 2;
+    return Rect.fromLTWH(rect.left + leftInset, top, width, height);
   }
+
 
   Rect _settingsSwipeRect(BuildContext context) {
     final size = MediaQuery.of(context).size;
     return Rect.fromLTWH(
-      size.width * 0.46,
+      size.width * 0.28,
       size.height * 0.54,
-      size.width * 0.42,
+      size.width * 0.44,
+      30,
+    );
+  }
+
+  Rect _homeSwipeRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return Rect.fromLTWH(
+      size.width * 0.28,
+      size.height * 0.54,
+      size.width * 0.44,
       30,
     );
   }
@@ -175,7 +200,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       String? actionLabel,
       VoidCallback? onAction,
     }) {
-      final rect = _touchRectForKey(key);
+      final rect = _textRectForKey(key, leftInset: 118, width: 150);
       if (rect == null) return;
       targets.add(
         PageGuideTarget(
@@ -277,7 +302,7 @@ class _MainMenuPageState extends State<MainMenuPage>
       String? actionLabel,
       VoidCallback? onAction,
     }) {
-      final rect = _touchRectForKey(key);
+      final rect = _textRectForKey(key, leftInset: 92, width: 180);
       if (rect == null) return;
       targets.add(
         PageGuideTarget(
@@ -371,6 +396,17 @@ class _MainMenuPageState extends State<MainMenuPage>
           ),
         );
       },
+    );
+
+    targets.add(
+      PageGuideTarget(
+        id: 'settings_back_home_swipe',
+        order: 6,
+        rect: _homeSwipeRect(context),
+        title: '滑动返回主菜单',
+        description: '在设置页按住这个细长高光框向右滑动，可以回到主菜单。',
+        onSwipeRight: _returnToHomeGuide,
+      ),
     );
 
     return targets;
@@ -533,14 +569,14 @@ class _MainMenuPageState extends State<MainMenuPage>
             if (_guidePhase == _MainGuidePhase.home)
               PageGuideOverlay(
                 title: '主页导览',
-                hint: '点击 1-4 的高光区域会进入对应页面；点击紫色编号查看说明。第 5 项请在细长高光框内向左滑动来打开设置页。',
+                hint: '点击文字高光框会进入对应页面；点击编号可展开说明。第 5 项请在细长高光框内向左滑动打开设置页。',
                 targets: _homeGuideTargets(context),
                 onExit: _finishGuide,
               ),
             if (_guidePhase == _MainGuidePhase.settings)
               PageGuideOverlay(
                 title: '设置页导览',
-                hint: '点击高光区域会进入对应页面；点击紫色编号查看说明。第一次使用时，建议先了解 API 配置和教程与导览入口。',
+                hint: '点击文字高光框会进入对应页面；点击编号可展开说明。第 6 项请在细长高光框内向右滑动返回主菜单。',
                 targets: _settingsGuideTargets(context),
                 onExit: _finishGuide,
               ),
