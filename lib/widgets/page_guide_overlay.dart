@@ -144,7 +144,7 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
             top: MediaQuery.of(context).padding.top + 8,
             child: _GuideTopBar(title: widget.title, onExit: widget.onExit),
           ),
-          for (final target in targets) ...[
+          for (final target in targets)
             Positioned.fromRect(
               rect: target.rect.inflate(3),
               child: GestureDetector(
@@ -162,21 +162,22 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
                 child: const SizedBox.expand(),
               ),
             ),
-            if (_selectedTarget?.id == target.id)
-              _ExpandedBadgeInfo(
-                target: target,
-                badgeRect: _badgeRect(context, target),
-                onClose: () => _toggleTarget(target),
-              )
-            else
-              Positioned.fromRect(
-                rect: _badgeRect(context, target),
-                child: GestureDetector(
-                  onTap: () => _toggleTarget(target),
-                  child: _GuideNumberBadge(number: target.order),
-                ),
+
+          for (final target in targets)
+            Positioned.fromRect(
+              rect: _badgeRect(context, target),
+              child: GestureDetector(
+                onTap: () => _toggleTarget(target),
+                child: _GuideNumberBadge(number: target.order),
               ),
-          ],
+            ),
+
+          if (_selectedTarget != null)
+            _ExpandedBadgeInfo(
+              target: _selectedTarget!,
+              badgeRect: _badgeRect(context, _selectedTarget!),
+              onClose: () => _toggleTarget(_selectedTarget!),
+            ),
           if (_selectedTarget == null)
             Positioned(
               left: 16,
@@ -292,20 +293,28 @@ class _ExpandedBadgeInfo extends StatelessWidget {
     final screenSize = MediaQuery.of(context).size;
     final safeTop = MediaQuery.of(context).padding.top;
     final safeBottom = MediaQuery.of(context).padding.bottom;
-
-    final targetIsLeft = target.rect.center.dx < screenSize.width / 2;
-    var rawLeft = targetIsLeft
-        ? target.rect.right + 14
-        : target.rect.left - _PageGuideOverlayState._expandedCardWidth - 14;
-    rawLeft = rawLeft.clamp(
-      12.0,
-      screenSize.width - _PageGuideOverlayState._expandedCardWidth - 12,
-    );
-    final left = rawLeft.toDouble();
-
     final estimatedHeight = target.actionLabel == null ? 150.0 : 196.0;
-    final top = (target.rect.top - 10)
-        .clamp(safeTop + 62.0, screenSize.height - safeBottom - estimatedHeight - 16)
+
+    // 说明框固定放在序号上方，水平中心对齐序号。
+    // 如果顶部空间不足，再自动放到序号下方，避免被顶部导览栏挡住。
+    final centeredLeft = badgeRect.center.dx -
+        _PageGuideOverlayState._expandedCardWidth / 2;
+    final left = centeredLeft
+        .clamp(
+          12.0,
+          screenSize.width - _PageGuideOverlayState._expandedCardWidth - 12,
+        )
+        .toDouble();
+
+    final topAbove = badgeRect.top - estimatedHeight - 10;
+    final topBelow = badgeRect.bottom + 10;
+    final hasEnoughSpaceAbove = topAbove >= safeTop + 62;
+    final rawTop = hasEnoughSpaceAbove ? topAbove : topBelow;
+    final top = rawTop
+        .clamp(
+          safeTop + 62.0,
+          screenSize.height - safeBottom - estimatedHeight - 16,
+        )
         .toDouble();
 
     return Positioned(
