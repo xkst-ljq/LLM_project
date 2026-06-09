@@ -3238,11 +3238,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final bottom = MediaQuery.of(context).padding.bottom;
 
     // 底部中间的角色名称胶囊区域。
+    // 这里不画高光框，只用于放置序号说明，所以取一个更贴近名称胶囊的小区域。
     return Rect.fromLTWH(
-      size.width * 0.32,
-      size.height - bottom - 62,
-      size.width * 0.36,
-      38,
+      size.width * 0.42,
+      size.height - bottom - 60,
+      size.width * 0.16,
+      34,
     );
   }
 
