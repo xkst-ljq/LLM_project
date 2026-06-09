@@ -411,10 +411,14 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里用于填写 API Key、服务地址和模型。没有 API 配置时，聊天通常无法正常回复。',
       actionLabel: '进入 API 配置',
       onAction: () {
-        _pushGuidedPage(
-          page: const ApiConfigPage(),
-          pageName: 'API 配置页',
-          pageDescription: '这里用于管理模型服务配置。第一次使用时通常需要先新增配置、填写 Key、测试连接并选择模型。',
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ApiConfigPage(
+              startGuide: true,
+              onExitGuide: _finishGuide,
+            ),
+          ),
         );
       },
     );

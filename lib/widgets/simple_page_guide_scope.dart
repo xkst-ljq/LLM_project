@@ -63,12 +63,13 @@ class _SimplePageGuideScopeState extends State<SimplePageGuideScope> {
     return [
       PageGuideTarget(
         id: 'page_back',
-        order: 1,
+        order: 0,
         rect: _backButtonRect(context),
         title: '返回上一页',
         description: '点击这里返回上一页。返回只会切换页面，不会关闭教程模式。',
         actionLabel: '返回上一页',
         onAction: () => Navigator.of(context).maybePop(),
+        showBadge: false,
       ),
     ];
   }

@@ -10,6 +10,7 @@ class PageGuideTarget {
   final VoidCallback? onAction;
   final VoidCallback? onSwipeLeft;
   final VoidCallback? onSwipeRight;
+  final bool showBadge;
 
   const PageGuideTarget({
     required this.id,
@@ -21,6 +22,7 @@ class PageGuideTarget {
     this.onAction,
     this.onSwipeLeft,
     this.onSwipeRight,
+    this.showBadge = true,
   });
 
   bool get isGestureTarget => onSwipeLeft != null || onSwipeRight != null;
@@ -251,13 +253,14 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
             ),
 
           for (final target in targets)
-            Positioned.fromRect(
-              rect: _badgeRect(context, target),
-              child: GestureDetector(
-                onTap: () => _toggleTarget(target),
-                child: _GuideNumberBadge(number: target.order),
+            if (target.showBadge)
+              Positioned.fromRect(
+                rect: _badgeRect(context, target),
+                child: GestureDetector(
+                  onTap: () => _toggleTarget(target),
+                  child: _GuideNumberBadge(number: target.order),
+                ),
               ),
-            ),
 
           if (_selectedTarget != null)
             _ExpandedBadgeInfo(
