@@ -23,7 +23,6 @@ class _ApiConfigPageState extends State<ApiConfigPage> {
   List<ApiConfig> _configs = [];
   late bool _showGuide;
 
-  final _addButtonKey = GlobalKey();
   final _emptyHintKey = GlobalKey();
   final _firstConfigTileKey = GlobalKey();
 
@@ -135,6 +134,18 @@ class _ApiConfigPageState extends State<ApiConfigPage> {
     return Rect.fromLTWH(4, top + 2, 58, kToolbarHeight);
   }
 
+  Rect _addButtonRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final top = MediaQuery.of(context).padding.top;
+
+    return Rect.fromLTWH(
+      size.width - 62,
+      top + 2,
+      58,
+      kToolbarHeight,
+    );
+  }
+
   Rect _fallbackContentRect(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final top = MediaQuery.of(context).padding.top + kToolbarHeight + 24;
@@ -155,20 +166,17 @@ class _ApiConfigPageState extends State<ApiConfigPage> {
       ),
     ];
 
-    final addRect = _rectForKey(_addButtonKey);
-    if (addRect != null) {
-      targets.add(
-        PageGuideTarget(
-          id: 'api_config_add',
-          order: 1,
-          rect: addRect.inflate(4),
-          title: '新增 API 配置',
-          description: '第一次使用时，通常需要先点击这里新增一个 API 配置。',
-          actionLabel: '新增配置',
-          onAction: () => _addConfig(guided: true),
-        ),
-      );
-    }
+    targets.add(
+      PageGuideTarget(
+        id: 'api_config_add',
+        order: 1,
+        rect: _addButtonRect(context),
+        title: '新增 API 配置',
+        description: '第一次使用时，通常需要先点击这里新增一个 API 配置。',
+        actionLabel: '新增配置',
+        onAction: () => _addConfig(guided: true),
+      ),
+    );
 
     final listRect = _configs.isEmpty
         ? (_rectForKey(_emptyHintKey) ?? _fallbackContentRect(context))
@@ -200,7 +208,6 @@ class _ApiConfigPageState extends State<ApiConfigPage> {
               title: const Text('API 配置管理'),
               actions: [
                 IconButton(
-                  key: _addButtonKey,
                   icon: const Icon(Icons.add),
                   onPressed: _addConfig,
                 ),
