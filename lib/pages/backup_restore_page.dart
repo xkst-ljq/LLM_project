@@ -365,6 +365,13 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                 onChanged: (v) => _options.includeApiKeys = v,
                 sensitive: true,
               ),
+              _sectionTitle('应用设定'),
+              _switchTile(
+                title: 'Prompt 策略',
+                subtitle: '包含全局 Prompt 策略、角色单独 Prompt 策略及启用状态。',
+                value: _options.includePromptSettings,
+                onChanged: (v) => _options.includePromptSettings = v,
+              ),
               _sectionTitle('其他'),
               _switchTile(
                 title: '排序和界面偏好',

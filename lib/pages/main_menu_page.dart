@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import '../services/background_service.dart';
+import '../services/tutorial_service.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/simple_page_guide_scope.dart';
 import 'api_config_page.dart';
@@ -69,13 +70,16 @@ class _MainMenuPageState extends State<MainMenuPage>
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showNewUserGuideDialogForTesting();
+      _maybeShowNewUserGuideDialog();
     });
   }
 
-  Future<void> _showNewUserGuideDialogForTesting() async {
+  Future<void> _maybeShowNewUserGuideDialog() async {
     if (!mounted || _hasAskedGuideThisSession) return;
     _hasAskedGuideThisSession = true;
+
+    final shouldShow = await TutorialService.shouldShowNewUserGuideDialog();
+    if (!mounted || !shouldShow) return;
 
     final startGuide = await showDialog<bool>(
       context: context,
@@ -85,7 +89,7 @@ class _MainMenuPageState extends State<MainMenuPage>
           content: const Text(
             '是否开启新用户快速导览？\n\n'
             '导览会在页面上标出可交互区域。你可以点击高亮区域查看说明，也可以进入对应页面继续了解。\n\n'
-            '当前测试阶段：每次启动都会显示这个弹窗，方便反复调试。',
+            '你也可以稍后在设置页的“教程与导览”中重新打开。',
           ),
           actions: [
             TextButton(
@@ -100,6 +104,8 @@ class _MainMenuPageState extends State<MainMenuPage>
         );
       },
     );
+
+    await TutorialService.markNewUserGuideDialogShown();
 
     if (!mounted) return;
     if (startGuide == true) {

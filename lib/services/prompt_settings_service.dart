@@ -118,6 +118,84 @@ class PromptSettingsService {
     return characterSettings ?? globalSettings.copy();
   }
 
+
+
+  static Future<Map<String, dynamic>> exportBackupData(
+    List<String> characterIds,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final globalSettings = await getSettings();
+    final characters = <String, dynamic>{};
+
+    for (final characterId in characterIds) {
+      if (characterId.trim().isEmpty) continue;
+
+      final enabled = prefs.getBool(_characterEnabledKey(characterId));
+      final rawSettings = prefs.getString(_characterSettingsKey(characterId));
+
+      // 没有启用状态且没有独立设置时，不写入，避免备份无意义默认项。
+      if (enabled == null && rawSettings == null) continue;
+
+      characters[characterId] = {
+        'enabled': enabled ?? false,
+        'settings': _decodeSettings(rawSettings)?.toJson(),
+      };
+    }
+
+    return {
+      'global': globalSettings.toJson(),
+      'characters': characters,
+    };
+  }
+
+  static Future<void> importBackupData(
+    Map<String, dynamic> data, {
+    Map<String, String> characterIdMap = const {},
+    bool mergeMode = false,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final global = data['global'];
+    if (!mergeMode && global is Map) {
+      await prefs.setString(
+        _globalKey,
+        jsonEncode(Map<String, dynamic>.from(global)),
+      );
+    }
+
+    final characters = data['characters'];
+    if (characters is Map) {
+      for (final entry in characters.entries) {
+        final oldCharacterId = entry.key.toString();
+        final targetCharacterId = mergeMode
+            ? characterIdMap[oldCharacterId]
+            : oldCharacterId;
+
+        // 合并模式下，如果对应角色没有被导入，则跳过该角色策略。
+        if (targetCharacterId == null || targetCharacterId.isEmpty) continue;
+
+        final rawValue = entry.value;
+        if (rawValue is! Map) continue;
+
+        final value = Map<String, dynamic>.from(rawValue);
+        final enabled = value['enabled'] == true;
+        await prefs.setBool(_characterEnabledKey(targetCharacterId), enabled);
+
+        final settings = value['settings'];
+        if (settings is Map) {
+          await prefs.setString(
+            _characterSettingsKey(targetCharacterId),
+            jsonEncode(Map<String, dynamic>.from(settings)),
+          );
+        } else {
+          await prefs.remove(_characterSettingsKey(targetCharacterId));
+        }
+      }
+    }
+
+    _notifyChanged();
+  }
+
   /// 可选清理：删除某个角色的独立策略状态和内容。
   static Future<void> removeCharacterSettings(String characterId) async {
     final prefs = await SharedPreferences.getInstance();

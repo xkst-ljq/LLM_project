@@ -12,6 +12,7 @@ import '../services/api_config_service.dart';
 import '../services/background_service.dart';
 import '../services/database_service.dart';
 import '../services/user_service.dart';
+import '../services/prompt_settings_service.dart';
 import '../utils/asset_magic.dart';
 import '../utils/id_utils.dart';
 
@@ -25,6 +26,7 @@ class BackupOptions {
   bool includeChatHistory;
   bool includeApiConfigs;
   bool includeApiKeys;
+  bool includePromptSettings;
   bool includePreferences;
 
   BackupOptions({
@@ -37,6 +39,7 @@ class BackupOptions {
     this.includeChatHistory = false,
     this.includeApiConfigs = true,
     this.includeApiKeys = false,
+    this.includePromptSettings = true,
     this.includePreferences = true,
   });
 
@@ -50,6 +53,7 @@ class BackupOptions {
         'include_chat_history': includeChatHistory,
         'include_api_configs': includeApiConfigs,
         'include_api_keys': includeApiKeys,
+        'include_prompt_settings': includePromptSettings,
         'include_preferences': includePreferences,
       };
 }
@@ -258,6 +262,16 @@ class BackupService {
         }).toList(),
       };
       _addText(archive, 'data/api_configs.json', data);
+    }
+
+    if (options.includePromptSettings) {
+      final characters = await DatabaseService.getAllCharacters();
+      final characterIds = characters
+          .map((c) => c['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final data = await PromptSettingsService.exportBackupData(characterIds);
+      _addText(archive, 'data/prompt_settings.json', data);
     }
 
     if (options.includeChatHistory) {
@@ -542,6 +556,15 @@ class BackupService {
           await ApiConfigService.setActiveConfigId(activeId);
         }
       }
+    }
+
+    final promptSettings = _readJson(files, 'data/prompt_settings.json');
+    if (promptSettings is Map) {
+      await PromptSettingsService.importBackupData(
+        Map<String, dynamic>.from(promptSettings),
+        characterIdMap: characterIdMap,
+        mergeMode: isMergeMode,
+      );
     }
 
     final messages = _readJson(files, 'data/messages.json');
