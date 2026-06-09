@@ -3233,6 +3233,32 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
+  Rect _chatCharacterSelectorRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final bottom = MediaQuery.of(context).padding.bottom;
+
+    // 底部中间的角色名称胶囊区域。
+    return Rect.fromLTWH(
+      size.width * 0.32,
+      size.height - bottom - 62,
+      size.width * 0.36,
+      38,
+    );
+  }
+
+  Rect _chatInputAreaRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final bottom = MediaQuery.of(context).padding.bottom;
+
+    // 底部输入区域。这里只用于放置说明序号，不画高光框。
+    return Rect.fromLTWH(
+      12,
+      size.height - bottom - 66,
+      size.width - 24,
+      46,
+    );
+  }
+
   List<PageGuideTarget> _chatGuideTargets(BuildContext context) {
     return [
       PageGuideTarget(
@@ -3242,6 +3268,22 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         title: '侧滑打开聊天设置',
         description: '按住这个细长高光框向左滑动，可以打开右侧聊天设置页。聊天设置里可以进入当前角色用户设定、Prompt 策略、背景设置和清空历史。',
         onSwipeLeft: _startChatSettingsGuide,
+      ),
+      PageGuideTarget(
+        id: 'chat_character_selector',
+        order: 2,
+        rect: _chatCharacterSelectorRect(context),
+        title: '当前角色 / 角色切换',
+        description: '这里显示当前聊天角色名称。点击角色名称可以打开角色切换轮盘，用来切换当前聊天对象。',
+        showHighlight: false,
+      ),
+      PageGuideTarget(
+        id: 'chat_input_area',
+        order: 3,
+        rect: _chatInputAreaRect(context),
+        title: '输入与发送',
+        description: '点击底部输入按钮可以展开输入框。输入内容后再次点击发送按钮即可发送消息。这里不做高光框，避免遮挡输入区域。',
+        showHighlight: false,
       ),
     ];
   }
