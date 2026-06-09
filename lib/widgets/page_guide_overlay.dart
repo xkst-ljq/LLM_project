@@ -4,6 +4,7 @@ class PageGuideTarget {
   final String id;
   final int order;
   final Rect rect;
+  final Rect? badgeRect;
   final String title;
   final String description;
   final String? actionLabel;
@@ -11,11 +12,13 @@ class PageGuideTarget {
   final VoidCallback? onSwipeLeft;
   final VoidCallback? onSwipeRight;
   final bool showBadge;
+  final bool showHighlight;
 
   const PageGuideTarget({
     required this.id,
     required this.order,
     required this.rect,
+    this.badgeRect,
     required this.title,
     required this.description,
     this.actionLabel,
@@ -23,6 +26,7 @@ class PageGuideTarget {
     this.onSwipeLeft,
     this.onSwipeRight,
     this.showBadge = true,
+    this.showHighlight = true,
   });
 
   bool get isGestureTarget => onSwipeLeft != null || onSwipeRight != null;
@@ -226,7 +230,10 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
               builder: (context, _) {
                 return CustomPaint(
                   painter: _GuideMaskPainter(
-                    targets: targets.map((e) => e.rect).toList(),
+                    targets: targets
+                        .where((e) => e.showHighlight)
+                        .map((e) => e.rect)
+                        .toList(),
                     pulseValue: _pulseController.value,
                   ),
                 );
@@ -234,9 +241,10 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
             ),
           ),
           for (final target in targets)
-            Positioned.fromRect(
-              rect: target.rect.inflate(3),
-              child: GestureDetector(
+            if (target.showHighlight)
+              Positioned.fromRect(
+                rect: target.rect.inflate(3),
+                child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => _handleTargetTap(target),
                 onHorizontalDragStart: target.isGestureTarget
@@ -310,6 +318,10 @@ class _PageGuideOverlayState extends State<PageGuideOverlay>
   }
 
   Rect _badgeRect(BuildContext context, PageGuideTarget target) {
+    if (target.badgeRect != null) {
+      return target.badgeRect!;
+    }
+
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
     final rect = target.rect;

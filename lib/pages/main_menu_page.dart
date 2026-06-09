@@ -324,10 +324,14 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里用于创建、编辑、导入和管理角色。如果想和自定义角色聊天，可以先从这里新建角色。',
       actionLabel: '进入角色库',
       onAction: () {
-        _pushGuidedPage(
-          page: const CharacterLibraryPage(),
-          pageName: '角色库',
-          pageDescription: '这里用于创建、编辑、导入和管理角色。后续会继续补充新建角色和导入导出的详细导览。',
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CharacterLibraryPage(
+              startGuide: true,
+              onExitGuide: _finishGuide,
+            ),
+          ),
         );
       },
     );

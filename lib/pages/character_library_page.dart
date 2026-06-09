@@ -14,6 +14,7 @@ import '../services/character_card_asset_service.dart';
 import '../services/character_card_png_asset_service.dart';
 import '../utils/id_utils.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/page_guide_overlay.dart';
 
 class CharacterImportPreview {
   final File file;
@@ -44,7 +45,14 @@ class CharacterImportPreview {
 }
 
 class CharacterLibraryPage extends StatefulWidget {
-  const CharacterLibraryPage({super.key});
+  final bool startGuide;
+  final VoidCallback? onExitGuide;
+
+  const CharacterLibraryPage({
+    super.key,
+    this.startGuide = false,
+    this.onExitGuide,
+  });
 
   @override
   State<CharacterLibraryPage> createState() => _CharacterLibraryPageState();
@@ -54,12 +62,20 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
   final List<CharacterCard> _characters = [];
   final Set<String> _expandedIds = {};
   final Set<String> _deletingIds = {};
+
+  late bool _showGuide;
+  final _sortButtonKey = GlobalKey();
+  final _exportButtonKey = GlobalKey();
+  final _addButtonKey = GlobalKey();
+  final _firstCardGuideKey = GlobalKey();
+  final _chatButtonGuideKey = GlobalKey();
   static const String _sortByKey = 'character_sort_by';
   static const String _sortAscendingKey = 'character_sort_ascending';
 
   @override
   void initState() {
     super.initState();
+    _showGuide = widget.startGuide;
     _loadSortPreference();
     _loadCharacters();
   }
@@ -685,10 +701,143 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
     );
   }
 
-  Widget _buildSortButton() {
+  void _exitGuide() {
+    setState(() => _showGuide = false);
+    widget.onExitGuide?.call();
+  }
+
+  Rect? _rectForKey(GlobalKey key) {
+    final keyContext = key.currentContext;
+    if (keyContext == null) return null;
+
+    final renderObject = keyContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+
+    return renderObject.localToGlobal(Offset.zero) & renderObject.size;
+  }
+
+  Rect _fallbackCardRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final top = MediaQuery.of(context).padding.top + kToolbarHeight + 32;
+    return Rect.fromLTWH(32, top, size.width * 0.38, size.width * 0.58);
+  }
+
+  Rect _backButtonRect(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
+
+    return Rect.fromLTWH(
+      4,
+      top + 2,
+      58,
+      kToolbarHeight,
+    );
+  }
+
+  Rect _badgeBelowRect(Rect rect) {
+    const badgeSize = 30.0;
+
+    return Rect.fromLTWH(
+      rect.center.dx - badgeSize / 2,
+      rect.bottom + 8,
+      badgeSize,
+      badgeSize,
+    );
+  }
+
+  List<PageGuideTarget> _guideTargets(BuildContext context) {
+    final targets = <PageGuideTarget>[
+      PageGuideTarget(
+        id: 'character_back',
+        order: 0,
+        rect: _backButtonRect(context),
+        title: '返回上一页',
+        description: '点击这里返回上一页。返回只会切换页面，不会关闭教程模式。',
+        actionLabel: '返回上一页',
+        onAction: () => Navigator.of(context).maybePop(),
+        showBadge: false,
+      ),
+    ];
+
+    final firstCardRect =
+        _rectForKey(_firstCardGuideKey) ?? _fallbackCardRect(context);
+    targets.add(
+      PageGuideTarget(
+        id: 'character_card',
+        order: 1,
+        rect: firstCardRect,
+        title: '角色卡片',
+        description: '这里是角色卡片列表。点击角色卡片一次会展开简介；再次点击已展开的角色卡片会进入角色预览 / 编辑页面；长按角色卡片可进入删除状态。',
+        showHighlight: false,
+      ),
+    );
+
+    final sortRect = _rectForKey(_sortButtonKey);
+    if (sortRect != null) {
+      targets.add(
+        PageGuideTarget(
+          id: 'character_sort',
+          order: 2,
+          rect: sortRect,
+          badgeRect: _badgeBelowRect(sortRect),
+          title: '排序',
+          description: '点击这里可以选择排序方式；长按可以切换正序 / 倒序。',
+          showHighlight: false,
+        ),
+      );
+    }
+
+    final exportRect = _rectForKey(_exportButtonKey);
+    if (exportRect != null) {
+      targets.add(
+        PageGuideTarget(
+          id: 'character_export',
+          order: 3,
+          rect: exportRect,
+          badgeRect: _badgeBelowRect(exportRect),
+          title: '导出角色卡',
+          description: '先点击一个角色卡片选中角色，再点击这里可以导出角色卡。可导出完整角色卡文件或角色卡图片。',
+          showHighlight: false,
+        ),
+      );
+    }
+
+    final addRect = _rectForKey(_addButtonKey);
+    if (addRect != null) {
+      targets.add(
+        PageGuideTarget(
+          id: 'character_add',
+          order: 4,
+          rect: addRect,
+          badgeRect: _badgeBelowRect(addRect),
+          title: '新建 / 导入角色',
+          description: '点击这里可以新建角色卡，也可以导入已有角色卡。导入支持 LLM Project 角色卡文件和角色卡图片。',
+          showHighlight: false,
+        ),
+      );
+    }
+
+    final chatRect = _rectForKey(_chatButtonGuideKey);
+    if (chatRect != null) {
+      targets.add(
+        PageGuideTarget(
+          id: 'character_chat',
+          order: 5,
+          rect: chatRect,
+          title: '进入聊天',
+          description: '先点击一个角色卡片选中角色，再点击这里可以进入聊天页与该角色对话。',
+          showHighlight: false,
+        ),
+      );
+    }
+
+    return targets;
+  }
+
+  Widget _buildSortButton({Key? key}) {
     return Builder(
       builder: (buttonContext) {
         return InkWell(
+          key: key,
           borderRadius: BorderRadius.circular(24),
           onTap: () async {
             final renderObject = buttonContext.findRenderObject();
@@ -882,17 +1031,23 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
+    return PopScope(
+      canPop: true,
+      child: Stack(
+        children: [
+          Scaffold(
+            appBar: AppBar(
         title: const Text('角色库'),
         actions: [
-          _buildSortButton(),
+          _buildSortButton(key: _sortButtonKey),
           IconButton(
+            key: _exportButtonKey,
             icon: const Icon(Icons.ios_share),
             tooltip: '导出角色卡',
             onPressed: _showExportCharacterSheet,
           ),
           IconButton(
+            key: _addButtonKey,
             icon: const Icon(Icons.add),
             tooltip: '新建或导入',
             onPressed: _showCreateOrImportSheet,
@@ -901,6 +1056,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
       ),
 
       floatingActionButton: SizedBox(
+        key: _chatButtonGuideKey,
         width: 54,
         height: 54,
         child: FloatingActionButton(
@@ -944,9 +1100,11 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
               final isDeleting = _deletingIds.contains(character.id);
               final isExpanded = _expandedIds.contains(character.id);
 
-              return AspectRatio(
-                aspectRatio: 2 / 3,
-                child: Stack(
+              return Container(
+                key: index == 0 ? _firstCardGuideKey : null,
+                child: AspectRatio(
+                  aspectRatio: 2 / 3,
+                  child: Stack(
                   clipBehavior: Clip.none,
                   children: [
                     GestureDetector(
@@ -1072,11 +1230,24 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
                       ),
                     ),
                   ],
+                  ),
                 ),
               );
             },
           ),
         ),
+          ),
+          ),
+          if (_showGuide)
+            Positioned.fill(
+              child: PageGuideOverlay(
+                title: '角色库导览',
+                hint: '点击紫色编号查看说明。本页主要介绍角色卡片、排序、导出、新建/导入和进入聊天。',
+                targets: _guideTargets(context),
+                onExit: _exitGuide,
+              ),
+            ),
+        ],
       ),
     );
   }
