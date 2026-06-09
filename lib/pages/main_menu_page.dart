@@ -309,10 +309,14 @@ class _MainMenuPageState extends State<MainMenuPage>
       description: '这里可以进入聊天页。配置好 API 并选择角色后，就可以从这里开始对话。',
       actionLabel: '进入聊天页',
       onAction: () {
-        _pushGuidedPage(
-          page: const ChatPage(),
-          pageName: '聊天页',
-          pageDescription: '这里用于和当前角色对话。后续会继续补充输入框、发送按钮、角色切换等详细导览。',
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatPage(
+              startGuide: true,
+              onExitGuide: _finishGuide,
+            ),
+          ),
         );
       },
     );

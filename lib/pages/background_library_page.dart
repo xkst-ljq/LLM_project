@@ -14,6 +14,7 @@ import '../services/background_asset_service.dart';
 import '../utils/id_utils.dart';
 import '../utils/app_feedback.dart';
 import '../services/image_pick_service.dart';
+import '../widgets/page_guide_overlay.dart';
 
 class BackgroundImportPreview {
   final File file;
@@ -32,7 +33,14 @@ class BackgroundImportPreview {
 }
 
 class BackgroundLibraryPage extends StatefulWidget {
-  const BackgroundLibraryPage({super.key});
+  final bool startGuide;
+  final VoidCallback? onExitGuide;
+
+  const BackgroundLibraryPage({
+    super.key,
+    this.startGuide = false,
+    this.onExitGuide,
+  });
 
   @override
   State<BackgroundLibraryPage> createState() => _BackgroundLibraryPageState();
@@ -41,18 +49,121 @@ class BackgroundLibraryPage extends StatefulWidget {
 class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
   List<BackgroundCard> _backgrounds = [];
   final Set<String> _expandedIds = {};
+  late bool _showGuide;
+  final _sortButtonKey = GlobalKey();
+  final _addButtonKey = GlobalKey();
+  final _firstBackgroundGuideKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
+    _showGuide = widget.startGuide;
     _loadSortPreference();
     _loadBackgrounds();
   }
 
-  Widget _buildSortButton() {
+
+  void _exitGuide() {
+    setState(() => _showGuide = false);
+    widget.onExitGuide?.call();
+  }
+
+  Rect? _rectForKey(GlobalKey key) {
+    final keyContext = key.currentContext;
+    if (keyContext == null) return null;
+
+    final renderObject = keyContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+
+    return renderObject.localToGlobal(Offset.zero) & renderObject.size;
+  }
+
+  Rect _backButtonRect(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
+    return Rect.fromLTWH(4, top + 2, 58, kToolbarHeight);
+  }
+
+  Rect _badgeBelowRect(Rect rect) {
+    const badgeSize = 30.0;
+    return Rect.fromLTWH(
+      rect.center.dx - badgeSize / 2,
+      rect.bottom + 8,
+      badgeSize,
+      badgeSize,
+    );
+  }
+
+  Rect _fallbackCardRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final top = MediaQuery.of(context).padding.top + kToolbarHeight + 32;
+    return Rect.fromLTWH(32, top, size.width * 0.38, size.width * 0.58);
+  }
+
+  List<PageGuideTarget> _guideTargets(BuildContext context) {
+    final targets = <PageGuideTarget>[
+      PageGuideTarget(
+        id: 'firstBackgroundGuideKey_back',
+        order: 0,
+        rect: _backButtonRect(context),
+        title: '返回上一页',
+        description: '点击这里返回上一页。返回只会切换页面，不会关闭教程模式。',
+        actionLabel: '返回上一页',
+        onAction: () => Navigator.of(context).maybePop(),
+        showBadge: false,
+      ),
+    ];
+
+    final firstCardRect =
+        _rectForKey(_firstBackgroundGuideKey) ?? _fallbackCardRect(context);
+    targets.add(
+      PageGuideTarget(
+        id: 'firstBackgroundGuideKey_card',
+        order: 1,
+        rect: firstCardRect,
+        title: '背景卡片',
+        description: '这里是背景卡片列表。点击背景卡片一次会展开名称；再次点击已展开的背景卡片会进入编辑页面；长按可打开导出或删除等操作。',
+        showHighlight: false,
+      ),
+    );
+
+    final sortRect = _rectForKey(_sortButtonKey);
+    if (sortRect != null) {
+      targets.add(
+        PageGuideTarget(
+          id: 'firstBackgroundGuideKey_sort',
+          order: 2,
+          rect: sortRect,
+          badgeRect: _badgeBelowRect(sortRect),
+          title: '排序',
+          description: '点击这里可以选择排序方式；长按可以切换正序 / 倒序。',
+          showHighlight: false,
+        ),
+      );
+    }
+
+    final addRect = _rectForKey(_addButtonKey);
+    if (addRect != null) {
+      targets.add(
+        PageGuideTarget(
+          id: 'firstBackgroundGuideKey_add',
+          order: 3,
+          rect: addRect,
+          badgeRect: _badgeBelowRect(addRect),
+          title: '新建 / 导入背景',
+          description: '点击这里可以新建图片背景，也可以导入已有背景卡。',
+          showHighlight: false,
+        ),
+      );
+    }
+
+    return targets;
+  }
+
+  Widget _buildSortButton({Key? key}) {
     return Builder(
       builder: (buttonContext) {
         return InkWell(
+          key: key,
           borderRadius: BorderRadius.circular(24),
           onTap: () async {
             final renderObject = buttonContext.findRenderObject();
@@ -544,86 +655,107 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('背景图库'),
-        actions: [
-          _buildSortButton(),
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: '新建或导入',
-            onPressed: _showCreateOrImportSheet,
-          ),
-        ],
-      ),
-      body: _backgrounds.isEmpty
-          ? const Center(child: Text('暂无背景，点击 + 添加'))
-          : GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 2 / 3,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: _backgrounds.length,
-        itemBuilder: (context, index) {
-          final bg = _backgrounds[index];
-          final isExpanded = _expandedIds.contains(bg.id);
-
-          return GestureDetector(
-            onTap: () {
-              if (isExpanded) {
-                _expandedIds.remove(bg.id);
-                _openBackgroundEdit(bg, index);
-              } else {
-                setState(() {
-                  _expandedIds.clear();
-                  _expandedIds.add(bg.id);
-                });
-              }
-            },
-            onLongPress: () => _showBackgroundActions(bg),
-            child: AspectRatio(
-              aspectRatio: 2 / 3,
-              child: Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: _buildPreview(bg),
-                  ),
-                  if (isExpanded)
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: const BorderRadius.only(
-                            bottomLeft: Radius.circular(12),
-                            bottomRight: Radius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          bg.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+    return PopScope(
+      canPop: true,
+      child: Stack(
+        children: [
+          Scaffold(
+            appBar: AppBar(
+              title: const Text('背景图库'),
+              actions: [
+                _buildSortButton(key: _sortButtonKey),
+                IconButton(
+                  key: _addButtonKey,
+                  icon: const Icon(Icons.add),
+                  tooltip: '新建或导入',
+                  onPressed: _showCreateOrImportSheet,
+                ),
+              ],
+            ),
+            body: _backgrounds.isEmpty
+                ? const Center(child: Text('暂无背景，点击 + 添加'))
+                : GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      childAspectRatio: 2 / 3,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
                     ),
-                ],
+                    itemCount: _backgrounds.length,
+                    itemBuilder: (context, index) {
+                      final bg = _backgrounds[index];
+                      final isExpanded = _expandedIds.contains(bg.id);
+
+                      return Container(
+                        key: index == 0 ? _firstBackgroundGuideKey : null,
+                        child: GestureDetector(
+                          onTap: () {
+                            if (isExpanded) {
+                              _expandedIds.remove(bg.id);
+                              _openBackgroundEdit(bg, index);
+                            } else {
+                              setState(() {
+                                _expandedIds.clear();
+                                _expandedIds.add(bg.id);
+                              });
+                            }
+                          },
+                          onLongPress: () => _showBackgroundActions(bg),
+                          child: AspectRatio(
+                            aspectRatio: 2 / 3,
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: _buildPreview(bg),
+                                ),
+                                if (isExpanded)
+                                  Positioned(
+                                    bottom: 0,
+                                    left: 0,
+                                    right: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.7),
+                                        borderRadius: const BorderRadius.only(
+                                          bottomLeft: Radius.circular(12),
+                                          bottomRight: Radius.circular(12),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        bg.name,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          if (_showGuide)
+            Positioned.fill(
+              child: PageGuideOverlay(
+                title: '背景图库导览',
+                hint: '点击紫色编号查看说明。本页主要介绍背景卡片、排序和新建 / 导入。',
+                targets: _guideTargets(context),
+                onExit: _exitGuide,
               ),
             ),
-          );
-        },
+        ],
       ),
     );
   }

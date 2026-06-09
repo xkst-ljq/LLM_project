@@ -26,11 +26,21 @@ import '../models/prompt_settings.dart';
 import '../services/prompt_settings_service.dart';
 import 'prompt_settings_page.dart';
 import 'prompt_preview_page.dart';
+import '../widgets/page_guide_overlay.dart';
+
+enum _ChatGuidePhase { none, chat, settings }
 
 class ChatPage extends StatefulWidget {
   final CharacterCard? character;
+  final bool startGuide;
+  final VoidCallback? onExitGuide;
 
-  const ChatPage({super.key, this.character});
+  const ChatPage({
+    super.key,
+    this.character,
+    this.startGuide = false,
+    this.onExitGuide,
+  });
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -50,6 +60,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   late AnimationController _fanSnapController;
   double _fanSnapStart = 0.0;
   double _fanSnapTarget = 0.0;
+  _ChatGuidePhase _guidePhase = _ChatGuidePhase.none;
 
   bool _isLastMessage(int index) {
     return index == _messages.length - 1 && !_isLoading;
@@ -1378,6 +1389,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _guidePhase = widget.startGuide
+        ? _ChatGuidePhase.chat
+        : _ChatGuidePhase.none;
 
     UserService.versionNotifier.addListener(_onGlobalUserChanged);
     PromptSettingsService.versionNotifier.addListener(_onPromptSettingsChanged);
@@ -1808,7 +1822,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final screenWidth = MediaQuery.of(context).size.width;
     final panelW = panelWidth;
 
-    return MediaQuery.removePadding(
+    final page = MediaQuery.removePadding(
         context: context,
         removeTop: true,        // ✅ 强制抹掉 Flutter 引擎留出的顶部 inset
         child: Scaffold(
@@ -3014,6 +3028,33 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           ),
         ),
     );
+
+    return PopScope(
+      canPop: true,
+      child: Stack(
+        children: [
+          page,
+          if (_guidePhase == _ChatGuidePhase.chat)
+            Positioned.fill(
+              child: PageGuideOverlay(
+                title: '聊天页导览',
+                hint: '本页只介绍聊天设置入口。按住细长高光框向左滑动可打开右侧聊天设置页；顶部“退出教程”才会结束教程。',
+                targets: _chatGuideTargets(context),
+                onExit: _exitGuide,
+              ),
+            ),
+          if (_guidePhase == _ChatGuidePhase.settings)
+            Positioned.fill(
+              child: PageGuideOverlay(
+                title: '聊天设置导览',
+                hint: '按住细长高光框向右滑动可返回聊天页；顶部“退出教程”才会结束教程。',
+                targets: _chatSettingsGuideTargets(context),
+                onExit: _exitGuide,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   void _startEdit(int index) {
@@ -3143,6 +3184,79 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     } else {
       _closePanel();
     }
+  }
+
+  void _exitGuide() {
+    setState(() {
+      _guidePhase = _ChatGuidePhase.none;
+    });
+    widget.onExitGuide?.call();
+  }
+
+  void _startChatSettingsGuide() {
+    _openPanel();
+    Future.delayed(const Duration(milliseconds: 320), () {
+      if (!mounted) return;
+      setState(() {
+        _guidePhase = _ChatGuidePhase.settings;
+      });
+    });
+  }
+
+  void _returnToChatGuide() {
+    _closePanel();
+    Future.delayed(const Duration(milliseconds: 320), () {
+      if (!mounted) return;
+      setState(() {
+        _guidePhase = _ChatGuidePhase.chat;
+      });
+    });
+  }
+
+  Rect _chatSettingsSwipeRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return Rect.fromLTWH(
+      size.width * 0.28,
+      size.height * 0.50,
+      size.width * 0.44,
+      30,
+    );
+  }
+
+  Rect _chatReturnSwipeRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return Rect.fromLTWH(
+      size.width * 0.28,
+      size.height * 0.50,
+      size.width * 0.44,
+      30,
+    );
+  }
+
+  List<PageGuideTarget> _chatGuideTargets(BuildContext context) {
+    return [
+      PageGuideTarget(
+        id: 'chat_settings_swipe',
+        order: 1,
+        rect: _chatSettingsSwipeRect(context),
+        title: '侧滑打开聊天设置',
+        description: '按住这个细长高光框向左滑动，可以打开右侧聊天设置页。聊天设置里可以进入当前角色用户设定、Prompt 策略、背景设置和清空历史。',
+        onSwipeLeft: _startChatSettingsGuide,
+      ),
+    ];
+  }
+
+  List<PageGuideTarget> _chatSettingsGuideTargets(BuildContext context) {
+    return [
+      PageGuideTarget(
+        id: 'chat_settings_back_swipe',
+        order: 1,
+        rect: _chatReturnSwipeRect(context),
+        title: '滑动返回聊天页',
+        description: '按住这个细长高光框向右滑动，可以从聊天设置页返回聊天页。',
+        onSwipeRight: _returnToChatGuide,
+      ),
+    ];
   }
 
   Widget _buildMarkdownWidget(String text) {

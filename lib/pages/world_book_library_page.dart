@@ -10,6 +10,7 @@ import 'world_book_edit_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/id_utils.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/page_guide_overlay.dart';
 
 class WorldBookImportPreview {
   final File file;
@@ -28,7 +29,14 @@ class WorldBookImportPreview {
 }
 
 class WorldBookLibraryPage extends StatefulWidget {
-  const WorldBookLibraryPage({super.key});
+  final bool startGuide;
+  final VoidCallback? onExitGuide;
+
+  const WorldBookLibraryPage({
+    super.key,
+    this.startGuide = false,
+    this.onExitGuide,
+  });
 
   @override
   State<WorldBookLibraryPage> createState() => _WorldBookLibraryPageState();
@@ -37,6 +45,10 @@ class WorldBookLibraryPage extends StatefulWidget {
 class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
   List<WorldBook> _worldBooks = [];
   final Set<String> _expandedIds = {}; // 记录当前展开彩带的卡片ID
+  late bool _showGuide;
+  final _sortButtonKey = GlobalKey();
+  final _addButtonKey = GlobalKey();
+  final _firstWorldBookGuideKey = GlobalKey();
   bool _sortAscending = true; // 默认升序（时间从旧到新，名称A-Z）
   static const String _sortByKey = 'wordbook_sort_by';
   static const String _sortAscendingKey = 'wordbook_sort_ascending';
@@ -44,14 +56,113 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
   @override
   void initState() {
     super.initState();
+    _showGuide = widget.startGuide;
     _loadSortPreference();
     _loadWorldBooks();
   }
 
-  Widget _buildSortButton() {
+
+  void _exitGuide() {
+    setState(() => _showGuide = false);
+    widget.onExitGuide?.call();
+  }
+
+  Rect? _rectForKey(GlobalKey key) {
+    final keyContext = key.currentContext;
+    if (keyContext == null) return null;
+
+    final renderObject = keyContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+
+    return renderObject.localToGlobal(Offset.zero) & renderObject.size;
+  }
+
+  Rect _backButtonRect(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
+    return Rect.fromLTWH(4, top + 2, 58, kToolbarHeight);
+  }
+
+  Rect _badgeBelowRect(Rect rect) {
+    const badgeSize = 30.0;
+    return Rect.fromLTWH(
+      rect.center.dx - badgeSize / 2,
+      rect.bottom + 8,
+      badgeSize,
+      badgeSize,
+    );
+  }
+
+  Rect _fallbackCardRect(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final top = MediaQuery.of(context).padding.top + kToolbarHeight + 32;
+    return Rect.fromLTWH(32, top, size.width * 0.38, size.width * 0.58);
+  }
+
+  List<PageGuideTarget> _guideTargets(BuildContext context) {
+    final targets = <PageGuideTarget>[
+      PageGuideTarget(
+        id: 'firstWorldBookGuideKey_back',
+        order: 0,
+        rect: _backButtonRect(context),
+        title: '返回上一页',
+        description: '点击这里返回上一页。返回只会切换页面，不会关闭教程模式。',
+        actionLabel: '返回上一页',
+        onAction: () => Navigator.of(context).maybePop(),
+        showBadge: false,
+      ),
+    ];
+
+    final firstCardRect =
+        _rectForKey(_firstWorldBookGuideKey) ?? _fallbackCardRect(context);
+    targets.add(
+      PageGuideTarget(
+        id: 'firstWorldBookGuideKey_card',
+        order: 1,
+        rect: firstCardRect,
+        title: '世界书卡片',
+        description: '这里是世界书列表。点击世界书卡片可以进入编辑页；长按卡片可打开导出和删除等操作。',
+        showHighlight: false,
+      ),
+    );
+
+    final sortRect = _rectForKey(_sortButtonKey);
+    if (sortRect != null) {
+      targets.add(
+        PageGuideTarget(
+          id: 'firstWorldBookGuideKey_sort',
+          order: 2,
+          rect: sortRect,
+          badgeRect: _badgeBelowRect(sortRect),
+          title: '排序',
+          description: '点击这里可以选择排序方式；长按可以切换正序 / 倒序。',
+          showHighlight: false,
+        ),
+      );
+    }
+
+    final addRect = _rectForKey(_addButtonKey);
+    if (addRect != null) {
+      targets.add(
+        PageGuideTarget(
+          id: 'firstWorldBookGuideKey_add',
+          order: 3,
+          rect: addRect,
+          badgeRect: _badgeBelowRect(addRect),
+          title: '新建 / 导入世界书',
+          description: '点击这里可以新建世界书，也可以导入已有世界书文件。',
+          showHighlight: false,
+        ),
+      );
+    }
+
+    return targets;
+  }
+
+  Widget _buildSortButton({Key? key}) {
     return Builder(
       builder: (buttonContext) {
         return InkWell(
+          key: key,
           borderRadius: BorderRadius.circular(24),
           onTap: () async {
             final renderObject = buttonContext.findRenderObject();
@@ -809,68 +920,91 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('世界书库'),
-        actions: [
-          _buildSortButton(),
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: '新建或导入',
-            onPressed: _showCreateOrImportSheet,
-          ),
-        ],
-      ),
-      body: _worldBooks.isEmpty
-          ? const Center(child: Text('暂无世界书，点击 + 添加'))
-          : GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 2 / 3,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: _worldBooks.length,
-        itemBuilder: (context, index) {
-          final wb = _worldBooks[index];
-          final isExpanded = _expandedIds.contains(wb.id);
+    return PopScope(
+      canPop: true,
+      child: Stack(
+        children: [
+          Scaffold(
+            appBar: AppBar(
+              title: const Text('世界书库'),
+              actions: [
+                _buildSortButton(key: _sortButtonKey),
+                IconButton(
+                  key: _addButtonKey,
+                  icon: const Icon(Icons.add),
+                  tooltip: '新建或导入',
+                  onPressed: _showCreateOrImportSheet,
+                ),
+              ],
+            ),
+            body: _worldBooks.isEmpty
+                ? const Center(child: Text('暂无世界书，点击 + 添加'))
+                : GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      childAspectRatio: 2 / 3,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                    ),
+                    itemCount: _worldBooks.length,
+                    itemBuilder: (context, index) {
+                      final wb = _worldBooks[index];
+                      final isExpanded = _expandedIds.contains(wb.id);
 
-          return GestureDetector(
-            onTap: () => _openWorldBookEdit(wb, index),
-            onLongPress: () => _showWorldBookActions(wb),
-            child: AspectRatio(
-              aspectRatio: 2 / 3,
-              child: Stack(
-                children: [
-                  // 纯封面图（暂时用灰色背景 + 世界书图标）
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: _buildWorldBookCover(wb),
-                  ),
-                  // 名称彩带
-                  if (isExpanded)
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: const BorderRadius.only(
-                            bottomLeft: Radius.circular(12),
-                            bottomRight: Radius.circular(12),
+                      return Container(
+                        key: index == 0 ? _firstWorldBookGuideKey : null,
+                        child: GestureDetector(
+                          onTap: () => _openWorldBookEdit(wb, index),
+                          onLongPress: () => _showWorldBookActions(wb),
+                          child: AspectRatio(
+                            aspectRatio: 2 / 3,
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: _buildWorldBookCover(wb),
+                                ),
+                                if (isExpanded)
+                                  Positioned(
+                                    bottom: 0,
+                                    left: 0,
+                                    right: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.7),
+                                        borderRadius: const BorderRadius.only(
+                                          bottomLeft: Radius.circular(12),
+                                          bottomRight: Radius.circular(12),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                ],
+                      );
+                    },
+                  ),
+          ),
+          if (_showGuide)
+            Positioned.fill(
+              child: PageGuideOverlay(
+                title: '世界书库导览',
+                hint: '点击紫色编号查看说明。本页主要介绍世界书卡片、排序和新建 / 导入。',
+                targets: _guideTargets(context),
+                onExit: _exitGuide,
               ),
             ),
-          );
-        },
+        ],
       ),
     );
   }
+
 }
