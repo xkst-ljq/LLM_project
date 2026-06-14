@@ -69,7 +69,7 @@ character_book(→世界书，基础字段)、creator/notes/version/tags(→ met
 3. **条目是结构化 JSON** —— 我们 `{"origin":...}`，酒馆是自由文本，无法精确拆分。
 
 ### C. 缺失（我们没有）
-1. **历史后注入位**（post_history_instructions）——真缺口。
+1. ~~**历史后注入位**（post_history_instructions）——真缺口。~~ ✅ 批3 已补齐。
 2. **标签系统**（tags）。
 3. **世界书高级触发**（次关键词/优先级/位置/深度/概率/防递归）——只能降级。
 4. **示例对话专门位**（mes_example）。
@@ -92,8 +92,8 @@ character_book(→世界书，基础字段)、creator/notes/version/tags(→ met
 | 批次 | 内容 | 改动面 | 状态 |
 | --- | --- | --- | --- |
 | 批1 | `meta_json` + 详情展示元信息 | 模型 / DB(v3) / 详情页 / 转换器 / 备份 / 资产 | ✅ 已完成 |
-| 批2 | 标签筛选（角色库）+ 编辑页编辑标签 | 角色库 / 编辑页 | 待做 |
-| 批3 | 历史后注入位（post_history_instructions） | prompt 引擎 / 编辑页 | 待做 |
+| 批2 | 标签筛选（角色库）+ 编辑页编辑标签 | 角色库 / 编辑页 | ✅ 已完成 |
+| 批3 | 历史后注入位（post_history_instructions） | prompt 引擎 / 编辑页 / Prompt 策略 | ✅ 已完成 |
 | 批4 | 示例对话注入位（mes_example） | prompt 引擎 / 编辑页 | 待做 |
 | 世界书高级触发 | 概率/位置/深度/防递归等 | 世界书引擎（= Roadmap 1.3.6） | 靠后，转换降级 |
 

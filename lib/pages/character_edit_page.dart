@@ -29,6 +29,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   late TextEditingController _creatorCtrl;
   late TextEditingController _creatorNotesCtrl;
   late TextEditingController _versionCtrl;
+  late TextEditingController _postHistoryCtrl;
   late CharacterMeta _meta;
   String _avatarPath = '';
   String _cardImagePath = '';
@@ -61,6 +62,8 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     _creatorCtrl = TextEditingController(text: _meta.creator);
     _creatorNotesCtrl = TextEditingController(text: _meta.creatorNotes);
     _versionCtrl = TextEditingController(text: _meta.characterVersion);
+    _postHistoryCtrl =
+        TextEditingController(text: _meta.postHistoryInstructions);
     _avatarPath = widget.character.avatar;
     _cardImagePath = widget.character.cardImagePath;
     _cardType = widget.character.cardType.isEmpty ? 'character' : widget.character.cardType;
@@ -112,6 +115,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     _creatorCtrl.dispose();
     _creatorNotesCtrl.dispose();
     _versionCtrl.dispose();
+    _postHistoryCtrl.dispose();
     super.dispose();
   }
 
@@ -197,6 +201,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     _meta.creator = _creatorCtrl.text.trim();
     _meta.creatorNotes = _creatorNotesCtrl.text.trim();
     _meta.characterVersion = _versionCtrl.text.trim();
+    _meta.postHistoryInstructions = _postHistoryCtrl.text.trim();
     widget.character.applyMeta(_meta);
 
     await DatabaseService.updateCharacter({
@@ -930,209 +935,209 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
         child: Stack(
-            children: [
-              GestureDetector(
-                onTap: _closeWithAnimation,
-                child: const SizedBox.expand(),
-              ),
-              AnimatedBuilder(
-                animation: _rectAnimation!,
-                builder: (context, child) {
-                  final rect = _rectAnimation!.value!;
-                  return Positioned(
-                    left: rect.left,
-                    top: rect.top,
-                    width: rect.width,
-                    height: rect.height,
-                    child: GestureDetector(
-                      onTap: () {},
-                      child: Material(
-                        borderRadius: BorderRadius.circular(20), elevation: 16,
-                        child: Container(
-                          decoration: BoxDecoration(color: Theme
-                              .of(context)
-                              .scaffoldBackgroundColor,
-                              borderRadius: BorderRadius.circular(20)),
-                          child: Column(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.fromLTRB(12, 10, 4, 0),
-                                child: Row(
+          children: [
+            GestureDetector(
+              onTap: _closeWithAnimation,
+              child: const SizedBox.expand(),
+            ),
+            AnimatedBuilder(
+              animation: _rectAnimation!,
+              builder: (context, child) {
+                final rect = _rectAnimation!.value!;
+                return Positioned(
+                  left: rect.left,
+                  top: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                  child: GestureDetector(
+                    onTap: () {},
+                    child: Material(
+                      borderRadius: BorderRadius.circular(20), elevation: 16,
+                      child: Container(
+                        decoration: BoxDecoration(color: Theme
+                            .of(context)
+                            .scaffoldBackgroundColor,
+                            borderRadius: BorderRadius.circular(20)),
+                        child: Column(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.fromLTRB(12, 10, 4, 0),
+                              child: Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      '编辑角色卡',
+                                      style: TextStyle(fontSize: 18,
+                                          fontWeight: FontWeight.bold),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  FilledButton(
+                                    onPressed: _isClosing ? null : _save,
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size(50, 30),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12),
+                                    ),
+                                    child: const Text(
+                                        '保存', style: TextStyle(fontSize: 14)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    const Expanded(
-                                      child: Text(
-                                        '编辑角色卡',
-                                        style: TextStyle(fontSize: 18,
-                                            fontWeight: FontWeight.bold),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                    Row(crossAxisAlignment: CrossAxisAlignment
+                                        .start, children: [
+                                      GestureDetector(
+                                          onTap: () => _pickImage(true),
+                                          child: CircleAvatar(radius: 40,
+                                              backgroundColor: Colors.grey
+                                                  .shade300,
+                                              backgroundImage: _avatarPath
+                                                  .isNotEmpty ? FileImage(
+                                                  File(_avatarPath)) : null,
+                                              child: _avatarPath.isEmpty
+                                                  ? Icon(Icons.person, size: 40,
+                                                  color: Colors.grey.shade600)
+                                                  : null)),
+                                      const SizedBox(width: 16),
+                                      Expanded(child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment
+                                              .start, children: [
+                                        TextField(controller: _nameCtrl,
+                                            decoration: InputDecoration(
+                                                labelText: '角色卡名称',
+                                                isDense: true,
+                                                errorText: _showNameError
+                                                    ? _nameErrorText
+                                                    : null)),
+                                        const SizedBox(height: 8),
+                                        TextField(controller: _descCtrl,
+                                            decoration: const InputDecoration(
+                                                labelText: '简短描述',
+                                                isDense: true)),
+                                        const SizedBox(height: 8),
+                                        Row(children: [
+                                          Expanded(child: _buildTypeButton(
+                                              '人物卡', 'character')),
+                                          const SizedBox(width: 8),
+                                          Expanded(child: _buildTypeButton(
+                                              '系统卡', 'system'))
+                                        ]),
+                                      ])),
+                                    ]),
+                                    const SizedBox(height: 12),
+
+                                    LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final maxW = constraints.maxWidth;
+
+                                        // 宽度太窄时，不做左右布局，改成上下布局
+                                        if (maxW < 300) {
+                                          return Column(
+                                            crossAxisAlignment: CrossAxisAlignment
+                                                .stretch,
+                                            children: [
+                                              Center(
+                                                child: SizedBox(
+                                                  width: 120,
+                                                  child: _buildCardImagePreview(),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              SizedBox(
+                                                height: 120,
+                                                child: _buildWorldBookBindPanel(),
+                                              ),
+                                            ],
+                                          );
+                                        }
+
+                                        // 正常宽度下使用左右布局
+                                        final previewHeight = maxW < 380
+                                            ? 160.0
+                                            : 180.0;
+
+                                        return SizedBox(
+                                          height: previewHeight,
+                                          child: Row(
+                                            crossAxisAlignment: CrossAxisAlignment
+                                                .stretch,
+                                            children: [
+                                              _buildCardImagePreview(),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                  child: _buildWorldBookBindPanel()),
+                                            ],
+                                          ),
+                                        );
+                                      },
                                     ),
-                                    const SizedBox(width: 8),
-                                    FilledButton(
-                                      onPressed: _isClosing ? null : _save,
-                                      style: FilledButton.styleFrom(
-                                        minimumSize: const Size(50, 30),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                      ),
-                                      child: const Text(
-                                          '保存', style: TextStyle(fontSize: 14)),
-                                    ),
+
+                                    const SizedBox(height: 12),
+                                    const Divider(),
+                                    _buildSectionHeader('简单介绍'),
+                                    ..._entries.where((e) {
+                                      if (_cardType == 'system') {
+                                        return ['system_name', 'system_summary']
+                                            .contains(e.id);
+                                      }
+                                      return ['name_entry', 'relationship']
+                                          .contains(e.id);
+                                    }).map((e) => _buildEntryCard(e)),
+                                    _buildSectionHeader('详细设定'),
+                                    ..._entries.where((e) {
+                                      if (_cardType == 'system') {
+                                        return [
+                                          'system_details',
+                                          'protagonist',
+                                          'plot'
+                                        ].contains(e.id);
+                                      }
+                                      return ['body', 'psychology', 'background']
+                                          .contains(e.id);
+                                    }).map((e) => _buildEntryCard(e)),
+                                    if (_entries.any((e) => e.isCustom)) ...[
+                                      _buildSectionHeader('自定义条目'),
+                                      ..._entries.where((e) => e.isCustom).map((
+                                          e) => _buildEntryCard(e))
+                                    ],
+                                    TextButton.icon(onPressed: _addCustomEntry,
+                                        icon: const Icon(Icons.add, size: 18),
+                                        label: const Text('添加自定义条目')),
+                                    const SizedBox(height: 16), const Divider(),
+                                    _buildSectionHeader('开场白'),
+                                    ..._greetings.map((g) =>
+                                        _buildGreetingTile(g)),
+                                    TextButton.icon(onPressed: _addGreeting,
+                                        icon: const Icon(Icons.add, size: 18),
+                                        label: const Text('添加开场白')),
+                                    const SizedBox(height: 16),
+                                    const Divider(),
+                                    _buildSectionHeader('角色信息'),
+                                    ..._buildMetaFields(),
+                                    const SizedBox(height: 80),
                                   ],
                                 ),
                               ),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      Row(crossAxisAlignment: CrossAxisAlignment
-                                          .start, children: [
-                                        GestureDetector(
-                                            onTap: () => _pickImage(true),
-                                            child: CircleAvatar(radius: 40,
-                                                backgroundColor: Colors.grey
-                                                    .shade300,
-                                                backgroundImage: _avatarPath
-                                                    .isNotEmpty ? FileImage(
-                                                    File(_avatarPath)) : null,
-                                                child: _avatarPath.isEmpty
-                                                    ? Icon(Icons.person, size: 40,
-                                                    color: Colors.grey.shade600)
-                                                    : null)),
-                                        const SizedBox(width: 16),
-                                        Expanded(child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment
-                                                .start, children: [
-                                          TextField(controller: _nameCtrl,
-                                              decoration: InputDecoration(
-                                                  labelText: '角色卡名称',
-                                                  isDense: true,
-                                                  errorText: _showNameError
-                                                      ? _nameErrorText
-                                                      : null)),
-                                          const SizedBox(height: 8),
-                                          TextField(controller: _descCtrl,
-                                              decoration: const InputDecoration(
-                                                  labelText: '简短描述',
-                                                  isDense: true)),
-                                          const SizedBox(height: 8),
-                                          Row(children: [
-                                            Expanded(child: _buildTypeButton(
-                                                '人物卡', 'character')),
-                                            const SizedBox(width: 8),
-                                            Expanded(child: _buildTypeButton(
-                                                '系统卡', 'system'))
-                                          ]),
-                                        ])),
-                                      ]),
-                                      const SizedBox(height: 12),
-
-                                      LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final maxW = constraints.maxWidth;
-
-                                          // 宽度太窄时，不做左右布局，改成上下布局
-                                          if (maxW < 300) {
-                                            return Column(
-                                              crossAxisAlignment: CrossAxisAlignment
-                                                  .stretch,
-                                              children: [
-                                                Center(
-                                                  child: SizedBox(
-                                                    width: 120,
-                                                    child: _buildCardImagePreview(),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 12),
-                                                SizedBox(
-                                                  height: 120,
-                                                  child: _buildWorldBookBindPanel(),
-                                                ),
-                                              ],
-                                            );
-                                          }
-
-                                          // 正常宽度下使用左右布局
-                                          final previewHeight = maxW < 380
-                                              ? 160.0
-                                              : 180.0;
-
-                                          return SizedBox(
-                                            height: previewHeight,
-                                            child: Row(
-                                              crossAxisAlignment: CrossAxisAlignment
-                                                  .stretch,
-                                              children: [
-                                                _buildCardImagePreview(),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                    child: _buildWorldBookBindPanel()),
-                                              ],
-                                            ),
-                                          );
-                                        },
-                                      ),
-
-                                      const SizedBox(height: 12),
-                                      const Divider(),
-                                      _buildSectionHeader('简单介绍'),
-                                      ..._entries.where((e) {
-                                        if (_cardType == 'system') {
-                                          return ['system_name', 'system_summary']
-                                              .contains(e.id);
-                                        }
-                                        return ['name_entry', 'relationship']
-                                            .contains(e.id);
-                                      }).map((e) => _buildEntryCard(e)),
-                                      _buildSectionHeader('详细设定'),
-                                      ..._entries.where((e) {
-                                        if (_cardType == 'system') {
-                                          return [
-                                            'system_details',
-                                            'protagonist',
-                                            'plot'
-                                          ].contains(e.id);
-                                        }
-                                        return ['body', 'psychology', 'background']
-                                            .contains(e.id);
-                                      }).map((e) => _buildEntryCard(e)),
-                                      if (_entries.any((e) => e.isCustom)) ...[
-                                        _buildSectionHeader('自定义条目'),
-                                        ..._entries.where((e) => e.isCustom).map((
-                                            e) => _buildEntryCard(e))
-                                      ],
-                                      TextButton.icon(onPressed: _addCustomEntry,
-                                          icon: const Icon(Icons.add, size: 18),
-                                          label: const Text('添加自定义条目')),
-                                      const SizedBox(height: 16), const Divider(),
-                                      _buildSectionHeader('开场白'),
-                                      ..._greetings.map((g) =>
-                                          _buildGreetingTile(g)),
-                                      TextButton.icon(onPressed: _addGreeting,
-                                          icon: const Icon(Icons.add, size: 18),
-                                          label: const Text('添加开场白')),
-                                      const SizedBox(height: 16),
-                                      const Divider(),
-                                      _buildSectionHeader('角色信息'),
-                                      ..._buildMetaFields(),
-                                      const SizedBox(height: 80),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
-            ],
-          ),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
+      ),
     );
   }
 
@@ -1191,6 +1196,20 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
         decoration: const InputDecoration(
           labelText: '作者备注',
           hintText: '使用建议、注意事项等（不会发送给模型）',
+          isDense: true,
+          border: OutlineInputBorder(),
+          alignLabelWithHint: true,
+        ),
+      ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _postHistoryCtrl,
+        maxLines: 5,
+        minLines: 2,
+        decoration: const InputDecoration(
+          labelText: '历史后指令',
+          hintText: '放在对话最末尾的强约束指令，如「只用中文、不要旁白、保持角色」。'
+              '支持 {{char}} {{user}}。兼容酒馆 post_history_instructions。',
           isDense: true,
           border: OutlineInputBorder(),
           alignLabelWithHint: true,

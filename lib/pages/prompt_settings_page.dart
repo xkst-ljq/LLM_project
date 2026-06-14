@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../models/prompt_settings.dart';
 import '../services/prompt_settings_service.dart';
 import 'prompt_preview_page.dart';
@@ -88,11 +89,11 @@ class _PromptSettingsPageState extends State<PromptSettingsPage> {
       final characterId = widget.characterId!;
 
       useCharacterSettings =
-          await PromptSettingsService.isCharacterSettingsEnabled(characterId);
+      await PromptSettingsService.isCharacterSettingsEnabled(characterId);
 
       if (useCharacterSettings) {
         final characterSettings =
-            await PromptSettingsService.getCharacterSettings(characterId);
+        await PromptSettingsService.getCharacterSettings(characterId);
         pageSettings = characterSettings ?? globalSettings.copy();
       }
     }
@@ -114,7 +115,7 @@ class _PromptSettingsPageState extends State<PromptSettingsPage> {
     if (value) {
       final characterId = widget.characterId!;
       final savedCharacterSettings =
-          await PromptSettingsService.getCharacterSettings(characterId);
+      await PromptSettingsService.getCharacterSettings(characterId);
       final nextSettings = savedCharacterSettings ?? _globalSettings.copy();
 
       if (!mounted) return;
@@ -395,6 +396,18 @@ class _PromptSettingsPageState extends State<PromptSettingsPage> {
               minLines: 3,
             ),
           ],
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('注入历史后指令'),
+            subtitle: const Text(
+                '把角色卡的「历史后指令」放到对话最末尾（贴近模型回复），'
+                    '常用于强约束语气/格式/不跳戏。兼容酒馆 post_history_instructions。'),
+            value: _settings.injectPostHistoryInstructions,
+            onChanged: _canEditSettings
+                ? (v) =>
+                setState(() => _settings.injectPostHistoryInstructions = v)
+                : null,
+          ),
           _sectionTitle('周期注入'),
           PromptNumberSliderTile(
             title: '摘要设定注入间隔',

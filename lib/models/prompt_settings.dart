@@ -19,6 +19,7 @@ class PromptSettings {
 
   bool injectRoleplayRules;
   bool injectContinuityReminder;
+  bool injectPostHistoryInstructions;
   String characterRoleplayRules;
   String systemRoleplayRules;
   String continuityReminder;
@@ -29,6 +30,7 @@ class PromptSettings {
   PromptSettings({
     this.injectRoleplayRules = true,
     this.injectContinuityReminder = true,
+    this.injectPostHistoryInstructions = true,
     this.characterRoleplayRules = defaultCharacterRoleplayRules,
     this.systemRoleplayRules = defaultSystemRoleplayRules,
     this.continuityReminder = defaultContinuityReminder,
@@ -50,6 +52,8 @@ class PromptSettings {
       injectRoleplayRules: json['inject_roleplay_rules'] as bool? ?? true,
       injectContinuityReminder:
       json['inject_continuity_reminder'] as bool? ?? true,
+      injectPostHistoryInstructions:
+      json['inject_post_history_instructions'] as bool? ?? true,
       characterRoleplayRules:
       json['character_roleplay_rules'] as String? ??
           defaultCharacterRoleplayRules,
@@ -67,6 +71,7 @@ class PromptSettings {
     return {
       'inject_roleplay_rules': injectRoleplayRules,
       'inject_continuity_reminder': injectContinuityReminder,
+      'inject_post_history_instructions': injectPostHistoryInstructions,
       'character_roleplay_rules': characterRoleplayRules,
       'system_roleplay_rules': systemRoleplayRules,
       'continuity_reminder': continuityReminder,
@@ -80,6 +85,7 @@ class PromptSettings {
     return PromptSettings(
       injectRoleplayRules: injectRoleplayRules,
       injectContinuityReminder: injectContinuityReminder,
+      injectPostHistoryInstructions: injectPostHistoryInstructions,
       characterRoleplayRules: characterRoleplayRules,
       systemRoleplayRules: systemRoleplayRules,
       continuityReminder: continuityReminder,
