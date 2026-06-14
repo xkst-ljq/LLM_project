@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api_config_page.dart';
 import 'backup_restore_page.dart';
+import 'character_converter_page.dart';
 import 'prompt_settings_page.dart';
 import 'tutorial_home_page.dart';
 import 'user_settings_page.dart';
@@ -119,6 +120,19 @@ class SettingsMenuPage extends StatelessWidget {
                 );
               },
             ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.transform),
+            title: const Text('角色卡转换工具'),
+            subtitle: const Text('导入 SillyTavern / TavernAI 角色卡并转换'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CharacterConverterPage(),
+                ),
+              );
+            },
           ),
           const Divider(),
           const ListTile(
