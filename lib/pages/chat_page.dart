@@ -627,8 +627,37 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return raw;
   }
 
+  /// 把角色扩展元信息（标签 / 作者 / 版本 / 作者备注 / 来源）拼成展示文本。
+  /// 这些信息默认不进 Prompt，只在角色详情里展示。
+  String _buildCharacterMetaText(CharacterCard card) {
+    final meta = card.meta;
+    if (meta.isEmpty) return '';
+
+    final lines = <String>[];
+    if (meta.tags.isNotEmpty) {
+      lines.add('标签：${meta.tags.join('、')}');
+    }
+    if (meta.creator.trim().isNotEmpty) {
+      lines.add('作者：${meta.creator.trim()}');
+    }
+    if (meta.characterVersion.trim().isNotEmpty) {
+      lines.add('版本：${meta.characterVersion.trim()}');
+    }
+    if (meta.sourceFormat.trim().isNotEmpty) {
+      lines.add('来源：${meta.sourceFormat.trim()}');
+    }
+    if (meta.creatorNotes.trim().isNotEmpty) {
+      lines.add('作者备注：\n${meta.creatorNotes.trim()}');
+    }
+
+    if (lines.isEmpty) return '';
+    return '【角色信息】\n${lines.join('\n')}';
+  }
+
   String _buildCharacterDetailText(CharacterCard card) {
     try {
+      final metaText = _buildCharacterMetaText(card);
+
       final rawList = jsonDecode(
         card.entriesJson.isEmpty ? '[]' : card.entriesJson,
       ) as List;
@@ -663,11 +692,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         return detailIds.contains(entry.id) || entry.isCustom;
       }).toList();
 
-      if (detailEntries.isEmpty) {
-        return '暂无详细设定';
-      }
-
       final sections = <String>[];
+      if (metaText.isNotEmpty) sections.add(metaText);
 
       for (final entry in detailEntries) {
         final content = _formatEntryForDetailPanel(entry).trim();
@@ -1317,6 +1343,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           entriesJson: updatedCharData['entries_json'] as String? ?? '[]',
           openingGreetings:
               updatedCharData['opening_greetings'] as String? ?? '[]',
+          metaJson: updatedCharData['meta_json'] as String? ?? '{}',
         );
       }
 
@@ -1494,6 +1521,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             cardType: charData['card_type'] as String? ?? 'character',
             entriesJson: charData['entries_json'] as String? ?? '[]',
             openingGreetings: charData['opening_greetings'] as String? ?? '[]',
+            metaJson: charData['meta_json'] as String? ?? '{}',
           );
           await _setCurrentCharacter(newChar);
         }
