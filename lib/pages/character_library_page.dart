@@ -64,6 +64,30 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
   final List<CharacterCard> _characters = [];
   final Set<String> _expandedIds = {};
   final Set<String> _deletingIds = {};
+  String? _activeTagFilter; // 当前选中的标签筛选，null 表示全部
+
+  /// 当前所有角色身上出现过的标签（去重 + 保持稳定顺序）。
+  List<String> get _allTags {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final c in _characters) {
+      for (final t in c.meta.tags) {
+        final tag = t.trim();
+        if (tag.isEmpty) continue;
+        if (seen.add(tag)) result.add(tag);
+      }
+    }
+    return result;
+  }
+
+  /// 按当前标签筛选后的角色列表。
+  List<CharacterCard> get _visibleCharacters {
+    final filter = _activeTagFilter;
+    if (filter == null || filter.isEmpty) return _characters;
+    return _characters
+        .where((c) => c.meta.tags.map((e) => e.trim()).contains(filter))
+        .toList();
+  }
 
   late bool _showGuide;
   final _sortButtonKey = GlobalKey();
@@ -835,6 +859,42 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
     return targets;
   }
 
+  /// 顶部标签筛选栏。无标签时不显示，避免占位。
+  Widget _buildTagFilterBar() {
+    final tags = _allTags;
+    if (tags.isEmpty) return const SizedBox.shrink();
+
+    final chips = <Widget>[
+      Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: FilterChip(
+          label: const Text('全部'),
+          selected: _activeTagFilter == null,
+          onSelected: (_) => setState(() => _activeTagFilter = null),
+        ),
+      ),
+      ...tags.map((tag) => Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilterChip(
+              label: Text(tag),
+              selected: _activeTagFilter == tag,
+              onSelected: (sel) => setState(() {
+                _activeTagFilter = sel ? tag : null;
+              }),
+            ),
+          )),
+    ];
+
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: chips,
+      ),
+    );
+  }
+
   Widget _buildSortButton({Key? key}) {
     return Builder(
       builder: (buttonContext) {
@@ -1088,7 +1148,21 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
               });
             }
           },
-          child: GridView.builder(
+          child: Column(
+            children: [
+              _buildTagFilterBar(),
+              Expanded(
+                child: Builder(builder: (context) {
+                  final visible = _visibleCharacters;
+                  if (visible.isEmpty && _activeTagFilter != null) {
+                    return Center(
+                      child: Text(
+                        '没有带「$_activeTagFilter」标签的角色',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    );
+                  }
+                  return GridView.builder(
             padding: const EdgeInsets.all(16),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
@@ -1096,9 +1170,9 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
             ),
-            itemCount: _characters.length,
+            itemCount: visible.length,
             itemBuilder: (context, index) {
-              final character = _characters[index];
+              final character = visible[index];
               final isDeleting = _deletingIds.contains(character.id);
               final isExpanded = _expandedIds.contains(character.id);
 
@@ -1264,8 +1338,12 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
                   ],
                   ),
                 ),
-              );
+               );
             },
+          );
+                }),
+              ),
+            ],
           ),
         ),
           ),
