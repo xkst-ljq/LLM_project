@@ -1,20 +1,22 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
-import '../models/character_card.dart';
-import '../services/database_service.dart';
-import 'character_edit_page.dart';
-import '../utils/default_image.dart';
-import 'chat_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/character_card.dart';
 import '../services/character_card_asset_service.dart';
 import '../services/character_card_png_asset_service.dart';
-import '../utils/id_utils.dart';
+import '../services/database_service.dart';
 import '../utils/app_feedback.dart';
+import '../utils/default_image.dart';
+import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
+import 'character_edit_page.dart';
+import 'chat_page.dart';
 
 class CharacterImportPreview {
   final File file;
@@ -1187,6 +1189,36 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
                                           style: const TextStyle(color: Colors.white70, fontSize: 12),
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                      if (character.meta.tags.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Wrap(
+                                          spacing: 4,
+                                          runSpacing: 4,
+                                          children: character.meta.tags
+                                              .take(4)
+                                              .map((t) => Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                              alpha: 0.22),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              8),
+                                                    ),
+                                                    child: Text(
+                                                      t,
+                                                      style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 10),
+                                                    ),
+                                                  ))
+                                              .toList(),
                                         ),
                                       ],
                                     ],

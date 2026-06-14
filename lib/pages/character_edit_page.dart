@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+
 import '../models/character_card.dart';
 import '../models/character_entry.dart';
+import '../models/character_meta.dart';
 import '../services/database_service.dart';
-import '../utils/id_utils.dart';
 import '../services/image_pick_service.dart';
+import '../utils/id_utils.dart';
 
 class CharacterEditOverlay extends StatefulWidget {
   final CharacterCard character;
@@ -21,6 +24,12 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     with SingleTickerProviderStateMixin {
   late TextEditingController _nameCtrl;
   late TextEditingController _descCtrl;
+  // 角色扩展元信息（标签 / 作者 / 作者备注 / 版本）
+  late TextEditingController _tagsCtrl;
+  late TextEditingController _creatorCtrl;
+  late TextEditingController _creatorNotesCtrl;
+  late TextEditingController _versionCtrl;
+  late CharacterMeta _meta;
   String _avatarPath = '';
   String _cardImagePath = '';
   String _cardType = 'character';
@@ -47,6 +56,11 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     );
     _nameCtrl = TextEditingController(text: widget.character.name);
     _descCtrl = TextEditingController(text: widget.character.description);
+    _meta = widget.character.meta;
+    _tagsCtrl = TextEditingController(text: _meta.tags.join('，'));
+    _creatorCtrl = TextEditingController(text: _meta.creator);
+    _creatorNotesCtrl = TextEditingController(text: _meta.creatorNotes);
+    _versionCtrl = TextEditingController(text: _meta.characterVersion);
     _avatarPath = widget.character.avatar;
     _cardImagePath = widget.character.cardImagePath;
     _cardType = widget.character.cardType.isEmpty ? 'character' : widget.character.cardType;
@@ -94,6 +108,10 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     _animController.dispose();
     _nameCtrl.dispose();
     _descCtrl.dispose();
+    _tagsCtrl.dispose();
+    _creatorCtrl.dispose();
+    _creatorNotesCtrl.dispose();
+    _versionCtrl.dispose();
     super.dispose();
   }
 
@@ -168,6 +186,19 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     widget.character.worldBookId = _worldBookId ?? '';
     widget.character.entriesJson = jsonEncode(_entries.map((e) => e.toJson()).toList());
     widget.character.openingGreetings = jsonEncode(_greetings.map((g) => g.toJson()).toList());
+
+    // 写回扩展元信息（标签 / 作者 / 作者备注 / 版本）。
+    // 保留转换器带来的其他字段（source_format / post_history / mes_example）。
+    _meta.tags = _tagsCtrl.text
+        .split(RegExp(r'[，,]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    _meta.creator = _creatorCtrl.text.trim();
+    _meta.creatorNotes = _creatorNotesCtrl.text.trim();
+    _meta.characterVersion = _versionCtrl.text.trim();
+    widget.character.applyMeta(_meta);
+
     await DatabaseService.updateCharacter({
       'id': widget.character.id,
       'name': widget.character.name,
@@ -183,6 +214,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
       'card_type': widget.character.cardType,
       'entries_json': widget.character.entriesJson,
       'opening_greetings': widget.character.openingGreetings,
+      'meta_json': widget.character.metaJson,
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1081,6 +1113,10 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                                       TextButton.icon(onPressed: _addGreeting,
                                           icon: const Icon(Icons.add, size: 18),
                                           label: const Text('添加开场白')),
+                                      const SizedBox(height: 16),
+                                      const Divider(),
+                                      _buildSectionHeader('角色信息'),
+                                      ..._buildMetaFields(),
                                       const SizedBox(height: 80),
                                     ],
                                   ),
@@ -1106,6 +1142,62 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   }
 
   Widget _buildSectionHeader(String title) => Padding(padding: const EdgeInsets.only(top: 16, bottom: 8), child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)));
+
+  // 角色信息（标签 / 作者 / 版本 / 作者备注）编辑字段。
+  // 这些信息默认不注入 Prompt，仅用于角色库展示、筛选与资料保留。
+  List<Widget> _buildMetaFields() {
+    final hint = (_meta.sourceFormat.trim().isNotEmpty)
+        ? '来源：${_meta.sourceFormat.trim()}'
+        : null;
+    return [
+      if (hint != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(hint,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+        ),
+      TextField(
+        controller: _tagsCtrl,
+        decoration: const InputDecoration(
+          labelText: '标签',
+          hintText: '用逗号分隔，例如：傲娇，校园，原创',
+          isDense: true,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(
+          child: TextField(
+            controller: _creatorCtrl,
+            decoration: const InputDecoration(
+                labelText: '作者', isDense: true),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 110,
+          child: TextField(
+            controller: _versionCtrl,
+            decoration: const InputDecoration(
+                labelText: '版本', isDense: true),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _creatorNotesCtrl,
+        maxLines: 3,
+        minLines: 1,
+        decoration: const InputDecoration(
+          labelText: '作者备注',
+          hintText: '使用建议、注意事项等（不会发送给模型）',
+          isDense: true,
+          border: OutlineInputBorder(),
+          alignLabelWithHint: true,
+        ),
+      ),
+    ];
+  }
 
   Widget _buildEntryCard(CharacterEntry entry) {
     final isExpanded = _expandedEntryIds.contains(entry.id);
