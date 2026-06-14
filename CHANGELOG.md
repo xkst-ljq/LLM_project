@@ -27,6 +27,12 @@
 - 角色库卡片展开时显示标签（最多 4 个）
 - 这些信息手动新建的角色也能填写使用，不依赖转换器
 
+#### 角色卡转换工具输出位置（移动端）
+
+- Android 转换结果改为保存到系统「Download/LLM Project/Converted Cards/<时间戳>」
+  （与备份 / 导出一致，方便用户在文件管理器中找到），不再留在应用内部目录
+- 桌面端仍保存到系统 Downloads/LLM Project/Converted Cards
+
 #### 历史后注入 / post_history_instructions（批3）
 
 - 新增「历史后指令」：把指令放到对话历史最末尾（贴近模型回复位置），

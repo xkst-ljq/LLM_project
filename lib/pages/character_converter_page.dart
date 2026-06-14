@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../services/android_download_service.dart';
 import '../tools/character_converter/conversion_models.dart';
 import '../tools/character_converter/conversion_service.dart';
 import '../tools/character_converter/conversion_writer.dart';
@@ -32,7 +33,7 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
 
   bool get _isDesktop =>
       !kIsWeb &&
-      (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
   // 支持的输入扩展名
   static const _exts = ['png', 'json'];
@@ -46,7 +47,7 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
     );
     if (result == null) return;
     final paths =
-        result.files.map((f) => f.path).whereType<String>().toList();
+    result.files.map((f) => f.path).whereType<String>().toList();
     await _convertPaths(paths);
   }
 
@@ -115,15 +116,42 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
       // 在后台线程转换（纯 Dart，可 compute）
       final report = await compute(_convertInIsolate, inputs);
 
-      // 写出
+      // 写出（先写到可直接访问的目录）
       final baseDir = await _resolveOutputBaseDir();
       final outDir = await ConversionWriter.writeBatch(report, baseDir: baseDir);
+
+      // Android：把结果复制到系统 Download/LLM Project/Converted Cards/<时间戳>
+      String savedLocation = outDir.path;
+      if (!_isDesktop && Platform.isAndroid) {
+        final dirName = p.basename(outDir.path); // 时间戳目录名
+        final subDir = 'LLM Project/Converted Cards/$dirName';
+        var copied = 0;
+        for (final entity in outDir.listSync()) {
+          if (entity is! File) continue;
+          final name = p.basename(entity.path);
+          final mime = name.endsWith('.png')
+              ? 'image/png'
+              : (name.endsWith('.txt')
+              ? 'text/plain'
+              : 'application/octet-stream');
+          final saved = await AndroidDownloadService.saveFileToDownloads(
+            sourcePath: entity.path,
+            fileName: name,
+            subDir: subDir,
+            mimeType: mime,
+          );
+          if (saved != null) copied++;
+        }
+        if (copied > 0) {
+          savedLocation = 'Download/$subDir';
+        }
+      }
 
       if (!mounted) return;
       setState(() {
         _report = report;
         _message = '转换完成：成功 ${report.successCount} / ${report.total}，'
-            '已保存到：\n${outDir.path}';
+            '已保存到：\n$savedLocation';
       });
     } catch (e) {
       if (!mounted) return;
@@ -215,33 +243,33 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
       child: Center(
         child: _busy
             ? const Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text('正在转换…'),
-                ],
-              )
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 12),
+            Text('正在转换…'),
+          ],
+        )
             : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.move_to_inbox_outlined,
-                      size: 40,
-                      color: Theme.of(context).colorScheme.primary),
-                  const SizedBox(height: 8),
-                  Text(
-                    _isDesktop
-                        ? '把 SillyTavern / TavernAI 角色卡或文件夹拖到这里'
-                        : '点击下方按钮选择角色卡文件',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '支持 PNG 角色卡 与 JSON（V1 / V2）',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.move_to_inbox_outlined,
+                size: 40,
+                color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 8),
+            Text(
+              _isDesktop
+                  ? '把 SillyTavern / TavernAI 角色卡或文件夹拖到这里'
+                  : '点击下方按钮选择角色卡文件',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '支持 PNG 角色卡 与 JSON（V1 / V2）',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       ),
     );
 
@@ -284,7 +312,7 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
           title: Text(r.success ? r.characterName : r.sourceName),
           subtitle: Text(
             '${r.format.label}'
-            '${r.success ? (r.partial ? " · 成功（部分降级）" : " · 成功") : " · 失败"}',
+                '${r.success ? (r.partial ? " · 成功（部分降级）" : " · 成功") : " · 失败"}',
           ),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           children: [
@@ -302,30 +330,30 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
   }
 
   Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 96,
-              child: Text(k,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-            ),
-            Expanded(child: SelectableText(v)),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 96,
+          child: Text(k,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
         ),
-      );
+        Expanded(child: SelectableText(v)),
+      ],
+    ),
+  );
 
   String _noteTag(ConversionNoteLevel l) => switch (l) {
-        ConversionNoteLevel.info => '提示',
-        ConversionNoteLevel.warning => '注意',
-        ConversionNoteLevel.error => '错误',
-      };
+    ConversionNoteLevel.info => '提示',
+    ConversionNoteLevel.warning => '注意',
+    ConversionNoteLevel.error => '错误',
+  };
 }
 
 /// 在隔离线程中执行批量转换（纯 Dart，可序列化）。
 BatchConversionReport _convertInIsolate(
-  List<({String name, List<int> bytes})> inputs,
-) {
+    List<({String name, List<int> bytes})> inputs,
+    ) {
   return CharacterConversionService.convertBatch(inputs);
 }
