@@ -166,7 +166,7 @@ class CharacterCardMapper {
       converted.add('后置指令(post_history_instructions)');
       notes.add(ConversionNote.info(
           '已导入 post_history_instructions 为「后置指令」条目，默认未启用，'
-          '可在角色编辑页确认后开启。'));
+              '可在角色编辑页确认后开启。'));
     }
 
     // 元信息（默认不注入 Prompt）
@@ -313,11 +313,11 @@ class CharacterCardMapper {
 
   /// character_book -> LLM Project 世界书（world_books.json 形态）。
   static Map<String, dynamic>? _mapCharacterBook(
-    Map<String, dynamic> book, {
-    required String characterName,
-    required List<String> unsupported,
-    required List<ConversionNote> notes,
-  }) {
+      Map<String, dynamic> book, {
+        required String characterName,
+        required List<String> unsupported,
+        required List<ConversionNote> notes,
+      }) {
     final rawEntries = book['entries'];
     final List entryList;
     if (rawEntries is List) {
@@ -341,7 +341,9 @@ class CharacterCardMapper {
       final secondary = _stringList(m['secondary_keys']);
       final content = (m['content'] ?? '').toString();
       final title = (m['comment'] ?? m['name'] ?? '').toString().trim();
-      final enabled = m['enabled'] != false; // 默认启用
+      // 酒馆条目 enabled=false 视为停用，跳过导入（默认启用）。
+      final enabled = m['enabled'] != false;
+      if (!enabled) continue;
       final constant = m['constant'] == true;
 
       // 高级字段降级

@@ -28,7 +28,6 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
   bool _dragging = false;
   bool _busy = false;
   BatchConversionReport? _report;
-  Directory? _outputDir;
   String? _message;
 
   bool get _isDesktop =>
@@ -123,7 +122,6 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
       if (!mounted) return;
       setState(() {
         _report = report;
-        _outputDir = outDir;
         _message = '转换完成：成功 ${report.successCount} / ${report.total}，'
             '已保存到：\n${outDir.path}';
       });
@@ -272,7 +270,7 @@ class _CharacterConverterPageState extends State<CharacterConverterPage> {
     }
     return ListView.separated(
       itemCount: report.results.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final r = report.results[i];
         final color = !r.success
