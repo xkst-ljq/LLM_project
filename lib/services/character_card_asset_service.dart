@@ -156,6 +156,7 @@ class CharacterCardAssetService {
       'card_type': character.cardType,
       'entries_json': character.entriesJson,
       'opening_greetings': character.openingGreetings,
+      'meta_json': character.metaJson,
 
       // 默认不导出当前用户覆盖设定，避免分享个人信息
       'user_name': includeUserOverride ? character.userName : '',

@@ -428,7 +428,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
         cardType: c['card_type'] as String? ?? 'character',
         entriesJson: c['entries_json'] as String? ?? '[]',
         openingGreetings: c['opening_greetings'] as String? ?? '[]',
-
+        metaJson: c['meta_json'] as String? ?? '{}',
       )));
       _sortCharacters();
     });

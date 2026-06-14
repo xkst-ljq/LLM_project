@@ -16,7 +16,7 @@ class DatabaseService {
     final path = p.join(dbPath, 'chat_history.db');
     return await openDatabase(
       path,
-      version: 2, // 升级版本号
+      version: 3, // 升级版本号
       onCreate: (db, version) async {
         // 消息表
         await db.execute('''
@@ -45,6 +45,7 @@ class DatabaseService {
  card_type TEXT DEFAULT 'character',
  entries_json TEXT DEFAULT '[]',
  opening_greetings TEXT DEFAULT '[]',
+ meta_json TEXT DEFAULT '{}',
  state_json TEXT DEFAULT '{}',
  created_at INTEGER DEFAULT 0,
  updated_at INTEGER DEFAULT 0
@@ -153,6 +154,16 @@ class DatabaseService {
             'world_books',
             'updated_at',
             'INTEGER DEFAULT 0',
+          );
+        }
+
+        if (oldVersion < 3) {
+          // 角色扩展元信息（标签、作者、来源、post_history、示例对话等）
+          await _safeAddColumn(
+            db,
+            'characters',
+            'meta_json',
+            "TEXT DEFAULT '{}'",
           );
         }
       },
