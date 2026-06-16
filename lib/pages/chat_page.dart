@@ -1,34 +1,32 @@
 // ignore_for_file: use_build_context_synchronously
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'dart:ui';
-
+import 'dart:math';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:markdown/markdown.dart' as md hide Text;
 import 'package:provider/provider.dart';
-
-import '../models/background_card.dart';
-import '../models/character_card.dart';
 import '../models/character_entry.dart';
-import '../models/prompt_settings.dart';
-import '../models/user_profile.dart';
 import '../models/world_book_entry.dart';
 import '../modules/chat_module.dart';
-import '../services/api_config_service.dart';
-import '../services/background_service.dart';
+import '../models/character_card.dart';
 import '../services/database_service.dart';
-import '../services/prompt_settings_service.dart';
+import '../services/api_config_service.dart';
+import '../models/user_profile.dart';
 import '../services/user_service.dart';
-import '../utils/protagonist_setting_utils.dart';
-import '../widgets/page_guide_overlay.dart';
 import 'background_picker_sheet.dart';
-import 'prompt_preview_page.dart';
-import 'prompt_settings_page.dart';
 import 'role_user_settings_page.dart';
+import '../services/background_service.dart';
+import '../models/background_card.dart';
+import 'package:markdown/markdown.dart' as md hide Text;
+import 'package:flutter_markdown/flutter_markdown.dart';
+import '../utils/protagonist_setting_utils.dart';
+import '../models/prompt_settings.dart';
+import '../services/prompt_settings_service.dart';
+import 'prompt_settings_page.dart';
+import 'prompt_preview_page.dart';
+import '../widgets/page_guide_overlay.dart';
 
 enum _ChatGuidePhase { none, chat, settings }
 
@@ -1747,7 +1745,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       }
     }
 
-    return systemPrompt;
+    // 统一渲染占位符：description / 条目 / 世界书等内容里的 {{char}} {{user}}
+    // 在发送给模型前替换为真实角色名与用户名（与酒馆行为一致）。
+    // 对已渲染过的片段（规则 / 连续性提醒等）是幂等的。
+    return _renderPromptTemplate(systemPrompt);
   }
 
   Future<BackgroundCard?> _getCurrentBackground() async {
