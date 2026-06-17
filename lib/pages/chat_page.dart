@@ -67,6 +67,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   // 会话副本覆盖层：界面交互 / 状态栏写入的变量等。
   // 母版（角色卡）不变，渲染时叠加；清空历史时一并清除。
   SessionState _sessionState = SessionState();
+  // 状态栏灵动岛展开状态。
+  bool _statusBarExpanded = false;
   late AnimationController _fanSnapController;
   double _fanSnapStart = 0.0;
   double _fanSnapTarget = 0.0;
@@ -2018,6 +2020,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   // ===== 状态栏 UI =====
 
+  // 折叠时左右两侧各最多显示的常驻字段数（中间留空，避开刘海 / 挖孔）。
+  static const int _statusPinnedPerSide = 2;
+  // 单个胶囊内每个字段文本的最大显示长度（超出截断，防溢出）。
+  static const int _statusValueMaxChars = 8;
+
   List<StatusBarField> get _statusFields {
     final list = _currentCharacter?.meta.statusBarFields ??
         const <StatusBarField>[];
@@ -2028,165 +2035,250 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   String _statusValueOf(StatusBarField f) =>
       _sessionState.statusValues[f.id] ?? f.initialValue;
 
-  /// 折叠长条：显示常驻字段；无常驻则显示前几个；无字段显示提示。
-  Widget _buildStatusBarStrip() {
-    final fields = _statusFields;
-    if (fields.isEmpty) {
-      return const Row(
-        children: [
-          Icon(Icons.speed_outlined, size: 14, color: Colors.black54),
-          SizedBox(width: 6),
-          Expanded(
-            child: Text('状态栏（未设置）',
-                style: TextStyle(fontSize: 12, color: Colors.black54)),
+  String _numText(double v) {
+    if (v == v.roundToDouble()) return v.toInt().toString();
+    return v.toString();
+  }
+
+  /// 单字段的短标签（名称 + 值，带长度截断防溢出）。
+  String _statusChipLabel(StatusBarField f) {
+    var v = _statusValueOf(f);
+    if (v.length > _statusValueMaxChars) {
+      v = '${v.substring(0, _statusValueMaxChars)}…';
+    }
+    return '${f.name} $v';
+  }
+
+  /// 折叠时左侧常驻字段（前一半）。
+  List<StatusBarField> get _pinnedLeft {
+    final pinned = _statusFields.where((f) => f.pinned).toList();
+    return pinned.take(_statusPinnedPerSide).toList();
+  }
+
+  /// 折叠时右侧常驻字段（后一半）。
+  List<StatusBarField> get _pinnedRight {
+    final pinned = _statusFields.where((f) => f.pinned).toList();
+    if (pinned.length <= _statusPinnedPerSide) return const [];
+    return pinned
+        .skip(_statusPinnedPerSide)
+        .take(_statusPinnedPerSide)
+        .toList();
+  }
+
+  void _toggleStatusBarExpanded() {
+    if (_statusFields.isEmpty) return;
+    setState(() => _statusBarExpanded = !_statusBarExpanded);
+  }
+
+  /// 切换某字段常驻显示，并持久化（属于卡片设定）。
+  Future<void> _toggleStatusPinned(StatusBarField f, bool v) async {
+    if (_currentCharacter == null) return;
+    final meta = _currentCharacter!.meta;
+    final idx = meta.statusBarFields.indexWhere((e) => e.id == f.id);
+    if (idx < 0) return;
+    meta.statusBarFields[idx] = meta.statusBarFields[idx].copyWith(pinned: v);
+    _currentCharacter!.applyMeta(meta);
+    await DatabaseService.updateCharacter({
+      'id': _currentCharacter!.id,
+      'meta_json': _currentCharacter!.metaJson,
+    });
+    if (mounted) setState(() {});
+  }
+
+  /// 状态栏胶囊的统一材质（毛玻璃 + 半透明白），折叠 / 展开共用。
+  Widget _statusGlass({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(60),
+            borderRadius: BorderRadius.circular(14),
           ),
-          Icon(Icons.expand_more, size: 16, color: Colors.black54),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _statusChip(StatusBarField f) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Text(
+        _statusChipLabel(f),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 12, color: Colors.black87),
+      ),
+    );
+  }
+
+  /// 折叠态：左右两个胶囊，中间留空避开刘海 / 挖孔。
+  Widget _buildStatusBarCollapsed() {
+    final left = _pinnedLeft;
+    final right = _pinnedRight;
+
+    Widget side(List<StatusBarField> items, {required bool isLeft}) {
+      if (items.isEmpty) return const SizedBox.shrink();
+      return _statusGlass(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final f in items) _statusChip(f),
+              Icon(
+                isLeft ? Icons.expand_more : Icons.expand_more,
+                size: 14,
+                color: Colors.black45,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 无任何常驻字段时，左侧给一个占位入口，仍可点击展开。
+    if (left.isEmpty && right.isEmpty) {
+      return Row(
+        children: [
+          _statusGlass(
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.speed_outlined, size: 14, color: Colors.black54),
+                  SizedBox(width: 6),
+                  Text('状态', style: TextStyle(fontSize: 12, color: Colors.black87)),
+                  SizedBox(width: 4),
+                  Icon(Icons.expand_more, size: 14, color: Colors.black45),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
         ],
       );
     }
 
-    var shown = fields.where((f) => f.pinned).toList();
-    if (shown.isEmpty) shown = fields.take(3).toList();
-
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Row(
-            children: [
-              for (final f in shown)
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Text(
-                    '${f.name} ${_statusValueOf(f)}',
-                    style: const TextStyle(fontSize: 12, color: Colors.black87),
-                  ),
-                ),
-            ],
+        Flexible(child: side(left, isLeft: true)),
+        const SizedBox(width: 40), // 中间留空，避开刘海 / 挖孔
+        Flexible(
+          child: Align(
+            alignment: Alignment.topRight,
+            child: side(right, isLeft: false),
           ),
         ),
-        const Icon(Icons.expand_more, size: 16, color: Colors.black54),
       ],
     );
   }
 
-  /// 展开面板：显示全部字段当前值，可切换哪些常驻显示（写回卡片）。
-  void _showStatusBarSheet() {
-    if (_statusFields.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('这张卡还没有设置状态栏字段（可在角色编辑页添加）。')),
-      );
-      return;
-    }
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheet) {
-            // 每次重建都重新读取，确保 pinned 切换后立即反映。
-            final fields = _statusFields;
-            Future<void> togglePin(StatusBarField f, bool v) async {
-              // 更新卡片中该字段的 pinned，并持久化（属于卡片设定）。
-              // 注意：meta 是每次重新解析的 getter，必须先取一份、改完再写回。
-              final meta = _currentCharacter!.meta;
-              final idx = meta.statusBarFields.indexWhere((e) => e.id == f.id);
-              if (idx < 0) return;
-              meta.statusBarFields[idx] =
-                  meta.statusBarFields[idx].copyWith(pinned: v);
-              _currentCharacter!.applyMeta(meta);
-              await DatabaseService.updateCharacter({
-                'id': _currentCharacter!.id,
-                'meta_json': _currentCharacter!.metaJson,
-              });
-              setSheet(() {});
-              setState(() {});
-            }
-
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+  /// 展开态（灵动岛式）：同材质单块，原地展开显示全部字段 + 常驻开关。
+  Widget _buildStatusBarExpanded() {
+    final fields = _statusFields;
+    return _statusGlass(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('状态栏',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87)),
+                const Spacer(),
+                Text('📌 常驻显示在长条上',
+                    style: TextStyle(fontSize: 10, color: Colors.black.withAlpha(120))),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 28),
+                  icon: const Icon(Icons.expand_less, size: 18, color: Colors.black54),
+                  onPressed: _toggleStatusBarExpanded,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            for (final f in fields)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        const Text('状态栏',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
-                        const Spacer(),
-                        Text('常驻：长条上显示',
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey.shade600)),
-                      ],
+                    Expanded(
+                      child: Text(
+                        f.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: Colors.black87),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Flexible(
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: fields.length,
-                        separatorBuilder: (context, index) =>
-                            const Divider(height: 1),
-                        itemBuilder: (_, i) {
-                          final f = fields[i];
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(f.name,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _statusValueOf(f) +
-                                          (f.isNumber &&
-                                                  f.maxValue != null
-                                              ? ' / ${_numText(f.maxValue!)}'
-                                              : ''),
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.grey.shade700),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Row(
-                                children: [
-                                  Icon(Icons.push_pin,
-                                      size: 14,
-                                      color: f.pinned
-                                          ? Theme.of(context).primaryColor
-                                          : Colors.grey.shade400),
-                                  Switch(
-                                    value: f.pinned,
-                                    onChanged: (v) => togglePin(f, v),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          );
-                        },
+                    Text(
+                      _statusValueOf(f) +
+                          (f.isNumber && f.maxValue != null
+                              ? ' / ${_numText(f.maxValue!)}'
+                              : ''),
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.black.withAlpha(160)),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => _toggleStatusPinned(f, !f.pinned),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          f.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                          size: 16,
+                          color: f.pinned
+                              ? Theme.of(context).primaryColor
+                              : Colors.black38,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            );
-          },
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 
-  String _numText(double v) {
-    if (v == v.roundToDouble()) return v.toInt().toString();
-    return v.toString();
+  /// 状态栏整体：折叠 / 展开切换，带动画；展开态同材质、无蒙版。
+  Widget _buildStatusBar() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _statusBarExpanded ? null : _toggleStatusBarExpanded,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, anim) =>
+              FadeTransition(opacity: anim, child: child),
+          child: _statusBarExpanded
+              ? KeyedSubtree(
+                  key: const ValueKey('sb_expanded'),
+                  child: _buildStatusBarExpanded())
+              : KeyedSubtree(
+                  key: const ValueKey('sb_collapsed'),
+                  child: _buildStatusBarCollapsed()),
+        ),
+      ),
+    );
   }
 
   @override
@@ -3042,7 +3134,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       ),
                     ),
 
-                  // 3. 状态栏
+                  // 3. 状态栏（左右胶囊 + 灵动岛式原地展开）
                   Positioned(
                     top: 8,
                     left: 16,
@@ -3053,24 +3145,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                         opacity: (_showFanPanel || _showCardDetail)
                             ? 0.0
                             : (1.0 - _animController.value),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: Container(
-                              height: 36,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withAlpha(60),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: _showStatusBarSheet,
-                                child: _buildStatusBarStrip(),
-                              ),
-                            ),
-                          ),
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: _buildStatusBar(),
                         ),
                       ),
                     ),
