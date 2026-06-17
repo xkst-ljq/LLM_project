@@ -1,13 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import '../utils/id_utils.dart';
+
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
 import '../utils/asset_magic.dart';
+import '../utils/id_utils.dart';
 
 class CharacterCardPngAssetService {
   static const String magic = AssetMagic.assetV1;
@@ -190,6 +192,8 @@ class CharacterCardPngAssetService {
       'card_type': character.cardType,
       'entries_json': character.entriesJson,
       'opening_greetings': character.openingGreetings,
+      // 扩展元信息（标签 / 作者 / 来源 / post_history / 状态栏字段等）
+      'meta_json': character.metaJson,
 
       // 默认不导出用户覆盖设定
       'user_name': includeUserOverride ? character.userName : '',

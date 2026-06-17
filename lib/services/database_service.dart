@@ -405,4 +405,45 @@ class DatabaseService {
     }
     return null;
   }
+
+  // ===== 会话状态（会话副本 Prompt 机制）=====
+  // 存放在 characters 表既有的 state_json 列里，不需要升级数据库版本。
+
+  /// 读取某角色的会话状态原始 JSON 字符串（不存在时回退 '{}'）。
+  static Future<String> getSessionStateJson(String characterId) async {
+    final db = await database;
+    final result = await db.query(
+      'characters',
+      columns: ['state_json'],
+      where: 'id = ?',
+      whereArgs: [characterId],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return result.first['state_json'] as String? ?? '{}';
+    }
+    return '{}';
+  }
+
+  /// 写入某角色的会话状态原始 JSON 字符串。
+  static Future<void> setSessionStateJson(
+    String characterId,
+    String stateJson,
+  ) async {
+    final db = await database;
+    await db.update(
+      'characters',
+      {
+        'state_json': stateJson,
+        'updated_at': _nowMs(),
+      },
+      where: 'id = ?',
+      whereArgs: [characterId],
+    );
+  }
+
+  /// 清空某角色的会话状态（清空聊天记录时调用，使 Prompt 回到纯母版）。
+  static Future<void> clearSessionState(String characterId) async {
+    await setSessionStateJson(characterId, '{}');
+  }
 }

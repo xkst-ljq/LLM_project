@@ -166,7 +166,7 @@ class CharacterCardMapper {
       converted.add('后置指令(post_history_instructions)');
       notes.add(ConversionNote.info(
           '已导入 post_history_instructions 为「后置指令」条目，默认未启用，'
-              '可在角色编辑页确认后开启。'));
+          '可在角色编辑页确认后开启。'));
     }
 
     // 元信息（默认不注入 Prompt）
@@ -313,11 +313,11 @@ class CharacterCardMapper {
 
   /// character_book -> LLM Project 世界书（world_books.json 形态）。
   static Map<String, dynamic>? _mapCharacterBook(
-      Map<String, dynamic> book, {
-        required String characterName,
-        required List<String> unsupported,
-        required List<ConversionNote> notes,
-      }) {
+    Map<String, dynamic> book, {
+    required String characterName,
+    required List<String> unsupported,
+    required List<ConversionNote> notes,
+  }) {
     final rawEntries = book['entries'];
     final List entryList;
     if (rawEntries is List) {
@@ -341,16 +341,20 @@ class CharacterCardMapper {
       final secondary = _stringList(m['secondary_keys']);
       final content = (m['content'] ?? '').toString();
       final title = (m['comment'] ?? m['name'] ?? '').toString().trim();
-      // 酒馆条目 enabled=false 视为停用，跳过导入（默认启用）。
+      // 酒馆条目 enabled=false 视为作者关闭：仍导入，但默认不启用，
+      // 用户可在世界书里手动开启（忠实保留作者内容，由用户决定）。
       final enabled = m['enabled'] != false;
-      if (!enabled) continue;
       final constant = m['constant'] == true;
 
-      // 高级字段降级
+      // insertion_order（注入优先级）：兼容 priority 字段。
+      final order = _readInt(m['insertion_order']) ?? _readInt(m['priority']);
+
+      // position（插入位置）：酒馆 0/before_char -> before_char；
+      // 其余（after_char / 数值 4 等）统一归为 after_char。
+      final position = _mapPosition(m['position']);
+
+      // 仍无法表达的高级字段（深度 / 概率 / selective / 大小写）记为降级。
       for (final adv in const [
-        'priority',
-        'insertion_order',
-        'position',
         'depth',
         'probability',
         'selective',
@@ -365,8 +369,12 @@ class CharacterCardMapper {
             ? title
             : (keys.isNotEmpty ? keys.first : '条目 ${i + 1}'),
         'content': content,
-        'keyword': [...keys, ...secondary].join(','),
+        'keys': keys,
+        'secondary_keys': secondary,
         'sort_order': i,
+        'insertion_order': order ?? i,
+        'position': position,
+        'enabled': enabled,
         'always_active': constant,
         'recursive': true,
       });
@@ -375,9 +383,10 @@ class CharacterCardMapper {
     if (entries.isEmpty) return null;
 
     if (downgraded) {
-      unsupported.add('世界书高级触发规则（优先级/位置/深度/概率等）');
+      unsupported.add('世界书部分高级触发字段（扫描深度 / 概率 / selective / 大小写敏感）');
       notes.add(ConversionNote.warning(
-          '内嵌世界书的部分高级触发规则已降级为基础关键词匹配。'));
+          '关键词列表、次关键词、启用状态、优先级、插入位置已保留；'
+          '扫描深度 / 概率 / selective / 大小写敏感等字段暂不支持，已忽略。'));
     }
 
     final bookName = (book['name'] ?? '').toString().trim();
@@ -399,6 +408,29 @@ class CharacterCardMapper {
     }
     if (v is String && v.trim().isNotEmpty) return [v.trim()];
     return const [];
+  }
+
+  static int? _readInt(dynamic v) {
+    if (v is int) return v;
+    if (v is double) return v.toInt();
+    if (v is String) return int.tryParse(v.trim());
+    return null;
+  }
+
+  /// 把酒馆的 position 映射到本项目的 before_char / after_char。
+  /// 酒馆数值：0=角色定义之前 -> before_char；其余（如 4=作者注 after）-> after_char。
+  /// 字符串：包含 'after' -> after_char；其余 -> before_char。
+  static String _mapPosition(dynamic v) {
+    if (v is int) return v == 0 ? 'before_char' : 'after_char';
+    if (v is num) return v == 0 ? 'before_char' : 'after_char';
+    if (v is String) {
+      final s = v.toLowerCase();
+      if (s.contains('after')) return 'after_char';
+      if (s.contains('before')) return 'before_char';
+      final n = int.tryParse(s.trim());
+      if (n != null) return n == 0 ? 'before_char' : 'after_char';
+    }
+    return 'before_char';
   }
 
   static bool _hasMacros(String text) =>

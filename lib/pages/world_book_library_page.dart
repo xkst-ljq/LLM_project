@@ -1,16 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/world_book.dart';
 import '../services/database_service.dart';
 import '../services/world_book_asset_service.dart';
-import 'world_book_edit_overlay.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/id_utils.dart';
 import '../utils/app_feedback.dart';
+import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
+import 'world_book_edit_overlay.dart';
 
 class WorldBookImportPreview {
   final File file;
@@ -606,11 +608,9 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     final tags = <String>[];
 
     for (final entry in wb.entries) {
-      final keyword = entry.keyword.trim();
-      if (keyword.isEmpty) continue;
+      if (!entry.hasKeys) continue;
 
-      final parts = keyword
-          .split(RegExp(r'[,，、\s]+'))
+      final parts = entry.keys
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty);
 
@@ -634,8 +634,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
     final entryCount = entries.length;
     final alwaysActiveCount = entries.where((e) => e.alwaysActive).length;
-    final keywordCount =
-        entries.where((e) => e.keyword.trim().isNotEmpty).length;
+    final keywordCount = entries.where((e) => e.hasKeys).length;
 
     final tags = _worldBookTags(wb);
     final initial = _worldBookInitial(wb);

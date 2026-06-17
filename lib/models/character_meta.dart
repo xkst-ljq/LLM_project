@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'status_bar_field.dart';
+
 /// 角色扩展元信息。
 ///
 /// 这是「补齐我们现在没有、酒馆有」的信息载体。统一存放在
@@ -24,6 +26,9 @@ class CharacterMeta {
   String postHistoryInstructions;
   String mesExample;
 
+  /// 状态栏字段定义（玩法设定，随卡片导入导出）。当前值另存于会话副本。
+  List<StatusBarField> statusBarFields;
+
   CharacterMeta({
     List<String>? tags,
     this.creator = '',
@@ -32,7 +37,9 @@ class CharacterMeta {
     this.sourceFormat = '',
     this.postHistoryInstructions = '',
     this.mesExample = '',
-  }) : tags = tags ?? <String>[];
+    List<StatusBarField>? statusBarFields,
+  })  : tags = tags ?? <String>[],
+        statusBarFields = statusBarFields ?? <StatusBarField>[];
 
   bool get isEmpty =>
       tags.isEmpty &&
@@ -41,7 +48,8 @@ class CharacterMeta {
       characterVersion.trim().isEmpty &&
       sourceFormat.trim().isEmpty &&
       postHistoryInstructions.trim().isEmpty &&
-      mesExample.trim().isEmpty;
+      mesExample.trim().isEmpty &&
+      statusBarFields.isEmpty;
 
   factory CharacterMeta.fromJson(Map<String, dynamic> json) {
     List<String> readTags(dynamic v) {
@@ -54,6 +62,19 @@ class CharacterMeta {
       return <String>[];
     }
 
+    List<StatusBarField> readFields(dynamic v) {
+      if (v is List) {
+        final out = <StatusBarField>[];
+        for (final e in v) {
+          if (e is Map) {
+            out.add(StatusBarField.fromJson(Map<String, dynamic>.from(e)));
+          }
+        }
+        return out;
+      }
+      return <StatusBarField>[];
+    }
+
     return CharacterMeta(
       tags: readTags(json['tags']),
       creator: json['creator']?.toString() ?? '',
@@ -63,6 +84,7 @@ class CharacterMeta {
       postHistoryInstructions:
           json['post_history_instructions']?.toString() ?? '',
       mesExample: json['mes_example']?.toString() ?? '',
+      statusBarFields: readFields(json['status_bar_fields']),
     );
   }
 
@@ -90,6 +112,7 @@ class CharacterMeta {
       'source_format': sourceFormat,
       'post_history_instructions': postHistoryInstructions,
       'mes_example': mesExample,
+      'status_bar_fields': statusBarFields.map((f) => f.toJson()).toList(),
     };
   }
 

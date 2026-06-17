@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
 import '../models/world_book.dart';
 import '../models/world_book_entry.dart';
 import '../services/database_service.dart';
@@ -35,15 +37,9 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
     super.initState();
     _nameCtrl = TextEditingController(text: widget.worldBook.name);
     _descCtrl = TextEditingController(text: widget.worldBook.description);
-    _entries = widget.worldBook.entries.map((e) => WorldBookEntry(
-      id: e.id,
-      title: e.title,
-      content: e.content,
-      keyword: e.keyword,
-      sortOrder: e.sortOrder,
-      alwaysActive: e.alwaysActive,
-      recursive: e.recursive,
-    )).toList();
+    // 用 copyWith 复制，避免漏带高级触发字段
+    // （keys / secondaryKeys / enabled / insertionOrder / position）。
+    _entries = widget.worldBook.entries.map((e) => e.copyWith()).toList();
 
     _animController = AnimationController(
       vsync: this,
@@ -318,15 +314,36 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                         itemCount: _entries.length,
                                         itemBuilder: (ctx, i) {
                                           final entry = _entries[i];
-                                          return Card(
+                                          return Opacity(
+                                            opacity: entry.enabled ? 1.0 : 0.45,
+                                            child: Card(
                                             margin: const EdgeInsets.only(bottom: 8),
                                             child: ListTile(
-                                              title: Text(entry.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                              title: Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(entry.title,
+                                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                                        overflow: TextOverflow.ellipsis),
+                                                  ),
+                                                  if (!entry.enabled)
+                                                    Container(
+                                                      margin: const EdgeInsets.only(left: 6),
+                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.grey.shade300,
+                                                        borderRadius: BorderRadius.circular(4),
+                                                      ),
+                                                      child: const Text('已停用',
+                                                          style: TextStyle(fontSize: 10, color: Colors.black54)),
+                                                    ),
+                                                ],
+                                              ),
                                               subtitle: Column(
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  if (entry.keyword.isNotEmpty)
+                                                  if (entry.hasKeys)
                                                     Padding(
                                                       padding: const EdgeInsets.only(bottom: 4),
                                                       child: Container(
@@ -336,7 +353,7 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                                           borderRadius: BorderRadius.circular(4),
                                                         ),
                                                         child: Text(
-                                                          entry.keyword,
+                                                          entry.keywordDisplay,
                                                           style: TextStyle(fontSize: 10, color: Colors.blue.shade700),
                                                         ),
                                                       ),
@@ -357,6 +374,7 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                               ),
                                               onTap: () => _editEntry(entry),
                                             ),
+                                          ),
                                           );
                                         },
                                       ),
@@ -402,8 +420,12 @@ class _EntryEditPageState extends State<_EntryEditPage> {
   late TextEditingController _titleCtrl;
   late TextEditingController _contentCtrl;
   late TextEditingController _keywordCtrl;
+  late TextEditingController _secondaryCtrl;
+  late TextEditingController _orderCtrl;
+  late bool _enabled;
   late bool _alwaysActive;
   late bool _recursive;
+  late String _position;
 
   bool get _isClosing => false;
 
@@ -412,9 +434,17 @@ class _EntryEditPageState extends State<_EntryEditPage> {
     super.initState();
     _titleCtrl = TextEditingController(text: widget.entry.title);
     _contentCtrl = TextEditingController(text: widget.entry.content);
-    _keywordCtrl = TextEditingController(text: widget.entry.keyword);
+    _keywordCtrl = TextEditingController(text: widget.entry.keywordDisplay);
+    _secondaryCtrl =
+        TextEditingController(text: widget.entry.secondaryKeys.join('，'));
+    _orderCtrl =
+        TextEditingController(text: widget.entry.insertionOrder.toString());
+    _enabled = widget.entry.enabled;
     _alwaysActive = widget.entry.alwaysActive;
     _recursive = widget.entry.recursive;
+    _position = widget.entry.position == 'after_char'
+        ? 'after_char'
+        : 'before_char';
   }
 
   @override
@@ -422,14 +452,22 @@ class _EntryEditPageState extends State<_EntryEditPage> {
     _titleCtrl.dispose();
     _contentCtrl.dispose();
     _keywordCtrl.dispose();
+    _secondaryCtrl.dispose();
+    _orderCtrl.dispose();
     super.dispose();
   }
 
   void _save() {
+    final order = int.tryParse(_orderCtrl.text.trim()) ??
+        widget.entry.insertionOrder;
     final updated = widget.entry.copyWith(
       title: _titleCtrl.text.trim(),
       content: _contentCtrl.text.trim(),
-      keyword: _keywordCtrl.text.trim(),
+      keys: WorldBookEntry.splitKeys(_keywordCtrl.text),
+      secondaryKeys: WorldBookEntry.splitKeys(_secondaryCtrl.text),
+      insertionOrder: order,
+      position: _position,
+      enabled: _enabled,
       alwaysActive: _alwaysActive,
       recursive: _recursive,
     );
@@ -464,9 +502,34 @@ class _EntryEditPageState extends State<_EntryEditPage> {
             TextField(
               controller: _keywordCtrl,
               decoration: const InputDecoration(
-                labelText: '触发关键词（可选）',
-                hintText: 'AI 回复中提到该词时自动注入此条目',
+                labelText: '触发关键词（可选，多个用逗号分隔）',
+                hintText: '对话中提到任一关键词时自动注入此条目',
               ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _secondaryCtrl,
+              decoration: const InputDecoration(
+                labelText: '次要关键词（可选，多个用逗号分隔）',
+                hintText: '保留自第三方卡的次关键词，暂作普通关键词处理',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('启用条目',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                Switch(
+                  value: _enabled,
+                  onChanged: (v) => setState(() => _enabled = v),
+                ),
+              ],
+            ),
+            const Text(
+              '关闭后此条目不会注入对话（导入的第三方卡中作者关闭的条目默认在此关闭）。',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
             ),
             const SizedBox(height: 12),
             Row(
@@ -489,6 +552,41 @@ class _EntryEditPageState extends State<_EntryEditPage> {
                   onChanged: (v) => setState(() => _recursive = v),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            // 注入位置
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text('注入位置'),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'before_char',
+                    label: Text('角色设定前'),
+                  ),
+                  ButtonSegment(
+                    value: 'after_char',
+                    label: Text('角色设定后'),
+                  ),
+                ],
+                selected: {_position},
+                onSelectionChanged: (s) =>
+                    setState(() => _position = s.first),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 注入优先级
+            TextField(
+              controller: _orderCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '注入优先级',
+                hintText: '数值越小越靠前，多条命中时靠前的更受重视（默认 0）',
+              ),
             ),
             const SizedBox(height: 12),
             Expanded(
