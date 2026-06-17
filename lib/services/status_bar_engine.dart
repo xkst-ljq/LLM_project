@@ -3,10 +3,10 @@ import '../models/status_bar_field.dart';
 /// 标签块工具（通用：将来背包 / 动态设定演化等"LLM 返回变更指令"的场景共用）。
 ///
 /// 约定：LLM 把机器可读的变更指令放进一对标签里，例如
-///   <状态变化> ... </状态变化>
+///   `<状态变化> ... </状态变化>`
 /// 引擎负责把它从展示文本里剥离（用户看不到技术标记），并解析其中的指令。
 class TaggedBlock {
-  /// 提取 <tag>...</tag> 之间的内容（取最后一个块；找不到返回 null）。
+  /// 提取 `<tag>...</tag>` 之间的内容（取最后一个块；找不到返回 null）。
   static String? extract(String text, String tag) {
     final re = RegExp('<$tag>(.*?)</$tag>', dotAll: true);
     final matches = re.allMatches(text).toList();
@@ -14,7 +14,7 @@ class TaggedBlock {
     return matches.last.group(1)?.trim();
   }
 
-  /// 从展示文本中剥离所有 <tag>...</tag> 块（含标签本身），并清理多余空行。
+  /// 从展示文本中剥离所有 `<tag>...</tag>` 块（含标签本身），并清理多余空行。
   static String strip(String text, String tag) {
     final re = RegExp('<$tag>.*?</$tag>', dotAll: true);
     var out = text.replaceAll(re, '');
@@ -88,7 +88,7 @@ class StatusBarEngine {
     return '';
   }
 
-  /// 解析 LLM 回复中的 <状态变化> 块，对 values 应用变更（原地修改 values）。
+  /// 解析 LLM 回复中的 `<状态变化>` 块，对 values 应用变更（原地修改 values）。
   /// 返回变更记录列表（无变化 / 无块时为空）。
   static List<StatusChange> applyFromReply(
     String reply,
@@ -160,7 +160,7 @@ class StatusBarEngine {
     return changes;
   }
 
-  /// 从展示文本剥离 <状态变化> 块（用户看到的回复里不含技术标记）。
+  /// 从展示文本剥离 `<状态变化>` 块（用户看到的回复里不含技术标记）。
   static String stripFromReply(String reply) => TaggedBlock.strip(reply, tag);
 
   // ---- 内部小工具 ----

@@ -16,6 +16,7 @@ import '../models/character_card.dart';
 import '../models/character_entry.dart';
 import '../models/prompt_settings.dart';
 import '../models/session_state.dart';
+import '../models/status_bar_field.dart';
 import '../models/user_profile.dart';
 import '../models/world_book_entry.dart';
 import '../modules/chat_module.dart';
@@ -2015,11 +2016,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     await _ensureOpeningGreetingForEmptyHistory();
   }
 
-  @override
   // ===== 状态栏 UI =====
 
   List<StatusBarField> get _statusFields {
-    final list = _currentCharacter?.meta.statusBarFields ?? const [];
+    final list = _currentCharacter?.meta.statusBarFields ??
+        const <StatusBarField>[];
     final sorted = [...list]..sort((a, b) => a.order.compareTo(b.order));
     return sorted;
   }
@@ -2127,7 +2128,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: fields.length,
-                        separatorBuilder: (_, __) =>
+                        separatorBuilder: (context, index) =>
                             const Divider(height: 1),
                         itemBuilder: (_, i) {
                           final f = fields[i];
