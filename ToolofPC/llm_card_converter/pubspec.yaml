@@ -1,0 +1,40 @@
+name: llm_card_converter
+description: "LLM Project 角色卡转换工具（PC 端）：把 SillyTavern / TavernAI 角色卡转换为 LLM Project 角色卡。"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # 转换核心依赖
+  archive: ^3.6.1          # zip / zlib
+  image: ^4.0.0            # PNG 解码/编码
+  path: ^1.9.0             # 路径处理
+  path_provider: ^2.1.2    # 下载目录
+
+  # PC 交互
+  desktop_drop: ^0.7.1     # 拖入文件 / 文件夹（适配新版 Flutter）
+  file_picker: ^8.0.0      # 选择文件 / 文件夹
+
+  # 本地设置持久化（默认保存位置、API 配置等）
+  shared_preferences: ^2.2.2
+
+  # 第二步 AI 智能归类（调用 OpenAI 兼容 API）
+  dio: ^5.4.0
+
+  # 自定义窗口标题栏（去系统黑边，把最小化/最大化/关闭做进应用内）
+  window_manager: ^0.4.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
