@@ -1,14 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import '../utils/id_utils.dart';
+
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
 import '../utils/asset_magic.dart';
+import '../utils/id_utils.dart';
 
 class CharacterCardAssetService {
   static const String magic = AssetMagic.assetV1;
@@ -337,6 +339,22 @@ class CharacterCardAssetService {
     return s;
   }
 
+  /// 把一段文本里所有对 assets/ 资产的引用（如开场白内嵌图片
+  /// src="assets/embedded/img_0.png"）替换为导入后的本地文件路径。
+  static String _restoreAssetRefsInText(
+    dynamic value,
+    Map<String, String> pathMap,
+  ) {
+    var s = value?.toString() ?? '';
+    if (s.isEmpty) return s;
+    pathMap.forEach((assetKey, localPath) {
+      if (s.contains(assetKey)) {
+        s = s.replaceAll(assetKey, localPath);
+      }
+    });
+    return s;
+  }
+
   static Future<Map<String, String>> _importWorldBookDependencies(
       Map<String, List<int>> files,
       ) async {
@@ -408,6 +426,11 @@ class CharacterCardAssetService {
     c['avatar'] = _restorePath(c['avatar'], pathMap);
     c['card_image_path'] = _restorePath(c['card_image_path'], pathMap);
     c['user_avatar'] = _restorePath(c['user_avatar'], pathMap);
+
+    // 开场白 / 描述里内嵌图片（assets/embedded/xxx）的引用，重写为本地文件路径。
+    c['opening_greetings'] =
+        _restoreAssetRefsInText(c['opening_greetings'], pathMap);
+    c['description'] = _restoreAssetRefsInText(c['description'], pathMap);
 
     // 如果包内包含世界书，则绑定新世界书 ID；否则清空，避免无效绑定
     c['world_book_id'] = worldBookIdMap[oldWorldBookId] ?? '';

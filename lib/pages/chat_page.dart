@@ -7,6 +7,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_html/flutter_html.dart' as fhtml;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md hide Text;
 import 'package:provider/provider.dart';
@@ -3875,6 +3876,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   Widget _buildMarkdownWidget(String text) {
+    // 含 HTML 标签（如导入的酒馆卡开场白 <img>/<div>/<h1>/<br>）→ 走 HTML 渲染。
+    if (_looksLikeHtml(text)) {
+      return _buildHtmlWidget(text);
+    }
+
     if (!_looksLikeComplexMarkdown(text)) {
       return _buildStyledRoleplayText(text);
     }
@@ -3889,6 +3895,190 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           _handleMarkdownAction(action);
         }
       },
+    );
+  }
+
+  /// 粗略判断内容是否包含 HTML 标签。只认常见的块/图片/排版标签，
+  /// 避免把普通文本里的 < > 误判（比如 "1<2"）。
+  bool _looksLikeHtml(String text) {
+    return RegExp(
+      r'<\s*(img|div|span|h[1-6]|p|br|b|i|strong|em|a|ul|ol|li|center|font|hr|table)'
+      r'(\s[^>]*)?/?\s*>',
+      caseSensitive: false,
+    ).hasMatch(text);
+  }
+
+  /// 用 flutter_html 渲染开场白 / 消息里的 HTML（档位 A：图片 / 标题 / 加粗 / 链接 / 简单排版）。
+  ///
+  /// 本地优先原则：图片仅显示本地资产（file:// 或本地绝对路径），
+  /// 外链（http/https）运行时不联网加载，降级为占位文字。
+  /// 转译工具会把外链图片下载内嵌成本地路径，届时即可正常显示。
+  Widget _buildHtmlWidget(String text) {
+    // ① 先做 {{char}} / {{user}} 等宏替换（HTML 路径之前漏了）。
+    var html = _renderPromptTemplate(text);
+    // ② 规范化无引号属性：第三方卡常写 <img src=data:...> / <div style=a:b;c:d>，
+    //    HTML 解析器遇到无引号属性里的特殊字符（; : , 等）会截断，导致 data URI /
+    //    样式失效。这里把 src= 与 style= 的无引号值补上引号。
+    html = _quoteUnquotedAttrs(html);
+    // ③ 把裸换行符转成 <br>：第三方卡常用 \n 换行，但 HTML 不认 \n。
+    //    标签之间的 \n（>\s*<）属于排版空白，去掉以免产生多余空行；
+    //    其余文本中的 \n 转为 <br>，还原作者的换行意图。
+    html = html.replaceAll(RegExp(r'>\s*\n\s*<'), '><');
+    html = html.replaceAll('\n', '<br>');
+
+    return fhtml.Html(
+      data: html,
+      // 禁止渲染脚本 / 样式块等无意义或有风险的标签。
+      onLinkTap: (url, attributes, element) {
+        if (url == null) return;
+        if (url.startsWith('action://')) {
+          _handleMarkdownAction(url.substring('action://'.length));
+          return;
+        }
+        // 外部链接：本地优先，不跳转外部浏览器，仅提示链接地址。
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('该链接指向外部网站，已忽略：$url'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      },
+      extensions: [
+        fhtml.TagExtension(
+          tagsToExtend: {'img'},
+          builder: (ctx) {
+            final src = ctx.attributes['src'] ?? '';
+            return _buildHtmlImage(src);
+          },
+        ),
+      ],
+      style: {
+        'body': fhtml.Style(
+          margin: fhtml.Margins.zero,
+          padding: fhtml.HtmlPaddings.zero,
+          fontSize: fhtml.FontSize(12.5),
+          lineHeight: fhtml.LineHeight(1.25),
+          color: Colors.black87,
+        ),
+        // 标题默认很大很占高度，整体压扁。
+        'h1': fhtml.Style(
+          fontSize: fhtml.FontSize(17),
+          margin: fhtml.Margins.symmetric(vertical: 4),
+          lineHeight: fhtml.LineHeight(1.2),
+        ),
+        'h2': fhtml.Style(
+          fontSize: fhtml.FontSize(15),
+          margin: fhtml.Margins.symmetric(vertical: 3),
+          lineHeight: fhtml.LineHeight(1.2),
+        ),
+        'h3': fhtml.Style(
+          fontSize: fhtml.FontSize(13.5),
+          margin: fhtml.Margins.symmetric(vertical: 2),
+        ),
+        // 段落上下间距收紧。
+        'p': fhtml.Style(
+          margin: fhtml.Margins.symmetric(vertical: 3),
+        ),
+        // 分隔线压扁。
+        'hr': fhtml.Style(
+          margin: fhtml.Margins.symmetric(vertical: 4),
+        ),
+        // 链接：橙色，贴近常见卡片风格。
+        'a': fhtml.Style(
+          color: const Color(0xFFE8833A),
+          textDecoration: TextDecoration.none,
+        ),
+      },
+    );
+  }
+
+  /// HTML 图片：本地路径 / data URI 正常显示；外链降级为占位（不联网）。
+  /// 给 src= / style= 等属性的无引号值补上双引号。
+  /// HTML 解析器对无引号属性遇到 ; : , 等会截断，导致 data URI / 内联样式失效。
+  String _quoteUnquotedAttrs(String html) {
+    // 匹配 属性名= 后面紧跟一个非引号、非空白的值（无引号），值取到空白或 > 之前。
+    // 适用于 data URI / url() 等不含空格的长值。
+    final re = RegExp(
+      r'''\b(src|style|href|width|height)\s*=\s*(?!["'])([^\s>]+)''',
+      caseSensitive: false,
+    );
+    return html.replaceAllMapped(re, (m) {
+      final name = m.group(1);
+      final value = m.group(2)!;
+      return '$name="$value"';
+    });
+  }
+
+  Widget _buildHtmlImage(String src) {
+    final s = src.trim();
+
+    // 限制开场白内嵌图片的最大高度，避免单张立绘占满整屏。
+    Widget wrap(Widget img) => ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240),
+            child: img,
+          ),
+        );
+
+    // data:image/...;base64,xxxx —— 图片内嵌在文本里，无需联网，直接解码显示。
+    if (s.startsWith('data:image')) {
+      final idx = s.indexOf('base64,');
+      if (idx != -1) {
+        try {
+          final bytes = base64Decode(s.substring(idx + 7));
+          return wrap(Image.memory(bytes, fit: BoxFit.contain));
+        } catch (_) {
+          return _imagePlaceholder('图片数据无法解码');
+        }
+      }
+    }
+
+    String? localPath;
+    if (s.startsWith('file://')) {
+      localPath = Uri.tryParse(s)?.toFilePath();
+    } else if (s.isNotEmpty &&
+        !s.startsWith('http://') &&
+        !s.startsWith('https://') &&
+        !s.startsWith('data:')) {
+      // 直接是本地绝对路径
+      localPath = s;
+    }
+
+    if (localPath != null && localPath.isNotEmpty) {
+      final file = File(localPath);
+      if (file.existsSync()) {
+        return wrap(Image.file(file, fit: BoxFit.contain));
+      }
+    }
+
+    // 外链 / 不可用：占位（保持本地、不暴露隐私）。
+    return _imagePlaceholder('外链图片（未内嵌）');
+  }
+
+  Widget _imagePlaceholder(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withAlpha(12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black.withAlpha(20)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.image_not_supported_outlined,
+              size: 16, color: Colors.black.withAlpha(120)),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: Colors.black.withAlpha(140)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
