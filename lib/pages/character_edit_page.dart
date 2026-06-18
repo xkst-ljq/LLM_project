@@ -330,13 +330,32 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('编辑开场白'),
-        content: TextField(
-          controller: controller,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            hintText: '输入开场白内容...',
-            border: OutlineInputBorder(),
-          ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              maxLines: 6,
+              decoration: const InputDecoration(
+                hintText: '输入开场白内容...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _insertImageIntoController(controller),
+                icon: const Icon(Icons.image_outlined, size: 18),
+                label: const Text('插入图片'),
+              ),
+            ),
+            Text(
+              '图片会保存到本地、随角色卡导出，聊天时显示在开场白中。',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -356,6 +375,28 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     });
     if (result != null && mounted) {
       setState(() => greeting.content = result);
+    }
+  }
+
+  /// 选择本地图片并把 <img> 标签插入到文本光标处（纯本地，符合本地优先理念）。
+  Future<void> _insertImageIntoController(
+      TextEditingController controller) async {
+    final path = await ImagePickService.pickInsertImage(context);
+    if (path == null || path.isEmpty) return;
+    // 用 <img> 标签承载本地路径，聊天页 HTML 渲染会以 Image.file 显示。
+    final tag = '<img src="$path">';
+    final sel = controller.selection;
+    final text = controller.text;
+    if (sel.isValid && sel.start >= 0) {
+      final newText =
+          text.replaceRange(sel.start, sel.end, tag);
+      controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: sel.start + tag.length),
+      );
+    } else {
+      // 无有效光标：追加到末尾。
+      controller.text = text.isEmpty ? tag : '$text\n$tag';
     }
   }
 

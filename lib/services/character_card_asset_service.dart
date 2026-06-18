@@ -92,6 +92,64 @@ class CharacterCardAssetService {
     }
   }
 
+  /// 把一段文本里引用的本地图片（<img src="本地路径"> 或 url(本地路径)）
+  /// 打包进 archive 的 assets/embedded/，并把引用改写为 assets/embedded/xxx。
+  /// 返回改写后的文本。[counter] 用于跨多段文本统一编号、避免重名。
+  static Future<String> _embedLocalImagesInText(
+    String text,
+    Archive archive,
+    List<int> counter,
+  ) async {
+    if (text.isEmpty) return text;
+
+    // 收集 <img src> 与 css url() 中的本地路径（非 http/https/data/assets）。
+    final imgRe = RegExp(
+      r'''<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s">]+))''',
+      caseSensitive: false,
+      dotAll: true,
+    );
+    final urlRe = RegExp(
+      r'''url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]+))\s*\)''',
+      caseSensitive: false,
+    );
+
+    final localPaths = <String>[];
+    void collect(RegExp re) {
+      for (final m in re.allMatches(text)) {
+        final s = (m.group(1) ?? m.group(2) ?? m.group(3) ?? '').trim();
+        if (s.isEmpty) continue;
+        if (s.startsWith('http://') ||
+            s.startsWith('https://') ||
+            s.startsWith('data:') ||
+            s.startsWith('assets/')) {
+          continue;
+        }
+        if (!localPaths.contains(s)) localPaths.add(s);
+      }
+    }
+
+    collect(imgRe);
+    collect(urlRe);
+    if (localPaths.isEmpty) return text;
+
+    var result = text;
+    for (final path in localPaths) {
+      final file = File(path);
+      if (!file.existsSync()) continue;
+      try {
+        final bytes = await file.readAsBytes();
+        final ext = p.extension(path).isEmpty ? '.png' : p.extension(path);
+        final assetPath = 'assets/embedded/img_${counter[0]}$ext';
+        counter[0]++;
+        archive.addFile(ArchiveFile(assetPath, bytes.length, bytes));
+        result = result.replaceAll(path, assetPath);
+      } catch (e) {
+        debugPrint('打包内嵌图片失败: $path $e');
+      }
+    }
+    return result;
+  }
+
   static Future<Map<String, dynamic>?> _findWorldBookRaw(String id) async {
     if (id.trim().isEmpty) return null;
 
@@ -248,6 +306,20 @@ class CharacterCardAssetService {
       includeUserOverride: includeUserOverride,
       userAvatarAssetPath: userAvatarAssetPath,
       includeBoundWorldBook: shouldIncludeWorldBook,
+    );
+
+    // 开场白 / 描述里用户插入的本地图片，打包进卡并改写引用路径，
+    // 使角色卡可跨设备分享（导入时再落地为本机路径）。
+    final embedCounter = <int>[0];
+    characterJson['opening_greetings'] = await _embedLocalImagesInText(
+      characterJson['opening_greetings']?.toString() ?? '[]',
+      archive,
+      embedCounter,
+    );
+    characterJson['description'] = await _embedLocalImagesInText(
+      characterJson['description']?.toString() ?? '',
+      archive,
+      embedCounter,
     );
 
     _addText(archive, 'data/character.json', characterJson);

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -203,6 +204,83 @@ class CharacterCardPngAssetService {
     };
   }
 
+  /// 图片角色卡是纯 JSON 载荷，无法另存 asset 文件。
+  /// 因此把开场白 / 描述里用户插入的本地图片转成 data URI 内联进文本，
+  /// 使卡片可跨设备分享（导入端的 HTML 渲染可直接显示 data URI）。
+  static Future<Map<String, dynamic>> _inlineLocalImages(
+    Map<String, dynamic> character,
+  ) async {
+    final imgRe = RegExp(
+      r'''<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s">]+))''',
+      caseSensitive: false,
+      dotAll: true,
+    );
+    final urlRe = RegExp(
+      r'''url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]+))\s*\)''',
+      caseSensitive: false,
+    );
+
+    final cache = <String, String?>{}; // 本地路径 -> data URI（null 表示读取失败）
+
+    Future<String?> toDataUri(String path) async {
+      if (cache.containsKey(path)) return cache[path];
+      String? uri;
+      try {
+        final file = File(path);
+        if (file.existsSync()) {
+          final bytes = await file.readAsBytes();
+          final ext = p.extension(path).toLowerCase();
+          String mime = 'image/png';
+          if (ext == '.gif') {
+            mime = 'image/gif';
+          } else if (ext == '.webp') {
+            mime = 'image/webp';
+          } else if (ext == '.jpg' || ext == '.jpeg') {
+            mime = 'image/jpeg';
+          }
+          uri = 'data:$mime;base64,${base64Encode(bytes)}';
+        }
+      } catch (e) {
+        debugPrint('内联本地图片失败: $path $e');
+      }
+      cache[path] = uri;
+      return uri;
+    }
+
+    Future<String> rewrite(String text) async {
+      if (text.isEmpty) return text;
+      final paths = <String>[];
+      void collect(RegExp re) {
+        for (final m in re.allMatches(text)) {
+          final s = (m.group(1) ?? m.group(2) ?? m.group(3) ?? '').trim();
+          if (s.isEmpty) continue;
+          if (s.startsWith('http://') ||
+              s.startsWith('https://') ||
+              s.startsWith('data:') ||
+              s.startsWith('assets/')) {
+            continue;
+          }
+          if (!paths.contains(s)) paths.add(s);
+        }
+      }
+
+      collect(imgRe);
+      collect(urlRe);
+      var result = text;
+      for (final path in paths) {
+        final uri = await toDataUri(path);
+        if (uri != null) result = result.replaceAll(path, uri);
+      }
+      return result;
+    }
+
+    final c = Map<String, dynamic>.from(character);
+    c['opening_greetings'] =
+        await rewrite(c['opening_greetings']?.toString() ?? '[]');
+    c['description'] = await rewrite(c['description']?.toString() ?? '');
+    return c;
+  }
+
   static Future<File> exportCharacterCardPng({
     required CharacterCard character,
     bool includeUserOverride = false,
@@ -254,11 +332,11 @@ class CharacterCardPngAssetService {
         'world_book': shouldIncludeWorldBook,
       },
       'payload': {
-        'character': _characterToExportMap(
+        'character': await _inlineLocalImages(_characterToExportMap(
           character,
           includeUserOverride: includeUserOverride,
           includeBoundWorldBook: shouldIncludeWorldBook,
-        ),
+        )),
         'dependencies': dependencies,
       },
     };

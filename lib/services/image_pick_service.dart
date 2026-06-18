@@ -1,10 +1,12 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
 import '../utils/id_utils.dart';
 import '../widgets/image_crop_page.dart';
 
@@ -60,6 +62,39 @@ class ImagePickService {
   }
 
   /// 背景图保留原图比例，不裁剪。
+  /// 选择一张本地图片并保存到应用文档目录，返回本地绝对路径。
+  /// 用于「开场白 / 描述里插入图片」：不裁剪，纯本地，符合本地优先理念。
+  static Future<String?> pickInsertImage(BuildContext context) async {
+    try {
+      final source = await _showSourceDialog(
+        context,
+        title: '选择图片来源',
+        allowCamera: false,
+      );
+
+      if (source == null) return null;
+
+      final picked = await _picker.pickImage(
+        source: source,
+        imageQuality: 95,
+      );
+
+      if (picked == null) return null;
+
+      return _saveFileToLocal(
+        sourcePath: picked.path,
+        filePrefix: 'embedded_image',
+        extension: p.extension(picked.path).isEmpty
+            ? '.png'
+            : p.extension(picked.path),
+      );
+    } catch (e, s) {
+      debugPrint('选择插入图片失败: $e');
+      debugPrint('$s');
+      return null;
+    }
+  }
+
   static Future<String?> pickBackgroundImage(BuildContext context) async {
     try {
       final source = await _showSourceDialog(
