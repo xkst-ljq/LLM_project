@@ -16,7 +16,7 @@ class StatusBarField {
   String initialValue;
   double? minValue; // 仅 number 有意义
   double? maxValue; // 仅 number 有意义
-  bool pinned; // 折叠状态栏时是否常驻显示
+  String pinSide; // 'none' | 'left' | 'right'：折叠长条上固定在哪一侧
   int order; // 排序
 
   StatusBarField({
@@ -26,16 +26,27 @@ class StatusBarField {
     this.initialValue = '',
     this.minValue,
     this.maxValue,
-    this.pinned = false,
+    this.pinSide = 'none',
     this.order = 0,
   });
 
   bool get isNumber => type == 'number';
+  bool get isPinned => pinSide == 'left' || pinSide == 'right';
+  bool get isPinnedLeft => pinSide == 'left';
+  bool get isPinnedRight => pinSide == 'right';
 
   static double? _readDouble(dynamic v) {
     if (v is num) return v.toDouble();
     if (v is String && v.trim().isNotEmpty) return double.tryParse(v.trim());
     return null;
+  }
+
+  static String _readPinSide(Map<String, dynamic> json) {
+    final raw = json['pin_side']?.toString();
+    if (raw == 'left' || raw == 'right' || raw == 'none') return raw!;
+    // 兼容旧字段 pinned(bool)：true -> 默认固定到左侧。
+    if (json['pinned'] == true) return 'left';
+    return 'none';
   }
 
   factory StatusBarField.fromJson(Map<String, dynamic> json) {
@@ -49,7 +60,7 @@ class StatusBarField {
       initialValue: json['initial_value']?.toString() ?? '',
       minValue: _readDouble(json['min_value']),
       maxValue: _readDouble(json['max_value']),
-      pinned: json['pinned'] as bool? ?? false,
+      pinSide: _readPinSide(json),
       order: json['order'] as int? ?? 0,
     );
   }
@@ -62,7 +73,7 @@ class StatusBarField {
       'initial_value': initialValue,
       'min_value': minValue,
       'max_value': maxValue,
-      'pinned': pinned,
+      'pin_side': pinSide,
       'order': order,
     };
   }
@@ -74,7 +85,7 @@ class StatusBarField {
     String? initialValue,
     double? minValue,
     double? maxValue,
-    bool? pinned,
+    String? pinSide,
     int? order,
   }) {
     return StatusBarField(
@@ -84,7 +95,7 @@ class StatusBarField {
       initialValue: initialValue ?? this.initialValue,
       minValue: minValue ?? this.minValue,
       maxValue: maxValue ?? this.maxValue,
-      pinned: pinned ?? this.pinned,
+      pinSide: pinSide ?? this.pinSide,
       order: order ?? this.order,
     );
   }

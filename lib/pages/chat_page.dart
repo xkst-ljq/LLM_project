@@ -935,8 +935,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   /// 惯性结束后吸附到最近卡片
   void _snapFanOffset() {
-    final maxOffset = (_cardCount - 1) / 2.0 * _cardDs;
-    final snapped = (_fanOffset / _cardDs).round() * _cardDs;
+    final centerIdx = (_cardCount - 1) / 2.0;
+    final maxOffset = centerIdx * _cardDs;
+    // 合法吸附点是「让某张卡正好居中」的偏移：(i - centerIdx) * ds。
+    // 当卡片数为偶数时 centerIdx 是半整数，直接四舍五入到 ds 整数倍会落在
+    // 两张卡之间（出现两张并排居中）。这里按 centerIdx 对齐后再取整。
+    final i = (_fanOffset / _cardDs + centerIdx).round();
+    final snapped = (i - centerIdx) * _cardDs;
     setState(() {
       _fanOffset = snapped.clamp(-maxOffset, maxOffset);
     });
@@ -2020,10 +2025,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   // ===== 状态栏 UI =====
 
-  // 折叠时左右两侧各最多显示的常驻字段数（中间留空，避开刘海 / 挖孔）。
-  static const int _statusPinnedPerSide = 2;
-  // 单个胶囊内每个字段文本的最大显示长度（超出截断，防溢出）。
-  static const int _statusValueMaxChars = 8;
+  // 折叠长条上每侧最多固定的字段数（左 / 右各自上限）。
+  static const int _statusPinnedMax = 3;
 
   List<StatusBarField> get _statusFields {
     final list = _currentCharacter?.meta.statusBarFields ??
@@ -2040,29 +2043,27 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return v.toString();
   }
 
-  /// 单字段的短标签（名称 + 值，带长度截断防溢出）。
-  String _statusChipLabel(StatusBarField f) {
-    var v = _statusValueOf(f);
-    if (v.length > _statusValueMaxChars) {
-      v = '${v.substring(0, _statusValueMaxChars)}…';
-    }
-    return '${f.name} $v';
+  /// 进度（0~1），仅当数值字段设了上下限时有值。
+  double? _statusProgress(StatusBarField f) {
+    if (!f.isNumber || f.minValue == null || f.maxValue == null) return null;
+    final v = double.tryParse(_statusValueOf(f));
+    final range = f.maxValue! - f.minValue!;
+    if (v == null || range <= 0) return null;
+    return ((v - f.minValue!) / range).clamp(0.0, 1.0);
   }
 
-  /// 折叠时左侧常驻字段（前一半）。
-  List<StatusBarField> get _pinnedLeft {
-    final pinned = _statusFields.where((f) => f.pinned).toList();
-    return pinned.take(_statusPinnedPerSide).toList();
-  }
+  List<StatusBarField> get _pinnedLeftFields =>
+      _statusFields.where((f) => f.isPinnedLeft).take(_statusPinnedMax).toList();
+  List<StatusBarField> get _pinnedRightFields =>
+      _statusFields.where((f) => f.isPinnedRight).take(_statusPinnedMax).toList();
 
-  /// 折叠时右侧常驻字段（后一半）。
-  List<StatusBarField> get _pinnedRight {
-    final pinned = _statusFields.where((f) => f.pinned).toList();
-    if (pinned.length <= _statusPinnedPerSide) return const [];
-    return pinned
-        .skip(_statusPinnedPerSide)
-        .take(_statusPinnedPerSide)
-        .toList();
+  void _showStatusPinFullToast(String sideLabel) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$sideLabel侧最多固定 $_statusPinnedMax 条，请先取消一条再添加。'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _toggleStatusBarExpanded() {
@@ -2070,13 +2071,28 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     setState(() => _statusBarExpanded = !_statusBarExpanded);
   }
 
-  /// 切换某字段常驻显示，并持久化（属于卡片设定）。
-  Future<void> _toggleStatusPinned(StatusBarField f, bool v) async {
+  void _collapseStatusBar() {
+    if (_statusBarExpanded) setState(() => _statusBarExpanded = false);
+  }
+
+  /// 设置某字段的固定方向（none/left/right），并持久化（属于卡片设定）。
+  Future<void> _setStatusPinSide(StatusBarField f, String side) async {
     if (_currentCharacter == null) return;
+    // 限制：每侧最多 _statusPinnedMax 个。已满时不允许再固定到该侧。
+    if (side == 'left' && !f.isPinnedLeft &&
+        _statusFields.where((e) => e.isPinnedLeft).length >= _statusPinnedMax) {
+      _showStatusPinFullToast('左');
+      return;
+    }
+    if (side == 'right' && !f.isPinnedRight &&
+        _statusFields.where((e) => e.isPinnedRight).length >= _statusPinnedMax) {
+      _showStatusPinFullToast('右');
+      return;
+    }
     final meta = _currentCharacter!.meta;
     final idx = meta.statusBarFields.indexWhere((e) => e.id == f.id);
     if (idx < 0) return;
-    meta.statusBarFields[idx] = meta.statusBarFields[idx].copyWith(pinned: v);
+    meta.statusBarFields[idx] = meta.statusBarFields[idx].copyWith(pinSide: side);
     _currentCharacter!.applyMeta(meta);
     await DatabaseService.updateCharacter({
       'id': _currentCharacter!.id,
@@ -2085,16 +2101,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     if (mounted) setState(() {});
   }
 
-  /// 状态栏胶囊的统一材质（毛玻璃 + 半透明白），折叠 / 展开共用。
-  Widget _statusGlass({required Widget child}) {
+  /// 状态栏统一材质（毛玻璃 + 半透明白），长条与详情块共用。
+  Widget _statusGlass({required Widget child, double radius = 14}) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white.withAlpha(60),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(radius),
           ),
           child: child,
         ),
@@ -2102,181 +2118,304 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _statusChip(StatusBarField f) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 10),
-      child: Text(
-        _statusChipLabel(f),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12, color: Colors.black87),
-      ),
+  /// 固定长条里的迷你块：无边框无底色。名称在上（极小浅色），
+  /// 下面是数值/文本，或一条很细的带百分比迷你进度条。
+  Widget _buildStripChip(StatusBarField f, {required bool alignRight}) {
+    final value = _statusValueOf(f);
+    final progress = _statusProgress(f);
+    final cross =
+        alignRight ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+
+    final nameWidget = Text(
+      f.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 8, color: Colors.black38, height: 1.1),
     );
-  }
 
-  /// 折叠态：左右两个胶囊，中间留空避开刘海 / 挖孔。
-  Widget _buildStatusBarCollapsed() {
-    final left = _pinnedLeft;
-    final right = _pinnedRight;
-
-    Widget side(List<StatusBarField> items, {required bool isLeft}) {
-      if (items.isEmpty) return const SizedBox.shrink();
-      return _statusGlass(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final f in items) _statusChip(f),
-              Icon(
-                isLeft ? Icons.expand_more : Icons.expand_more,
-                size: 14,
-                color: Colors.black45,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // 无任何常驻字段时，左侧给一个占位入口，仍可点击展开。
-    if (left.isEmpty && right.isEmpty) {
-      return Row(
+    final Widget valueLine;
+    if (progress != null) {
+      // 迷你进度条 + 百分比（无底色，仅细条）。
+      // 用 Flexible 让进度条可压缩，避免在窄空间内溢出。
+      valueLine = Row(
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment:
+            alignRight ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
-          _statusGlass(
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.speed_outlined, size: 14, color: Colors.black54),
-                  SizedBox(width: 6),
-                  Text('状态', style: TextStyle(fontSize: 12, color: Colors.black87)),
-                  SizedBox(width: 4),
-                  Icon(Icons.expand_more, size: 14, color: Colors.black45),
-                ],
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: Colors.black.withAlpha(28),
+                valueColor: AlwaysStoppedAnimation(
+                    Theme.of(context).primaryColor.withAlpha(210)),
               ),
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 4),
+          Text(
+            '${(progress * 100).round()}%',
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+                height: 1.1),
+          ),
         ],
+      );
+    } else {
+      valueLine = Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+            height: 1.1),
       );
     }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: cross,
       children: [
-        Flexible(child: side(left, isLeft: true)),
-        const SizedBox(width: 40), // 中间留空，避开刘海 / 挖孔
-        Flexible(
-          child: Align(
-            alignment: Alignment.topRight,
-            child: side(right, isLeft: false),
-          ),
-        ),
+        nameWidget,
+        const SizedBox(height: 1),
+        valueLine,
       ],
     );
   }
 
-  /// 展开态（灵动岛式）：同材质单块，原地展开显示全部字段 + 常驻开关。
-  Widget _buildStatusBarExpanded() {
-    final fields = _statusFields;
-    return _statusGlass(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text('状态栏',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87)),
-                const Spacer(),
-                Text('📌 常驻显示在长条上',
-                    style: TextStyle(fontSize: 10, color: Colors.black.withAlpha(120))),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 28),
-                  icon: const Icon(Icons.expand_less, size: 18, color: Colors.black54),
-                  onPressed: _toggleStatusBarExpanded,
+  /// 固定长条内容（左固定字段靠左，右固定字段靠右）。不含毛玻璃外壳。
+  Widget _buildStatusStrip() {
+    final left = _pinnedLeftFields;
+    final right = _pinnedRightFields;
+    final hasAny = left.isNotEmpty || right.isNotEmpty;
+
+    return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+        child: !hasAny
+            ? Center(
+                child: Text(
+                  '状态栏 · 点击展开',
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.black.withAlpha(120)),
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            for (final f in fields)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        f.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: Colors.black87),
-                      ),
+              )
+            : Row(
+                children: [
+                  // 左侧固定
+                  Expanded(
+                    child: Row(
+                      children: [
+                        for (int i = 0; i < left.length; i++)
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                  right: i == left.length - 1 ? 0 : 10),
+                              child: _buildStripChip(left[i],
+                                  alignRight: false),
+                            ),
+                          ),
+                      ],
                     ),
-                    Text(
-                      _statusValueOf(f) +
-                          (f.isNumber && f.maxValue != null
-                              ? ' / ${_numText(f.maxValue!)}'
-                              : ''),
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.black.withAlpha(160)),
+                  ),
+                  const SizedBox(width: 56), // 中间留出较大空白，内容不靠近中部
+                  // 右侧固定
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        for (int i = 0; i < right.length; i++)
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(left: i == 0 ? 0 : 10),
+                              child: _buildStripChip(right[i],
+                                  alignRight: true),
+                            ),
+                          ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => _toggleStatusPinned(f, !f.pinned),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          f.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                          size: 16,
-                          color: f.pinned
-                              ? Theme.of(context).primaryColor
-                              : Colors.black38,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-          ],
-        ),
+      );
+  }
+
+  /// 详情区：块状网格内容，一个块 = 一个字段。不含毛玻璃外壳。
+  /// 每行 3 列等分，撑满整行宽度（避免右侧留白）。
+  Widget _buildStatusDetailGrid() {
+    final fields = _statusFields;
+    if (fields.isEmpty) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      // 顶部留一点和长条隔开的呼吸感，但仍在同一块毛玻璃内（视觉相连）。
+      padding: const EdgeInsets.fromLTRB(10, 2, 10, 10),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          const cols = 3;
+          const spacing = 8.0;
+          final blockW = (c.maxWidth - spacing * (cols - 1)) / cols;
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: [
+              for (final f in fields)
+                SizedBox(width: blockW, child: _buildStatusBlock(f)),
+            ],
+          );
+        },
       ),
     );
   }
 
-  /// 状态栏整体：折叠 / 展开切换，带动画；展开态同材质、无蒙版。
+  Widget _buildStatusBlock(StatusBarField f) {
+    final value = _statusValueOf(f);
+    final progress = _statusProgress(f);
+
+    // 字段名称（浅色小字），数值 / 文本块共用。
+    final nameWidget = Text(
+      f.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 12, color: Colors.black45),
+    );
+
+    // 块主体内容（不含顶部滑块触摸区）。
+    final Widget body;
+    if (progress != null) {
+      // 数值类：名称在上，下面是较厚进度条，进度条内显示「当前值/最大值」。
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          nameWidget,
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(7),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  height: 14,
+                  width: double.infinity,
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    backgroundColor: Colors.black12,
+                    valueColor: AlwaysStoppedAnimation(
+                        Theme.of(context).primaryColor.withAlpha(200)),
+                  ),
+                ),
+                Text(
+                  '$value/${_numText(f.maxValue!)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.clip,
+                  style: const TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    } else {
+      // 文本类（或无范围的数值）：名称在上，值居中显示在下，超出省略。
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          nameWidget,
+          const SizedBox(height: 3),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(110),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 顶部空白区即滑块触摸区（点 / 拖都在这块上半空白，干扰最小）。
+          _PinSlider(
+            pinSide: f.pinSide,
+            onChanged: (side) => _setStatusPinSide(f, side),
+          ),
+          // 主体内容
+          Padding(
+            padding: const EdgeInsets.fromLTRB(9, 0, 9, 8),
+            child: body,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 状态栏整体：长条始终在顶部；展开时在其下方插入详情块网格。
+  /// 同材质、无蒙版，带展开 / 收起动画。
   Widget _buildStatusBar() {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _statusBarExpanded ? null : _toggleStatusBarExpanded,
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-        alignment: Alignment.topCenter,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, anim) =>
-              FadeTransition(opacity: anim, child: child),
-          child: _statusBarExpanded
-              ? KeyedSubtree(
-                  key: const ValueKey('sb_expanded'),
-                  child: _buildStatusBarExpanded())
-              : KeyedSubtree(
-                  key: const ValueKey('sb_collapsed'),
-                  child: _buildStatusBarCollapsed()),
-        ),
+    // 长条与详情同处一块毛玻璃内：等宽、无缝隙、相连。
+    return _statusGlass(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 长条（固定长度，始终显示，不被覆盖）
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggleStatusBarExpanded,
+            child: _buildStatusStrip(),
+          ),
+          // 详情块网格（展开时出现在长条下方，同块内相连）
+          // AnimatedSize 用带回弹的曲线，整体展开后有一点回弹效果。
+          AnimatedSize(
+            duration: const Duration(milliseconds: 340),
+            curve: _statusBarExpanded
+                ? Curves.easeOutBack // 展开：略微过冲再回弹
+                : Curves.easeInCubic, // 收起：干脆收回
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: SizeTransition(
+                  sizeFactor: anim,
+                  axisAlignment: -1.0,
+                  child: child,
+                ),
+              ),
+              child: _statusBarExpanded
+                  ? KeyedSubtree(
+                      key: const ValueKey('sb_detail'),
+                      child: _buildStatusDetailGrid(),
+                    )
+                  : const SizedBox(
+                      key: ValueKey('sb_none'), width: double.infinity),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3134,20 +3273,36 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       ),
                     ),
 
-                  // 3. 状态栏（左右胶囊 + 灵动岛式原地展开）
+                  // 状态栏展开时：点击状态栏以外区域关闭（无蒙版，纯透明捕获）
+                  if (_statusBarExpanded)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: _collapseStatusBar,
+                      ),
+                    ),
+                  // 3. 状态栏（固定长条 + 点击在下方展开详情块网格）
+                  // 加宽到几乎贴边，遮住两侧头像，聚焦更强。
                   Positioned(
                     top: 8,
-                    left: 16,
-                    right: 16,
+                    left: 6,
+                    right: 6,
                     child: IgnorePointer(
                       ignoring: _showFanPanel || _animController.value > 0.5,
                       child: Opacity(
                         opacity: (_showFanPanel || _showCardDetail)
                             ? 0.0
                             : (1.0 - _animController.value),
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: _buildStatusBar(),
+                        // 吸收状态栏区域内的横向拖动，避免误触发滑出右侧设置页。
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.deferToChild,
+                          onHorizontalDragStart: (_) {},
+                          onHorizontalDragUpdate: (_) {},
+                          onHorizontalDragEnd: (_) {},
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: _buildStatusBar(),
+                          ),
                         ),
                       ),
                     ),
@@ -4395,4 +4550,151 @@ class _FanCard {
   int _index = 0; // 在 _selectableCharacters 中的索引
 
   _FanCard({required this.character, required this.t});
+}
+
+/// 状态栏块顶部的"固定方向"细滑块。
+///
+/// - 轨道很细（约 4px），滑块直径不超过轨道直径（4px）。
+/// - 三档：左（固定到长条左侧）/ 中（不固定）/ 右（固定到长条右侧）。
+/// - 滑块颜色：中为灰，向左 / 向右渐变为两种不同颜色。
+/// - 平时隐藏轨道，只露出一个很小的滑块；按下 / 拖动时才显示轨道。
+class _PinSlider extends StatefulWidget {
+  final String pinSide; // 'none' | 'left' | 'right'
+  final ValueChanged<String> onChanged;
+  const _PinSlider({required this.pinSide, required this.onChanged});
+
+  @override
+  State<_PinSlider> createState() => _PinSliderState();
+}
+
+class _PinSliderState extends State<_PinSlider> {
+  bool _active = false; // 是否正在交互（显示轨道）
+  double? _dragT; // 拖动中的归一化位置 0(左)~0.5(中)~1(右)
+
+  // 触摸热区高度（块上半空白区，便于点中且干扰最小）。
+  static const double _hitH = 22;
+  // 轨道很细（参考进度条），滑块直径不超过轨道直径。
+  static const double _trackH = 5;
+  static const double _thumb = 7;
+  // 轨道左右内边距（让轨道不顶到块边缘）。
+  static const double _padX = 10;
+
+  double _sideToT(String side) {
+    switch (side) {
+      case 'left':
+        return 0.0;
+      case 'right':
+        return 1.0;
+      default:
+        return 0.5;
+    }
+  }
+
+  String _tToSide(double t) {
+    if (t < 0.33) return 'left';
+    if (t > 0.67) return 'right';
+    return 'none';
+  }
+
+  Color _colorForT(double t) {
+    if (t < 0.33) return const Color(0xFF4F8DF7); // 左：蓝
+    if (t > 0.67) return const Color(0xFFF77F4F); // 右：橙
+    return Colors.black26; // 中：灰
+  }
+
+  void _commit(double t) {
+    final side = _tToSide(t);
+    if (side != widget.pinSide) widget.onChanged(side);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, c) {
+      final w = c.maxWidth;
+      // 轨道可用宽度（两侧留 _padX）。
+      final trackW = (w - _padX * 2).clamp(0.0, w);
+      final usable = (trackW - _thumb).clamp(0.0, trackW);
+      final t = _dragT ?? _sideToT(widget.pinSide);
+      final thumbLeft = _padX + usable * t;
+      final color = _colorForT(t);
+
+      double posToT(double dx) {
+        final local = (dx - _padX - _thumb / 2).clamp(0.0, usable);
+        return usable == 0 ? 0.5 : local / usable;
+      }
+
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // 处理横向拖动；放在子节点能赢得手势竞技，阻止冒泡到外层（避免误触发滑出设置页）。
+        onHorizontalDragStart: (_) => setState(() => _active = true),
+        onHorizontalDragUpdate: (d) {
+          setState(() => _dragT = posToT(d.localPosition.dx));
+        },
+        onHorizontalDragEnd: (_) {
+          final cur = _dragT ?? _sideToT(widget.pinSide);
+          final snapped = cur < 0.33 ? 0.0 : (cur > 0.67 ? 1.0 : 0.5);
+          _commit(snapped);
+          setState(() {
+            _active = false;
+            _dragT = null;
+          });
+        },
+        onHorizontalDragCancel: () => setState(() {
+          _active = false;
+          _dragT = null;
+        }),
+        onTapDown: (_) => setState(() => _active = true),
+        onTapUp: (d) {
+          // 点击三等分直接切换左 / 中 / 右
+          final x = d.localPosition.dx;
+          final third = w / 3;
+          final side = x < third ? 'left' : (x > third * 2 ? 'right' : 'none');
+          if (side != widget.pinSide) widget.onChanged(side);
+          setState(() => _active = false);
+        },
+        onTapCancel: () => setState(() => _active = false),
+        child: SizedBox(
+          height: _hitH,
+          width: double.infinity,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              // 轨道：仅在交互时显示
+              Positioned(
+                left: _padX,
+                right: _padX,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: _active ? 1.0 : 0.0,
+                  child: Container(
+                    height: _trackH,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withAlpha(28),
+                      borderRadius: BorderRadius.circular(_trackH / 2),
+                    ),
+                  ),
+                ),
+              ),
+              // 滑块（始终可见，位置反映当前 pinSide）
+              Positioned(
+                left: thumbLeft,
+                child: AnimatedContainer(
+                  duration: _dragT == null
+                      ? const Duration(milliseconds: 180)
+                      : Duration.zero,
+                  width: _thumb,
+                  height: _thumb,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
 }

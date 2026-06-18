@@ -36,7 +36,7 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
         initialValue: '0',
         minValue: 0,
         maxValue: 100,
-        pinned: _fields.where((f) => f.pinned).length < 3,
+        pinSide: 'none',
         order: _fields.length,
       ));
     });
@@ -198,17 +198,9 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
               ),
             ],
             const SizedBox(height: 4),
-            // 常驻
-            Row(
-              children: [
-                const Text('折叠时常驻显示'),
-                const Spacer(),
-                Switch(
-                  value: f.pinned,
-                  onChanged: (v) =>
-                      setState(() => _fields[i] = f.copyWith(pinned: v)),
-                ),
-              ],
+            Text(
+              '提示：是否固定显示在聊天页长条上（左/右），在聊天页展开状态栏后用每个块顶部的小滑块设置。',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
           ],
         ),
