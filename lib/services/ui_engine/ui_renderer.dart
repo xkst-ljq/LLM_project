@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import 'ui_models.dart';
@@ -13,7 +15,6 @@ class UIRenderer {
   }
 
   static Widget _renderModule(BuildContext context, UIModule module) {
-    // 根据 type 分发渲染不同的原子组件
     switch (module.type) {
       case 'progress':
         return _buildProgressBar(module);
@@ -30,28 +31,31 @@ class UIRenderer {
 
   static Widget _renderComposite(BuildContext context, UIComposite composite) {
     Widget content;
-    
-    // 根据 layoutType 决定布局
     switch (composite.layoutType) {
       case 'column':
         content = Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: composite.children.map((e) => render(context, e)).toList(),
         );
         break;
       case 'row':
         content = Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: composite.children.map((e) => render(context, e)).toList(),
         );
         break;
       case 'stack':
         content = Stack(
+          alignment: Alignment.center,
           children: composite.children.map((e) => render(context, e)).toList(),
         );
         break;
       case 'wrap':
         content = Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: composite.children.map((e) => render(context, e)).toList(),
         );
         break;
@@ -59,42 +63,83 @@ class UIRenderer {
         content = Text('未知布局: ${composite.layoutType}');
     }
 
-    // 包裹在材质容器中
     return _buildGlassContainer(composite, content);
   }
 
   static Widget _buildGlassContainer(dynamic container, Widget child) {
-    // 这里实现你想要的毛玻璃、圆角、颜色等效果
-    return Container(
-      decoration: BoxDecoration(
-        color: container.color.withOpacity(container.opacity),
-        borderRadius: BorderRadius.circular(container.borderRadius),
-        boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(container.borderRadius),
-        child: child,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(container.borderRadius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: container.color.withValues(alpha: container.opacity * 0.3),
+            borderRadius: BorderRadius.circular(container.borderRadius),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.2),
+              width: 1.0,
+            ),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.2),
+                Colors.white.withValues(alpha: 0.05),
+              ],
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: child,
+          ),
+        ),
       ),
     );
   }
 
-  // --- 原子组件实现 (暂定基础样式) ---
-
   static Widget _buildProgressBar(UIModule module) {
     return Padding(
-      padding: const EdgeInsets.all(8.0),
+      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(module.name, style: TextStyle(fontSize: 12, color: Colors.black54)),
-          const SizedBox(height: 4),
-          LinearProgressIndicator(
-            value: 0.5, // 暂时硬编码，后续接变量绑定
-            backgroundColor: Colors.grey[300],
-            color: module.color,
-            minHeight: 6,
+          Text(
+            module.name,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.black54,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Stack(
+            children: [
+              Container(
+                height: 6,
+                width: 120,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              FractionallySizedBox(
+                widthFactor: 0.6,
+                child: Container(
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: module.color,
+                    borderRadius: BorderRadius.circular(3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: module.color.withValues(alpha: 0.5),
+                        blurRadius: 4,
+                        offset: const Offset(0, 0),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -104,15 +149,35 @@ class UIRenderer {
   static Widget _buildButton(UIModule module) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: module.color,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(module.borderRadius)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(module.borderRadius),
+          boxShadow: [
+            BoxShadow(
+              color: module.color.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        onPressed: () {
-          debugPrint('Triggered: ${module.id}');
-        },
-        child: Text(module.name),
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: module.color,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(module.borderRadius),
+            ),
+          ),
+          onPressed: () {
+            debugPrint('Triggered: ${module.id}');
+          },
+          child: Text(
+            module.name,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ),
       ),
     );
   }
@@ -122,7 +187,12 @@ class UIRenderer {
       padding: const EdgeInsets.all(8.0),
       child: Text(
         module.properties['text'] ?? module.name,
-        style: TextStyle(color: module.color, fontSize: 14),
+        style: TextStyle(
+          color: module.color,
+          fontSize: 13,
+          fontWeight: FontWeight.w400,
+        ),
+        textAlign: TextAlign.center,
       ),
     );
   }
@@ -131,9 +201,20 @@ class UIRenderer {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: TextField(
+        style: TextStyle(color: module.color, fontSize: 13),
         decoration: InputDecoration(
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.1),
           labelText: module.name,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(module.borderRadius)),
+          labelStyle: TextStyle(color: module.color.withValues(alpha: 0.7), fontSize: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(module.borderRadius),
+            borderSide: BorderSide(color: module.color.withValues(alpha: 0.3)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(module.borderRadius),
+            borderSide: BorderSide(color: module.color.withValues(alpha: 0.2)),
+          ),
         ),
       ),
     );

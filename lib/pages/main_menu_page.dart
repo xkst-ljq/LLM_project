@@ -202,7 +202,6 @@ class _MainMenuPageState extends State<MainMenuPage>
     const height = 30.0;
     const horizontalPadding = 16.0;
 
-    // 优先读取 Text 实际绘制出来的文字范围，而不是 Text 组件被父级撑开的布局宽度。
     if (renderObject is RenderParagraph && renderObject.hasSize) {
       final plainText = renderObject.text.toPlainText();
 
@@ -248,7 +247,6 @@ class _MainMenuPageState extends State<MainMenuPage>
       }
     }
 
-    // 兜底：如果不是 Text 渲染对象，则使用组件区域，但限制最大宽度，避免变成长条。
     final rect = _rectForKey(key);
     if (rect == null) return null;
 
@@ -340,10 +338,8 @@ class _MainMenuPageState extends State<MainMenuPage>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => CharacterLibraryPage(
-              startGuide: true,
-              onExitGuide: _finishGuide,
-            ),
+            builder: (_) =>
+                const CharacterLibraryPage(),
           ),
         );
       },
@@ -374,7 +370,7 @@ class _MainMenuPageState extends State<MainMenuPage>
         _pushGuidedPage(
           page: const BackgroundLibraryPage(),
           pageName: '背景图库',
-          pageDescription: '这里用于管理背景图片和背景卡。后续会继续补充导入、编辑和选择背景的导览。',
+          pageDescription: '这里用于管理聊天背景和页面背景。它属于外观相关功能，不影响基础聊天流程。',
         );
       },
     );
@@ -656,8 +652,18 @@ class _MainMenuPageState extends State<MainMenuPage>
                                   },
                                 ),
                               ),
-                              const Divider(),
-                              const UIAssetGallery(),
+                              ListTile(
+                                leading: const Icon(Icons.grid_view),
+                                title: const Text('UI 模组库'),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const UIAssetGallery(),
+                                    ),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                         ),

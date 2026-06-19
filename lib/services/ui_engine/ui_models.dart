@@ -26,21 +26,25 @@ class UIModule {
   final Color color;
   final double opacity;
   final double borderRadius;
-  final Map<String, dynamic> properties; // 存储特定组件的属性 (如: min, max, defaultText)
-  final String? boundVariable; // 绑定到 SessionState 的变量名 (如: 'var.hp')
+  final Map<String, dynamic> properties; // 存储特定组件的属性
+  final String? boundVariable; // 绑定到 SessionState 的变量名
 
   UIModule({
     required this.id,
     required this.name,
     required this.type,
-    this.material = UIModuleMaterial.glass,
-    this.shape = UIModuleShape.rounded,
-    this.color = Colors.white,
-    this.opacity = 1.0,
-    this.borderRadius = 12.0,
+    UIModuleMaterial? material,
+    UIModuleShape? shape,
+    Color? color,
+    double opacity = 1.0,
+    double borderRadius = 12.0,
     required this.properties,
     this.boundVariable,
-  });
+  })  : this.material = material ?? UIModuleMaterial.glass,
+        this.shape = shape ?? UIModuleShape.rounded,
+        this.color = color ?? Colors.white,
+        this.opacity = opacity,
+        this.borderRadius = borderRadius;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -109,11 +113,14 @@ class UIComposite {
     required this.name,
     required this.layoutType,
     required this.children,
-    this.material = UIModuleMaterial.glass,
-    this.borderRadius = 16.0,
-    this.color = Colors.white,
-    this.opacity = 1.0,
-  });
+    UIModuleMaterial? material,
+    double borderRadius = 16.0,
+    Color? color,
+    double opacity = 1.0,
+  })  : this.material = material ?? UIModuleMaterial.glass,
+        this.color = color ?? Colors.white,
+        this.borderRadius = borderRadius,
+        this.opacity = opacity;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -138,51 +145,58 @@ class UIComposite {
   );
 }
 
-/// UI 元素统一封装 (可以是单个模组，也可以是组合块)
+/// UI 元素统一封装
 class UIElement {
   final String id;
   final bool isComposite;
   final UIModule? module;
   final UIComposite? composite;
+  
+  final Offset offset;
+  final Size size;
 
   UIElement({
     required this.id,
     required this.isComposite,
     this.module,
     this.composite,
+    this.offset = Offset.zero,
+    this.size = const Size(100, 100),
   });
 
-  // 方便在 JSON 中统一表示
   Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{
+      'id': id,
+      'isComposite': isComposite,
+      'offset': {'x': offset.dx, 'y': offset.dy},
+      'size': {'width': size.width, 'height': size.height},
+    };
     if (isComposite) {
-      return {
-        'id': id,
-        'isComposite': true,
-        'composite': composite?.toJson(),
-      };
+      map['composite'] = composite?.toJson();
     } else {
-      return {
-        'id': id,
-        'isComposite': false,
-        'module': module?.toJson(),
-      };
+      map['module'] = module?.toJson();
     }
+    return map;
   }
 
   factory UIElement.fromJson(Map<String, dynamic> json) {
     final isComposite = json['isComposite'] ?? false;
-    if (isComposite) {
-      return UIElement(
-        id: json['id'],
-        isComposite: true,
-        composite: UIComposite.fromJson(json['composite']),
-      );
-    } else {
-      return UIElement(
-        id: json['id'],
-        isComposite: false,
-        module: UIModule.fromJson(json['module']),
-      );
-    }
+    final offsetData = json['offset'] as Map<String, dynamic>? ?? {};
+    final sizeData = json['size'] as Map<String, dynamic>? ?? {};
+    
+    return UIElement(
+      id: json['id'],
+      isComposite: isComposite,
+      offset: Offset(
+        (offsetData['x'] ?? 0).toDouble(),
+        (offsetData['y'] ?? 0).toDouble(),
+      ),
+      size: Size(
+        (sizeData['width'] ?? 100.0).toDouble(),
+        (sizeData['height'] ?? 100.0).toDouble(),
+      ),
+      composite: isComposite ? UIComposite.fromJson(json['composite']) : null,
+      module: !isComposite ? UIModule.fromJson(json['module']) : null,
+    );
   }
 }

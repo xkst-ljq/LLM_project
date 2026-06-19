@@ -21,7 +21,6 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
   }
 
   void _initTestAssets() {
-    // 创建一个简单的测试原子模组
     _assetService.addModule(UIModule(
       id: 'test_progress',
       name: '生命值',
@@ -39,7 +38,6 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
       properties: {'text': '发送 lOVE'},
     ));
 
-    // 创建一个简单的组合块
     _assetService.addComposite(UIComposite(
       id: 'test_composite',
       name: '基础面板',
@@ -56,53 +54,52 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
     final modules = _assetService.getAllModules();
     final composites = _assetService.getAllComposites();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          child: Text(
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('UI 模组库'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16.0),
+        children: [
+          Text(
             'UI 模组预览',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: Colors.black54,
             ),
           ),
-        ),
-        // 渲染原子模组
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: modules.map((m) {
-            return SizedBox(
-              width: 160,
-              child: UIRenderer.render(context, UIElement(id: m.id, isComposite: false, module: m)),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Text(
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: modules.map((m) {
+              return SizedBox(
+                width: 160,
+                child: UIRenderer.render(context, UIElement(id: m.id, isComposite: false, module: m)),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 24),
+          Text(
             '组合块预览',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.bold,
               color: Colors.black38,
             ),
           ),
-        ),
-        // 渲染组合块
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: composites.map((c) {
-            return SizedBox(
-              width: 200,
-              child: UIRenderer.render(context, UIElement(id: c.id, isComposite: true, composite: c)),
-            );
-          }).toList(),
-        ),
-      ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: composites.map((c) {
+              return SizedBox(
+                width: 200,
+                child: UIRenderer.render(context, UIElement(id: c.id, isComposite: true, composite: c)),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
     );
   }
 }
