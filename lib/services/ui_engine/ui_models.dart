@@ -16,18 +16,26 @@ enum UIModuleShape {
   circle      // 圆形
 }
 
+/// UI 场景的运行时接管/渲染模式
+enum UISceneRenderingMode {
+  modalArchive, // 开屏全屏档案模式 (保存后销毁)
+  appTakeover,  // 完全接管/软件模式 (替代普通聊天框)
+  inlineHybrid  // 传统气泡共存模式
+}
+
 /// UI 模组-原子定义
 class UIModule {
   final String id;
   final String name;
-  final String type; // 'slider', 'button', 'text', 'progress', 'input' 等
+  final String type; // 'slider', 'button', 'text', 'progress', 'input', 'base_box' 等
   final UIModuleMaterial material;
   final UIModuleShape shape;
   final Color color;
   final double opacity;
   final double borderRadius;
   final Map<String, dynamic> properties; // 存储特定组件的属性
-  final String? boundVariable; // 绑定到 SessionState 的变量名
+  final String? boundVariable; // 绑定到 SessionState 的变量名 (主动驱动 Prompt)
+  final String? statusFieldMirrorKey; // 纯镜像映射置顶状态栏的字段名 (只读显示)
 
   UIModule({
     required this.id,
@@ -40,9 +48,10 @@ class UIModule {
     double borderRadius = 12.0,
     required this.properties,
     this.boundVariable,
-  })  : this.material = material ?? UIModuleMaterial.glass,
-        this.shape = shape ?? UIModuleShape.rounded,
-        this.color = color ?? Colors.white,
+    this.statusFieldMirrorKey,
+  })  : material = material ?? UIModuleMaterial.glass,
+        shape = shape ?? UIModuleShape.rounded,
+        color = color ?? Colors.white,
         this.opacity = opacity,
         this.borderRadius = borderRadius;
 
@@ -57,6 +66,7 @@ class UIModule {
     'borderRadius': borderRadius,
     'properties': properties,
     'boundVariable': boundVariable,
+    'statusFieldMirrorKey': statusFieldMirrorKey,
   };
 
   factory UIModule.fromJson(Map<String, dynamic> json) => UIModule(
@@ -70,6 +80,7 @@ class UIModule {
     borderRadius: (json['borderRadius'] ?? 12.0).toDouble(),
     properties: Map<String, dynamic>.from(json['properties'] ?? {}),
     boundVariable: json['boundVariable'],
+    statusFieldMirrorKey: json['statusFieldMirrorKey'],
   );
 
   UIModule copyWith({
@@ -81,6 +92,7 @@ class UIModule {
     double? borderRadius,
     Map<String, dynamic>? properties,
     String? boundVariable,
+    String? statusFieldMirrorKey,
   }) {
     return UIModule(
       id: id,
@@ -93,20 +105,22 @@ class UIModule {
       borderRadius: borderRadius ?? this.borderRadius,
       properties: properties ?? this.properties,
       boundVariable: boundVariable ?? this.boundVariable,
+      statusFieldMirrorKey: statusFieldMirrorKey ?? this.statusFieldMirrorKey,
     );
   }
 }
 
-/// UI 组合块定义 (Composite)
+/// UI 组合块定义 (Composite / 多重组件容器)
 class UIComposite {
   final String id;
   final String name;
-  final String layoutType; // 'column', 'row', 'stack', 'wrap'
+  final String layoutType; // 'column', 'row', 'stack', 'wrap', 'base_box'
   final List<UIElement> children;
   final UIModuleMaterial material;
   final double borderRadius;
   final Color color;
   final double opacity;
+  final UISceneRenderingMode renderingMode; // 多形态场景模式
 
   UIComposite({
     required this.id,
@@ -117,10 +131,12 @@ class UIComposite {
     double borderRadius = 16.0,
     Color? color,
     double opacity = 1.0,
-  })  : this.material = material ?? UIModuleMaterial.glass,
-        this.color = color ?? Colors.white,
+    UISceneRenderingMode? renderingMode,
+  })  : material = material ?? UIModuleMaterial.glass,
+        color = color ?? Colors.white,
         this.borderRadius = borderRadius,
-        this.opacity = opacity;
+        this.opacity = opacity,
+        renderingMode = renderingMode ?? UISceneRenderingMode.inlineHybrid;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -131,6 +147,7 @@ class UIComposite {
     'borderRadius': borderRadius,
     'color': color.toARGB32(),
     'opacity': opacity,
+    'renderingMode': renderingMode.index,
   };
 
   factory UIComposite.fromJson(Map<String, dynamic> json) => UIComposite(
@@ -142,6 +159,7 @@ class UIComposite {
     borderRadius: (json['borderRadius'] ?? 16.0).toDouble(),
     color: Color(json['color'] ?? Colors.white.toARGB32()),
     opacity: (json['opacity'] ?? 1.0).toDouble(),
+    renderingMode: UISceneRenderingMode.values[json['renderingMode'] ?? 2],
   );
 
   UIComposite copyWith({
@@ -152,6 +170,7 @@ class UIComposite {
     double? borderRadius,
     Color? color,
     double? opacity,
+    UISceneRenderingMode? renderingMode,
   }) {
     return UIComposite(
       id: id,
@@ -162,11 +181,12 @@ class UIComposite {
       borderRadius: borderRadius ?? this.borderRadius,
       color: color ?? this.color,
       opacity: opacity ?? this.opacity,
+      renderingMode: renderingMode ?? this.renderingMode,
     );
   }
 }
 
-/// UI 元素统一封装
+/// UI 元素统一封装 (承载在画布上的真实几何实例)
 class UIElement {
   final String id;
   final bool isComposite;

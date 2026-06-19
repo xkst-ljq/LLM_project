@@ -8,14 +8,14 @@ class UIRenderer {
   /// 将 UIElement 渲染为 Flutter Widget
   static Widget render(BuildContext context, UIElement element) {
     if (element.isComposite && element.composite != null) {
-      return _renderComposite(context, element.composite!);
+      return _renderComposite(context, element.composite!, element.size);
     } else if (!element.isComposite && element.module != null) {
-      return _renderModule(context, element.module!);
+      return _renderModule(context, element.module!, element.size);
     }
     return const SizedBox();
   }
 
-  static Widget _renderModule(BuildContext context, UIModule module) {
+  static Widget _renderModule(BuildContext context, UIModule module, Size size) {
     Widget content;
     switch (module.type) {
       case 'progress':
@@ -30,15 +30,25 @@ class UIRenderer {
       case 'input':
         content = _buildInputBlock(module);
         break;
+      case 'base_box':
+        content = _buildBaseBox();
+        break;
       default:
-        content = Center(child: Text('未知控件: ${module.type}', style: const TextStyle(color: Colors.white)));
+        content = Center(child: Text('未知控件: ${module.type}', style: const TextStyle(color: Colors.white, fontSize: 12)));
     }
 
-    // 封装外层材质与形状
-    return _applyMaterialAndShape(module.material, module.shape, module.color, module.opacity, module.borderRadius, content);
+    return _applyMaterialAndShape(
+      module.material,
+      module.shape,
+      module.color,
+      module.opacity,
+      module.borderRadius,
+      content,
+      size,
+    );
   }
 
-  static Widget _renderComposite(BuildContext context, UIComposite composite) {
+  static Widget _renderComposite(BuildContext context, UIComposite composite, Size size) {
     Widget content;
     switch (composite.layoutType) {
       case 'column':
@@ -70,14 +80,38 @@ class UIRenderer {
           children: composite.children.map((e) => render(context, e)).toList(),
         );
         break;
+      case 'base_box':
       default:
-        content = Text('未知布局: ${composite.layoutType}', style: const TextStyle(color: Colors.white));
+        content = Stack(
+          children: [
+            if (composite.children.isEmpty)
+              const Positioned.fill(
+                child: Center(
+                  child: Text(
+                    '📦 复合组块基本框\n(请将基本组件拖拽至此范围内组合)',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ...composite.children.map((e) => render(context, e)).toList(),
+          ],
+        );
+        break;
     }
 
-    return _applyMaterialAndShape(composite.material, UIModuleShape.rounded, composite.color, composite.opacity, composite.borderRadius, content);
+    return _applyMaterialAndShape(
+      composite.material,
+      UIModuleShape.rounded,
+      composite.color,
+      composite.opacity,
+      composite.borderRadius,
+      content,
+      size,
+    );
   }
 
-  // 核心：统一应用材质与外框形状
+  // 核心：统一应用材质与外框形状，完美支持独立长宽比自由形变，彻底消除缩太小溢出错误
   static Widget _applyMaterialAndShape(
     UIModuleMaterial material,
     UIModuleShape shape,
@@ -85,8 +119,8 @@ class UIRenderer {
     double opacity,
     double rawRadius,
     Widget child,
+    Size size,
   ) {
-    // 1. 根据 Shape 计算具体的 BorderRadius
     BorderRadius radius;
     switch (shape) {
       case UIModuleShape.rectangle:
@@ -104,7 +138,6 @@ class UIRenderer {
         break;
     }
 
-    // 2. 根据 Material 构建具体的 Decoration 与 背景特效
     BoxDecoration decoration;
     switch (material) {
       case UIModuleMaterial.solid:
@@ -153,13 +186,20 @@ class UIRenderer {
         break;
     }
 
+    // 底层主体包裹 Container 与 ClipRect，彻底杜绝缩太小时越界报错
     Widget container = Container(
+      width: size.width,
+      height: size.height,
       decoration: decoration,
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-      child: child,
+      child: ClipRRect(
+        borderRadius: radius,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+          child: child,
+        ),
+      ),
     );
 
-    // 如果是 Glass 材质，额外包裹 BackdropFilter 真正实现物理毛玻璃模糊
     if (material == UIModuleMaterial.glass) {
       return ClipRRect(
         borderRadius: radius,
@@ -173,24 +213,33 @@ class UIRenderer {
     return container;
   }
 
+  static Widget _buildBaseBox() {
+    return const Center(
+      child: Text('📦 复合基本框容器\n(多重组块的基础)', textAlign: TextAlign.center, style: TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  // 充满父级宽度的自适应进度条
   static Widget _buildProgressBar(UIModule module) {
     final double maxVal = (module.properties['max'] ?? 100.0).toDouble();
-    final double curVal = (module.properties['current'] ?? maxVal).toDouble();
+    final double curVal = (module.properties['current'] ?? 80.0).toDouble();
     final double ratio = maxVal > 0 ? (curVal / maxVal).clamp(0.0, 1.0) : 1.0;
 
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              module.name,
-              style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+            Expanded(
+              child: Text(
+                module.name,
+                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Text(
               '${curVal.toInt()}/${maxVal.toInt()}',
               style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.8), fontFamily: 'monospace'),
@@ -198,30 +247,26 @@ class UIRenderer {
           ],
         ),
         const SizedBox(height: 6),
-        Stack(
-          children: [
-            Container(
-              height: 8,
-              width: 150,
+        Container(
+          height: 8,
+          width: double.infinity,
+          alignment: Alignment.centerLeft,
+          decoration: BoxDecoration(
+            color: Colors.black26,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: FractionallySizedBox(
+            widthFactor: ratio,
+            child: Container(
               decoration: BoxDecoration(
-                color: Colors.black26,
+                color: module.color,
                 borderRadius: BorderRadius.circular(4),
+                boxShadow: [
+                  BoxShadow(color: module.color.withValues(alpha: 0.6), blurRadius: 6),
+                ],
               ),
             ),
-            FractionallySizedBox(
-              widthFactor: ratio,
-              child: Container(
-                height: 8,
-                decoration: BoxDecoration(
-                  color: module.color,
-                  borderRadius: BorderRadius.circular(4),
-                  boxShadow: [
-                    BoxShadow(color: module.color.withValues(alpha: 0.6), blurRadius: 6),
-                  ],
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ],
     );
@@ -229,32 +274,34 @@ class UIRenderer {
 
   static Widget _buildButton(UIModule module) {
     final text = module.properties['text']?.toString() ?? module.name;
-    // 按钮自身内容保持简洁，外层已有装饰
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          text,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.5),
-        ),
-      ],
+    return Container(
+      alignment: Alignment.center,
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.5),
+        textAlign: TextAlign.center,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 
   static Widget _buildTextBlock(UIModule module) {
     final text = module.properties['text']?.toString() ?? module.name;
-    return Text(
-      text,
-      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
-      textAlign: TextAlign.center,
+    return Container(
+      alignment: Alignment.center,
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+        textAlign: TextAlign.center,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 
   static Widget _buildInputBlock(UIModule module) {
     final label = module.properties['label']?.toString() ?? module.name;
-    return SizedBox(
-      width: 180,
+    return Container(
+      alignment: Alignment.center,
       child: TextField(
         style: const TextStyle(color: Colors.white, fontSize: 13),
         decoration: InputDecoration(
@@ -262,7 +309,7 @@ class UIRenderer {
           fillColor: Colors.black12,
           hintText: label,
           hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
