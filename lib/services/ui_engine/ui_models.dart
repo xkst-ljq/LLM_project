@@ -48,7 +48,7 @@ class UIModule {
     'type': type,
     'material': material.index,
     'shape': shape.index,
-    'color': color.value,
+    'color': color.toARGB32(),
     'opacity': opacity,
     'borderRadius': borderRadius,
     'properties': properties,
@@ -61,7 +61,7 @@ class UIModule {
     type: json['type'],
     material: UIModuleMaterial.values[json['material'] ?? 0],
     shape: UIModuleShape.values[json['shape'] ?? 1],
-    color: Color(json['color'] ?? Colors.white.value),
+    color: Color(json['color'] ?? Colors.white.toARGB32()),
     opacity: (json['opacity'] ?? 1.0).toDouble(),
     borderRadius: (json['borderRadius'] ?? 12.0).toDouble(),
     properties: Map<String, dynamic>.from(json['properties'] ?? {}),
@@ -122,7 +122,7 @@ class UIComposite {
     'children': children.map((e) => e.toJson()).toList(),
     'material': material.index,
     'borderRadius': borderRadius,
-    'color': color.value,
+    'color': color.toARGB32(),
     'opacity': opacity,
   };
 
@@ -133,7 +133,7 @@ class UIComposite {
     children: (json['children'] as List).map((e) => UIElement.fromJson(e)).toList(),
     material: UIModuleMaterial.values[json['material'] ?? 0],
     borderRadius: (json['borderRadius'] ?? 16.0).toDouble(),
-    color: Color(json['color'] ?? Colors.white.value),
+    color: Color(json['color'] ?? Colors.white.toARGB32()),
     opacity: (json['opacity'] ?? 1.0).toDouble(),
   );
 }

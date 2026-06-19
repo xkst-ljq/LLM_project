@@ -21,9 +21,6 @@ import 'world_book_library_page.dart';
 
 enum _MainGuidePhase { none, home, settings }
 
-
-enum _MainGuidePhase { none, home, settings }
-
 class MainMenuPage extends StatefulWidget {
   const MainMenuPage({super.key});
 

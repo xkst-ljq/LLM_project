@@ -110,7 +110,7 @@ class UIRenderer {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(module.borderRadius)),
         ),
         onPressed: () {
-          print('Triggered: ${module.id}');
+          debugPrint('Triggered: ${module.id}');
         },
         child: Text(module.name),
       ),
