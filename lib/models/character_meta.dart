@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../services/ui_engine/ui_models.dart';
 import 'status_bar_field.dart';
 
 /// 角色扩展元信息。
@@ -17,6 +18,7 @@ import 'status_bar_field.dart';
 ///   - sourceFormat               来源格式（如 SillyTavern V2）
 ///   - postHistoryInstructions    历史之后注入指令（我们暂无注入位，先保留）
 ///   - mesExample                 对话示例（暂以条目承载，这里也保留原文）
+///   - uiElements                 角色专属的 UI 引擎排版布局定义 (Lego-like UI)
 class CharacterMeta {
   List<String> tags;
   String creator;
@@ -29,6 +31,9 @@ class CharacterMeta {
   /// 状态栏字段定义（玩法设定，随卡片导入导出）。当前值另存于会话副本。
   List<StatusBarField> statusBarFields;
 
+  /// 角色专属的 UI 引擎排版布局元素列表
+  List<UIElement> uiElements;
+
   CharacterMeta({
     List<String>? tags,
     this.creator = '',
@@ -38,8 +43,10 @@ class CharacterMeta {
     this.postHistoryInstructions = '',
     this.mesExample = '',
     List<StatusBarField>? statusBarFields,
+    List<UIElement>? uiElements,
   })  : tags = tags ?? <String>[],
-        statusBarFields = statusBarFields ?? <StatusBarField>[];
+        statusBarFields = statusBarFields ?? <StatusBarField>[],
+        uiElements = uiElements ?? <UIElement>[];
 
   bool get isEmpty =>
       tags.isEmpty &&
@@ -49,7 +56,8 @@ class CharacterMeta {
       sourceFormat.trim().isEmpty &&
       postHistoryInstructions.trim().isEmpty &&
       mesExample.trim().isEmpty &&
-      statusBarFields.isEmpty;
+      statusBarFields.isEmpty &&
+      uiElements.isEmpty;
 
   factory CharacterMeta.fromJson(Map<String, dynamic> json) {
     List<String> readTags(dynamic v) {
@@ -75,6 +83,19 @@ class CharacterMeta {
       return <StatusBarField>[];
     }
 
+    List<UIElement> readUIElements(dynamic v) {
+      if (v is List) {
+        final out = <UIElement>[];
+        for (final e in v) {
+          if (e is Map) {
+            out.add(UIElement.fromJson(Map<String, dynamic>.from(e)));
+          }
+        }
+        return out;
+      }
+      return <UIElement>[];
+    }
+
     return CharacterMeta(
       tags: readTags(json['tags']),
       creator: json['creator']?.toString() ?? '',
@@ -85,6 +106,7 @@ class CharacterMeta {
           json['post_history_instructions']?.toString() ?? '',
       mesExample: json['mes_example']?.toString() ?? '',
       statusBarFields: readFields(json['status_bar_fields']),
+      uiElements: readUIElements(json['ui_elements']),
     );
   }
 
@@ -113,6 +135,7 @@ class CharacterMeta {
       'post_history_instructions': postHistoryInstructions,
       'mes_example': mesExample,
       'status_bar_fields': statusBarFields.map((f) => f.toJson()).toList(),
+      'ui_elements': uiElements.map((e) => e.toJson()).toList(),
     };
   }
 

@@ -60,9 +60,9 @@ class UIModule {
   };
 
   factory UIModule.fromJson(Map<String, dynamic> json) => UIModule(
-    id: json['id'],
-    name: json['name'],
-    type: json['type'],
+    id: json['id'] ?? 'unknown_id',
+    name: json['name'] ?? '未命名组件',
+    type: json['type'] ?? 'text',
     material: UIModuleMaterial.values[json['material'] ?? 0],
     shape: UIModuleShape.values[json['shape'] ?? 1],
     color: Color(json['color'] ?? Colors.white.toARGB32()),
@@ -134,15 +134,36 @@ class UIComposite {
   };
 
   factory UIComposite.fromJson(Map<String, dynamic> json) => UIComposite(
-    id: json['id'],
-    name: json['name'],
-    layoutType: json['layoutType'],
-    children: (json['children'] as List).map((e) => UIElement.fromJson(e)).toList(),
+    id: json['id'] ?? 'unknown_comp',
+    name: json['name'] ?? '未命名组合块',
+    layoutType: json['layoutType'] ?? 'column',
+    children: (json['children'] as List?)?.map((e) => UIElement.fromJson(e)).toList() ?? [],
     material: UIModuleMaterial.values[json['material'] ?? 0],
     borderRadius: (json['borderRadius'] ?? 16.0).toDouble(),
     color: Color(json['color'] ?? Colors.white.toARGB32()),
     opacity: (json['opacity'] ?? 1.0).toDouble(),
   );
+
+  UIComposite copyWith({
+    String? name,
+    String? layoutType,
+    List<UIElement>? children,
+    UIModuleMaterial? material,
+    double? borderRadius,
+    Color? color,
+    double? opacity,
+  }) {
+    return UIComposite(
+      id: id,
+      name: name ?? this.name,
+      layoutType: layoutType ?? this.layoutType,
+      children: children ?? this.children,
+      material: material ?? this.material,
+      borderRadius: borderRadius ?? this.borderRadius,
+      color: color ?? this.color,
+      opacity: opacity ?? this.opacity,
+    );
+  }
 }
 
 /// UI 元素统一封装
@@ -185,7 +206,7 @@ class UIElement {
     final sizeData = json['size'] as Map<String, dynamic>? ?? {};
     
     return UIElement(
-      id: json['id'],
+      id: json['id'] ?? 'el_${DateTime.now().millisecondsSinceEpoch}',
       isComposite: isComposite,
       offset: Offset(
         (offsetData['x'] ?? 0).toDouble(),
@@ -195,8 +216,25 @@ class UIElement {
         (sizeData['width'] ?? 100.0).toDouble(),
         (sizeData['height'] ?? 100.0).toDouble(),
       ),
-      composite: isComposite ? UIComposite.fromJson(json['composite']) : null,
-      module: !isComposite ? UIModule.fromJson(json['module']) : null,
+      composite: (isComposite && json['composite'] != null) ? UIComposite.fromJson(json['composite']) : null,
+      module: (!isComposite && json['module'] != null) ? UIModule.fromJson(json['module']) : null,
+    );
+  }
+
+  UIElement copyWith({
+    bool? isComposite,
+    UIModule? module,
+    UIComposite? composite,
+    Offset? offset,
+    Size? size,
+  }) {
+    return UIElement(
+      id: id,
+      isComposite: isComposite ?? this.isComposite,
+      module: module ?? this.module,
+      composite: composite ?? this.composite,
+      offset: offset ?? this.offset,
+      size: size ?? this.size,
     );
   }
 }
