@@ -18,6 +18,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
   final List<UIElement> _canvasElements = [];
   // 当前选中的元素 ID
   String? _selectedElementId;
+  
+  // 面板开关状态
+  bool _showAssets = false;
+  bool _showProperties = false;
 
   // 添加组件到画布
   void _addElement(UIModule module) {
@@ -31,6 +35,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
       );
       _canvasElements.add(newElement);
       _selectedElementId = newElement.id;
+      _showAssets = false; // 添加后关闭资产栏
+      _showProperties = true; // 自动打开属性栏
     });
   }
 
@@ -69,39 +75,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
           ),
         ],
       ),
-      body: Row(
+      body: Stack(
         children: [
-          // 1. 左侧资产栏
-          SizedBox(
-            width: 250,
-            child: Container(
-              color: Theme.of(context).cardColor,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text('资产库', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.all(8.0),
-                      children: [
-                        _buildAssetTile('原子模组', _assetService.getAllModules()),
-                        const Divider(),
-                        _buildAssetTile('组合块', _assetService.getAllComposites()),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
-          // 2. 中间画布区
-          Expanded(
-            child: Container(
-              color: Colors.grey[200],
+          // 1. 底层：无限画布 (全屏)
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => setState(() {
+                _selectedElementId = null;
+                _showProperties = false;
+              }),
               child: InteractiveViewer(
                 boundaryMargin: const EdgeInsets.all(1000),
                 minScale: 0.1,
@@ -112,19 +94,86 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     Positioned.fill(child: _buildGridBackground()),
                     
                     // 渲染画布元素
-                        ..._canvasElements.map((el) => _buildDraggableNode(el)),
+                    ..._canvasElements.map((el) => _buildDraggableNode(el)).toList(),
                   ],
                 ),
               ),
             ),
           ),
           
-          // 3. 右侧属性面板
-          SizedBox(
+          // 2. 左侧：资产库浮窗
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            left: _showAssets ? 0 : -260,
+            top: 0,
+            bottom: 0,
+            width: 250,
+            child: _buildAssetPanel(),
+          ),
+          
+          // 3. 右侧：属性面板浮窗
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            right: _showProperties ? 0 : -310,
+            top: 0,
+            bottom: 0,
             width: 300,
-            child: Container(
-              color: Theme.of(context).cardColor,
-              child: _buildPropertiesPanel(),
+            child: _buildPropertiesPanel(),
+          ),
+
+          // 底部控制条 (用于快速切换面板)
+          Positioned(
+            bottom: 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FloatingActionButton.small(
+                    heroTag: 'asset_btn',
+                    onPressed: () => setState(() => _showAssets = !_showAssets),
+                    child: Icon(_showAssets ? Icons.close : Icons.grid_view),
+                  ),
+                  const SizedBox(width: 20),
+                  FloatingActionButton.small(
+                    heroTag: 'prop_btn',
+                    onPressed: () => setState(() => _showProperties = !_showProperties),
+                    child: Icon(_showProperties ? Icons.close : Icons.settings),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAssetPanel() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)],
+        borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text('资产库', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(8.0),
+              children: [
+                _buildAssetTile('原子模组', _assetService.getAllModules()),
+                const Divider(),
+                _buildAssetTile('组合块', _assetService.getAllComposites()),
+              ],
             ),
           ),
         ],
@@ -163,21 +212,23 @@ class _UIStudioPageState extends State<UIStudioPage> {
               }
             },
           );
-        }),
+        }).toList(),
       ],
     );
   }
 
   Widget _buildDraggableNode(UIElement el) {
     bool isSelected = _selectedElementId == el.id;
-    
     return Positioned(
       left: el.offset.dx,
       top: el.offset.dy,
       width: el.size.width,
       height: el.size.height,
       child: GestureDetector(
-        onTap: () => setState(() => _selectedElementId = el.id),
+        onTap: () => setState(() {
+          _selectedElementId = el.id;
+          _showProperties = true;
+        }),
         onPanUpdate: (details) {
           _updateElementPosition(el.id, el.offset + details.delta);
         },
@@ -202,6 +253,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
   Widget _buildGridBackground() {
     return CustomPaint(
       painter: GridPainter(),
+      size: Size.infinite,
     );
   }
 
@@ -211,31 +263,38 @@ class _UIStudioPageState extends State<UIStudioPage> {
     }
 
     final el = _canvasElements.firstWhere((e) => e.id == _selectedElementId);
-    
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('属性编辑器', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const Divider(),
-          const SizedBox(height: 16),
-          Text('ID: ${el.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          const SizedBox(height: 16),
-          _buildPropertyField('X 坐标', el.offset.dx),
-          _buildPropertyField('Y 坐标', el.offset.dy),
-          _buildPropertyField('宽度', el.size.width),
-          _buildPropertyField('高度', el.size.height),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _selectedElementId = null;
-              });
-            },
-            child: const Text('取消选中'),
-          ),
-        ],
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)],
+        borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('属性编辑器', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Divider(),
+            const SizedBox(height: 16),
+            Text('ID: ${el.id}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 16),
+            _buildPropertyField('X 坐标', el.offset.dx),
+            _buildPropertyField('Y 坐标', el.offset.dy),
+            _buildPropertyField('宽度', el.size.width),
+            _buildPropertyField('高度', el.size.height),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _selectedElementId = null;
+                  _showProperties = false;
+                });
+              },
+              child: const Text('取消选中'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -264,10 +323,11 @@ class GridPainter extends CustomPainter {
       ..strokeWidth = 1.0;
 
     const double step = 50.0;
-    for (double x = 0; x < size.width; x += step) {
+    // 绘制一个足够大的网格以适应 InteractiveViewer 的平移
+    for (double x = -1000; x < 2000; x += step) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
-    for (double y = 0; y < size.height; y += step) {
+    for (double y = -1000; y < 2000; y += step) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
   }

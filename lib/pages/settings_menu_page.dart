@@ -5,7 +5,9 @@ import 'backup_restore_page.dart';
 import 'character_converter_page.dart';
 import 'prompt_settings_page.dart';
 import 'tutorial_home_page.dart';
+import 'ui_studio_page.dart';
 import 'user_settings_page.dart';
+
 
 class SettingsMenuPage extends StatelessWidget {
   final VoidCallback? onStartNewUserGuide;
@@ -129,6 +131,18 @@ class SettingsMenuPage extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (_) => const CharacterConverterPage(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.palette),
+            title: const Text('UI 创作工作室'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const UIStudioPage(),
                 ),
               );
             },
