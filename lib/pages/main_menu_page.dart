@@ -1,20 +1,26 @@
-import 'package:flutter/material.dart';
 import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+
 import '../services/background_service.dart';
 import '../services/tutorial_service.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/simple_page_guide_scope.dart';
 import 'api_config_page.dart';
 import 'background_library_page.dart';
+import 'backup_restore_page.dart';
 import 'character_library_page.dart';
 import 'chat_page.dart';
+import 'prompt_settings_page.dart';
 import 'settings_menu_page.dart';
 import 'tutorial_home_page.dart';
-import 'world_book_library_page.dart';
-import 'backup_restore_page.dart';
-import 'prompt_settings_page.dart';
+import 'ui_asset_gallery.dart';
 import 'user_settings_page.dart';
+import 'world_book_library_page.dart';
+
+enum _MainGuidePhase { none, home, settings }
+
 
 enum _MainGuidePhase { none, home, settings }
 
@@ -653,12 +659,15 @@ class _MainMenuPageState extends State<MainMenuPage>
                                   },
                                 ),
                               ),
+                              const Divider(),
+                              const UIAssetGallery(),
                             ],
                           ),
                         ),
                       ],
                     ),
                   ),
+
                   SizedBox(
                     key: _settingsPanelKey,
                     width: panelW,

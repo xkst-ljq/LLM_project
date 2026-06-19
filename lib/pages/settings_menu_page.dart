@@ -124,7 +124,6 @@ class SettingsMenuPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.transform),
             title: const Text('角色卡转换工具'),
-            subtitle: const Text('导入 SillyTavern / TavernAI 角色卡并转换'),
             onTap: () {
               Navigator.push(
                 context,
