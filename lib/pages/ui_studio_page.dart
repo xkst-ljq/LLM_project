@@ -19,8 +19,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
   // 图层是给用户组织 UI 组件用的工作区结构，不应真正无限增长。
   // 64 层已经远超常规编辑需求，同时能避免误触连续创建导致存档结构失控。
   static const int _maxSceneLayerCount = 64;
-  static const double _canvasExtent = 20000.0;
-  static const Offset _canvasOrigin = Offset(_canvasExtent / 2, _canvasExtent / 2);
 
   final UIAssetService _assetService = UIAssetService();
   
@@ -627,45 +625,37 @@ class _UIStudioPageState extends State<UIStudioPage> {
               child: ClipRect(
                 child: CustomPaint(
                   painter: StudioWarmGridPainter(_workspaceOffset),
-                  child: Transform.translate(
-                    // 使用超大画布 + 原点偏移，避免元素拖远后超出 Stack hitTest 范围导致交互失效。
-                    offset: _workspaceOffset - _canvasOrigin,
-                    child: SizedBox(
-                      width: _canvasExtent,
-                      height: _canvasExtent,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          // 真实模块层：严格按 layerIndex 顺序绘制，保持最终 UI 预览效果。
-                          ...sortedElements.map((el) {
-                            final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
-                            return Positioned(
-                              left: _canvasOrigin.dx + el.offset.dx - p,
-                              top: _canvasOrigin.dy + el.offset.dy - p,
-                              width: el.size.width + p * 2,
-                              height: el.size.height + p * 2,
-                              child: _buildTrueSingleHandleNode(el, p),
-                            );
-                          }),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      // 真实模块层：直接换算为屏幕坐标，避免超大 Transform 画布造成 hitTest 坐标落在 Stack 尺寸外。
+                      ...sortedElements.map((el) {
+                        final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
+                        return Positioned(
+                          left: _workspaceOffset.dx + el.offset.dx - p,
+                          top: _workspaceOffset.dy + el.offset.dy - p,
+                          width: el.size.width + p * 2,
+                          height: el.size.height + p * 2,
+                          child: _buildTrueSingleHandleNode(el, p),
+                        );
+                      }),
 
-                          // 当前编辑层辅助层：只把“层号角标 + 细黑白虚线边界”置顶，
-                          // 不改变模块本体层级，避免破坏真实预览。
-                          ...sortedElements
-                              .where((el) => el.layerIndex == _activeLayerIndex)
-                              .map((el) {
-                            final bool selected = el.id == _selectedTransformationId;
-                            return Positioned(
-                              // 辅助层不再外扩覆盖模块颜色；只在元素原始边界内绘制细虚线。
-                              left: _canvasOrigin.dx + el.offset.dx,
-                              top: _canvasOrigin.dy + el.offset.dy - 18,
-                              width: el.size.width,
-                              height: el.size.height + 18,
-                              child: _buildActiveLayerLocatorOverlay(el, selected),
-                            );
-                          }),
-                        ],
-                      ),
-                    ),
+                      // 当前编辑层辅助层：只把“层号角标 + 细黑白虚线边界”置顶，
+                      // 不改变模块本体层级，避免破坏真实预览。
+                      ...sortedElements
+                          .where((el) => el.layerIndex == _activeLayerIndex)
+                          .map((el) {
+                        final bool selected = el.id == _selectedTransformationId;
+                        return Positioned(
+                          // 辅助层不再外扩覆盖模块颜色；只在元素原始边界内绘制细虚线。
+                          left: _workspaceOffset.dx + el.offset.dx,
+                          top: _workspaceOffset.dy + el.offset.dy - 18,
+                          width: el.size.width,
+                          height: el.size.height + 18,
+                          child: _buildActiveLayerLocatorOverlay(el, selected),
+                        );
+                      }),
+                    ],
                   ),
                 ),
               ),
