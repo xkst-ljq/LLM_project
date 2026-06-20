@@ -16,6 +16,12 @@ class UIStudioPage extends StatefulWidget {
 }
 
 class _UIStudioPageState extends State<UIStudioPage> {
+  // 图层是给用户组织 UI 组件用的工作区结构，不应真正无限增长。
+  // 64 层已经远超常规编辑需求，同时能避免误触连续创建导致存档结构失控。
+  static const int _maxSceneLayerCount = 64;
+  static const double _canvasExtent = 20000.0;
+  static const Offset _canvasOrigin = Offset(_canvasExtent / 2, _canvasExtent / 2);
+
   final UIAssetService _assetService = UIAssetService();
   
   // 独立维护双模式工作台面数据
@@ -88,37 +94,108 @@ class _UIStudioPageState extends State<UIStudioPage> {
       } catch (_) {}
     }
 
+    _repairSceneLayerData();
+    if (!mounted) return;
     setState(() {});
   }
 
   Future<void> _saveWorkspaces() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    final layerData = jsonEncode(_sceneLayers.map((e) => e.toJson()).toList());
-    await prefs.setString('ui_studio_scene_layers_v4', layerData);
+    try {
+      _repairSceneLayerData();
 
-    final atomicData = jsonEncode(_atomicWorkspaceElements.map((e) => e.toJson()).toList());
-    await prefs.setString('ui_studio_atomic_workspace_v4', atomicData);
+      final prefs = await SharedPreferences.getInstance();
+      
+      final layerData = jsonEncode(_sceneLayers.map((e) => e.toJson()).toList());
+      await prefs.setString('ui_studio_scene_layers_v4', layerData);
 
-    final compositeData = jsonEncode(_compositeWorkspaceElements.map((e) => e.toJson()).toList());
-    await prefs.setString('ui_studio_composite_workspace_v4', compositeData);
-    
-    for (final el in _atomicWorkspaceElements) {
-      if (!el.isComposite && el.module != null) {
-        _assetService.addModule(el.module!);
+      final atomicData = jsonEncode(_atomicWorkspaceElements.map((e) => e.toJson()).toList());
+      await prefs.setString('ui_studio_atomic_workspace_v4', atomicData);
+
+      final compositeData = jsonEncode(_compositeWorkspaceElements.map((e) => e.toJson()).toList());
+      await prefs.setString('ui_studio_composite_workspace_v4', compositeData);
+      
+      for (final el in _atomicWorkspaceElements) {
+        if (!el.isComposite && el.module != null) {
+          _assetService.addModule(el.module!);
+        }
+      }
+      for (final el in _compositeWorkspaceElements) {
+        if (el.isComposite && el.composite != null) {
+          _assetService.addComposite(el.composite!);
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('动态图层总览与模组资产已完整入库保存！✅'), backgroundColor: Color(0xFF00C853)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存失败：$e'), backgroundColor: const Color(0xFFD32F2F)),
+        );
       }
     }
-    for (final el in _compositeWorkspaceElements) {
-      if (el.isComposite && el.composite != null) {
-        _assetService.addComposite(el.composite!);
+  }
+
+  /// 修复图层存档与元素 layerIndex 不一致的问题，避免出现无法切换/无法编辑的
+  /// “幽灵元素”。此方法只做确定性的兜底修复，不删除用户数据。
+  void _repairSceneLayerData() {
+    if (_sceneLayers.isEmpty) {
+      _sceneLayers = [LayerScene(id: 0, name: '图层 Level 0')];
+    }
+
+    // 去重：未来如果加入删除/重排图层，旧存档也不会因为重复 id 导致选择混乱。
+    final uniqueLayers = <int, LayerScene>{};
+    for (final layer in _sceneLayers) {
+      if (layer.id < 0) continue;
+      uniqueLayers.putIfAbsent(layer.id, () => layer);
+    }
+    if (uniqueLayers.isEmpty) {
+      uniqueLayers[0] = LayerScene(id: 0, name: '图层 Level 0');
+    }
+    _sceneLayers = uniqueLayers.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
+
+    final existingIds = _sceneLayers.map((e) => e.id).toSet();
+
+    void repairElements(List<UIElement> elements) {
+      for (var i = 0; i < elements.length; i++) {
+        final el = elements[i];
+        if (el.layerIndex < 0) {
+          elements[i] = el.copyWith(layerIndex: 0);
+          if (!existingIds.contains(0)) {
+            _sceneLayers.add(LayerScene(id: 0, name: '图层 Level 0'));
+            existingIds.add(0);
+          }
+          continue;
+        }
+        if (!existingIds.contains(el.layerIndex)) {
+          // 元素引用了图层列表里不存在的层：自动补回该层，而不是丢弃元素。
+          _sceneLayers.add(LayerScene(id: el.layerIndex, name: '图层 Level ${el.layerIndex}'));
+          existingIds.add(el.layerIndex);
+        }
       }
     }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('动态图层总览与模组资产已完整入库保存！✅'), backgroundColor: Color(0xFF00C853)),
-      );
+    repairElements(_atomicWorkspaceElements);
+    repairElements(_compositeWorkspaceElements);
+
+    _sceneLayers.sort((a, b) => a.id.compareTo(b.id));
+
+    if (!_sceneLayers.any((e) => e.id == _activeLayerIndex)) {
+      _activeLayerIndex = _sceneLayers.first.id;
+      _selectedTransformationId = null;
     }
+  }
+
+  int _nextAvailableLayerId() {
+    var maxId = -1;
+    for (final layer in _sceneLayers) {
+      if (layer.id > maxId) maxId = layer.id;
+    }
+    return maxId + 1;
   }
 
   void _switchActiveSceneLayer(int newLayerId) {
@@ -129,10 +206,21 @@ class _UIStudioPageState extends State<UIStudioPage> {
   }
 
   void _createNewSceneLayer() {
+    if (_sceneLayers.length >= _maxSceneLayerCount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('图层数量已达上限 64 层，建议整理或复用现有图层。'),
+          backgroundColor: Color(0xFFFF8F00),
+        ),
+      );
+      return;
+    }
+
     setState(() {
-      final newId = _sceneLayers.length;
+      final newId = _nextAvailableLayerId();
       _sceneLayers.add(LayerScene(id: newId, name: '图层 Level $newId'));
-      _switchActiveSceneLayer(newId); // 自动无缝切至新图层！
+      _activeLayerIndex = newId; // 自动无缝切至新图层！
+      _selectedTransformationId = null;
     });
   }
 
@@ -144,7 +232,20 @@ class _UIStudioPageState extends State<UIStudioPage> {
       final dx = 180.0 + (len * 35) % 200 - _workspaceOffset.dx;
       final dy = 140.0 + (len * 25) % 200 - _workspaceOffset.dy;
 
-      final Size initialSize = module.type == 'base_box' ? const Size(260, 160) : const Size(150, 68);
+      Size initialSize = const Size(150, 68);
+      if (module.type == 'base_box') {
+        initialSize = const Size(260, 160);
+      } else if (module.type == 'progress') {
+        initialSize = const Size(180, 18);
+      } else if (module.type == 'button') {
+        initialSize = const Size(120, 44);
+      } else if (module.type == 'input') {
+        initialSize = const Size(160, 42);
+      } else if (module.type == 'surface') {
+        initialSize = const Size(160, 70);
+      } else if (module.type == 'text') {
+        initialSize = const Size(150, 34);
+      }
 
       final newElement = UIElement(
         id: 'el_${DateTime.now().millisecondsSinceEpoch}',
@@ -177,6 +278,36 @@ class _UIStudioPageState extends State<UIStudioPage> {
       _showRightDrawer = false;
       _showLayerManager = false;
     });
+  }
+
+  Size _minElementSize(UIElement el) {
+    final type = el.module?.type;
+    if (type == 'progress') return const Size(8, 2);
+    if (type == 'button') return const Size(4, 4);
+    if (type == 'input') return const Size(4, 4);
+    if (type == 'text') return const Size(8, 8);
+    if (type == 'surface') return const Size(4, 4);
+    if (type == 'base_box' || el.isComposite) return const Size(12, 12);
+    return const Size(4, 4);
+  }
+
+  Size _maxElementSize(UIElement el) => const Size(4000, 4000);
+
+  UIModuleShape _outlineShapeOf(UIElement el) {
+    final module = el.module;
+    if (module == null) return UIModuleShape.rounded;
+    if (module.type == 'progress') return UIModuleShape.capsule;
+    if (module.type == 'button' || module.type == 'input') {
+      return UIModuleShape.rectangle;
+    }
+    return module.shape;
+  }
+
+  double _outlineBorderRadiusOf(UIElement el) {
+    final module = el.module;
+    if (module == null) return 12;
+    if (module.type == 'progress') return 999;
+    return module.borderRadius;
   }
 
   // 执行同层温和推开防重叠避碰法则
@@ -240,10 +371,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
     UIModuleShape shape = (!isComp ? el.module?.shape : null) ?? UIModuleShape.rounded;
     UIModuleMaterial material = (isComp ? el.composite?.material : el.module?.material) ?? UIModuleMaterial.glass;
     int selectedLayer = el.layerIndex;
+    if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
+      selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex)
+          ? _activeLayerIndex
+          : _sceneLayers.first.id;
+    }
 
     Map<String, dynamic> props = Map.from(!isComp ? (el.module?.properties ?? {}) : {});
     String textProp = props['text']?.toString() ?? '';
-    String labelProp = props['label']?.toString() ?? '';
+    String labelProp = props['label']?.toString() ?? props['variable']?.toString() ?? '';
     double maxProp = (props['max'] ?? 100.0).toDouble();
     double curProp = (props['current'] ?? 75.0).toDouble();
 
@@ -328,8 +464,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       const SizedBox(height: 16),
                     ],
 
-                    if (!isComp && (el.module?.type == 'button' || el.module?.type == 'text')) ...[
-                      const Text('显示文本内容', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    if (!isComp && el.module?.type == 'text') ...[
+                      const Text('文本显示内容', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                       const SizedBox(height: 6),
                       TextField(
                         controller: TextEditingController(text: textProp)..selection = TextSelection.collapsed(offset: textProp.length),
@@ -341,7 +477,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ],
 
                     if (!isComp && el.module?.type == 'input') ...[
-                      const Text('输入占位提示文字 (Placeholder)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const Text('输入逻辑变量名（可选）', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                       const SizedBox(height: 6),
                       TextField(
                         controller: TextEditingController(text: labelProp)..selection = TextSelection.collapsed(offset: labelProp.length),
@@ -443,7 +579,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         if (!isComp) {
                           Map<String, dynamic> updatedProps = Map.from(el.module!.properties);
                           updatedProps['text'] = textProp;
-                          updatedProps['label'] = labelProp;
+                          if (el.module!.type == 'input') {
+                            updatedProps['variable'] = labelProp;
+                            updatedProps.remove('label');
+                          } else {
+                            updatedProps['label'] = labelProp;
+                          }
                           updatedProps['max'] = maxProp;
                           updatedProps['current'] = curProp;
                           final newMod = el.module!.copyWith(
@@ -478,6 +619,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
           // 1. 无限绝对跟手工作台面底壳
           Positioned.fill(
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onPanUpdate: (details) {
                 setState(() => _workspaceOffset += details.delta);
               },
@@ -486,19 +628,43 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 child: CustomPaint(
                   painter: StudioWarmGridPainter(_workspaceOffset),
                   child: Transform.translate(
-                    offset: _workspaceOffset,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: sortedElements.map((el) {
-                        final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
-                        return Positioned(
-                          left: el.offset.dx - p,
-                          top: el.offset.dy - p,
-                          width: el.size.width + p * 2,
-                          height: el.size.height + p * 2,
-                          child: _buildTrueSingleHandleNode(el, p),
-                        );
-                      }).toList(),
+                    // 使用超大画布 + 原点偏移，避免元素拖远后超出 Stack hitTest 范围导致交互失效。
+                    offset: _workspaceOffset - _canvasOrigin,
+                    child: SizedBox(
+                      width: _canvasExtent,
+                      height: _canvasExtent,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // 真实模块层：严格按 layerIndex 顺序绘制，保持最终 UI 预览效果。
+                          ...sortedElements.map((el) {
+                            final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
+                            return Positioned(
+                              left: _canvasOrigin.dx + el.offset.dx - p,
+                              top: _canvasOrigin.dy + el.offset.dy - p,
+                              width: el.size.width + p * 2,
+                              height: el.size.height + p * 2,
+                              child: _buildTrueSingleHandleNode(el, p),
+                            );
+                          }),
+
+                          // 当前编辑层辅助层：只把“层号角标 + 细黑白虚线边界”置顶，
+                          // 不改变模块本体层级，避免破坏真实预览。
+                          ...sortedElements
+                              .where((el) => el.layerIndex == _activeLayerIndex)
+                              .map((el) {
+                            final bool selected = el.id == _selectedTransformationId;
+                            return Positioned(
+                              // 辅助层不再外扩覆盖模块颜色；只在元素原始边界内绘制细虚线。
+                              left: _canvasOrigin.dx + el.offset.dx,
+                              top: _canvasOrigin.dy + el.offset.dy - 18,
+                              width: el.size.width,
+                              height: el.size.height + 18,
+                              child: _buildActiveLayerLocatorOverlay(el, selected),
+                            );
+                          }),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -794,35 +960,53 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       const Divider(color: Colors.black12),
                     ],
 
-                    const Text('状态进度条预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('纯进度条原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'prog', name: '生命条', type: 'progress', properties: {'min': 0, 'max': 100, 'current': 75}, color: const Color(0xFFFF4081)),
-                      Container(height: 46, padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFFE2E2E8), borderRadius: BorderRadius.circular(8)), child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [Text('生命条', style: TextStyle(color: Color(0xFF111116), fontSize: 10, fontWeight: FontWeight.bold)), Text('75/100', style: TextStyle(color: Color(0xFF555562), fontSize: 9))]), const SizedBox(height: 4), Container(height: 6, decoration: BoxDecoration(color: const Color(0xFFFF4081), borderRadius: BorderRadius.circular(3)))])),
+                      UIModule(id: 'prog', name: '进度条原子', type: 'progress', properties: {'min': 0, 'max': 100, 'current': 75}, color: const Color(0xFFFF4081)),
+                      Container(
+                        height: 28,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: 0.75,
+                          child: Container(decoration: BoxDecoration(color: const Color(0xFFFF4081), borderRadius: BorderRadius.circular(99))),
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('动作按钮预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 10),
+                    const Text('视觉表面原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'btn', name: '发起动作', type: 'button', properties: {'text': '发起动作'}, color: const Color(0xFF651FFF)),
-                      Container(height: 38, decoration: BoxDecoration(color: const Color(0xFF651FFF), borderRadius: BorderRadius.circular(8)), child: const Center(child: Text('发起动作', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)))),
+                      UIModule(id: 'surface', name: '胶囊表面原子', type: 'surface', properties: {}, color: const Color(0xFF651FFF), material: UIModuleMaterial.gradient, shape: UIModuleShape.capsule),
+                      Container(height: 34, decoration: BoxDecoration(color: const Color(0xFF651FFF), borderRadius: BorderRadius.circular(999))),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('称号展示文本预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('按钮逻辑区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'txt', name: '传奇勇者', type: 'text', properties: {'text': '传奇勇者标签'}, color: const Color(0xFF00E5FF)),
-                      Container(height: 36, decoration: BoxDecoration(color: const Color(0xFF00E5FF).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF00E5FF))), child: const Center(child: Text('传奇勇者标签', style: TextStyle(color: Color(0xFF00B0FF), fontSize: 11, fontWeight: FontWeight.bold)))),
+                      UIModule(id: 'btn', name: '按钮点击逻辑区', type: 'button', properties: {'action': 'tap'}, color: Colors.transparent),
+                      Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFFFF4081), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('透明点击热区', style: TextStyle(color: Color(0xFFFF4081), fontSize: 10, fontWeight: FontWeight.bold))),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('提示输入框预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('纯文本原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'inp', name: '自定称呼', type: 'input', properties: {'label': '请输入称呼...'}, color: const Color(0xFF00E676)),
-                      Container(height: 36, padding: const EdgeInsets.symmetric(horizontal: 10), decoration: BoxDecoration(color: const Color(0xFFEBEBF1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.centerLeft, child: const Text('请输入称呼...', style: TextStyle(color: Color(0xFF888896), fontSize: 11))),
+                      UIModule(id: 'txt', name: '文本原子', type: 'text', properties: {'text': '传奇勇者标签'}, color: const Color(0xFF00B0FF)),
+                      const SizedBox(height: 30, child: Center(child: Text('传奇勇者标签', style: TextStyle(color: Color(0xFF00B0FF), fontSize: 12, fontWeight: FontWeight.bold)))),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text('输入逻辑区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(id: 'inp', name: '输入触发逻辑区', type: 'input', properties: {'variable': 'var.input'}, color: Colors.transparent),
+                      Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00ACC1), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('透明输入热区', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 10, fontWeight: FontWeight.bold))),
                     ),
                   ],
                 ),
@@ -911,6 +1095,63 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
+  /// 当前编辑层的置顶定位辅助层。
+  ///
+  /// 只绘制“层号小角标 + 元素边界内侧的黑白交替细虚线”。
+  /// 不加阴影、不加半透明蒙版、不重新渲染模块本体，避免影响原始颜色判断。
+  /// 整体 IgnorePointer，避免遮挡原有拖拽、缩放、删除等交互命中。
+  Widget _buildActiveLayerLocatorOverlay(UIElement el, bool selected) {
+    return IgnorePointer(
+      ignoring: true,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            top: 18,
+            width: el.size.width,
+            height: el.size.height,
+            child: CustomPaint(
+              painter: StudioAlternatingDashedBorderPainter(
+                strokeWidth: selected ? 1.6 : 1.2,
+                shape: _outlineShapeOf(el),
+                borderRadius: _outlineBorderRadiusOf(el),
+              ),
+              child: const SizedBox.expand(),
+            ),
+          ),
+
+          // 只显示层号，尽量减少对最终视觉预览的干扰。
+          Positioned(
+            left: 4,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  width: 0.7,
+                ),
+              ),
+              child: Text(
+                'L${el.layerIndex}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  height: 1.0,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // --- 极其严谨完美的 单一把手 + 当前图层专注锁定法则 节点 ---
   Widget _buildTrueSingleHandleNode(UIElement el, double p) {
     final bool isTransformationActive = _selectedTransformationId == el.id;
@@ -919,36 +1160,29 @@ class _UIStudioPageState extends State<UIStudioPage> {
     // 极其完美正确的图层专注锁定法则声明，完美保持视觉相对位置静止无偏差！
     if (!isCurrentLayerActive) {
       return IgnorePointer(
-        ignoring: true, // 彻底屏蔽旧图层误触！
-        child: Opacity(
-          opacity: 0.65,
-          child: Container(
-            margin: EdgeInsets.only(left: p, top: p), // 完美正确的布局参数！
-            width: el.size.width,
-            height: el.size.height,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: UIRenderer.render(context, el),
+        ignoring: true, // 彻底屏蔽旧图层误触，同时保持真实预览不降透明度。
+        child: Container(
+          margin: EdgeInsets.only(left: p, top: p), // 完美正确的布局参数！
+          width: el.size.width,
+          height: el.size.height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
           ),
+          child: UIRenderer.render(context, el),
         ),
       );
     }
 
-    Widget mainContent = Container(
+    Widget mainContent = SizedBox(
       width: el.size.width,
       height: el.size.height,
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: isTransformationActive ? const Color(0xFFFF4081) : Colors.transparent,
-          width: isTransformationActive ? 1.5 : 0.0,
-        ),
-        borderRadius: BorderRadius.circular(12),
-      ),
       child: UIRenderer.render(context, el),
     );
 
     Widget touchableBody = GestureDetector(
+      // 必须显式使用 opaque：button/input 等逻辑型原子本体是透明 SizedBox，
+      // 若沿用默认 deferToChild，透明子树不会参与 hitTest，导致模块看得见但点不动。
+      behavior: HitTestBehavior.opaque,
       onPanStart: (details) {
         _startTouchElemOffset = el.offset;
         _startTouchScreenPos = details.globalPosition;
@@ -968,40 +1202,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
 
     if (!isTransformationActive) {
-      return Stack(
-        clipBehavior: Clip.none,
-        children: [
-          touchableBody,
-          Positioned(
-            left: 8, top: -10,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: const Color(0xFF111116), borderRadius: BorderRadius.circular(6), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
-              child: Text('Layer Level ${el.layerIndex}', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      );
+      return touchableBody;
     }
 
     return Stack(
       children: [
         Positioned(
           left: p, top: p,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              touchableBody,
-              Positioned(
-                left: 8, top: -10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(color: const Color(0xFFFF4081), borderRadius: BorderRadius.circular(6), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
-                  child: Text('Layer Level ${el.layerIndex}', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
+          child: touchableBody,
         ),
 
         Positioned(
@@ -1016,8 +1224,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
             onPanUpdate: (details) {
               final deltaX = details.globalPosition.dx - _startTouchGlobalPos.dx;
               final deltaY = details.globalPosition.dy - _startTouchGlobalPos.dy;
-              final newWidth = (_startTouchWidth + deltaX).clamp(60.0, 1200.0);
-              final newHeight = (_startTouchHeight + deltaY).clamp(40.0, 1200.0);
+              final minSize = _minElementSize(el);
+              final maxSize = _maxElementSize(el);
+              final newWidth = (_startTouchWidth + deltaX)
+                  .clamp(minSize.width, maxSize.width)
+                  .toDouble();
+              final newHeight = (_startTouchHeight + deltaY)
+                  .clamp(minSize.height, maxSize.height)
+                  .toDouble();
               _updateElementGeometry(el.id, el.offset, Size(newWidth, newHeight));
             },
             child: Container(
@@ -1049,6 +1263,84 @@ class _UIStudioPageState extends State<UIStudioPage> {
         ),
       ],
     );
+  }
+}
+
+class StudioAlternatingDashedBorderPainter extends CustomPainter {
+  final double strokeWidth;
+  final UIModuleShape shape;
+  final double borderRadius;
+
+  StudioAlternatingDashedBorderPainter({
+    this.strokeWidth = 1.2,
+    this.shape = UIModuleShape.rounded,
+    this.borderRadius = 12,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+
+    final rect = (Offset.zero & size).deflate(strokeWidth / 2);
+    final path = Path();
+    switch (shape) {
+      case UIModuleShape.rectangle:
+        path.addRect(rect);
+        break;
+      case UIModuleShape.circle:
+        path.addOval(rect);
+        break;
+      case UIModuleShape.capsule:
+        path.addRRect(
+          RRect.fromRectAndRadius(
+            rect,
+            Radius.circular(rect.shortestSide / 2),
+          ),
+        );
+        break;
+      case UIModuleShape.rounded:
+        path.addRRect(
+          RRect.fromRectAndRadius(
+            rect,
+            Radius.circular(borderRadius),
+          ),
+        );
+        break;
+    }
+
+    final blackPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.86)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    final whitePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.95)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    const dashLength = 6.0;
+    const gapLength = 2.0;
+
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      var drawWhite = false;
+      while (distance < metric.length) {
+        final next = (distance + dashLength).clamp(0.0, metric.length).toDouble();
+        final dashPath = metric.extractPath(distance, next);
+        canvas.drawPath(dashPath, drawWhite ? whitePaint : blackPaint);
+        distance = next + gapLength;
+        drawWhite = !drawWhite;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant StudioAlternatingDashedBorderPainter oldDelegate) {
+    return oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.shape != shape ||
+        oldDelegate.borderRadius != borderRadius;
   }
 }
 

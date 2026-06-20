@@ -16,36 +16,57 @@ class UIRenderer {
   }
 
   static Widget _renderModule(BuildContext context, UIModule module, Size size) {
-    Widget content;
+    // 原子部件只渲染自己的单一职责：
+    // progress = 一根条；text = 一段文字；surface/base_box = 一个视觉表面；
+    // button/input = 透明逻辑热区，不自带任何边框或底色。
     switch (module.type) {
       case 'progress':
-        content = _buildProgressBar(module);
-        break;
-      case 'button':
-        content = _buildButton(module);
-        break;
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildProgressBar(module),
+        );
       case 'text':
-        content = _buildTextBlock(module);
-        break;
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildTextBlock(module),
+        );
       case 'input':
-        content = _buildInputBlock(module);
-        break;
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildInputBlock(module),
+        );
+      case 'button':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildButton(module),
+        );
+      case 'surface':
       case 'base_box':
-        content = _buildBaseBox();
-        break;
+        return _applyMaterialAndShape(
+          module.material,
+          module.shape,
+          module.color,
+          module.opacity,
+          module.borderRadius,
+          _buildBaseBox(),
+          size,
+        );
       default:
-        content = Center(child: Text('未知控件: ${module.type}', style: const TextStyle(color: Color(0xFF111116), fontSize: 12)));
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: Center(
+            child: Text(
+              '未知控件: ${module.type}',
+              style: const TextStyle(color: Color(0xFF111116), fontSize: 12),
+            ),
+          ),
+        );
     }
-
-    return _applyMaterialAndShape(
-      module.material,
-      module.shape,
-      module.color,
-      module.opacity,
-      module.borderRadius,
-      content,
-      size,
-    );
   }
 
   static Widget _renderComposite(BuildContext context, UIComposite composite, Size size) {
@@ -82,22 +103,18 @@ class UIRenderer {
         break;
       case 'base_box':
       default:
+        // 复合容器本体只负责承载子元素。空态提示属于编辑器 UI，
+        // 不应进入最终渲染结果。
         content = Stack(
-          children: [
-            if (composite.children.isEmpty)
-              const Positioned.fill(
-                child: Center(
-                  child: Text(
-                    '📦 复合组块基本边界框\n(将原子组件拖入组合)',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFF888896), fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ...composite.children.map((e) => render(context, e)),
-          ],
+          children: composite.children.map((e) => render(context, e)).toList(),
         );
         break;
+    }
+
+    // opacity <= 0 且颜色透明的组合块视作“纯布局组”，不额外绘制容器壳。
+    // 这让带文字按钮等复合模板可以只由内部原子决定视觉。
+    if (composite.opacity <= 0.0 && composite.color == Colors.transparent) {
+      return SizedBox(width: size.width, height: size.height, child: content);
     }
 
     return _applyMaterialAndShape(
@@ -205,74 +222,40 @@ class UIRenderer {
   }
 
   static Widget _buildBaseBox() {
-    return const Center(
-      child: Text('📦 基本边界框容器\n(多重组块的基础)', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF00ACC1), fontSize: 12, fontWeight: FontWeight.bold)),
-    );
+    // 原子容器只提供容器面，不带说明文字。说明文字属于编辑器预览。
+    return const SizedBox.expand();
   }
 
   static Widget _buildProgressBar(UIModule module) {
     final double maxVal = (module.properties['max'] ?? 100.0).toDouble();
     final double curVal = (module.properties['current'] ?? 80.0).toDouble();
     final double ratio = maxVal > 0 ? (curVal / maxVal).clamp(0.0, 1.0) : 1.0;
+    final Color fillColor =
+        module.color == Colors.white ? const Color(0xFFFF4081) : module.color;
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Text(
-                module.name,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF111116), fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '${curVal.toInt()}/${maxVal.toInt()}',
-              style: TextStyle(fontSize: 11, color: const Color(0xFF555562), fontFamily: 'monospace'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Container(
-          height: 8,
-          width: double.infinity,
-          alignment: Alignment.centerLeft,
+    // 原子进度条只负责显示“条本体”，不显示名称、数值或单位。
+    return Container(
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE2E2E8),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: FractionallySizedBox(
+        widthFactor: ratio,
+        child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFFE2E2E8),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: FractionallySizedBox(
-            widthFactor: ratio,
-            child: Container(
-              decoration: BoxDecoration(
-                color: module.color == Colors.white ? const Color(0xFFFF4081) : module.color,
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: [
-                  BoxShadow(color: (module.color == Colors.white ? const Color(0xFFFF4081) : module.color).withValues(alpha: 0.4), blurRadius: 4),
-                ],
-              ),
-            ),
+            color: fillColor,
+            borderRadius: BorderRadius.circular(999),
           ),
         ),
-      ],
+      ),
     );
   }
 
   static Widget _buildButton(UIModule module) {
-    final text = module.properties['text']?.toString() ?? module.name;
-    return Container(
-      alignment: Alignment.center,
-      child: Text(
-        text,
-        style: TextStyle(color: module.color == Colors.white ? const Color(0xFF111116) : Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.5),
-        textAlign: TextAlign.center,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
+    // 原子按钮只提供透明点击逻辑热区，不自带视觉外观。
+    // 视觉按钮 = surface + text/icon + button 逻辑区的复合块。
+    return const SizedBox.expand();
   }
 
   static Widget _buildTextBlock(UIModule module) {
@@ -281,7 +264,7 @@ class UIRenderer {
       alignment: Alignment.center,
       child: Text(
         text,
-        style: TextStyle(color: module.color == Colors.white ? const Color(0xFF111116) : module.color, fontSize: 14, fontWeight: FontWeight.w600),
+        style: TextStyle(color: module.color, fontSize: 14, fontWeight: FontWeight.w600),
         textAlign: TextAlign.center,
         overflow: TextOverflow.ellipsis,
       ),
@@ -289,23 +272,9 @@ class UIRenderer {
   }
 
   static Widget _buildInputBlock(UIModule module) {
-    final label = module.properties['label']?.toString() ?? module.name;
-    return Container(
-      alignment: Alignment.center,
-      child: TextField(
-        style: const TextStyle(color: Color(0xFF111116), fontSize: 13),
-        decoration: InputDecoration(
-          filled: true,
-          fillColor: const Color(0xFFEBEBF1),
-          hintText: label,
-          hintStyle: const TextStyle(color: Color(0xFF888896), fontSize: 12),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide.none,
-          ),
-        ),
-      ),
-    );
+    // 原子输入框只提供透明输入逻辑热区，不自带边框、底色或 placeholder。
+    // 视觉输入框 = surface + placeholder text + input 逻辑区的复合块。
+    return const SizedBox.expand();
   }
+
 }

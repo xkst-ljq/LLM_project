@@ -31,11 +31,42 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
     ));
 
     _assetService.addModule(UIModule(
-      id: 'test_button',
-      name: '快速发送',
-      type: 'button',
+      id: 'test_button_surface',
+      name: '按钮视觉表面',
+      type: 'surface',
       color: Colors.deepPurpleAccent,
-      properties: {'text': '发送 lOVE'},
+      material: UIModuleMaterial.gradient,
+      shape: UIModuleShape.capsule,
+      properties: {},
+    ));
+
+    _assetService.addModule(UIModule(
+      id: 'test_button_logic',
+      name: '按钮点击逻辑区',
+      type: 'button',
+      color: Colors.transparent,
+      properties: {'action': 'tap'},
+    ));
+
+    _assetService.addModule(UIModule(
+      id: 'test_button_text',
+      name: '按钮文字',
+      type: 'text',
+      color: Colors.white,
+      properties: {'text': '发送 LOVE'},
+    ));
+
+    _assetService.addComposite(UIComposite(
+      id: 'test_text_button',
+      name: '带文字按钮',
+      layoutType: 'stack',
+      color: Colors.transparent,
+      opacity: 0.0,
+      children: [
+        UIElement(id: 'btn_surface', isComposite: false, module: _assetService.getModule('test_button_surface'), size: const Size(150, 44)),
+        UIElement(id: 'btn_text', isComposite: false, module: _assetService.getModule('test_button_text'), size: const Size(150, 44)),
+        UIElement(id: 'btn_logic', isComposite: false, module: _assetService.getModule('test_button_logic'), size: const Size(150, 44)),
+      ],
     ));
 
     _assetService.addComposite(UIComposite(
@@ -43,8 +74,8 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
       name: '基础面板',
       layoutType: 'column',
       children: [
-        UIElement(id: 'e1', isComposite: false, module: _assetService.getModule('test_progress')),
-        UIElement(id: 'e2', isComposite: false, module: _assetService.getModule('test_button')),
+        UIElement(id: 'e1', isComposite: false, module: _assetService.getModule('test_progress'), size: const Size(160, 14)),
+        UIElement(id: 'e2', isComposite: true, composite: _assetService.getComposite('test_text_button'), size: const Size(170, 54)),
       ],
     ));
   }
