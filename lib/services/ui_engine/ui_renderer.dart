@@ -24,7 +24,7 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildProgressBar(module),
+          child: _buildProgressBar(module, size),
         );
       case 'text':
         return SizedBox(
@@ -144,8 +144,14 @@ class UIRenderer {
         radius = BorderRadius.zero;
         break;
       case UIModuleShape.capsule:
-      case UIModuleShape.circle:
         radius = BorderRadius.circular(9999.0);
+        break;
+      case UIModuleShape.circle:
+        // 这里的 circle 作为“椭圆/正圆”处理：宽高相等时是正圆，
+        // 宽高不等时自然成为椭圆。不要与 capsule 胶囊混用。
+        radius = BorderRadius.all(
+          Radius.elliptical(size.width / 2, size.height / 2),
+        );
         break;
       case UIModuleShape.rounded:
         radius = BorderRadius.circular(rawRadius);
@@ -226,7 +232,7 @@ class UIRenderer {
     return const SizedBox.expand();
   }
 
-  static Widget _buildProgressBar(UIModule module) {
+  static Widget _buildProgressBar(UIModule module, Size size) {
     final double maxVal = (module.properties['max'] ?? 100.0).toDouble();
     final double curVal = (module.properties['current'] ?? 80.0).toDouble();
     final double ratio = maxVal > 0 ? (curVal / maxVal).clamp(0.0, 1.0) : 1.0;
@@ -234,19 +240,24 @@ class UIRenderer {
         module.color == Colors.white ? const Color(0xFFFF4081) : module.color;
 
     // 原子进度条只负责显示“条本体”，不显示名称、数值或单位。
-    return Container(
-      alignment: Alignment.centerLeft,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE2E2E8),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: FractionallySizedBox(
-        widthFactor: ratio,
-        child: Container(
-          decoration: BoxDecoration(
-            color: fillColor,
-            borderRadius: BorderRadius.circular(999),
-          ),
+    // 方向固定为横向：竖向进度条以后交给旋转/变换系统处理，避免
+    // 用户仅改变宽高比例时组件语义突然变化。
+    //
+    // 注意：轨道本身负责裁剪成胶囊形，填充块只是一块矩形色块。
+    // 这样在特殊宽高比例下，填充边界不会因为自身也套胶囊圆角而
+    // 和整体轨道/选中虚线边界产生视觉错位。
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        alignment: Alignment.centerLeft,
+        decoration: const BoxDecoration(
+          color: Color(0xFFE2E2E8),
+        ),
+        child: FractionallySizedBox(
+          widthFactor: ratio,
+          heightFactor: 1.0,
+          alignment: Alignment.centerLeft,
+          child: Container(color: fillColor),
         ),
       ),
     );

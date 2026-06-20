@@ -551,7 +551,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                                     DropdownMenuItem(value: UIModuleShape.rectangle, child: Text('直角')),
                                     DropdownMenuItem(value: UIModuleShape.rounded, child: Text('圆角')),
                                     DropdownMenuItem(value: UIModuleShape.capsule, child: Text('胶囊')),
-                                    DropdownMenuItem(value: UIModuleShape.circle, child: Text('正圆')),
+                                    DropdownMenuItem(value: UIModuleShape.circle, child: Text('椭圆 / 正圆')),
                                   ],
                                   onChanged: (v) => setDialogState(() => shape = v ?? UIModuleShape.rounded),
                                 ),
@@ -1087,7 +1087,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   /// 当前编辑层的置顶定位辅助层。
   ///
-  /// 只绘制“层号小角标 + 元素边界内侧的黑白交替细虚线”。
+  /// 未选中时只绘制层号小角标；选中时额外绘制元素边界内侧的白灰交替细虚线。
   /// 不加阴影、不加半透明蒙版、不重新渲染模块本体，避免影响原始颜色判断。
   /// 整体 IgnorePointer，避免遮挡原有拖拽、缩放、删除等交互命中。
   Widget _buildActiveLayerLocatorOverlay(UIElement el, bool selected) {
@@ -1096,22 +1096,23 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned(
-            left: 0,
-            top: 18,
-            width: el.size.width,
-            height: el.size.height,
-            child: CustomPaint(
-              painter: StudioAlternatingDashedBorderPainter(
-                strokeWidth: selected ? 1.6 : 1.2,
-                shape: _outlineShapeOf(el),
-                borderRadius: _outlineBorderRadiusOf(el),
+          if (selected)
+            Positioned(
+              left: 0,
+              top: 18,
+              width: el.size.width,
+              height: el.size.height,
+              child: CustomPaint(
+                painter: StudioAlternatingDashedBorderPainter(
+                  strokeWidth: 1.2,
+                  shape: _outlineShapeOf(el),
+                  borderRadius: _outlineBorderRadiusOf(el),
+                ),
+                child: const SizedBox.expand(),
               ),
-              child: const SizedBox.expand(),
             ),
-          ),
 
-          // 只显示层号，尽量减少对最终视觉预览的干扰。
+          // 未选中时只显示层号；选中时额外显示细白灰虚线外框。
           Positioned(
             left: 4,
             top: 0,
@@ -1298,14 +1299,14 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
         break;
     }
 
-    final blackPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.86)
+    final greyPaint = Paint()
+      ..color = const Color(0xFFB8B8C2).withValues(alpha: 0.92)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
     final whitePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.95)
+      ..color = Colors.white.withValues(alpha: 0.96)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
@@ -1319,7 +1320,7 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
       while (distance < metric.length) {
         final next = (distance + dashLength).clamp(0.0, metric.length).toDouble();
         final dashPath = metric.extractPath(distance, next);
-        canvas.drawPath(dashPath, drawWhite ? whitePaint : blackPaint);
+        canvas.drawPath(dashPath, drawWhite ? whitePaint : greyPaint);
         distance = next + gapLength;
         drawWhite = !drawWhite;
       }

@@ -108,7 +108,7 @@ class UIAssetService {
     );
     final surfaceCircle = UIModule(
       id: 'std_surface_circle',
-      name: '圆形图标底板原子',
+      name: '椭圆 / 正圆表面原子',
       type: 'surface',
       color: const Color(0xFFFF4081),
       material: UIModuleMaterial.gradient,
