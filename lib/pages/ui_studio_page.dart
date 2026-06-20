@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,18 +18,32 @@ class UIStudioPage extends StatefulWidget {
 class _UIStudioPageState extends State<UIStudioPage> {
   final UIAssetService _assetService = UIAssetService();
   
-  // 两种不同模式的工作台面独立维护，彻底避免桌面冲突
+  // 独立维护双模式工作台面数据
   List<UIElement> _atomicWorkspaceElements = [];
   List<UIElement> _compositeWorkspaceElements = [];
   
-  // 画布整体平移偏移量 (自定义跟手手势引擎，完全摆脱 InteractiveViewer 阻尼与跟手 Bug)
+  // 绝对跟手无阻尼平移桌面偏移量
   Offset _workspaceOffset = Offset.zero;
 
-  // 单点形变触发：记录当前激活 8 个形变点把手的元素 ID
+  // --- 极其严谨卓越的动态图层管理体系 (The Targeted Dynamic Layer Engine) ---
+  List<LayerScene> _sceneLayers = [LayerScene(id: 0, name: '图层 Level 0')];
+  int _activeLayerIndex = 0;
+  bool _showLayerManager = false;
+
+  // 按压瞬间绝对屏幕坐标与初始偏移锚定
+  Offset _startTouchScreenPos = Offset.zero;
+  Offset _startTouchElemOffset = Offset.zero;
+
+  // 右下角拉伸把手全局锚定状态 (1:1 Flawless Absolute Resizing Sync)
+  double _startTouchWidth = 150.0;
+  double _startTouchHeight = 70.0;
+  Offset _startTouchGlobalPos = Offset.zero;
+
+  // 当前激活把手的元素 ID
   String? _selectedTransformationId;
   
-  // 抽屉开关状态 (固定箭头把手不会动，缩小时抽屉完全消失不见)
-  bool _showLeftDrawer = false;  // 左侧基本组件抽屉
+  // 左右边栏抽屉开关状态
+  bool _showLeftDrawer = false;  // 左侧基本部件抽屉
   bool _showRightDrawer = false; // 右侧完成资产抽屉
 
   // 底部工作模式开关 (0: 基础原子部件模式, 1: 复合多重组块模式)
@@ -46,8 +61,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
   Future<void> _loadWorkspaces() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // 读取原子工作台面
-    final atomicData = prefs.getString('ui_studio_atomic_workspace');
+    // 加载独立图层列表
+    final layerData = prefs.getString('ui_studio_scene_layers_v4');
+    if (layerData != null) {
+      try {
+        final List list = jsonDecode(layerData);
+        if (list.isNotEmpty) {
+          _sceneLayers = list.map((e) => LayerScene.fromJson(e)).toList();
+        }
+      } catch (_) {}
+    }
+
+    final atomicData = prefs.getString('ui_studio_atomic_workspace_v4');
     if (atomicData != null) {
       try {
         final List list = jsonDecode(atomicData);
@@ -55,8 +80,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       } catch (_) {}
     }
 
-    // 读取复合工作台面
-    final compositeData = prefs.getString('ui_studio_composite_workspace');
+    final compositeData = prefs.getString('ui_studio_composite_workspace_v4');
     if (compositeData != null) {
       try {
         final List list = jsonDecode(compositeData);
@@ -70,15 +94,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
   Future<void> _saveWorkspaces() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // 保存原子工作台面
-    final atomicData = jsonEncode(_atomicWorkspaceElements.map((e) => e.toJson()).toList());
-    await prefs.setString('ui_studio_atomic_workspace', atomicData);
+    final layerData = jsonEncode(_sceneLayers.map((e) => e.toJson()).toList());
+    await prefs.setString('ui_studio_scene_layers_v4', layerData);
 
-    // 保存复合工作台面
+    final atomicData = jsonEncode(_atomicWorkspaceElements.map((e) => e.toJson()).toList());
+    await prefs.setString('ui_studio_atomic_workspace_v4', atomicData);
+
     final compositeData = jsonEncode(_compositeWorkspaceElements.map((e) => e.toJson()).toList());
-    await prefs.setString('ui_studio_composite_workspace', compositeData);
+    await prefs.setString('ui_studio_composite_workspace_v4', compositeData);
     
-    // 入库全局共享
     for (final el in _atomicWorkspaceElements) {
       if (!el.isComposite && el.module != null) {
         _assetService.addModule(el.module!);
@@ -92,19 +116,35 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('两套工作台面数据与模组资产已完整入库！✅'), backgroundColor: Colors.green),
+        const SnackBar(content: Text('动态图层总览与模组资产已完整入库保存！✅'), backgroundColor: Color(0xFF00C853)),
       );
     }
   }
 
-  // 拖出添加组件或基本框到工作区域
+  void _switchActiveSceneLayer(int newLayerId) {
+    setState(() {
+      _activeLayerIndex = newLayerId;
+      _selectedTransformationId = null;
+    });
+  }
+
+  void _createNewSceneLayer() {
+    setState(() {
+      final newId = _sceneLayers.length;
+      _sceneLayers.add(LayerScene(id: newId, name: '图层 Level $newId'));
+      _switchActiveSceneLayer(newId); // 自动无缝切至新图层！
+    });
+  }
+
+  // 拖拽添加新积木：生成在完全避开边栏与顶部控制区域的安全中心区，同时立刻自动收回边栏抽屉，彻底释放触控交互空间！
   void _addElement(UIModule module) {
     setState(() {
       final len = _currentElements.length;
-      final dx = 120.0 + (len * 25) % 150 - _workspaceOffset.dx;
-      final dy = 100.0 + (len * 25) % 150 - _workspaceOffset.dy;
+      // 极其智能安全的可视中心生成坐标，绝不碰撞边栏与顶部按钮
+      final dx = 180.0 + (len * 35) % 200 - _workspaceOffset.dx;
+      final dy = 140.0 + (len * 25) % 200 - _workspaceOffset.dy;
 
-      final Size initialSize = module.type == 'base_box' ? const Size(240, 160) : const Size(150, 70);
+      final Size initialSize = module.type == 'base_box' ? const Size(260, 160) : const Size(150, 68);
 
       final newElement = UIElement(
         id: 'el_${DateTime.now().millisecondsSinceEpoch}',
@@ -113,14 +153,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
         composite: module.type == 'base_box'
             ? UIComposite(
                 id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
-                name: '复合多重容器',
+                name: '复合多重边界框',
                 layoutType: 'base_box',
                 children: [],
-                color: Colors.blueGrey,
+                color: const Color(0xFFECEFF1),
               )
             : null,
         offset: Offset(dx, dy),
         size: initialSize,
+        layerIndex: _activeLayerIndex, // 完美挂载至动态当前工作层！
       );
 
       if (_bottomModeIndex == 0) {
@@ -130,21 +171,54 @@ class _UIStudioPageState extends State<UIStudioPage> {
       }
 
       _selectedTransformationId = newElement.id;
+      
+      // 核心绝杀：添加积木瞬间，立刻自动收回两边与图层管理抽屉！彻底杜绝新模块生成在抽屉正下方导致漏按、被吃掉 Bug！
+      _showLeftDrawer = false;
+      _showRightDrawer = false;
+      _showLayerManager = false;
     });
   }
 
-  // 更新元素几何规范 (1:1 绝对跟手无阻尼平移)
+  // 执行同层温和推开防重叠避碰法则
   void _updateElementGeometry(String id, Offset newOffset, Size newSize) {
     setState(() {
       final list = _currentElements;
       final index = list.indexWhere((e) => e.id == id);
-      if (index != -1) {
-        list[index] = list[index].copyWith(offset: newOffset, size: newSize);
+      if (index == -1) return;
+
+      final targetEl = list[index];
+      Offset updatedOffset = newOffset;
+
+      for (final other in list) {
+        if (other.id == id || other.layerIndex != targetEl.layerIndex) continue;
+
+        final Rect newRect = Rect.fromLTWH(updatedOffset.dx, updatedOffset.dy, newSize.width, newSize.height);
+        final Rect otherRect = Rect.fromLTWH(other.offset.dx, other.offset.dy, other.size.width, other.size.height);
+
+        if (newRect.overlaps(otherRect)) {
+          final double overLeft = newRect.right - otherRect.left;
+          final double overRight = otherRect.right - newRect.left;
+          final double overTop = newRect.bottom - otherRect.top;
+          final double overBottom = otherRect.bottom - newRect.top;
+
+          final double minOver = [overLeft, overRight, overTop, overBottom].reduce((a, b) => a < b ? a : b);
+
+          if (minOver == overLeft) {
+            updatedOffset = Offset(otherRect.left - newSize.width - 2.0, updatedOffset.dy);
+          } else if (minOver == overRight) {
+            updatedOffset = Offset(otherRect.right + 2.0, updatedOffset.dy);
+          } else if (minOver == overTop) {
+            updatedOffset = Offset(updatedOffset.dx, otherRect.top - newSize.height - 2.0);
+          } else if (minOver == overBottom) {
+            updatedOffset = Offset(updatedOffset.dx, otherRect.bottom + 2.0);
+          }
+        }
       }
+
+      list[index] = targetEl.copyWith(offset: updatedOffset, size: newSize);
     });
   }
 
-  // 删除组件
   void _deleteElement(String id) {
     setState(() {
       if (_bottomModeIndex == 0) {
@@ -158,20 +232,20 @@ class _UIStudioPageState extends State<UIStudioPage> {
     });
   }
 
-  // 专门 tailored 的独立高级参数设定窗
+  // 高雅通透模组规格配置窗
   void _showTailoredPrecisionEditorDialog(UIElement el) {
     final bool isComp = el.isComposite;
     String name = isComp ? (el.composite?.name ?? '') : (el.module?.name ?? '');
     Color color = (isComp ? el.composite?.color : el.module?.color) ?? Colors.white;
     UIModuleShape shape = (!isComp ? el.module?.shape : null) ?? UIModuleShape.rounded;
     UIModuleMaterial material = (isComp ? el.composite?.material : el.module?.material) ?? UIModuleMaterial.glass;
+    int selectedLayer = el.layerIndex;
 
-    // 针对具体类型独立抽取的属性
     Map<String, dynamic> props = Map.from(!isComp ? (el.module?.properties ?? {}) : {});
     String textProp = props['text']?.toString() ?? '';
     String labelProp = props['label']?.toString() ?? '';
     double maxProp = (props['max'] ?? 100.0).toDouble();
-    double curProp = (props['current'] ?? 80.0).toDouble();
+    double curProp = (props['current'] ?? 75.0).toDouble();
 
     showDialog(
       context: context,
@@ -180,14 +254,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             return AlertDialog(
-              backgroundColor: const Color(0xFF1C1C22), // 极其高雅、高对比度的深色调
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('全局模组资产规格配置', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const Text('全局模组资产规格配置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 18, color: Colors.white70),
+                    icon: const Icon(Icons.close, size: 18, color: Color(0xFF888896)),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
@@ -197,33 +271,45 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // --- 模块通用配置 (无杂乱图标) ---
-                    const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 6),
                     TextField(
                       controller: TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length),
-                      style: const TextStyle(fontSize: 13, color: Colors.white),
+                      style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
                       decoration: InputDecoration(
-                        filled: true, fillColor: Colors.black38,
+                        filled: true, fillColor: const Color(0xFFF2F2F6),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                       ),
                       onChanged: (v) => name = v,
                     ),
                     const SizedBox(height: 16),
 
-                    // --- 根据具体类型的独立定制编辑 (Tailored Setup) ---
+                    const Text('模块所属独立 Z 轴图层 (同层避碰阻止重叠，跨层覆盖)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int>(
+                      initialValue: selectedLayer,
+                      decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                      dropdownColor: Colors.white,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                      items: _sceneLayers.map((ly) {
+                        return DropdownMenuItem<int>(value: ly.id, child: Text('${ly.name}${ly.id == _activeLayerIndex ? " (当前创作层)" : ""}'));
+                      }).toList(),
+                      onChanged: (v) => setDialogState(() => selectedLayer = v ?? _activeLayerIndex),
+                    ),
+                    const SizedBox(height: 16),
+
                     if (!isComp && el.module?.type == 'progress') ...[
-                      const Text('进度条范围设定 (最大值 / 当前预览值)', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                      const Text('进度条范围设定 (最大值 / 当前预览值)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                       const SizedBox(height: 6),
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
                               controller: TextEditingController(text: maxProp.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: maxProp.toStringAsFixed(0).length),
-                              style: const TextStyle(fontSize: 13, color: Colors.white),
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
                               keyboardType: TextInputType.number,
-                              decoration: InputDecoration(filled: true, fillColor: Colors.black38, labelText: '最大值', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none)),
+                              decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), labelText: '最大值', labelStyle: const TextStyle(color: Color(0xFF888896)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
                               onChanged: (v) => maxProp = double.tryParse(v) ?? 100.0,
                             ),
                           ),
@@ -231,10 +317,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           Expanded(
                             child: TextField(
                               controller: TextEditingController(text: curProp.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: curProp.toStringAsFixed(0).length),
-                              style: const TextStyle(fontSize: 13, color: Colors.white),
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
                               keyboardType: TextInputType.number,
-                              decoration: InputDecoration(filled: true, fillColor: Colors.black38, labelText: '预览值', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none)),
-                              onChanged: (v) => curProp = double.tryParse(v) ?? 80.0,
+                              decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), labelText: '预览值', labelStyle: const TextStyle(color: Color(0xFF888896)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+                              onChanged: (v) => curProp = double.tryParse(v) ?? 75.0,
                             ),
                           ),
                         ],
@@ -243,38 +329,37 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ],
 
                     if (!isComp && (el.module?.type == 'button' || el.module?.type == 'text')) ...[
-                      const Text('显示文本内容', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                      const Text('显示文本内容', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                       const SizedBox(height: 6),
                       TextField(
                         controller: TextEditingController(text: textProp)..selection = TextSelection.collapsed(offset: textProp.length),
-                        style: const TextStyle(fontSize: 13, color: Colors.white),
-                        decoration: InputDecoration(filled: true, fillColor: Colors.black38, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none)),
+                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                        decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
                         onChanged: (v) => textProp = v,
                       ),
                       const SizedBox(height: 16),
                     ],
 
                     if (!isComp && el.module?.type == 'input') ...[
-                      const Text('输入占位提示文字 (Placeholder)', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                      const Text('输入占位提示文字 (Placeholder)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                       const SizedBox(height: 6),
                       TextField(
                         controller: TextEditingController(text: labelProp)..selection = TextSelection.collapsed(offset: labelProp.length),
-                        style: const TextStyle(fontSize: 13, color: Colors.white),
-                        decoration: InputDecoration(filled: true, fillColor: Colors.black38, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none)),
+                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                        decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
                         onChanged: (v) => labelProp = v,
                       ),
                       const SizedBox(height: 16),
                     ],
 
-                    // --- 主色调卡 (Swatches) ---
-                    const Text('主色调调色板', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    const Text('外观调色板', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8, runSpacing: 8,
                       children: [
-                        Colors.redAccent, Colors.deepOrange, Colors.amberAccent,
-                        Colors.greenAccent, Colors.cyan, Colors.blueAccent,
-                        Colors.purpleAccent, Colors.pinkAccent, Colors.white, Colors.blueGrey
+                        Colors.white, const Color(0xFFFF4081), const Color(0xFFFF6E40),
+                        const Color(0xFFFFD740), const Color(0xFF00E676), const Color(0xFF00E5FF),
+                        const Color(0xFF2979FF), const Color(0xFF651FFF), const Color(0xFF37474F)
                       ].map((c) {
                         return GestureDetector(
                           onTap: () => setDialogState(() => color = c),
@@ -282,8 +367,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
                             width: 28, height: 28,
                             decoration: BoxDecoration(
                               color: c, shape: BoxShape.circle,
-                              border: Border.all(color: color == c ? Colors.white : Colors.transparent, width: 2),
-                              boxShadow: [if (color == c) const BoxShadow(color: Colors.white54, blurRadius: 6)],
+                              border: Border.all(color: color == c ? const Color(0xFF111116) : Colors.black12, width: color == c ? 2.5 : 1),
+                              boxShadow: [if (color == c) const BoxShadow(color: Colors.black26, blurRadius: 6)],
                             ),
                           ),
                         );
@@ -291,20 +376,19 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ),
                     const SizedBox(height: 16),
 
-                    // --- 材质与几何下拉 ---
                     Row(
                       children: [
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('渲染材质风格', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                              const Text('渲染材质皮肤', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                               const SizedBox(height: 6),
                               DropdownButtonFormField<UIModuleMaterial>(
-                                value: material,
-                                decoration: InputDecoration(filled: true, fillColor: Colors.black38, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                dropdownColor: const Color(0xFF2A2A32),
-                                style: const TextStyle(fontSize: 12, color: Colors.white),
+                                initialValue: material,
+                                decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                                dropdownColor: Colors.white,
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
                                 items: const [
                                   DropdownMenuItem(value: UIModuleMaterial.glass, child: Text('毛玻璃质感')),
                                   DropdownMenuItem(value: UIModuleMaterial.solid, child: Text('纯色实心')),
@@ -322,13 +406,13 @@ class _UIStudioPageState extends State<UIStudioPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('几何外延', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                                const Text('几何外延', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                                 const SizedBox(height: 6),
                                 DropdownButtonFormField<UIModuleShape>(
-                                  value: shape,
-                                  decoration: InputDecoration(filled: true, fillColor: Colors.black38, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                                  dropdownColor: const Color(0xFF2A2A32),
-                                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                                  initialValue: shape,
+                                  decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                                  dropdownColor: Colors.white,
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
                                   items: const [
                                     DropdownMenuItem(value: UIModuleShape.rectangle, child: Text('直角')),
                                     DropdownMenuItem(value: UIModuleShape.rounded, child: Text('圆角')),
@@ -347,9 +431,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Colors.white54))),
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Color(0xFF888896)))),
                 FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: Colors.pinkAccent.shade200, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                   onPressed: () {
                     Navigator.pop(ctx);
                     setState(() {
@@ -365,15 +449,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           final newMod = el.module!.copyWith(
                             name: name, color: color, shape: shape, material: material, properties: updatedProps,
                           );
-                          list[index] = el.copyWith(module: newMod);
+                          list[index] = el.copyWith(module: newMod, layerIndex: selectedLayer);
                         } else {
                           final newComp = el.composite!.copyWith(name: name, color: color, material: material);
-                          list[index] = el.copyWith(composite: newComp);
+                          list[index] = el.copyWith(composite: newComp, layerIndex: selectedLayer);
                         }
                       }
                     });
                   },
-                  child: const Text('确定应用', style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: const Text('确定应用', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ],
             );
@@ -385,57 +469,57 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   @override
   Widget build(BuildContext context) {
+    final sortedElements = _currentElements.toList()..sort((a, b) => a.layerIndex.compareTo(b.layerIndex));
+
     return Scaffold(
-      backgroundColor: const Color(0xFF141418), // 极具质感、高档深邃的暗灰主题背景，彻底告别死黑
+      backgroundColor: const Color(0xFFF6F6F9),
       body: Stack(
         children: [
-          // 1. 无限绝对跟手工作区域 (摆脱 InteractiveViewer 阻尼，1:1 跟随鼠标/手指)
+          // 1. 无限绝对跟手工作台面底壳
           Positioned.fill(
             child: GestureDetector(
               onPanUpdate: (details) {
-                // 平移整个工作桌面
                 setState(() => _workspaceOffset += details.delta);
               },
               onTap: () => setState(() => _selectedTransformationId = null),
               child: ClipRect(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // 高对比度专业网格背景
-                    Positioned.fill(
-                      child: CustomPaint(painter: StudioGridPainter(_workspaceOffset)),
+                child: CustomPaint(
+                  painter: StudioWarmGridPainter(_workspaceOffset),
+                  child: Transform.translate(
+                    offset: _workspaceOffset,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: sortedElements.map((el) {
+                        final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
+                        return Positioned(
+                          left: el.offset.dx - p,
+                          top: el.offset.dy - p,
+                          width: el.size.width + p * 2,
+                          height: el.size.height + p * 2,
+                          child: _buildTrueSingleHandleNode(el, p),
+                        );
+                      }).toList(),
                     ),
-
-                    // 当前模式桌面上的所有实体积木节点
-                    ..._currentElements.map((el) {
-                      return Positioned(
-                        left: el.offset.dx + _workspaceOffset.dx,
-                        top: el.offset.dy + _workspaceOffset.dy,
-                        width: el.size.width,
-                        height: el.size.height,
-                        child: _buildCADInstanceNode(el),
-                      );
-                    }).toList(),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
 
-          // 2. 左上角：圆角返回把手
+          // 2. 左上角返回键
           Positioned(
             top: MediaQuery.of(context).padding.top + 16,
             left: 16,
             child: Material(
-              color: const Color(0xFF282832),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              color: Colors.white.withValues(alpha: 0.9),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
               elevation: 4,
               child: InkWell(
                 borderRadius: BorderRadius.circular(14),
                 onTap: () => Navigator.pop(context),
                 child: const Padding(
                   padding: EdgeInsets.all(10.0),
-                  child: Icon(Icons.reply_rounded, color: Colors.white, size: 26),
+                  child: Icon(Icons.reply_rounded, color: Color(0xFF111116), size: 26),
                 ),
               ),
             ),
@@ -447,10 +531,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
             right: 16,
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
-                backgroundColor: Colors.pinkAccent.shade200,
+                backgroundColor: const Color(0xFFFF4081),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                elevation: 4,
               ),
               icon: const Icon(Icons.save_rounded, size: 18),
               label: const Text('保存成果', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -458,63 +543,91 @@ class _UIStudioPageState extends State<UIStudioPage> {
             ),
           ),
 
-          // 4. 左侧抽屉系统 (固定箭头在屏幕边缘，缩小时整个抽屉消失不见)
+          // 4. 【📑图层管理】专属按键：精准部署在保存按键的正下方 (`top: 68`)！
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 68,
+            right: 16,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF00E5FF),
+                foregroundColor: const Color(0xFF111116),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                elevation: 4,
+              ),
+              icon: const Icon(Icons.layers_rounded, size: 18),
+              label: Text('图层 (Level $_activeLayerIndex)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              onPressed: () => setState(() => _showLayerManager = true),
+            ),
+          ),
+
+          // 5. 动态图层管理展示抽屉
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOut,
-            left: _showLeftDrawer ? 0 : -180, // 完全缩回屏幕外
+            right: _showLayerManager ? 0 : -260,
             top: 100, bottom: 100,
-            width: 180, // 小巧精致，绝不遮挡屏幕
+            width: 240,
+            child: _buildDedicatedLayerManagerDrawer(),
+          ),
+
+          // 6. 左侧基础部件抽屉
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+            left: _showLeftDrawer ? 0 : -150,
+            top: 100, bottom: 100,
+            width: 150,
             child: _buildLeftCompactAssetPreviewDrawer(),
           ),
           
-          // 固定不会动的左侧展开箭头把手
-          Positioned(
-            left: 0,
-            top: MediaQuery.of(context).size.height / 2 - 20,
-            child: GestureDetector(
-              onTap: () => setState(() => _showLeftDrawer = !_showLeftDrawer),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.pinkAccent.withValues(alpha: 0.85),
-                  borderRadius: const BorderRadius.only(topRight: Radius.circular(12), bottomRight: Radius.circular(12)),
-                  boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 6)],
+          if (!_showLeftDrawer)
+            Positioned(
+              left: 0,
+              top: MediaQuery.of(context).size.height / 2 - 24,
+              child: GestureDetector(
+                onTap: () => setState(() => _showLeftDrawer = true),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF4081).withValues(alpha: 0.9),
+                    borderRadius: const BorderRadius.only(topRight: Radius.circular(14), bottomRight: Radius.circular(14)),
+                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                  ),
+                  child: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white),
                 ),
-                child: Icon(_showLeftDrawer ? Icons.arrow_back_ios : Icons.arrow_forward_ios, size: 14, color: Colors.white),
               ),
             ),
-          ),
 
-          // 5. 右侧抽屉系统
+          // 7. 右侧已完成资产抽屉
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOut,
-            right: _showRightDrawer ? 0 : -200, // 缩回屏幕外
+            right: _showRightDrawer ? 0 : -160,
             top: 120, bottom: 120,
-            width: 200,
+            width: 160,
             child: _buildRightCompletedAssetsDrawer(),
           ),
 
-          // 固定不会动的右侧展开箭头把手
-          Positioned(
-            right: 0,
-            top: MediaQuery.of(context).size.height / 2 - 20,
-            child: GestureDetector(
-              onTap: () => setState(() => _showRightDrawer = !_showRightDrawer),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.cyan.withValues(alpha: 0.85),
-                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), bottomLeft: Radius.circular(12)),
-                  boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 6)],
+          if (!_showRightDrawer && !_showLayerManager)
+            Positioned(
+              right: 0,
+              top: MediaQuery.of(context).size.height / 2 - 24,
+              child: GestureDetector(
+                onTap: () => setState(() => _showRightDrawer = true),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00E5FF).withValues(alpha: 0.9),
+                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), bottomLeft: Radius.circular(14)),
+                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                  ),
+                  child: const Icon(Icons.arrow_back_ios, size: 14, color: Color(0xFF111116)),
                 ),
-                child: Icon(_showRightDrawer ? Icons.arrow_forward_ios : Icons.arrow_back_ios, size: 14, color: Colors.white),
               ),
             ),
-          ),
 
-          // 6. 底部正中央：两种独立模式工作台面切换钮
+          // 8. 底部正中央模式轮盘
           Positioned(
             bottom: 24,
             left: 0, right: 0,
@@ -532,6 +645,85 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
+  Widget _buildDedicatedLayerManagerDrawer() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 25)],
+        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 16, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _showLayerManager = false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: const Color(0xFF00E5FF).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+                        child: const Row(children: [Icon(Icons.arrow_forward_ios, size: 10, color: Color(0xFF00ACC1)), Text(' 收回', style: TextStyle(fontSize: 10, color: Color(0xFF00ACC1), fontWeight: FontWeight.bold))]),
+                      ),
+                    ),
+                    const Text('动态图层总览', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                  ],
+                ),
+              ),
+              const Divider(color: Colors.black12),
+
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF00E676), foregroundColor: const Color(0xFF111116), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                  icon: const Icon(Icons.add_circle, size: 18),
+                  label: const Text('新建图层', style: TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: _createNewSceneLayer,
+                ),
+              ),
+
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: Text('图层专注模式：仅激活选中层，屏蔽旧图层误触', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+              ),
+              const Divider(color: Colors.black12),
+
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  children: _sceneLayers.map((ly) {
+                    final bool isSel = _activeLayerIndex == ly.id;
+                    return Card(
+                      color: isSel ? const Color(0xFF111116) : const Color(0xFFF6F6F9),
+                      elevation: isSel ? 4 : 0,
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: isSel ? const Color(0xFF00E5FF) : Colors.black.withValues(alpha: 0.05), width: isSel ? 1.5 : 1)),
+                      child: ListTile(
+                        leading: Icon(Icons.layers, color: isSel ? const Color(0xFF00E5FF) : const Color(0xFF888896), size: 18),
+                        title: Text(ly.name, style: TextStyle(color: isSel ? Colors.white : const Color(0xFF111116), fontSize: 12, fontWeight: FontWeight.bold)),
+                        trailing: isSel ? const Icon(Icons.check_circle, color: Color(0xFF00E5FF), size: 18) : null,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                        onTap: () => _switchActiveSceneLayer(ly.id),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBottomPinkModeButton(String label, int modeIndex) {
     final bool isSel = _bottomModeIndex == modeIndex;
     return GestureDetector(
@@ -543,94 +735,101 @@ class _UIStudioPageState extends State<UIStudioPage> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: isSel ? Colors.pinkAccent.shade200 : const Color(0xFF2A2A34),
+          color: isSel ? const Color(0xFFFF4081) : Colors.white,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: isSel ? [BoxShadow(color: Colors.pinkAccent.withValues(alpha: 0.5), blurRadius: 10, offset: const Offset(0, 4))] : [],
-          border: Border.all(color: isSel ? Colors.white : Colors.white.withValues(alpha: 0.1), width: 1.5),
+          boxShadow: [BoxShadow(color: (isSel ? const Color(0xFFFF4081) : Colors.black).withValues(alpha: isSel ? 0.4 : 0.05), blurRadius: 10, offset: const Offset(0, 4))],
+          border: Border.all(color: isSel ? const Color(0xFFFF4081) : Colors.black.withValues(alpha: 0.05), width: 1.5),
         ),
-        child: Text(label, style: TextStyle(color: isSel ? Colors.white : Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
+        child: Text(label, style: TextStyle(color: isSel ? Colors.white : const Color(0xFF555562), fontWeight: FontWeight.bold, fontSize: 13)),
       ),
     );
   }
 
-  // 左侧基本组件抽屉 —— 废除图标加文字，全幅采用真实的 Live Preview 预览图卡片
   Widget _buildLeftCompactAssetPreviewDrawer() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E26).withValues(alpha: 0.95),
+        color: Colors.white.withValues(alpha: 0.85),
         borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
-        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 15)],
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 20)],
+        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('拖拽基础预览', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 16, color: Colors.white54),
-                  constraints: const BoxConstraints(),
-                  padding: EdgeInsets.zero,
-                  onPressed: () => setState(() => _showLeftDrawer = false),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 16, 8, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('基础预览', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _showLeftDrawer = false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: const Color(0xFFFF4081).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                        child: const Row(children: [Text('收回 ', style: TextStyle(fontSize: 10, color: Color(0xFFFF4081), fontWeight: FontWeight.bold)), Icon(Icons.arrow_back_ios, size: 10, color: Color(0xFFFF4081))]),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const Divider(color: Colors.black12),
+
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  children: [
+                    if (_bottomModeIndex == 1) ...[
+                      const Text('复合基本边界框', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                      const SizedBox(height: 4),
+                      _buildPreviewDraggableCard(
+                        UIModule(id: 'box', name: '基本边界框', type: 'base_box', properties: {}, color: Colors.cyan),
+                        Container(height: 50, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00ACC1), width: 1.5, style: BorderStyle.none), borderRadius: BorderRadius.circular(8), color: const Color(0xFF00ACC1).withValues(alpha: 0.08)), child: const Center(child: Text('📦 拖出边界框', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 11, fontWeight: FontWeight.bold)))),
+                      ),
+                      const Divider(color: Colors.black12),
+                    ],
+
+                    const Text('状态进度条预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(id: 'prog', name: '生命条', type: 'progress', properties: {'min': 0, 'max': 100, 'current': 75}, color: const Color(0xFFFF4081)),
+                      Container(height: 46, padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFFE2E2E8), borderRadius: BorderRadius.circular(8)), child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [Text('生命条', style: TextStyle(color: Color(0xFF111116), fontSize: 10, fontWeight: FontWeight.bold)), Text('75/100', style: TextStyle(color: Color(0xFF555562), fontSize: 9))]), const SizedBox(height: 4), Container(height: 6, decoration: BoxDecoration(color: const Color(0xFFFF4081), borderRadius: BorderRadius.circular(3)))])),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text('动作按钮预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(id: 'btn', name: '发起动作', type: 'button', properties: {'text': '发起动作'}, color: const Color(0xFF651FFF)),
+                      Container(height: 38, decoration: BoxDecoration(color: const Color(0xFF651FFF), borderRadius: BorderRadius.circular(8)), child: const Center(child: Text('发起动作', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)))),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text('称号展示文本预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(id: 'txt', name: '传奇勇者', type: 'text', properties: {'text': '传奇勇者标签'}, color: const Color(0xFF00E5FF)),
+                      Container(height: 36, decoration: BoxDecoration(color: const Color(0xFF00E5FF).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF00E5FF))), child: const Center(child: Text('传奇勇者标签', style: TextStyle(color: Color(0xFF00B0FF), fontSize: 11, fontWeight: FontWeight.bold)))),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text('提示输入框预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(id: 'inp', name: '自定称呼', type: 'input', properties: {'label': '请输入称呼...'}, color: const Color(0xFF00E676)),
+                      Container(height: 36, padding: const EdgeInsets.symmetric(horizontal: 10), decoration: BoxDecoration(color: const Color(0xFFEBEBF1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.centerLeft, child: const Text('请输入称呼...', style: TextStyle(color: Color(0xFF888896), fontSize: 11))),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const Divider(color: Colors.white12),
-
-          // 预览图插槽列表
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              children: [
-                if (_bottomModeIndex == 1) ...[
-                  const Text('复合基本边界容器', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                  const SizedBox(height: 6),
-                  _buildPreviewDraggableCard(
-                    UIModule(id: 'box', name: '基本边界框', type: 'base_box', properties: {}, color: Colors.cyan),
-                    Container(height: 54, decoration: BoxDecoration(border: Border.all(color: Colors.cyanAccent, width: 1.5, style: BorderStyle.none), borderRadius: BorderRadius.circular(8), color: Colors.cyan.withValues(alpha: 0.1)), child: const Center(child: Text('📦 拖出基本边界框', style: TextStyle(color: Colors.cyanAccent, fontSize: 11, fontWeight: FontWeight.bold)))),
-                  ),
-                  const Divider(color: Colors.white12),
-                ],
-
-                const Text('状态进度条预览', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                const SizedBox(height: 6),
-                _buildPreviewDraggableCard(
-                  UIModule(id: 'prog', name: '生命条', type: 'progress', properties: {'min': 0, 'max': 100, 'current': 75}, color: Colors.pinkAccent),
-                  Container(height: 48, padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)), child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [Text('生命条', style: TextStyle(color: Colors.white, fontSize: 10)), Text('75/100', style: TextStyle(color: Colors.white70, fontSize: 9))]), const SizedBox(height: 4), Container(height: 6, decoration: BoxDecoration(color: Colors.pinkAccent, borderRadius: BorderRadius.circular(3)))])),
-                ),
-
-                const SizedBox(height: 12),
-                const Text('动作按钮预览', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                const SizedBox(height: 6),
-                _buildPreviewDraggableCard(
-                  UIModule(id: 'btn', name: '发起动作', type: 'button', properties: {'text': '发起动作'}, color: Colors.deepPurpleAccent),
-                  Container(height: 40, decoration: BoxDecoration(color: Colors.deepPurpleAccent, borderRadius: BorderRadius.circular(8)), child: const Center(child: Text('发起动作', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))),
-                ),
-
-                const SizedBox(height: 12),
-                const Text('称号文本预览', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                const SizedBox(height: 6),
-                _buildPreviewDraggableCard(
-                  UIModule(id: 'txt', name: '传奇勇者', type: 'text', properties: {'text': '传奇勇者标签'}, color: Colors.tealAccent),
-                  Container(height: 36, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.tealAccent.withValues(alpha: 0.4))), child: const Center(child: Text('传奇勇者标签', style: TextStyle(color: Colors.tealAccent, fontSize: 11)))),
-                ),
-
-                const SizedBox(height: 12),
-                const Text('输入提示框预览', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                const SizedBox(height: 6),
-                _buildPreviewDraggableCard(
-                  UIModule(id: 'inp', name: '自定称呼', type: 'input', properties: {'label': '请输入称呼...'}, color: Colors.greenAccent),
-                  Container(height: 38, padding: const EdgeInsets.symmetric(horizontal: 10), decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(6)), alignment: Alignment.centerLeft, child: const Text('请输入称呼...', style: TextStyle(color: Colors.white54, fontSize: 11))),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -641,10 +840,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 8),
+          margin: const EdgeInsets.only(bottom: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
           ),
           child: visualPreview,
         ),
@@ -657,217 +856,210 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E26).withValues(alpha: 0.95),
+        color: Colors.white.withValues(alpha: 0.85),
         borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
-        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 15)],
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 20)],
+        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 16, 16, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.close, size: 16, color: Colors.white54),
-                  constraints: const BoxConstraints(),
-                  padding: EdgeInsets.zero,
-                  onPressed: () => setState(() => _showRightDrawer = false),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 16, 14, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _showRightDrawer = false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: const Color(0xFF00E5FF).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                        child: const Row(children: [Icon(Icons.arrow_forward_ios, size: 10, color: Color(0xFF00ACC1)), Text(' 收回', style: TextStyle(fontSize: 10, color: Color(0xFF00ACC1), fontWeight: FontWeight.bold))]),
+                      ),
+                    ),
+                    const Text('完成资产库', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                  ],
                 ),
-                const Text('已制资产库', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-              ],
-            ),
-          ),
-          const Divider(color: Colors.white12),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(8),
-              children: modules.map((m) => Card(
-                color: Colors.white.withValues(alpha: 0.05),
-                elevation: 0,
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  title: Text(m.name, style: const TextStyle(color: Colors.white, fontSize: 12)),
-                  trailing: const Icon(Icons.add_circle, size: 18, color: Colors.greenAccent),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                  onTap: () => _addElement(m),
+              ),
+              const Divider(color: Colors.black12),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  children: modules.map((m) => Card(
+                    color: const Color(0xFFF6F6F9),
+                    elevation: 0,
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.black.withValues(alpha: 0.03))),
+                    child: ListTile(
+                      title: Text(m.name, style: const TextStyle(color: Color(0xFF111116), fontSize: 11, fontWeight: FontWeight.bold)),
+                      trailing: const Icon(Icons.add_circle, size: 16, color: Color(0xFF00E676)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      onTap: () => _addElement(m),
+                    ),
+                  )).toList(),
                 ),
-              )).toList(),
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  // 构建支持丝滑 1:1 跟手、独立 8 个拉伸形变把手、长按专属定制设定的节点
-  Widget _buildCADInstanceNode(UIElement el) {
-    bool isActive = _selectedTransformationId == el.id;
+  // --- 极其严谨完美的 单一把手 + 当前图层专注锁定法则 节点 ---
+  Widget _buildTrueSingleHandleNode(UIElement el, double p) {
+    final bool isTransformationActive = _selectedTransformationId == el.id;
+    final bool isCurrentLayerActive = el.layerIndex == _activeLayerIndex;
+
+    // 极其完美正确的图层专注锁定法则声明，完美保持视觉相对位置静止无偏差！
+    if (!isCurrentLayerActive) {
+      return IgnorePointer(
+        ignoring: true, // 彻底屏蔽旧图层误触！
+        child: Opacity(
+          opacity: 0.65,
+          child: Container(
+            margin: EdgeInsets.only(left: p, top: p), // 完美正确的布局参数！
+            width: el.size.width,
+            height: el.size.height,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: UIRenderer.render(context, el),
+          ),
+        ),
+      );
+    }
+
+    Widget mainContent = Container(
+      width: el.size.width,
+      height: el.size.height,
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: isTransformationActive ? const Color(0xFFFF4081) : Colors.transparent,
+          width: isTransformationActive ? 1.5 : 0.0,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: UIRenderer.render(context, el),
+    );
+
+    Widget touchableBody = GestureDetector(
+      onPanStart: (details) {
+        _startTouchElemOffset = el.offset;
+        _startTouchScreenPos = details.globalPosition;
+      },
+      onPanUpdate: (details) {
+        final delta = details.globalPosition - _startTouchScreenPos;
+        _updateElementGeometry(el.id, _startTouchElemOffset + delta, el.size);
+      },
+      onPanEnd: (_) => _startTouchElemOffset = Offset.zero,
+      onTap: () {
+        setState(() => _selectedTransformationId = el.id);
+      },
+      onLongPress: () {
+        _showTailoredPrecisionEditorDialog(el);
+      },
+      child: mainContent,
+    );
+
+    if (!isTransformationActive) {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          touchableBody,
+          Positioned(
+            left: 8, top: -10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: const Color(0xFF111116), borderRadius: BorderRadius.circular(6), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
+              child: Text('Layer Level ${el.layerIndex}', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Stack(
-      clipBehavior: Clip.none,
       children: [
-        // 核心被触控体
-        Positioned.fill(
+        Positioned(
+          left: p, top: p,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              touchableBody,
+              Positioned(
+                left: 8, top: -10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: const Color(0xFFFF4081), borderRadius: BorderRadius.circular(6), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
+                  child: Text('Layer Level ${el.layerIndex}', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        Positioned(
+          right: 0, bottom: 0,
           child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (details) {
+              _startTouchWidth = el.size.width;
+              _startTouchHeight = el.size.height;
+              _startTouchGlobalPos = details.globalPosition;
+            },
             onPanUpdate: (details) {
-              // 极其精确跟手平移
-              _updateElementGeometry(el.id, el.offset + details.delta, el.size);
-            },
-            onTap: () {
-              setState(() => _selectedTransformationId = el.id);
-            },
-            onLongPress: () {
-              _showTailoredPrecisionEditorDialog(el);
+              final deltaX = details.globalPosition.dx - _startTouchGlobalPos.dx;
+              final deltaY = details.globalPosition.dy - _startTouchGlobalPos.dy;
+              final newWidth = (_startTouchWidth + deltaX).clamp(60.0, 1200.0);
+              final newHeight = (_startTouchHeight + deltaY).clamp(40.0, 1200.0);
+              _updateElementGeometry(el.id, el.offset, Size(newWidth, newHeight));
             },
             child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: isActive ? Colors.pinkAccent : Colors.transparent,
-                  width: isActive ? 1.5 : 0.0,
-                ),
-                borderRadius: BorderRadius.circular(12),
+              width: 40, height: 40,
+              alignment: Alignment.center,
+              child: Container(
+                width: 22, height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: const Color(0xFFFF4081), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
+                child: const Icon(Icons.open_with, size: 12, color: Colors.white),
               ),
-              child: UIRenderer.render(context, el),
             ),
           ),
         ),
 
-        // --- 真正的 CAD 8 个拉伸把手 (8-Point CAD Handles) ---
-        
-        // 1. 左上角：调整 dx, dy, w, h
-        if (isActive)
-          Positioned(
-            left: -8, top: -8,
-            child: _buildCADHandleDot((delta) {
-              final nw = (el.size.width - delta.dx).clamp(60.0, 900.0);
-              final nh = (el.size.height - delta.dy).clamp(40.0, 900.0);
-              final ndx = el.size.width - delta.dx >= 60.0 ? el.offset.dx + delta.dx : el.offset.dx;
-              final ndy = el.size.height - delta.dy >= 40.0 ? el.offset.dy + delta.dy : el.offset.dy;
-              _updateElementGeometry(el.id, Offset(ndx, ndy), Size(nw, nh));
-            }),
-          ),
-
-        // 2. 顶部正中：调整 dy, h
-        if (isActive)
-          Positioned(
-            left: el.size.width / 2 - 8, top: -8,
-            child: _buildCADHandleDot((delta) {
-              final nh = (el.size.height - delta.dy).clamp(40.0, 900.0);
-              final ndy = el.size.height - delta.dy >= 40.0 ? el.offset.dy + delta.dy : el.offset.dy;
-              _updateElementGeometry(el.id, Offset(el.offset.dx, ndy), Size(el.size.width, nh));
-            }),
-          ),
-
-        // 3. 右上角：调整 dy, w, h
-        if (isActive)
-          Positioned(
-            right: -8, top: -8,
-            child: _buildCADHandleDot((delta) {
-              final nw = (el.size.width + delta.dx).clamp(60.0, 900.0);
-              final nh = (el.size.height - delta.dy).clamp(40.0, 900.0);
-              final ndy = el.size.height - delta.dy >= 40.0 ? el.offset.dy + delta.dy : el.offset.dy;
-              _updateElementGeometry(el.id, Offset(el.offset.dx, ndy), Size(nw, nh));
-            }),
-          ),
-
-        // 4. 左侧正中：调整 dx, w
-        if (isActive)
-          Positioned(
-            left: -8, top: el.size.height / 2 - 8,
-            child: _buildCADHandleDot((delta) {
-              final nw = (el.size.width - delta.dx).clamp(60.0, 900.0);
-              final ndx = el.size.width - delta.dx >= 60.0 ? el.offset.dx + delta.dx : el.offset.dx;
-              _updateElementGeometry(el.id, Offset(ndx, el.offset.dy), Size(nw, el.size.height));
-            }),
-          ),
-
-        // 5. 右侧正中：调整 w
-        if (isActive)
-          Positioned(
-            right: -8, top: el.size.height / 2 - 8,
-            child: _buildCADHandleDot((delta) {
-              final nw = (el.size.width + delta.dx).clamp(60.0, 900.0);
-              _updateElementGeometry(el.id, el.offset, Size(nw, el.size.height));
-            }),
-          ),
-
-        // 6. 左下角：调整 dx, w, h
-        if (isActive)
-          Positioned(
-            left: -8, bottom: -8,
-            child: _buildCADHandleDot((delta) {
-              final nw = (el.size.width - delta.dx).clamp(60.0, 900.0);
-              final nh = (el.size.height + delta.dy).clamp(40.0, 900.0);
-              final ndx = el.size.width - delta.dx >= 60.0 ? el.offset.dx + delta.dx : el.offset.dx;
-              _updateElementGeometry(el.id, Offset(ndx, el.offset.dy), Size(nw, nh));
-            }),
-          ),
-
-        // 7. 底部正中：调整 h
-        if (isActive)
-          Positioned(
-            left: el.size.width / 2 - 8, bottom: -8,
-            child: _buildCADHandleDot((delta) {
-              final nh = (el.size.height + delta.dy).clamp(40.0, 900.0);
-              _updateElementGeometry(el.id, el.offset, Size(el.size.width, nh));
-            }),
-          ),
-
-        // 8. 右下角：调整 w, h
-        if (isActive)
-          Positioned(
-            right: -8, bottom: -8,
-            child: _buildCADHandleDot((delta) {
-              final nw = (el.size.width + delta.dx).clamp(60.0, 900.0);
-              final nh = (el.size.height + delta.dy).clamp(40.0, 900.0);
-              _updateElementGeometry(el.id, el.offset, Size(nw, nh));
-            }),
-          ),
-
-        // 9. 顶部悬浮的一键删除专属把手
-        if (isActive)
-          Positioned(
-            right: 16, top: -26,
-            child: GestureDetector(
-              onTap: () => _deleteElement(el.id),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(10), boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 4)]),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [Icon(Icons.delete_forever, size: 12, color: Colors.white), SizedBox(width: 4), Text('移除该部件', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))],
-                ),
+        Positioned(
+          right: 0, top: 0,
+          child: GestureDetector(
+            onTap: () => _deleteElement(el.id),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(color: const Color(0xFFFF4081), borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)]),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [Icon(Icons.delete_outline, size: 12, color: Colors.white), SizedBox(width: 4), Text('移除该部件', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))],
               ),
             ),
           ),
+        ),
       ],
-    );
-  }
-
-  // 单个 CAD 纯正 8 点形变圆点
-  Widget _buildCADHandleDot(Function(Offset delta) onDrag) {
-    return GestureDetector(
-      onPanUpdate: (details) => onDrag(details.delta),
-      child: Container(
-        width: 16, height: 16,
-        decoration: BoxDecoration(color: Colors.pinkAccent.shade200, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 4)]),
-      ),
     );
   }
 }
 
-// 极其优雅明显的暗夜专业网格画笔
-class StudioGridPainter extends CustomPainter {
+class StudioWarmGridPainter extends CustomPainter {
   final Offset offset;
-  StudioGridPainter(this.offset);
+  StudioWarmGridPainter(this.offset);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paintLine = Paint()
-      ..color = const Color(0xFF2C2C36) // 极其优雅明显的线条颜色
+      ..color = const Color(0xFFE2E2E8)
       ..strokeWidth = 1.0;
 
     const double step = 40.0;
@@ -883,5 +1075,5 @@ class StudioGridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant StudioGridPainter oldDelegate) => oldDelegate.offset != offset;
+  bool shouldRepaint(covariant StudioWarmGridPainter oldDelegate) => oldDelegate.offset != offset;
 }

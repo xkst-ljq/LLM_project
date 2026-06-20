@@ -34,7 +34,7 @@ class UIRenderer {
         content = _buildBaseBox();
         break;
       default:
-        content = Center(child: Text('未知控件: ${module.type}', style: const TextStyle(color: Colors.white, fontSize: 12)));
+        content = Center(child: Text('未知控件: ${module.type}', style: const TextStyle(color: Color(0xFF111116), fontSize: 12)));
     }
 
     return _applyMaterialAndShape(
@@ -88,13 +88,13 @@ class UIRenderer {
               const Positioned.fill(
                 child: Center(
                   child: Text(
-                    '📦 复合组块基本框\n(请将基本组件拖拽至此范围内组合)',
+                    '📦 复合组块基本边界框\n(将原子组件拖入组合)',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: Color(0xFF888896), fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
-            ...composite.children.map((e) => render(context, e)).toList(),
+            ...composite.children.map((e) => render(context, e)),
           ],
         );
         break;
@@ -111,7 +111,7 @@ class UIRenderer {
     );
   }
 
-  // 核心：统一应用材质与外框形状，完美支持独立长宽比自由形变，彻底消除缩太小溢出错误
+  // 极其高雅通透的纯白/微光毛玻璃外壳封装，完美契合主 App 主题
   static Widget _applyMaterialAndShape(
     UIModuleMaterial material,
     UIModuleShape shape,
@@ -127,13 +127,10 @@ class UIRenderer {
         radius = BorderRadius.zero;
         break;
       case UIModuleShape.capsule:
-        radius = BorderRadius.circular(9999.0);
-        break;
       case UIModuleShape.circle:
         radius = BorderRadius.circular(9999.0);
         break;
       case UIModuleShape.rounded:
-      default:
         radius = BorderRadius.circular(rawRadius);
         break;
     }
@@ -144,7 +141,8 @@ class UIRenderer {
         decoration = BoxDecoration(
           color: color.withValues(alpha: opacity),
           borderRadius: radius,
-          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3 * opacity), blurRadius: 10, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 4))],
+          border: Border.all(color: Colors.black.withValues(alpha: 0.04), width: 0.5),
         );
         break;
       case UIModuleMaterial.gradient:
@@ -155,38 +153,31 @@ class UIRenderer {
             end: Alignment.bottomRight,
             colors: [
               color.withValues(alpha: opacity),
-              color.withValues(alpha: opacity * 0.4),
+              color.withValues(alpha: opacity * 0.5),
             ],
           ),
-          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.4 * opacity), blurRadius: 12, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 12, offset: const Offset(0, 4))],
+          border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 0.5),
         );
         break;
       case UIModuleMaterial.outline:
         decoration = BoxDecoration(
           color: color.withValues(alpha: 0.05 * opacity),
           borderRadius: radius,
-          border: Border.all(color: color.withValues(alpha: opacity), width: 2.0),
+          border: Border.all(color: color.withValues(alpha: opacity), width: 1.5),
         );
         break;
       case UIModuleMaterial.glass:
-      default:
+        // 高雅纯白物理毛玻璃模糊
         decoration = BoxDecoration(
-          color: color.withValues(alpha: opacity * 0.25),
+          color: color.withValues(alpha: opacity * 0.75), // 明亮通透的底色
           borderRadius: radius,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1.0),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: 0.2),
-              Colors.white.withValues(alpha: 0.05),
-            ],
-          ),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4))],
         );
         break;
     }
 
-    // 底层主体包裹 Container 与 ClipRect，彻底杜绝缩太小时越界报错
     Widget container = Container(
       width: size.width,
       height: size.height,
@@ -204,7 +195,7 @@ class UIRenderer {
       return ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: container,
         ),
       );
@@ -215,11 +206,10 @@ class UIRenderer {
 
   static Widget _buildBaseBox() {
     return const Center(
-      child: Text('📦 复合基本框容器\n(多重组块的基础)', textAlign: TextAlign.center, style: TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+      child: Text('📦 基本边界框容器\n(多重组块的基础)', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF00ACC1), fontSize: 12, fontWeight: FontWeight.bold)),
     );
   }
 
-  // 充满父级宽度的自适应进度条
   static Widget _buildProgressBar(UIModule module) {
     final double maxVal = (module.properties['max'] ?? 100.0).toDouble();
     final double curVal = (module.properties['current'] ?? 80.0).toDouble();
@@ -235,14 +225,14 @@ class UIRenderer {
             Expanded(
               child: Text(
                 module.name,
-                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF111116), fontWeight: FontWeight.bold),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 8),
             Text(
               '${curVal.toInt()}/${maxVal.toInt()}',
-              style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.8), fontFamily: 'monospace'),
+              style: TextStyle(fontSize: 11, color: const Color(0xFF555562), fontFamily: 'monospace'),
             ),
           ],
         ),
@@ -252,17 +242,17 @@ class UIRenderer {
           width: double.infinity,
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
-            color: Colors.black26,
+            color: const Color(0xFFE2E2E8),
             borderRadius: BorderRadius.circular(4),
           ),
           child: FractionallySizedBox(
             widthFactor: ratio,
             child: Container(
               decoration: BoxDecoration(
-                color: module.color,
+                color: module.color == Colors.white ? const Color(0xFFFF4081) : module.color,
                 borderRadius: BorderRadius.circular(4),
                 boxShadow: [
-                  BoxShadow(color: module.color.withValues(alpha: 0.6), blurRadius: 6),
+                  BoxShadow(color: (module.color == Colors.white ? const Color(0xFFFF4081) : module.color).withValues(alpha: 0.4), blurRadius: 4),
                 ],
               ),
             ),
@@ -278,7 +268,7 @@ class UIRenderer {
       alignment: Alignment.center,
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.5),
+        style: TextStyle(color: module.color == Colors.white ? const Color(0xFF111116) : Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.5),
         textAlign: TextAlign.center,
         overflow: TextOverflow.ellipsis,
       ),
@@ -291,7 +281,7 @@ class UIRenderer {
       alignment: Alignment.center,
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+        style: TextStyle(color: module.color == Colors.white ? const Color(0xFF111116) : module.color, fontSize: 14, fontWeight: FontWeight.w600),
         textAlign: TextAlign.center,
         overflow: TextOverflow.ellipsis,
       ),
@@ -303,12 +293,12 @@ class UIRenderer {
     return Container(
       alignment: Alignment.center,
       child: TextField(
-        style: const TextStyle(color: Colors.white, fontSize: 13),
+        style: const TextStyle(color: Color(0xFF111116), fontSize: 13),
         decoration: InputDecoration(
           filled: true,
-          fillColor: Colors.black12,
+          fillColor: const Color(0xFFEBEBF1),
           hintText: label,
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
+          hintStyle: const TextStyle(color: Color(0xFF888896), fontSize: 12),
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),

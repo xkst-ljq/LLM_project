@@ -23,6 +23,19 @@ enum UISceneRenderingMode {
   inlineHybrid  // 传统气泡共存模式
 }
 
+/// UI 独立图层定义 (支持动态新建无尽图层，默认只有一层)
+class LayerScene {
+  final int id;
+  final String name;
+
+  LayerScene({required this.id, required this.name});
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+
+  factory LayerScene.fromJson(Map<String, dynamic> json) => 
+      LayerScene(id: json['id'] ?? 0, name: json['name'] ?? '图层 Level 0');
+}
+
 /// UI 模组-原子定义
 class UIModule {
   final String id;
@@ -44,16 +57,14 @@ class UIModule {
     UIModuleMaterial? material,
     UIModuleShape? shape,
     Color? color,
-    double opacity = 1.0,
-    double borderRadius = 12.0,
+    this.opacity = 1.0,
+    this.borderRadius = 12.0,
     required this.properties,
     this.boundVariable,
     this.statusFieldMirrorKey,
   })  : material = material ?? UIModuleMaterial.glass,
         shape = shape ?? UIModuleShape.rounded,
-        color = color ?? Colors.white,
-        this.opacity = opacity,
-        this.borderRadius = borderRadius;
+        color = color ?? Colors.white;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -120,7 +131,7 @@ class UIComposite {
   final double borderRadius;
   final Color color;
   final double opacity;
-  final UISceneRenderingMode renderingMode; // 多形态场景模式
+  final UISceneRenderingMode renderingMode;
 
   UIComposite({
     required this.id,
@@ -128,14 +139,12 @@ class UIComposite {
     required this.layoutType,
     required this.children,
     UIModuleMaterial? material,
-    double borderRadius = 16.0,
+    this.borderRadius = 16.0,
     Color? color,
-    double opacity = 1.0,
+    this.opacity = 1.0,
     UISceneRenderingMode? renderingMode,
   })  : material = material ?? UIModuleMaterial.glass,
         color = color ?? Colors.white,
-        this.borderRadius = borderRadius,
-        this.opacity = opacity,
         renderingMode = renderingMode ?? UISceneRenderingMode.inlineHybrid;
 
   Map<String, dynamic> toJson() => {
@@ -195,6 +204,7 @@ class UIElement {
   
   final Offset offset;
   final Size size;
+  final int layerIndex; // 动态所属的图层 ID
 
   UIElement({
     required this.id,
@@ -203,6 +213,7 @@ class UIElement {
     this.composite,
     this.offset = Offset.zero,
     this.size = const Size(100, 100),
+    this.layerIndex = 0,
   });
 
   Map<String, dynamic> toJson() {
@@ -211,6 +222,7 @@ class UIElement {
       'isComposite': isComposite,
       'offset': {'x': offset.dx, 'y': offset.dy},
       'size': {'width': size.width, 'height': size.height},
+      'layerIndex': layerIndex,
     };
     if (isComposite) {
       map['composite'] = composite?.toJson();
@@ -238,6 +250,7 @@ class UIElement {
       ),
       composite: (isComposite && json['composite'] != null) ? UIComposite.fromJson(json['composite']) : null,
       module: (!isComposite && json['module'] != null) ? UIModule.fromJson(json['module']) : null,
+      layerIndex: json['layerIndex'] ?? 0,
     );
   }
 
@@ -247,6 +260,7 @@ class UIElement {
     UIComposite? composite,
     Offset? offset,
     Size? size,
+    int? layerIndex,
   }) {
     return UIElement(
       id: id,
@@ -255,6 +269,7 @@ class UIElement {
       composite: composite ?? this.composite,
       offset: offset ?? this.offset,
       size: size ?? this.size,
+      layerIndex: layerIndex ?? this.layerIndex,
     );
   }
 }
