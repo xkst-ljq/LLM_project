@@ -36,6 +36,71 @@ class LayerScene {
       LayerScene(id: json['id'] ?? 0, name: json['name'] ?? '图层 Level 0');
 }
 
+/// 基础工作台内部使用的“原材料构造层”。
+///
+/// 它不是复合组件里的运行时子元素，而是用于制造一个新基础模组的
+/// 工艺层：多个 PrimitiveLayer 最终会被烘焙/保存进一个 UIModule 的
+/// properties['layers'] 中，对外仍然表现为单个基础模组。
+class UIPrimitiveLayer {
+  final String id;
+  final String kind; // surface, oval, stroke, glow, highlight, line, mask...
+  final Offset offset; // 归一化坐标：0~1
+  final Size size; // 归一化尺寸：0~1
+  final Color color;
+  final double opacity;
+  final UIModuleShape shape;
+  final double borderRadius;
+  final Map<String, dynamic> properties;
+
+  UIPrimitiveLayer({
+    required this.id,
+    required this.kind,
+    this.offset = Offset.zero,
+    this.size = const Size(1, 1),
+    Color? color,
+    this.opacity = 1.0,
+    UIModuleShape? shape,
+    this.borderRadius = 12.0,
+    Map<String, dynamic>? properties,
+  })  : color = color ?? Colors.white,
+        shape = shape ?? UIModuleShape.rounded,
+        properties = properties ?? <String, dynamic>{};
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'kind': kind,
+        'offset': {'x': offset.dx, 'y': offset.dy},
+        'size': {'width': size.width, 'height': size.height},
+        'color': color.toARGB32(),
+        'opacity': opacity,
+        'shape': shape.index,
+        'borderRadius': borderRadius,
+        'properties': properties,
+      };
+
+  factory UIPrimitiveLayer.fromJson(Map<String, dynamic> json) {
+    final offsetData = json['offset'] as Map<String, dynamic>? ?? {};
+    final sizeData = json['size'] as Map<String, dynamic>? ?? {};
+    return UIPrimitiveLayer(
+      id: json['id']?.toString() ?? 'layer_${DateTime.now().millisecondsSinceEpoch}',
+      kind: json['kind']?.toString() ?? 'surface',
+      offset: Offset(
+        (offsetData['x'] ?? 0).toDouble(),
+        (offsetData['y'] ?? 0).toDouble(),
+      ),
+      size: Size(
+        (sizeData['width'] ?? 1).toDouble(),
+        (sizeData['height'] ?? 1).toDouble(),
+      ),
+      color: Color(json['color'] ?? Colors.white.toARGB32()),
+      opacity: (json['opacity'] ?? 1.0).toDouble(),
+      shape: UIModuleShape.values[json['shape'] ?? UIModuleShape.rounded.index],
+      borderRadius: (json['borderRadius'] ?? 12.0).toDouble(),
+      properties: Map<String, dynamic>.from(json['properties'] ?? {}),
+    );
+  }
+}
+
 /// UI 模组-原子定义
 class UIModule {
   final String id;

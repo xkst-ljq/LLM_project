@@ -21,18 +21,19 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
   }
 
   void _initTestAssets() {
+    // 模组库预览页只注入基础原材料示例，不再自动注入复合资产。
     _assetService.addModule(UIModule(
       id: 'test_progress',
-      name: '生命值',
+      name: '数据条原子预览',
       type: 'progress',
       color: Colors.redAccent,
-      properties: {'min': 0, 'max': 100},
-      boundVariable: 'var.hp',
+      properties: {'min': 0, 'max': 100, 'current': 65},
+      boundVariable: 'var.value',
     ));
 
     _assetService.addModule(UIModule(
-      id: 'test_button_surface',
-      name: '按钮视觉表面',
+      id: 'test_surface',
+      name: '表面原子预览',
       type: 'surface',
       color: Colors.deepPurpleAccent,
       material: UIModuleMaterial.gradient,
@@ -41,42 +42,19 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
     ));
 
     _assetService.addModule(UIModule(
-      id: 'test_button_logic',
-      name: '按钮点击逻辑区',
-      type: 'button',
-      color: Colors.transparent,
-      properties: {'action': 'tap'},
+      id: 'test_slider',
+      name: '滑块原子预览',
+      type: 'slider',
+      color: const Color(0xFF00ACC1),
+      properties: {'min': 0, 'max': 100, 'current': 50},
     ));
 
     _assetService.addModule(UIModule(
-      id: 'test_button_text',
-      name: '按钮文字',
-      type: 'text',
-      color: Colors.white,
-      properties: {'text': '发送 LOVE'},
-    ));
-
-    _assetService.addComposite(UIComposite(
-      id: 'test_text_button',
-      name: '带文字按钮',
-      layoutType: 'stack',
+      id: 'test_button_logic',
+      name: '点击逻辑区预览',
+      type: 'button',
       color: Colors.transparent,
-      opacity: 0.0,
-      children: [
-        UIElement(id: 'btn_surface', isComposite: false, module: _assetService.getModule('test_button_surface'), size: const Size(150, 44)),
-        UIElement(id: 'btn_text', isComposite: false, module: _assetService.getModule('test_button_text'), size: const Size(150, 44)),
-        UIElement(id: 'btn_logic', isComposite: false, module: _assetService.getModule('test_button_logic'), size: const Size(150, 44)),
-      ],
-    ));
-
-    _assetService.addComposite(UIComposite(
-      id: 'test_composite',
-      name: '基础面板',
-      layoutType: 'column',
-      children: [
-        UIElement(id: 'e1', isComposite: false, module: _assetService.getModule('test_progress'), size: const Size(160, 14)),
-        UIElement(id: 'e2', isComposite: true, composite: _assetService.getComposite('test_text_button'), size: const Size(170, 54)),
-      ],
+      properties: {'action': 'tap'},
     ));
   }
 

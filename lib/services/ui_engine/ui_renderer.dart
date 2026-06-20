@@ -38,6 +38,22 @@ class UIRenderer {
           height: size.height,
           child: _buildInputBlock(module),
         );
+      case 'slider':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildSlider(module),
+        );
+      case 'primitive_art':
+      case 'surface_art':
+      case 'light_effect':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: CustomPaint(
+            painter: UIPrimitiveArtPainter(module.properties),
+          ),
+        );
       case 'button':
         return SizedBox(
           width: size.width,
@@ -263,6 +279,71 @@ class UIRenderer {
     );
   }
 
+  static Widget _buildSlider(UIModule module) {
+    final double maxVal = (module.properties['max'] ?? 100.0).toDouble();
+    final double curVal = (module.properties['current'] ?? 50.0).toDouble();
+    final double ratio = maxVal > 0 ? (curVal / maxVal).clamp(0.0, 1.0) : 0.5;
+    final Color fillColor =
+        module.color == Colors.white ? const Color(0xFF00ACC1) : module.color;
+
+    // 基础滑块原语：只提供轨道 + 滑块柄的通用数值控制外观。
+    // 它不命名具体业务变量，变量绑定应在 UI 场景层完成。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth.isFinite ? constraints.maxWidth : 160.0;
+        final h = constraints.maxHeight.isFinite ? constraints.maxHeight : 28.0;
+        final trackHeight = (h * 0.22).clamp(3.0, 10.0);
+        final knobSize = (h * 0.72).clamp(10.0, 28.0);
+        final knobLeft = (w - knobSize) * ratio;
+        return Stack(
+          alignment: Alignment.centerLeft,
+          children: [
+            Positioned(
+              left: knobSize / 2,
+              right: knobSize / 2,
+              top: (h - trackHeight) / 2,
+              height: trackHeight,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: Container(color: const Color(0xFFE2E2E8)),
+              ),
+            ),
+            Positioned(
+              left: knobSize / 2,
+              width: (w - knobSize) * ratio,
+              top: (h - trackHeight) / 2,
+              height: trackHeight,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: Container(color: fillColor.withValues(alpha: 0.72)),
+              ),
+            ),
+            Positioned(
+              left: knobLeft,
+              top: (h - knobSize) / 2,
+              width: knobSize,
+              height: knobSize,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: fillColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   static Widget _buildButton(UIModule module) {
     // 原子按钮只提供透明点击逻辑热区，不自带视觉外观。
     // 视觉按钮 = surface + text/icon + button 逻辑区的复合块。
@@ -288,4 +369,314 @@ class UIRenderer {
     return const SizedBox.expand();
   }
 
+}
+
+
+class UIPrimitiveArtPainter extends CustomPainter {
+  final Map<String, dynamic> properties;
+
+  UIPrimitiveArtPainter(this.properties);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rawLayers = properties['layers'];
+    if (rawLayers is! List || size.width <= 0 || size.height <= 0) return;
+
+    final layers = <UIPrimitiveLayer>[];
+    for (final raw in rawLayers) {
+      if (raw is Map) {
+        layers.add(UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw)));
+      }
+    }
+    if (layers.isEmpty) return;
+
+    for (final layer in layers) {
+      _paintLayer(canvas, size, layer);
+    }
+
+    final composeMode = properties['composeMode']?.toString();
+    // softBlend 是旧名，保留兼容；当前这套算法本质是“交叠边缘渐变”。
+    if (composeMode == 'edgeBlend' || composeMode == 'softBlend') {
+      _paintEdgeBlendOverlaps(canvas, size, layers);
+    }
+  }
+
+  void _paintEdgeBlendOverlaps(
+    Canvas canvas,
+    Size canvasSize,
+    List<UIPrimitiveLayer> layers,
+  ) {
+    final candidates = layers
+        .where((layer) => _canSoftBlend(layer))
+        .toList(growable: false);
+    if (candidates.length < 2) return;
+
+    for (var i = 0; i < candidates.length; i++) {
+      for (var j = i + 1; j < candidates.length; j++) {
+        final a = candidates[i];
+        final b = candidates[j];
+        final rectA = _layerRect(canvasSize, a);
+        final rectB = _layerRect(canvasSize, b);
+        if (!rectA.overlaps(rectB)) continue;
+        final overlap = rectA.intersect(rectB);
+        if (overlap.width <= 0 || overlap.height <= 0) continue;
+
+        final colorA = a.color.withValues(alpha: a.opacity.clamp(0.0, 1.0).toDouble());
+        final colorB = b.color.withValues(alpha: b.opacity.clamp(0.0, 1.0).toDouble());
+        final centerDelta = rectB.center - rectA.center;
+        final horizontal = centerDelta.dx.abs() >= centerDelta.dy.abs();
+        final begin = horizontal
+            ? (centerDelta.dx >= 0 ? Alignment.centerLeft : Alignment.centerRight)
+            : (centerDelta.dy >= 0 ? Alignment.topCenter : Alignment.bottomCenter);
+        final end = horizontal
+            ? (centerDelta.dx >= 0 ? Alignment.centerRight : Alignment.centerLeft)
+            : (centerDelta.dy >= 0 ? Alignment.bottomCenter : Alignment.topCenter);
+
+        final paint = Paint()
+          ..shader = LinearGradient(
+            begin: begin,
+            end: end,
+            colors: [colorA, Color.lerp(colorA, colorB, 0.5) ?? colorB, colorB],
+            stops: const [0.0, 0.5, 1.0],
+          ).createShader(overlap)
+          ..blendMode = BlendMode.srcOver;
+
+        canvas.save();
+        canvas.clipPath(_shapePath(rectA, a));
+        canvas.clipPath(_shapePath(rectB, b));
+        canvas.drawRect(overlap, paint);
+        canvas.restore();
+      }
+    }
+  }
+
+  bool _canSoftBlend(UIPrimitiveLayer layer) {
+    final kind = layer.kind;
+    return kind == 'surface' || kind == 'highlight';
+  }
+
+  Rect _layerRect(Size canvasSize, UIPrimitiveLayer layer) {
+    return Rect.fromLTWH(
+      layer.offset.dx * canvasSize.width,
+      layer.offset.dy * canvasSize.height,
+      layer.size.width * canvasSize.width,
+      layer.size.height * canvasSize.height,
+    );
+  }
+
+  void _paintLayer(Canvas canvas, Size canvasSize, UIPrimitiveLayer layer) {
+    final rect = _layerRect(canvasSize, layer);
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    final color = layer.color.withValues(alpha: layer.opacity.clamp(0.0, 1.0).toDouble());
+    final kind = layer.kind;
+    final blendMode = _readBlendMode(
+      layer.properties['blendMode']?.toString(),
+      fallback: _defaultBlendModeForKind(kind),
+    );
+
+    if (kind == 'surface') {
+      _paintSurfaceLayer(canvas, rect, layer, color, blendMode);
+      return;
+    }
+
+    if (kind == 'glow') {
+      final blur = (layer.properties['blur'] as num?)?.toDouble() ?? 18.0;
+      final paint = Paint()
+        ..color = color
+        ..blendMode = blendMode
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
+      _drawShape(canvas, rect, layer, paint);
+      return;
+    }
+
+    if (kind == 'stroke') {
+      final width = (layer.properties['width'] as num?)?.toDouble() ?? 1.5;
+      final paint = Paint()
+        ..color = color
+        ..blendMode = blendMode
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width;
+      _drawShape(canvas, rect.deflate(width / 2), layer, paint);
+      return;
+    }
+
+    if (kind == 'highlight') {
+      final paint = Paint()
+        ..blendMode = blendMode
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [color, color.withValues(alpha: 0.0)],
+        ).createShader(rect);
+      _drawShape(canvas, rect, layer, paint);
+      return;
+    }
+
+    if (kind == 'line') {
+      final width = (layer.properties['width'] as num?)?.toDouble() ?? 1.0;
+      final paint = Paint()
+        ..color = color
+        ..blendMode = blendMode
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(rect.centerLeft, rect.centerRight, paint);
+      return;
+    }
+
+    final paint = Paint()
+      ..color = color
+      ..blendMode = blendMode
+      ..style = PaintingStyle.fill;
+    _drawShape(canvas, rect, layer, paint);
+  }
+
+  void _paintSurfaceLayer(
+    Canvas canvas,
+    Rect rect,
+    UIPrimitiveLayer layer,
+    Color color,
+    BlendMode blendMode,
+  ) {
+    final material = _readMaterial(layer.properties['material']);
+    if (material == UIModuleMaterial.gradient) {
+      final paint = Paint()
+        ..blendMode = blendMode
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color, color.withValues(alpha: 0.62)],
+        ).createShader(rect);
+      _drawShape(canvas, rect, layer, paint);
+      return;
+    }
+
+    if (material == UIModuleMaterial.outline) {
+      final width = (layer.properties['width'] as num?)?.toDouble() ?? 1.5;
+      final paint = Paint()
+        ..color = color
+        ..blendMode = blendMode
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width;
+      _drawShape(canvas, rect.deflate(width / 2), layer, paint);
+      return;
+    }
+
+    // glass 暂时以半透明实色 + 高光描边近似，后续可替换为更完整的材质系统。
+    final paint = Paint()
+      ..color = color
+      ..blendMode = blendMode
+      ..style = PaintingStyle.fill;
+    _drawShape(canvas, rect, layer, paint);
+
+    if (material == UIModuleMaterial.glass) {
+      final stroke = Paint()
+        ..color = Colors.white.withValues(alpha: 0.38)
+        ..blendMode = BlendMode.srcOver
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      _drawShape(canvas, rect.deflate(0.5), layer, stroke);
+    }
+  }
+
+  UIModuleMaterial _readMaterial(dynamic raw) {
+    if (raw is int && raw >= 0 && raw < UIModuleMaterial.values.length) {
+      return UIModuleMaterial.values[raw];
+    }
+    if (raw is num) {
+      final index = raw.toInt();
+      if (index >= 0 && index < UIModuleMaterial.values.length) {
+        return UIModuleMaterial.values[index];
+      }
+    }
+    return UIModuleMaterial.solid;
+  }
+
+  BlendMode _defaultBlendModeForKind(String kind) {
+    switch (kind) {
+      case 'glow':
+        return BlendMode.plus;
+      case 'highlight':
+        return BlendMode.screen;
+      default:
+        return BlendMode.srcOver;
+    }
+  }
+
+  BlendMode _readBlendMode(String? raw, {BlendMode fallback = BlendMode.srcOver}) {
+    switch (raw) {
+      case 'multiply':
+        return BlendMode.multiply;
+      case 'screen':
+        return BlendMode.screen;
+      case 'overlay':
+        return BlendMode.overlay;
+      case 'plus':
+      case 'add':
+        return BlendMode.plus;
+      case 'darken':
+        return BlendMode.darken;
+      case 'lighten':
+        return BlendMode.lighten;
+      case 'softLight':
+      case 'soft_light':
+        return BlendMode.softLight;
+      case 'normal':
+      case 'srcOver':
+        return BlendMode.srcOver;
+      default:
+        return fallback;
+    }
+  }
+
+  Path _shapePath(Rect rect, UIPrimitiveLayer layer) {
+    final path = Path();
+    switch (layer.shape) {
+      case UIModuleShape.rectangle:
+        path.addRect(rect);
+        break;
+      case UIModuleShape.circle:
+        path.addOval(rect);
+        break;
+      case UIModuleShape.capsule:
+        path.addRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
+        );
+        break;
+      case UIModuleShape.rounded:
+        path.addRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(layer.borderRadius)),
+        );
+        break;
+    }
+    return path;
+  }
+
+  void _drawShape(Canvas canvas, Rect rect, UIPrimitiveLayer layer, Paint paint) {
+    switch (layer.shape) {
+      case UIModuleShape.rectangle:
+        canvas.drawRect(rect, paint);
+        break;
+      case UIModuleShape.circle:
+        canvas.drawOval(rect, paint);
+        break;
+      case UIModuleShape.capsule:
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
+          paint,
+        );
+        break;
+      case UIModuleShape.rounded:
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(layer.borderRadius)),
+          paint,
+        );
+        break;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant UIPrimitiveArtPainter oldDelegate) {
+    return oldDelegate.properties != properties;
+  }
 }

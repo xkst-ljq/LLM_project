@@ -21,6 +21,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
   static const int _maxSceneLayerCount = 64;
 
   final UIAssetService _assetService = UIAssetService();
+  final GlobalKey _canvasDropKey = GlobalKey();
   
   // 独立维护双模式工作台面数据
   List<UIElement> _atomicWorkspaceElements = [];
@@ -45,6 +46,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   // 当前激活把手的元素 ID
   String? _selectedTransformationId;
+
+  // 右下角单一变换把手模式：false=缩放，true=旋转（旋转行为后续接入）。
+  bool _transformHandleRotateMode = false;
   
   // 左右边栏抽屉开关状态
   bool _showLeftDrawer = false;  // 左侧基本部件抽屉
@@ -112,20 +116,31 @@ class _UIStudioPageState extends State<UIStudioPage> {
       final compositeData = jsonEncode(_compositeWorkspaceElements.map((e) => e.toJson()).toList());
       await prefs.setString('ui_studio_composite_workspace_v4', compositeData);
       
-      for (final el in _atomicWorkspaceElements) {
-        if (!el.isComposite && el.module != null) {
-          _assetService.addModule(el.module!);
+      String savedMessage = '工作台草稿已保存。';
+      if (_bottomModeIndex == 0) {
+        final baked = _bakeAtomicWorkspaceToModule();
+        if (baked != null) {
+          _assetService.addModule(baked);
+          savedMessage = '基础工作台已烘焙为新的基础模组：${baked.name} ✅';
+        } else {
+          savedMessage = '基础工作台草稿已保存；当前没有可烘焙的视觉构造层。';
         }
-      }
-      for (final el in _compositeWorkspaceElements) {
-        if (el.isComposite && el.composite != null) {
-          _assetService.addComposite(el.composite!);
+      } else {
+        var count = 0;
+        for (final el in _compositeWorkspaceElements) {
+          if (el.isComposite && el.composite != null) {
+            _assetService.addComposite(el.composite!);
+            count++;
+          }
         }
+        savedMessage = count > 0
+            ? '复合工作台已保存 $count 个复合组件 ✅'
+            : '复合工作台草稿已保存；当前没有可入库的复合组件。';
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('动态图层总览与模组资产已完整入库保存！✅'), backgroundColor: Color(0xFF00C853)),
+          SnackBar(content: Text(savedMessage), backgroundColor: const Color(0xFF00C853)),
         );
       }
     } catch (e) {
@@ -135,6 +150,246 @@ class _UIStudioPageState extends State<UIStudioPage> {
         );
       }
     }
+  }
+
+  bool _isBakeableElement(UIElement el) {
+    final type = el.module?.type;
+    return !el.isComposite &&
+        el.module != null &&
+        (type == 'surface' ||
+            type == 'base_box' ||
+            type == 'surface_art' ||
+            type == 'light_effect' ||
+            type == 'primitive_art');
+  }
+
+  String _elementTypeLabel(UIElement el) {
+    final type = el.module?.type ?? (el.isComposite ? 'composite' : 'unknown');
+    switch (type) {
+      case 'surface':
+        return '面 / 简单';
+      case 'surface_art':
+        return '面 / 高级';
+      case 'light_effect':
+        return '光效';
+      case 'primitive_art':
+        return '装饰层';
+      case 'progress':
+        return '数据条';
+      case 'slider':
+        return '滑块';
+      case 'text':
+        return '文本';
+      case 'button':
+        return '点击热区';
+      case 'input':
+        return '输入热区';
+      case 'base_box':
+        return '容器面';
+      case 'composite':
+        return '复合组件';
+      default:
+        return type;
+    }
+  }
+
+  void _moveAtomicConstructionLayer(String id, int delta) {
+    setState(() {
+      final index = _atomicWorkspaceElements.indexWhere((e) => e.id == id);
+      if (index == -1) return;
+      final target = (index + delta).clamp(0, _atomicWorkspaceElements.length - 1);
+      if (target == index) return;
+      final el = _atomicWorkspaceElements.removeAt(index);
+      _atomicWorkspaceElements.insert(target, el);
+    });
+  }
+
+  Map<String, dynamic> _syncArtModuleProperties({
+    required UIModule module,
+    required Map<String, dynamic> props,
+    required Color color,
+    required double opacity,
+    required UIModuleShape shape,
+    required UIModuleMaterial material,
+    required double borderRadius,
+  }) {
+    final type = module.type;
+    if (type != 'surface_art' && type != 'primitive_art' && type != 'light_effect') {
+      return props;
+    }
+
+    final rawLayers = props['layers'];
+    if (rawLayers is! List) return props;
+
+    var updatedOne = false;
+    final updatedLayers = <dynamic>[];
+    for (final raw in rawLayers) {
+      if (raw is! Map) {
+        updatedLayers.add(raw);
+        continue;
+      }
+      final layer = UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw));
+      final shouldUpdate = !updatedOne &&
+          ((type == 'surface_art' && layer.kind == 'surface') ||
+              (type == 'light_effect' && (layer.kind == 'glow' || layer.kind == 'surface')) ||
+              (type == 'primitive_art' && (layer.kind == 'line' || layer.kind == 'stroke' || layer.kind == 'surface')));
+      if (!shouldUpdate) {
+        updatedLayers.add(layer.toJson());
+        continue;
+      }
+
+      final layerProps = Map<String, dynamic>.from(layer.properties);
+      layerProps['material'] = material.index;
+      updatedLayers.add(UIPrimitiveLayer(
+        id: layer.id,
+        kind: layer.kind,
+        offset: layer.offset,
+        size: layer.size,
+        color: color,
+        opacity: opacity,
+        shape: shape,
+        borderRadius: borderRadius,
+        properties: layerProps,
+      ).toJson());
+      updatedOne = true;
+    }
+
+    props['layers'] = updatedLayers;
+    return props;
+  }
+
+  UIModule? _bakeAtomicWorkspaceToModule() {
+    final order = <String, int>{};
+    for (var i = 0; i < _atomicWorkspaceElements.length; i++) {
+      order[_atomicWorkspaceElements[i].id] = i;
+    }
+    final elements = _atomicWorkspaceElements
+        .where((e) => !e.isComposite && e.module != null)
+        .toList()
+      ..sort((a, b) {
+        final layer = a.layerIndex.compareTo(b.layerIndex);
+        if (layer != 0) return layer;
+        return (order[a.id] ?? 0).compareTo(order[b.id] ?? 0);
+      });
+    if (elements.isEmpty) return null;
+
+    final supportedElements = elements.where(_isBakeableElement).toList();
+    if (supportedElements.isEmpty) return null;
+
+    Rect bounds = Rect.fromLTWH(
+      supportedElements.first.offset.dx,
+      supportedElements.first.offset.dy,
+      supportedElements.first.size.width,
+      supportedElements.first.size.height,
+    );
+    for (final el in supportedElements.skip(1)) {
+      bounds = bounds.expandToInclude(Rect.fromLTWH(
+        el.offset.dx,
+        el.offset.dy,
+        el.size.width,
+        el.size.height,
+      ));
+    }
+    if (bounds.width <= 0 || bounds.height <= 0) return null;
+
+    final layers = <UIPrimitiveLayer>[];
+    for (final el in supportedElements) {
+      layers.addAll(_bakeElementToPrimitiveLayers(el, bounds));
+    }
+    if (layers.isEmpty) return null;
+
+    final id = 'custom_atom_${DateTime.now().millisecondsSinceEpoch}';
+    return UIModule(
+      id: id,
+      name: '面原子 / 自定义基础模组',
+      type: 'surface_art',
+      color: Colors.white,
+      material: UIModuleMaterial.solid,
+      shape: UIModuleShape.rectangle,
+      properties: {
+        'source': 'basic_workbench_bake',
+        'composeMode': 'edgeBlend',
+        'defaultWidth': bounds.width,
+        'defaultHeight': bounds.height,
+        'layers': layers.map((e) => e.toJson()).toList(),
+      },
+    );
+  }
+
+  List<UIPrimitiveLayer> _bakeElementToPrimitiveLayers(UIElement el, Rect bounds) {
+    final module = el.module;
+    if (module == null) return const [];
+
+    final elRect = Rect.fromLTWH(
+      el.offset.dx,
+      el.offset.dy,
+      el.size.width,
+      el.size.height,
+    );
+
+    Offset normalizeOffset(Offset absolute) => Offset(
+          (absolute.dx - bounds.left) / bounds.width,
+          (absolute.dy - bounds.top) / bounds.height,
+        );
+
+    Size normalizeSize(Size absolute) => Size(
+          absolute.width / bounds.width,
+          absolute.height / bounds.height,
+        );
+
+    UIPrimitiveLayer normalizeLayer(UIPrimitiveLayer layer) {
+      final absoluteOffset = Offset(
+        elRect.left + layer.offset.dx * elRect.width,
+        elRect.top + layer.offset.dy * elRect.height,
+      );
+      final absoluteSize = Size(
+        layer.size.width * elRect.width,
+        layer.size.height * elRect.height,
+      );
+      return UIPrimitiveLayer(
+        id: '${el.id}_${layer.id}',
+        kind: layer.kind,
+        offset: normalizeOffset(absoluteOffset),
+        size: normalizeSize(absoluteSize),
+        color: layer.color,
+        opacity: layer.opacity,
+        shape: layer.shape,
+        borderRadius: layer.borderRadius,
+        properties: Map<String, dynamic>.from(layer.properties),
+      );
+    }
+
+    final type = module.type;
+    if (type == 'surface' || type == 'base_box') {
+      return [
+        UIPrimitiveLayer(
+          id: '${el.id}_surface',
+          kind: 'surface',
+          offset: normalizeOffset(elRect.topLeft),
+          size: normalizeSize(el.size),
+          color: module.color,
+          opacity: module.opacity,
+          shape: module.shape,
+          borderRadius: module.borderRadius,
+          properties: {'material': module.material.index},
+        ),
+      ];
+    }
+
+    final rawLayers = module.properties['layers'];
+    if (rawLayers is List) {
+      final out = <UIPrimitiveLayer>[];
+      for (final raw in rawLayers) {
+        if (raw is Map) {
+          out.add(normalizeLayer(
+            UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw)),
+          ));
+        }
+      }
+      return out;
+    }
+
+    return const [];
   }
 
   /// 修复图层存档与元素 layerIndex 不一致的问题，避免出现无法切换/无法编辑的
@@ -200,6 +455,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
     setState(() {
       _activeLayerIndex = newLayerId;
       _selectedTransformationId = null;
+      _transformHandleRotateMode = false;
     });
   }
 
@@ -219,31 +475,36 @@ class _UIStudioPageState extends State<UIStudioPage> {
       _sceneLayers.add(LayerScene(id: newId, name: '图层 Level $newId'));
       _activeLayerIndex = newId; // 自动无缝切至新图层！
       _selectedTransformationId = null;
+      _transformHandleRotateMode = false;
     });
   }
 
-  // 拖拽添加新积木：生成在完全避开边栏与顶部控制区域的安全中心区，同时立刻自动收回边栏抽屉，彻底释放触控交互空间！
-  void _addElement(UIModule module) {
-    setState(() {
-      final len = _currentElements.length;
-      // 极其智能安全的可视中心生成坐标，绝不碰撞边栏与顶部按钮
-      final dx = 180.0 + (len * 35) % 200 - _workspaceOffset.dx;
-      final dy = 140.0 + (len * 25) % 200 - _workspaceOffset.dy;
+  Size _initialSizeForModule(UIModule module) {
+    if (module.type == 'base_box') return const Size(260, 160);
+    if (module.type == 'progress') return const Size(180, 18);
+    if (module.type == 'button') return const Size(120, 44);
+    if (module.type == 'input') return const Size(160, 42);
+    if (module.type == 'surface') return const Size(160, 70);
+    if (module.type == 'surface_art') return const Size(180, 90);
+    if (module.type == 'light_effect') return const Size(120, 120);
+    if (module.type == 'primitive_art') return const Size(160, 18);
+    if (module.type == 'slider') return const Size(180, 32);
+    if (module.type == 'text') return const Size(150, 34);
+    return const Size(150, 68);
+  }
 
-      Size initialSize = const Size(150, 68);
-      if (module.type == 'base_box') {
-        initialSize = const Size(260, 160);
-      } else if (module.type == 'progress') {
-        initialSize = const Size(180, 18);
-      } else if (module.type == 'button') {
-        initialSize = const Size(120, 44);
-      } else if (module.type == 'input') {
-        initialSize = const Size(160, 42);
-      } else if (module.type == 'surface') {
-        initialSize = const Size(160, 70);
-      } else if (module.type == 'text') {
-        initialSize = const Size(150, 34);
-      }
+  void _addElement(UIModule module) {
+    final len = _currentElements.length;
+    // 点击生成仍保留：生成在视野安全中心区。
+    final dx = 180.0 + (len * 35) % 200 - _workspaceOffset.dx;
+    final dy = 140.0 + (len * 25) % 200 - _workspaceOffset.dy;
+    _addElementAt(module, Offset(dx, dy));
+  }
+
+  // 从资产区拖到画布时使用：canvasOffset 是工作台坐标系下的左上角位置。
+  void _addElementAt(UIModule module, Offset canvasOffset) {
+    setState(() {
+      final initialSize = _initialSizeForModule(module);
 
       final newElement = UIElement(
         id: 'el_${DateTime.now().millisecondsSinceEpoch}',
@@ -258,9 +519,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 color: const Color(0xFFECEFF1),
               )
             : null,
-        offset: Offset(dx, dy),
+        offset: canvasOffset,
         size: initialSize,
-        layerIndex: _activeLayerIndex, // 完美挂载至动态当前工作层！
+        layerIndex: _activeLayerIndex,
       );
 
       if (_bottomModeIndex == 0) {
@@ -270,8 +531,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
       }
 
       _selectedTransformationId = newElement.id;
-      
-      // 核心绝杀：添加积木瞬间，立刻自动收回两边与图层管理抽屉！彻底杜绝新模块生成在抽屉正下方导致漏按、被吃掉 Bug！
+      _transformHandleRotateMode = false;
+
+      // 添加积木后自动收回抽屉，释放画布交互空间。
       _showLeftDrawer = false;
       _showRightDrawer = false;
       _showLayerManager = false;
@@ -285,6 +547,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
     if (type == 'input') return const Size(4, 4);
     if (type == 'text') return const Size(8, 8);
     if (type == 'surface') return const Size(4, 4);
+    if (type == 'surface_art') return const Size(12, 12);
+    if (type == 'light_effect') return const Size(8, 8);
+    if (type == 'primitive_art') return const Size(4, 1);
+    if (type == 'slider') return const Size(20, 8);
     if (type == 'base_box' || el.isComposite) return const Size(12, 12);
     return const Size(4, 4);
   }
@@ -298,6 +564,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
     if (module.type == 'button' || module.type == 'input') {
       return UIModuleShape.rectangle;
     }
+    if (module.type == 'light_effect') return UIModuleShape.circle;
+    if (module.type == 'primitive_art') return UIModuleShape.rectangle;
+    if (module.type == 'slider') return UIModuleShape.capsule;
     return module.shape;
   }
 
@@ -308,7 +577,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return module.borderRadius;
   }
 
-  // 执行同层温和推开防重叠避碰法则
+  // 更新元素几何。
+  //
+  // UI 创作需要允许同级重叠：例如表面 + 高光 + 光效、按钮底板 + 文本 + 热区。
+  // 因此这里不再强制同层避碰，显示上下关系由 layerIndex + 构造层/元素列表顺序决定。
   void _updateElementGeometry(String id, Offset newOffset, Size newSize) {
     setState(() {
       final list = _currentElements;
@@ -316,35 +588,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       if (index == -1) return;
 
       final targetEl = list[index];
-      Offset updatedOffset = newOffset;
-
-      for (final other in list) {
-        if (other.id == id || other.layerIndex != targetEl.layerIndex) continue;
-
-        final Rect newRect = Rect.fromLTWH(updatedOffset.dx, updatedOffset.dy, newSize.width, newSize.height);
-        final Rect otherRect = Rect.fromLTWH(other.offset.dx, other.offset.dy, other.size.width, other.size.height);
-
-        if (newRect.overlaps(otherRect)) {
-          final double overLeft = newRect.right - otherRect.left;
-          final double overRight = otherRect.right - newRect.left;
-          final double overTop = newRect.bottom - otherRect.top;
-          final double overBottom = otherRect.bottom - newRect.top;
-
-          final double minOver = [overLeft, overRight, overTop, overBottom].reduce((a, b) => a < b ? a : b);
-
-          if (minOver == overLeft) {
-            updatedOffset = Offset(otherRect.left - newSize.width - 2.0, updatedOffset.dy);
-          } else if (minOver == overRight) {
-            updatedOffset = Offset(otherRect.right + 2.0, updatedOffset.dy);
-          } else if (minOver == overTop) {
-            updatedOffset = Offset(updatedOffset.dx, otherRect.top - newSize.height - 2.0);
-          } else if (minOver == overBottom) {
-            updatedOffset = Offset(updatedOffset.dx, otherRect.bottom + 2.0);
-          }
-        }
-      }
-
-      list[index] = targetEl.copyWith(offset: updatedOffset, size: newSize);
+      list[index] = targetEl.copyWith(offset: newOffset, size: newSize);
     });
   }
 
@@ -357,7 +601,28 @@ class _UIStudioPageState extends State<UIStudioPage> {
       }
       if (_selectedTransformationId == id) {
         _selectedTransformationId = null;
+        _transformHandleRotateMode = false;
       }
+    });
+  }
+
+  void _deleteSelectedElement() {
+    final id = _selectedTransformationId;
+    if (id == null) return;
+    _deleteElement(id);
+  }
+
+  void _moveSelectedElementOrder(int delta) {
+    final id = _selectedTransformationId;
+    if (id == null) return;
+    setState(() {
+      final list = _currentElements;
+      final index = list.indexWhere((e) => e.id == id);
+      if (index == -1) return;
+      final target = (index + delta).clamp(0, list.length - 1);
+      if (target == index) return;
+      final el = list.removeAt(index);
+      list.insert(target, el);
     });
   }
 
@@ -368,6 +633,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
     Color color = (isComp ? el.composite?.color : el.module?.color) ?? Colors.white;
     UIModuleShape shape = (!isComp ? el.module?.shape : null) ?? UIModuleShape.rounded;
     UIModuleMaterial material = (isComp ? el.composite?.material : el.module?.material) ?? UIModuleMaterial.glass;
+    double opacity = ((isComp ? el.composite?.opacity : el.module?.opacity) ?? 1.0).clamp(0.0, 1.0).toDouble();
     int selectedLayer = el.layerIndex;
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex)
@@ -376,6 +642,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
     }
 
     Map<String, dynamic> props = Map.from(!isComp ? (el.module?.properties ?? {}) : {});
+    String composeMode = props['composeMode']?.toString() ??
+        ((el.module?.type == 'surface' || el.module?.type == 'base_box') ? 'edgeBlend' : 'normal');
+    if (composeMode == 'softBlend') composeMode = 'edgeBlend'; // 旧名兼容
+    if (composeMode != 'normal' && composeMode != 'edgeBlend') composeMode = 'normal';
     String textProp = props['text']?.toString() ?? '';
     String labelProp = props['label']?.toString() ?? props['variable']?.toString() ?? '';
     double maxProp = (props['max'] ?? 100.0).toDouble();
@@ -486,6 +756,25 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       const SizedBox(height: 16),
                     ],
 
+                    if (!isComp && ['surface', 'base_box', 'surface_art', 'primitive_art', 'light_effect'].contains(el.module?.type)) ...[
+                      const Text('融合模式', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        initialValue: composeMode,
+                        decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                        dropdownColor: Colors.white,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                        items: const [
+                          DropdownMenuItem(value: 'normal', child: Text('普通覆盖')),
+                          DropdownMenuItem(value: 'edgeBlend', child: Text('交叠渐变 edgeBlend')),
+                        ],
+                        onChanged: (v) => setDialogState(() => composeMode = v ?? 'normal'),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text('说明：edgeBlend 会在视觉层交集区域生成渐变过渡；它不是最终液态融合，只是一种可保留的边缘融合风格。', style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25)),
+                      const SizedBox(height: 16),
+                    ],
+
                     const Text('外观调色板', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 8),
                     Wrap(
@@ -508,6 +797,24 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         );
                       }).toList(),
                     ),
+                    const SizedBox(height: 16),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('透明度 / 融合强度', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                        Text('${(opacity * 100).round()}%', style: const TextStyle(fontSize: 11, color: Color(0xFF888896), fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    Slider(
+                      value: opacity,
+                      min: 0.05,
+                      max: 1.0,
+                      divisions: 19,
+                      activeColor: const Color(0xFFFF4081),
+                      onChanged: (v) => setDialogState(() => opacity = v),
+                    ),
+                    const Text('提示：普通模块之间不会自动“求交集融合”，需要通过透明度或基础构造层的 blendMode 形成融合效果。', style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25)),
                     const SizedBox(height: 16),
 
                     Row(
@@ -585,12 +892,24 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           }
                           updatedProps['max'] = maxProp;
                           updatedProps['current'] = curProp;
+                          if (['surface', 'base_box', 'surface_art', 'primitive_art', 'light_effect'].contains(el.module!.type)) {
+                            updatedProps['composeMode'] = composeMode;
+                          }
+                          updatedProps = _syncArtModuleProperties(
+                            module: el.module!,
+                            props: updatedProps,
+                            color: color,
+                            opacity: opacity,
+                            shape: shape,
+                            material: material,
+                            borderRadius: el.module!.borderRadius,
+                          );
                           final newMod = el.module!.copyWith(
-                            name: name, color: color, shape: shape, material: material, properties: updatedProps,
+                            name: name, color: color, shape: shape, material: material, opacity: opacity, properties: updatedProps,
                           );
                           list[index] = el.copyWith(module: newMod, layerIndex: selectedLayer);
                         } else {
-                          final newComp = el.composite!.copyWith(name: name, color: color, material: material);
+                          final newComp = el.composite!.copyWith(name: name, color: color, material: material, opacity: opacity);
                           list[index] = el.copyWith(composite: newComp, layerIndex: selectedLayer);
                         }
                       }
@@ -606,9 +925,41 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
+  Widget _buildFloatingObjectAction({
+    required IconData icon,
+    required Color background,
+    required Color foreground,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: background,
+      shape: const CircleBorder(),
+      elevation: 5,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, color: foreground, size: 24),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final sortedElements = _currentElements.toList()..sort((a, b) => a.layerIndex.compareTo(b.layerIndex));
+    final elementOrder = <String, int>{};
+    for (var i = 0; i < _currentElements.length; i++) {
+      elementOrder[_currentElements[i].id] = i;
+    }
+    final sortedElements = _currentElements.toList()
+      ..sort((a, b) {
+        final layer = a.layerIndex.compareTo(b.layerIndex);
+        if (layer != 0) return layer;
+        return (elementOrder[a.id] ?? 0).compareTo(elementOrder[b.id] ?? 0);
+      });
+    final double rightDrawerWidth = _bottomModeIndex == 0 ? 230.0 : 160.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F6F9),
@@ -616,49 +967,78 @@ class _UIStudioPageState extends State<UIStudioPage> {
         children: [
           // 1. 无限绝对跟手工作台面底壳
           Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanUpdate: (details) {
-                setState(() => _workspaceOffset += details.delta);
+            child: DragTarget<UIModule>(
+              key: _canvasDropKey,
+              onAcceptWithDetails: (details) {
+                final box = _canvasDropKey.currentContext?.findRenderObject() as RenderBox?;
+                if (box == null) return;
+                final local = box.globalToLocal(details.offset);
+                final size = _initialSizeForModule(details.data);
+                // 拖拽落点以模块中心为准，换算回工作台坐标。
+                final canvasOffset = local -
+                    _workspaceOffset -
+                    Offset(size.width / 2, size.height / 2);
+                _addElementAt(details.data, canvasOffset);
               },
-              onTap: () => setState(() => _selectedTransformationId = null),
-              child: ClipRect(
-                child: CustomPaint(
-                  painter: StudioWarmGridPainter(_workspaceOffset),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      // 真实模块层：直接换算为屏幕坐标，避免超大 Transform 画布造成 hitTest 坐标落在 Stack 尺寸外。
-                      ...sortedElements.map((el) {
-                        final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
-                        return Positioned(
-                          left: _workspaceOffset.dx + el.offset.dx - p,
-                          top: _workspaceOffset.dy + el.offset.dy - p,
-                          width: el.size.width + p * 2,
-                          height: el.size.height + p * 2,
-                          child: _buildTrueSingleHandleNode(el, p),
-                        );
-                      }),
+              builder: (context, candidateData, rejectedData) {
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onPanUpdate: (details) {
+                    setState(() => _workspaceOffset += details.delta);
+                  },
+                  onTap: () => setState(() => _selectedTransformationId = null),
+                  child: ClipRect(
+                    child: CustomPaint(
+                      painter: StudioWarmGridPainter(_workspaceOffset),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // 真实模块层：直接换算为屏幕坐标，避免超大 Transform 画布造成 hitTest 坐标落在 Stack 尺寸外。
+                          ...sortedElements.map((el) {
+                            final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
+                            return Positioned(
+                              left: _workspaceOffset.dx + el.offset.dx - p,
+                              top: _workspaceOffset.dy + el.offset.dy - p,
+                              width: el.size.width + p * 2,
+                              height: el.size.height + p * 2,
+                              child: _buildTrueSingleHandleNode(el, p),
+                            );
+                          }),
 
-                      // 当前编辑层辅助层：只把“层号角标 + 细黑白虚线边界”置顶，
-                      // 不改变模块本体层级，避免破坏真实预览。
-                      ...sortedElements
-                          .where((el) => el.layerIndex == _activeLayerIndex)
-                          .map((el) {
-                        final bool selected = el.id == _selectedTransformationId;
-                        return Positioned(
-                          // 辅助层不再外扩覆盖模块颜色；只在元素原始边界内绘制细虚线。
-                          left: _workspaceOffset.dx + el.offset.dx,
-                          top: _workspaceOffset.dy + el.offset.dy - 18,
-                          width: el.size.width,
-                          height: el.size.height + 18,
-                          child: _buildActiveLayerLocatorOverlay(el, selected),
-                        );
-                      }),
-                    ],
+                          // 基础工作台实时交叠渐变预览：不改变元素层级，只在重叠区域叠加渐变过渡。
+                          if (_bottomModeIndex == 0)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: CustomPaint(
+                                  painter: StudioEdgeBlendOverlayPainter(
+                                    elements: sortedElements,
+                                    workspaceOffset: _workspaceOffset,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // 当前编辑层辅助层：只把“层号角标 + 细白灰虚线边界”置顶，
+                          // 不改变模块本体层级，避免破坏真实预览。
+                          ...sortedElements
+                              .where((el) => el.layerIndex == _activeLayerIndex)
+                              .map((el) {
+                            final bool selected = el.id == _selectedTransformationId;
+                            return Positioned(
+                              // 辅助层不再外扩覆盖模块颜色；只在元素原始边界内绘制细虚线。
+                              left: _workspaceOffset.dx + el.offset.dx,
+                              top: _workspaceOffset.dy + el.offset.dy - 18,
+                              width: el.size.width,
+                              height: el.size.height + 18,
+                              child: _buildActiveLayerLocatorOverlay(el, selected),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
 
@@ -717,6 +1097,36 @@ class _UIStudioPageState extends State<UIStudioPage> {
             ),
           ),
 
+          if (_selectedTransformationId != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 120,
+              right: 16,
+              child: Column(
+                children: [
+                  _buildFloatingObjectAction(
+                    icon: Icons.keyboard_arrow_up_rounded,
+                    background: const Color(0xFF111116),
+                    foreground: Colors.white,
+                    onTap: () => _moveSelectedElementOrder(1),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildFloatingObjectAction(
+                    icon: Icons.keyboard_arrow_down_rounded,
+                    background: const Color(0xFF111116),
+                    foreground: Colors.white,
+                    onTap: () => _moveSelectedElementOrder(-1),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildFloatingObjectAction(
+                    icon: Icons.delete_outline_rounded,
+                    background: const Color(0xFFFF4081),
+                    foreground: Colors.white,
+                    onTap: _deleteSelectedElement,
+                  ),
+                ],
+              ),
+            ),
+
           // 5. 动态图层管理展示抽屉
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
@@ -759,9 +1169,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOut,
-            right: _showRightDrawer ? 0 : -160,
+            right: _showRightDrawer ? 0 : -rightDrawerWidth,
             top: 120, bottom: 120,
-            width: 160,
+            width: rightDrawerWidth,
             child: _buildRightCompletedAssetsDrawer(),
           ),
 
@@ -967,11 +1377,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ),
 
                     const SizedBox(height: 10),
-                    const SizedBox(height: 10),
-                    const Text('视觉表面原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('面原子 / 简单面预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'surface', name: '胶囊表面原子', type: 'surface', properties: {}, color: const Color(0xFF651FFF), material: UIModuleMaterial.gradient, shape: UIModuleShape.capsule),
+                      UIModule(id: 'surface', name: '面原子 / 胶囊', type: 'surface', properties: {}, color: const Color(0xFF651FFF), material: UIModuleMaterial.gradient, shape: UIModuleShape.capsule),
                       Container(height: 34, decoration: BoxDecoration(color: const Color(0xFF651FFF), borderRadius: BorderRadius.circular(999))),
                     ),
 
@@ -992,6 +1401,49 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ),
 
                     const SizedBox(height: 10),
+                    const Text('通用滑块原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(id: 'slider', name: '通用滑块原子', type: 'slider', properties: {'min': 0, 'max': 100, 'current': 50}, color: const Color(0xFF00ACC1)),
+                      SizedBox(
+                        height: 34,
+                        child: Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            Container(height: 5, margin: const EdgeInsets.symmetric(horizontal: 10), decoration: BoxDecoration(color: const Color(0xFFE2E2E8), borderRadius: BorderRadius.circular(99))),
+                            Container(height: 5, width: 62, margin: const EdgeInsets.only(left: 10), decoration: BoxDecoration(color: const Color(0xFF00ACC1), borderRadius: BorderRadius.circular(99))),
+                            Positioned(left: 58, child: Container(width: 18, height: 18, decoration: BoxDecoration(color: const Color(0xFF00ACC1), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)))),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text('光效原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(
+                        id: 'light', name: '柔光块原子', type: 'light_effect', color: const Color(0xFF7C4DFF),
+                        properties: {'layers': [UIPrimitiveLayer(id: 'g', kind: 'glow', offset: const Offset(0.08, 0.08), size: const Size(0.84, 0.84), color: const Color(0xFF7C4DFF), opacity: 0.45, shape: UIModuleShape.circle, properties: {'blur': 20}).toJson()]},
+                      ),
+                      Container(height: 42, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF7C4DFF).withValues(alpha: 0.28), boxShadow: [BoxShadow(color: const Color(0xFF7C4DFF).withValues(alpha: 0.45), blurRadius: 18)])),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text('面原子 / 高级面预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(
+                        id: 'surface_art', name: '面原子 / 高光玻璃', type: 'surface_art', color: Colors.white,
+                        properties: {'layers': [
+                          UIPrimitiveLayer(id: 'base', kind: 'surface', offset: Offset.zero, size: const Size(1, 1), color: const Color(0xFF651FFF), opacity: 0.70, shape: UIModuleShape.rounded, borderRadius: 18).toJson(),
+                          UIPrimitiveLayer(id: 'hi', kind: 'highlight', offset: const Offset(0.06, 0.05), size: const Size(0.88, 0.38), color: Colors.white, opacity: 0.42, shape: UIModuleShape.rounded, borderRadius: 16).toJson(),
+                        ]},
+                      ),
+                      Container(height: 42, decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), gradient: LinearGradient(colors: [const Color(0xFF651FFF).withValues(alpha: 0.75), const Color(0xFF651FFF).withValues(alpha: 0.45)]))),
+                    ),
+
+                    const SizedBox(height: 10),
                     const Text('输入逻辑区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
@@ -1009,23 +1461,229 @@ class _UIStudioPageState extends State<UIStudioPage> {
   }
 
   Widget _buildPreviewDraggableCard(UIModule module, Widget visualPreview) {
+    final card = Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+      ),
+      child: visualPreview,
+    );
+
     return GestureDetector(
       onTap: () => _addElement(module),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+      child: Draggable<UIModule>(
+        data: module,
+        feedback: Material(
+          color: Colors.transparent,
+          child: Opacity(
+            opacity: 0.88,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: card,
+            ),
           ),
-          child: visualPreview,
+        ),
+        childWhenDragging: Opacity(opacity: 0.38, child: card),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.grab,
+          child: card,
         ),
       ),
     );
   }
 
+
+  Widget _buildAtomicConstructionDrawer() {
+    final bakeable = _atomicWorkspaceElements.where(_isBakeableElement).length;
+    final total = _atomicWorkspaceElements.length;
+    final notBakeable = total - bakeable;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 20)],
+        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 16, 14, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _showRightDrawer = false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.arrow_forward_ios, size: 10, color: Color(0xFF00ACC1)),
+                            Text(' 收回', style: TextStyle(fontSize: 10, color: Color(0xFF00ACC1), fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Text('基础构造层', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF6F6F9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+                  ),
+                  child: Text(
+                    '可烘焙 $bakeable 层 · 不参与 $notBakeable 层',
+                    style: TextStyle(
+                      color: notBakeable > 0 ? const Color(0xFFFF8F00) : const Color(0xFF00A86B),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                child: Text(
+                  '基础工作台会把可烘焙视觉层合成为一个新的基础模组；文本/数据/交互层暂不参与。',
+                  style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25),
+                ),
+              ),
+              const Divider(color: Colors.black12),
+              Expanded(
+                child: _atomicWorkspaceElements.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(18.0),
+                          child: Text(
+                            '还没有构造层。\n从左侧拖入面、光效等原材料。',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        itemCount: _atomicWorkspaceElements.length,
+                        itemBuilder: (context, index) {
+                          final el = _atomicWorkspaceElements[index];
+                          final selected = _selectedTransformationId == el.id;
+                          final bake = _isBakeableElement(el);
+                          final name = el.module?.name ?? el.composite?.name ?? '未命名层';
+                          return Card(
+                            color: selected ? const Color(0xFF111116) : const Color(0xFFF6F6F9),
+                            elevation: selected ? 3 : 0,
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: BorderSide(
+                                color: selected ? const Color(0xFF00E5FF) : Colors.black.withValues(alpha: 0.04),
+                                width: selected ? 1.4 : 1,
+                              ),
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: () => setState(() => _selectedTransformationId = el.id),
+                              onLongPress: () => _showTailoredPrecisionEditorDialog(el),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: bake ? const Color(0xFF00C853) : const Color(0xFFFF8F00),
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                          child: Text(
+                                            bake ? '烘焙' : '跳过',
+                                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: selected ? Colors.white : const Color(0xFF111116),
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${_elementTypeLabel(el)} · L${el.layerIndex} · ${el.size.width.toStringAsFixed(0)}×${el.size.height.toStringAsFixed(0)}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: selected ? Colors.white70 : const Color(0xFF777783),
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        _buildLayerMiniButton(Icons.keyboard_arrow_up_rounded, () => _moveAtomicConstructionLayer(el.id, -1), selected),
+                                        _buildLayerMiniButton(Icons.keyboard_arrow_down_rounded, () => _moveAtomicConstructionLayer(el.id, 1), selected),
+                                        _buildLayerMiniButton(Icons.tune_rounded, () => _showTailoredPrecisionEditorDialog(el), selected),
+                                        _buildLayerMiniButton(Icons.delete_outline_rounded, () => _deleteElement(el.id), selected, danger: true),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLayerMiniButton(IconData icon, VoidCallback onTap, bool selected, {bool danger = false}) {
+    final color = danger ? const Color(0xFFFF4081) : (selected ? Colors.white : const Color(0xFF555562));
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Icon(icon, size: 16, color: color),
+      ),
+    );
+  }
+
   Widget _buildRightCompletedAssetsDrawer() {
+    if (_bottomModeIndex == 0) return _buildAtomicConstructionDrawer();
+
     final modules = _assetService.getAllModules();
 
     return Container(
@@ -1064,24 +1722,53 @@ class _UIStudioPageState extends State<UIStudioPage> {
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  children: modules.map((m) => Card(
-                    color: const Color(0xFFF6F6F9),
-                    elevation: 0,
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.black.withValues(alpha: 0.03))),
-                    child: ListTile(
-                      title: Text(m.name, style: const TextStyle(color: Color(0xFF111116), fontSize: 11, fontWeight: FontWeight.bold)),
-                      trailing: const Icon(Icons.add_circle, size: 16, color: Color(0xFF00E676)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      onTap: () => _addElement(m),
-                    ),
-                  )).toList(),
+                  children: modules.map(_buildAssetLibraryModuleCard).toList(),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAssetLibraryModuleCard(UIModule module) {
+    final card = Card(
+      color: const Color(0xFFF6F6F9),
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.black.withValues(alpha: 0.03)),
+      ),
+      child: ListTile(
+        title: Text(
+          module.name,
+          style: const TextStyle(color: Color(0xFF111116), fontSize: 11, fontWeight: FontWeight.bold),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          _elementTypeLabel(UIElement(id: 'preview_${module.id}', isComposite: false, module: module)),
+          style: const TextStyle(color: Color(0xFF888896), fontSize: 9),
+        ),
+        trailing: const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF00E676)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        onTap: () => _addElement(module),
+      ),
+    );
+
+    return Draggable<UIModule>(
+      data: module,
+      feedback: Material(
+        color: Colors.transparent,
+        child: SizedBox(
+          width: 150,
+          child: Opacity(opacity: 0.9, child: card),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.38, child: card),
+      child: card,
     );
   }
 
@@ -1184,7 +1871,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
       },
       onPanEnd: (_) => _startTouchElemOffset = Offset.zero,
       onTap: () {
-        setState(() => _selectedTransformationId = el.id);
+        setState(() {
+          if (_selectedTransformationId != el.id) {
+            _transformHandleRotateMode = false;
+          }
+          _selectedTransformationId = el.id;
+        });
       },
       onLongPress: () {
         _showTailoredPrecisionEditorDialog(el);
@@ -1207,12 +1899,17 @@ class _UIStudioPageState extends State<UIStudioPage> {
           right: 0, bottom: 0,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
+            onTap: () {
+              setState(() => _transformHandleRotateMode = !_transformHandleRotateMode);
+            },
             onPanStart: (details) {
               _startTouchWidth = el.size.width;
               _startTouchHeight = el.size.height;
               _startTouchGlobalPos = details.globalPosition;
             },
             onPanUpdate: (details) {
+              // 旋转模式的拖拽旋转逻辑后续接入；当前仅先占位并避免与缩放/删除冲突。
+              if (_transformHandleRotateMode) return;
               final deltaX = details.globalPosition.dx - _startTouchGlobalPos.dx;
               final deltaY = details.globalPosition.dy - _startTouchGlobalPos.dy;
               final minSize = _minElementSize(el);
@@ -1231,29 +1928,163 @@ class _UIStudioPageState extends State<UIStudioPage> {
               child: Container(
                 width: 22, height: 22,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: const Color(0xFFFF4081), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
-                child: const Icon(Icons.open_with, size: 12, color: Colors.white),
-              ),
-            ),
-          ),
-        ),
-
-        Positioned(
-          right: 0, top: 0,
-          child: GestureDetector(
-            onTap: () => _deleteElement(el.id),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(color: const Color(0xFFFF4081), borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)]),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [Icon(Icons.delete_outline, size: 12, color: Colors.white), SizedBox(width: 4), Text('移除该部件', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))],
+                decoration: BoxDecoration(
+                  color: _transformHandleRotateMode ? const Color(0xFF00E5FF) : const Color(0xFFFF4081),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                ),
+                child: Icon(
+                  _transformHandleRotateMode ? Icons.rotate_right_rounded : Icons.open_with,
+                  size: 12,
+                  color: _transformHandleRotateMode ? const Color(0xFF111116) : Colors.white,
+                ),
               ),
             ),
           ),
         ),
       ],
     );
+  }
+}
+
+/// 当前的实时融合预览采用 edgeBlend（交叠边缘渐变）算法。
+/// 它会保留一定边缘感，适合做有美术风格的彩色块交叠；
+/// 后续真正的 softUnion / 液态融合会作为另一种 composeMode 实现。
+class StudioEdgeBlendOverlayPainter extends CustomPainter {
+  final List<UIElement> elements;
+  final Offset workspaceOffset;
+
+  StudioEdgeBlendOverlayPainter({
+    required this.elements,
+    required this.workspaceOffset,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final candidates = elements
+        .where((e) => _canBlend(e))
+        .toList(growable: false);
+    if (candidates.length < 2) return;
+
+    for (var i = 0; i < candidates.length; i++) {
+      for (var j = i + 1; j < candidates.length; j++) {
+        final a = candidates[i];
+        final b = candidates[j];
+        final rectA = _screenRect(a);
+        final rectB = _screenRect(b);
+        if (!rectA.overlaps(rectB)) continue;
+        final overlap = rectA.intersect(rectB);
+        if (overlap.width <= 0 || overlap.height <= 0) continue;
+
+        final modA = a.module!;
+        final modB = b.module!;
+        final colorA = _blendColorFor(a);
+        final colorB = _blendColorFor(b);
+        final centerDelta = rectB.center - rectA.center;
+        final horizontal = centerDelta.dx.abs() >= centerDelta.dy.abs();
+        final begin = horizontal
+            ? (centerDelta.dx >= 0 ? Alignment.centerLeft : Alignment.centerRight)
+            : (centerDelta.dy >= 0 ? Alignment.topCenter : Alignment.bottomCenter);
+        final end = horizontal
+            ? (centerDelta.dx >= 0 ? Alignment.centerRight : Alignment.centerLeft)
+            : (centerDelta.dy >= 0 ? Alignment.bottomCenter : Alignment.topCenter);
+
+        final paint = Paint()
+          ..shader = LinearGradient(
+            begin: begin,
+            end: end,
+            colors: [colorA, Color.lerp(colorA, colorB, 0.5) ?? colorB, colorB],
+            stops: const [0.0, 0.5, 1.0],
+          ).createShader(overlap);
+
+        canvas.save();
+        canvas.clipPath(_shapePath(rectA, modA));
+        canvas.clipPath(_shapePath(rectB, modB));
+        canvas.drawRect(overlap, paint);
+        canvas.restore();
+      }
+    }
+  }
+
+  bool _canBlend(UIElement e) {
+    final module = e.module;
+    final type = module?.type;
+    if (e.isComposite || module == null) return false;
+    if (type != 'surface' && type != 'base_box' && type != 'surface_art') return false;
+    return _composeModeOf(module) == 'edgeBlend';
+  }
+
+  String _composeModeOf(UIModule module) {
+    var mode = module.properties['composeMode']?.toString();
+    if (mode == 'softBlend') mode = 'edgeBlend';
+    if (mode == null && (module.type == 'surface' || module.type == 'base_box')) {
+      return 'edgeBlend';
+    }
+    return mode == 'edgeBlend' ? 'edgeBlend' : 'normal';
+  }
+
+  Color _blendColorFor(UIElement e) {
+    final module = e.module!;
+    final firstSurface = _firstSurfaceLayer(module);
+    if (firstSurface != null) {
+      final alpha = (firstSurface.opacity * module.opacity).clamp(0.0, 1.0).toDouble();
+      return firstSurface.color.withValues(alpha: alpha);
+    }
+    return module.color.withValues(alpha: module.opacity.clamp(0.0, 1.0).toDouble());
+  }
+
+  UIPrimitiveLayer? _firstSurfaceLayer(UIModule module) {
+    final rawLayers = module.properties['layers'];
+    if (rawLayers is! List) return null;
+    for (final raw in rawLayers) {
+      if (raw is Map) {
+        final layer = UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw));
+        if (layer.kind == 'surface' || layer.kind == 'glow') return layer;
+      }
+    }
+    return null;
+  }
+
+  Rect _screenRect(UIElement e) {
+    return Rect.fromLTWH(
+      workspaceOffset.dx + e.offset.dx,
+      workspaceOffset.dy + e.offset.dy,
+      e.size.width,
+      e.size.height,
+    );
+  }
+
+  Path _shapePath(Rect rect, UIModule module) {
+    final path = Path();
+    final surfaceLayer = _firstSurfaceLayer(module);
+    final shape = surfaceLayer?.shape ?? module.shape;
+    final radius = surfaceLayer?.borderRadius ?? module.borderRadius;
+    switch (shape) {
+      case UIModuleShape.rectangle:
+        path.addRect(rect);
+        break;
+      case UIModuleShape.circle:
+        path.addOval(rect);
+        break;
+      case UIModuleShape.capsule:
+        path.addRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
+        );
+        break;
+      case UIModuleShape.rounded:
+        path.addRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(radius)),
+        );
+        break;
+    }
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(covariant StudioEdgeBlendOverlayPainter oldDelegate) {
+    return oldDelegate.elements != elements ||
+        oldDelegate.workspaceOffset != workspaceOffset;
   }
 }
 
