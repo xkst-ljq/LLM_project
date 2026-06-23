@@ -839,6 +839,13 @@ class _UIStudioPageState extends State<UIStudioPage> {
   Size _maxElementSize(UIElement el) => const Size(4000, 4000);
 
   UIModuleShape _outlineShapeOf(UIElement el) {
+    // 单子元素复合组件：继承子元素的边框形状，避免圆角矩形框住胶囊/圆形。
+    if (el.isComposite && el.composite != null) {
+      if (el.composite!.children.length == 1) {
+        return _outlineShapeOf(el.composite!.children.first);
+      }
+      return UIModuleShape.rounded;
+    }
     final module = el.module;
     if (module == null) return UIModuleShape.rounded;
     if (module.type == 'progress') return UIModuleShape.capsule;
@@ -852,6 +859,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
   }
 
   double _outlineBorderRadiusOf(UIElement el) {
+    if (el.isComposite && el.composite != null) {
+      if (el.composite!.children.length == 1) {
+        return _outlineBorderRadiusOf(el.composite!.children.first);
+      }
+      return 12;
+    }
     final module = el.module;
     if (module == null) return 12;
     if (module.type == 'progress') return 999;
@@ -869,7 +882,26 @@ class _UIStudioPageState extends State<UIStudioPage> {
       if (index == -1) return;
 
       final targetEl = list[index];
-      list[index] = targetEl.copyWith(offset: newOffset, size: newSize);
+
+      // 复合元素缩放时，子元素按比例同步缩放，否则内容不跟随容器变化。
+      if (targetEl.isComposite &&
+          targetEl.composite != null &&
+          targetEl.size.width > 0 &&
+          targetEl.size.height > 0) {
+        final scaleX = newSize.width / targetEl.size.width;
+        final scaleY = newSize.height / targetEl.size.height;
+        final scaledChildren = targetEl.composite!.children.map((c) {
+          return c.copyWith(
+            offset: Offset(c.offset.dx * scaleX, c.offset.dy * scaleY),
+            size: Size(c.size.width * scaleX, c.size.height * scaleY),
+          );
+        }).toList();
+        final newComp = targetEl.composite!.copyWith(children: scaledChildren);
+        list[index] = targetEl.copyWith(
+            offset: newOffset, size: newSize, composite: newComp);
+      } else {
+        list[index] = targetEl.copyWith(offset: newOffset, size: newSize);
+      }
     });
   }
 
@@ -1081,9 +1113,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ),
                     Slider(
                       value: opacity,
-                      min: 0.05,
+                      min: 0.0,
                       max: 1.0,
-                      divisions: 19,
+                      divisions: 20,
                       activeColor: const Color(0xFFFF4081),
                       onChanged: (v) => setDialogState(() => opacity = v),
                     ),
@@ -2120,33 +2152,13 @@ class _UIStudioPageState extends State<UIStudioPage> {
   /// 不加阴影、不加半透明蒙版、不重新渲染模块本体，避免影响原始颜色判断。
   /// 整体 IgnorePointer，避免遮挡原有拖拽、缩放、删除等交互命中。
   Widget _buildActiveLayerLocatorOverlay(UIElement el, bool selected) {
+    // 选中虚线边框已移入 _buildTrueSingleHandleNode 与内容一体渲染，
+    // 此辅助层只负责层号角标。
     return IgnorePointer(
       ignoring: true,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          if (selected)
-            Positioned(
-              left: 0,
-              top: 18,
-              width: el.size.width,
-              height: el.size.height,
-              child: Transform.rotate(
-                // 选中虚线框与模块本体一起旋转，反馈与实际一致。
-                // Transform.rotate 默认绕自身中心，此处即元素中心。
-                angle: el.rotation * math.pi / 180.0,
-                child: CustomPaint(
-                  painter: StudioAlternatingDashedBorderPainter(
-                    strokeWidth: 1.2,
-                    shape: _outlineShapeOf(el),
-                    borderRadius: _outlineBorderRadiusOf(el),
-                  ),
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            ),
-
-          // 未选中时只显示层号；选中时额外显示细白灰虚线外框。
           Positioned(
             left: 4,
             top: 0,
@@ -2204,6 +2216,38 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: UIRenderer.render(context, el),
     );
 
+    // 选中时：边框与内容作为一体渲染。
+    // 内容通过 render() 内部 Transform.rotate(el.rotation) 旋转，
+    // 边框用同一个 el.rotation 旋转，两者中心一致 → 永远同步。
+    Widget body = mainContent;
+    if (isTransformationActive) {
+      body = SizedBox(
+        width: el.size.width,
+        height: el.size.height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            mainContent,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Transform.rotate(
+                  angle: el.rotation * math.pi / 180.0,
+                  child: CustomPaint(
+                    painter: StudioAlternatingDashedBorderPainter(
+                      strokeWidth: 1.2,
+                      shape: _outlineShapeOf(el),
+                      borderRadius: _outlineBorderRadiusOf(el),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+
     Widget touchableBody = GestureDetector(
       // 必须显式使用 opaque：button/input 等逻辑型原子本体是透明 SizedBox，
       // 若沿用默认 deferToChild，透明子树不会参与 hitTest，导致模块看得见但点不动。
@@ -2228,7 +2272,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       onLongPress: () {
         _showTailoredPrecisionEditorDialog(el);
       },
-      child: mainContent,
+      child: body,
     );
 
     if (!isTransformationActive) {
