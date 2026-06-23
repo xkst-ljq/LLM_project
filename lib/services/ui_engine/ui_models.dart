@@ -270,6 +270,7 @@ class UIElement {
   final Offset offset;
   final Size size;
   final int layerIndex; // 动态所属的图层 ID
+  final double rotation; // 旋转角度（度），围绕元素自身中心
 
   UIElement({
     required this.id,
@@ -279,6 +280,7 @@ class UIElement {
     this.offset = Offset.zero,
     this.size = const Size(100, 100),
     this.layerIndex = 0,
+    this.rotation = 0.0,
   });
 
   Map<String, dynamic> toJson() {
@@ -288,6 +290,7 @@ class UIElement {
       'offset': {'x': offset.dx, 'y': offset.dy},
       'size': {'width': size.width, 'height': size.height},
       'layerIndex': layerIndex,
+      'rotation': rotation,
     };
     if (isComposite) {
       map['composite'] = composite?.toJson();
@@ -316,6 +319,7 @@ class UIElement {
       composite: (isComposite && json['composite'] != null) ? UIComposite.fromJson(json['composite']) : null,
       module: (!isComposite && json['module'] != null) ? UIModule.fromJson(json['module']) : null,
       layerIndex: json['layerIndex'] ?? 0,
+      rotation: (json['rotation'] ?? 0.0).toDouble(),
     );
   }
 
@@ -326,6 +330,7 @@ class UIElement {
     Offset? offset,
     Size? size,
     int? layerIndex,
+    double? rotation,
   }) {
     return UIElement(
       id: id,
@@ -335,6 +340,7 @@ class UIElement {
       offset: offset ?? this.offset,
       size: size ?? this.size,
       layerIndex: layerIndex ?? this.layerIndex,
+      rotation: rotation ?? this.rotation,
     );
   }
 }

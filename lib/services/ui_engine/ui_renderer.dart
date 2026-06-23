@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -7,12 +8,23 @@ import 'ui_models.dart';
 class UIRenderer {
   /// 将 UIElement 渲染为 Flutter Widget
   static Widget render(BuildContext context, UIElement element) {
+    Widget widget;
     if (element.isComposite && element.composite != null) {
-      return _renderComposite(context, element.composite!, element.size);
+      widget = _renderComposite(context, element.composite!, element.size);
     } else if (!element.isComposite && element.module != null) {
-      return _renderModule(context, element.module!, element.size);
+      widget = _renderModule(context, element.module!, element.size);
+    } else {
+      widget = const SizedBox();
     }
-    return const SizedBox();
+    // 围绕元素自身中心旋转。工作室拖拽与运行时聊天渲染共用此入口，
+    // 因此两处表现一致；rotation == 0 时不套 Transform，零开销。
+    if (element.rotation != 0.0) {
+      return Transform.rotate(
+        angle: element.rotation * math.pi / 180.0,
+        child: widget,
+      );
+    }
+    return widget;
   }
 
   static Widget _renderModule(BuildContext context, UIModule module, Size size) {
@@ -119,10 +131,20 @@ class UIRenderer {
         break;
       case 'base_box':
       default:
-        // 复合容器本体只负责承载子元素。空态提示属于编辑器 UI，
-        // 不应进入最终渲染结果。
+        // 复合容器按子元素的绝对 offset 定位。
+        // 子元素 offset 在「保存为复合组件」/「拖出到画布」时已归一化到
+        // 容器左上角，这里用 Positioned 还原，否则全部堆在左上角。
         content = Stack(
-          children: composite.children.map((e) => render(context, e)).toList(),
+          clipBehavior: Clip.none,
+          children: composite.children.map((e) {
+            return Positioned(
+              left: e.offset.dx,
+              top: e.offset.dy,
+              width: e.size.width,
+              height: e.size.height,
+              child: render(context, e),
+            );
+          }).toList(),
         );
         break;
     }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/ui_engine/ui_asset_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
+
+/// 拖拽统一载荷：原子模组 或 复合组件（二选一）。
+/// 左右抽屉的卡片均产出此类型，画布 DragTarget 统一接收。
+class _DragPayload {
+  final UIModule? module;
+  final UIComposite? composite;
+  _DragPayload({this.module, this.composite});
+}
 
 class UIStudioPage extends StatefulWidget {
   const UIStudioPage({super.key});
@@ -44,6 +53,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
   double _startTouchWidth = 150.0;
   double _startTouchHeight = 70.0;
   Offset _startTouchGlobalPos = Offset.zero;
+
+  // 旋转模式拖拽锚定：按下时记录元素中心(全局)、把手相对中心的角度、起始旋转角。
+  // 元素中心由 工作台偏移 + 元素 offset + 半尺寸 直接算出，无需 GlobalKey。
+  Offset _rotationCenter = Offset.zero;
+  double _startHandleAngle = 0.0;
+  double _startRotation = 0.0;
 
   // 当前激活把手的元素 ID
   String? _selectedTransformationId;
@@ -734,6 +749,78 @@ class _UIStudioPageState extends State<UIStudioPage> {
     });
   }
 
+  // 拖拽统一载荷：原子模组 或 复合组件二选一。
+  // 画布 DragTarget<_DragPayload> 据此分派到 _addElementAt / _addCompositeAt。
+  // 子元素旋转后的轴对齐外接矩形 (AABB)。
+  // 复合组件的边框尺寸必须包裹旋转后的实际范围，否则边框偏小。
+  Rect _childRotatedAABB(UIElement el) {
+    if (el.rotation == 0.0) {
+      return Rect.fromLTWH(
+          el.offset.dx, el.offset.dy, el.size.width, el.size.height);
+    }
+    final cx = el.offset.dx + el.size.width / 2;
+    final cy = el.offset.dy + el.size.height / 2;
+    final rad = el.rotation * math.pi / 180.0;
+    final cosA = math.cos(rad).abs();
+    final sinA = math.sin(rad).abs();
+    final newW = el.size.width * cosA + el.size.height * sinA;
+    final newH = el.size.width * sinA + el.size.height * cosA;
+    return Rect.fromCenter(center: Offset(cx, cy), width: newW, height: newH);
+  }
+
+  // 复合组件内容的外接矩形（含子元素旋转后的范围）。
+  Rect _compositeBoundsRect(UIComposite composite) {
+    if (composite.children.isEmpty) return Rect.zero;
+    Rect? bounds;
+    for (final child in composite.children) {
+      final aabb = _childRotatedAABB(child);
+      bounds = (bounds == null) ? aabb : bounds.expandToInclude(aabb);
+    }
+    return bounds ?? Rect.zero;
+  }
+
+  Size? _compositeBounds(UIComposite composite) {
+    final rect = _compositeBoundsRect(composite);
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return Size(rect.width, rect.height);
+  }
+
+  // 从资产库拖出一个已保存的复合组件到画布。
+  void _addCompositeAt(UIComposite composite, Offset canvasOffset) {
+    setState(() {
+      final bounds = _compositeBoundsRect(composite);
+      final initialSize = (bounds.width > 0 && bounds.height > 0)
+          ? Size(bounds.width, bounds.height)
+          : const Size(200, 120);
+
+      // 子元素 offset 平移到外接矩形左上角，使内容从 (0,0) 开始。
+      // 这样 Stack(0,0)-(w,h) 正好对齐内容范围，边框不再错位。
+      final adjustedChildren = composite.children.map((c) => c.copyWith(
+        offset: Offset(c.offset.dx - bounds.left, c.offset.dy - bounds.top),
+      )).toList();
+
+      final newElement = UIElement(
+        id: 'el_${DateTime.now().millisecondsSinceEpoch}',
+        isComposite: true,
+        module: null,
+        composite: composite.copyWith(children: adjustedChildren),
+        offset: canvasOffset,
+        size: initialSize,
+        layerIndex: _activeLayerIndex,
+      );
+
+      _compositeWorkspaceElements.add(newElement);
+
+      _selectedTransformationId = newElement.id;
+      _transformHandleRotateMode = false;
+
+      _showLeftDrawer = false;
+      _showRightDrawer = false;
+      _showLayerManager = false;
+      _showConstructionManager = false;
+    });
+  }
+
   Size _minElementSize(UIElement el) {
     final type = el.module?.type;
     if (type == 'progress') return const Size(8, 2);
@@ -786,6 +873,22 @@ class _UIStudioPageState extends State<UIStudioPage> {
     });
   }
 
+  void _updateElementRotation(String id, double rotation) {
+    setState(() {
+      final list = _currentElements;
+      final index = list.indexWhere((e) => e.id == id);
+      if (index == -1) return;
+      list[index] = list[index].copyWith(rotation: rotation);
+    });
+  }
+
+  // 旋转吸附：接近 90° 整数倍(误差 ≤5°)时吸附，方便摆正。
+  double _snapRotation(double deg) {
+    final snapped = ((deg / 90).round()) * 90.0;
+    if ((deg - snapped).abs() <= 5.0) return snapped;
+    return deg;
+  }
+
   void _deleteElement(String id) {
     setState(() {
       _compositeWorkspaceElements.removeWhere((e) => e.id == id);
@@ -832,6 +935,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
     }
 
     Map<String, dynamic> props = Map.from(!isComp ? (el.module?.properties ?? {}) : {});
+    // 归一到 (-180, 180]，保证滑块与显示一致，且 270 与 -90 等价。
+    double rotation =
+        ((el.rotation + 180) % 360 + 360) % 360 - 180;
     String textProp = props['text']?.toString() ?? '';
     String labelProp = props['label']?.toString() ?? props['variable']?.toString() ?? '';
     double maxProp = (props['max'] ?? 100.0).toDouble();
@@ -1035,6 +1141,39 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         ],
                       ],
                     ),
+
+                    // 旋转角度（围绕元素中心）。对原子 / 复合块均生效。
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('旋转角度 (绕中心)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('${rotation.round()}°', style: const TextStyle(fontSize: 11, color: Color(0xFF888896), fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: () => setDialogState(() => rotation = 0.0),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(color: const Color(0xFFFF4081).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                                child: const Text('复位', style: TextStyle(fontSize: 10, color: Color(0xFFFF4081), fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: rotation.clamp(-180.0, 180.0),
+                      min: -180,
+                      max: 180,
+                      divisions: 360,
+                      activeColor: const Color(0xFFFF4081),
+                      onChanged: (v) => setDialogState(() => rotation = v),
+                    ),
+                    const Text('提示：画布上拖右下角把手(青色旋转模式)可自由旋转，接近水平/垂直会自动吸附。', style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25)),
                   ],
                 ),
               ),
@@ -1071,10 +1210,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           final newMod = el.module!.copyWith(
                             name: name, color: color, shape: shape, material: material, opacity: opacity, properties: updatedProps,
                           );
-                          list[index] = el.copyWith(module: newMod, layerIndex: selectedLayer);
+                          list[index] = el.copyWith(module: newMod, layerIndex: selectedLayer, rotation: rotation);
                         } else {
                           final newComp = el.composite!.copyWith(name: name, color: color, material: material, opacity: opacity);
-                          list[index] = el.copyWith(composite: newComp, layerIndex: selectedLayer);
+                          list[index] = el.copyWith(composite: newComp, layerIndex: selectedLayer, rotation: rotation);
                         }
                       }
                     });
@@ -1131,18 +1270,31 @@ class _UIStudioPageState extends State<UIStudioPage> {
         children: [
           // 1. 无限绝对跟手工作台面底壳
           Positioned.fill(
-            child: DragTarget<UIModule>(
+            child: DragTarget<_DragPayload>(
               key: _canvasDropKey,
               onAcceptWithDetails: (details) {
                 final box = _canvasDropKey.currentContext?.findRenderObject() as RenderBox?;
                 if (box == null) return;
                 final local = box.globalToLocal(details.offset);
-                final size = _initialSizeForModule(details.data);
+                final payload = details.data;
+                final Size payloadSize;
+                if (payload.module != null) {
+                  payloadSize = _initialSizeForModule(payload.module!);
+                } else if (payload.composite != null) {
+                  payloadSize = _compositeBounds(payload.composite!) ??
+                      const Size(200, 120);
+                } else {
+                  payloadSize = const Size(150, 68);
+                }
                 // 拖拽落点以模块中心为准，换算回工作台坐标。
                 final canvasOffset = local -
                     _workspaceOffset -
-                    Offset(size.width / 2, size.height / 2);
-                _addElementAt(details.data, canvasOffset);
+                    Offset(payloadSize.width / 2, payloadSize.height / 2);
+                if (payload.module != null) {
+                  _addElementAt(payload.module!, canvasOffset);
+                } else if (payload.composite != null) {
+                  _addCompositeAt(payload.composite!, canvasOffset);
+                }
               },
               builder: (context, candidateData, rejectedData) {
                 return GestureDetector(
@@ -1600,25 +1752,25 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: visualPreview,
     );
 
-    return GestureDetector(
-      onTap: () => _addElement(module),
-      child: Draggable<UIModule>(
-        data: module,
-        feedback: Material(
-          color: Colors.transparent,
-          child: Opacity(
-            opacity: 0.88,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 150),
-              child: card,
-            ),
+    // LongPressDraggable：触摸短滑 → 列表滚动；长按后拖 → 生成到画布。
+    // 鼠标仍可直接按下即拖。delay 调到 180ms 兼顾响应与防误触。
+    return LongPressDraggable<_DragPayload>(
+      data: _DragPayload(module: module),
+      delay: const Duration(milliseconds: 180),
+      feedback: Material(
+        color: Colors.transparent,
+        child: Opacity(
+          opacity: 0.88,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 150),
+            child: card,
           ),
         ),
-        childWhenDragging: Opacity(opacity: 0.38, child: card),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.grab,
-          child: card,
-        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.38, child: card),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.grab,
+        child: card,
       ),
     );
   }
@@ -1813,6 +1965,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   Widget _buildRightCompletedAssetsDrawer() {
     final modules = _assetService.getAllModules();
+    final composites = _assetService.getAllComposites();
+    final isEmpty = modules.isEmpty && composites.isEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -1848,10 +2002,30 @@ class _UIStudioPageState extends State<UIStudioPage> {
               ),
               const Divider(color: Colors.black12),
               Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  children: modules.map(_buildAssetLibraryModuleCard).toList(),
-                ),
+                child: isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(18.0),
+                          child: Text(
+                            '还没有保存的资产。\n在工作台拖入积木后点「保存」即可入库。',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
+                          ),
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        children: [
+                          ...modules.map(_buildAssetLibraryModuleCard),
+                          if (composites.isNotEmpty) ...[
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(4, 10, 4, 2),
+                              child: Text('复合组件', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                            ),
+                            ...composites.map(_buildAssetLibraryCompositeCard),
+                          ],
+                        ],
+                      ),
               ),
             ],
           ),
@@ -1882,12 +2056,52 @@ class _UIStudioPageState extends State<UIStudioPage> {
         ),
         trailing: const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF00E676)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-        onTap: () => _addElement(module),
       ),
     );
 
-    return Draggable<UIModule>(
-      data: module,
+    return LongPressDraggable<_DragPayload>(
+      data: _DragPayload(module: module),
+      delay: const Duration(milliseconds: 180),
+      feedback: Material(
+        color: Colors.transparent,
+        child: SizedBox(
+          width: 150,
+          child: Opacity(opacity: 0.9, child: card),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.38, child: card),
+      child: card,
+    );
+  }
+
+  Widget _buildAssetLibraryCompositeCard(UIComposite composite) {
+    final card = Card(
+      color: const Color(0xFFF3E5F5),
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.black.withValues(alpha: 0.05)),
+      ),
+      child: ListTile(
+        title: Text(
+          composite.name,
+          style: const TextStyle(color: Color(0xFF111116), fontSize: 11, fontWeight: FontWeight.bold),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '复合组件 · ${composite.children.length} 个子元素',
+          style: const TextStyle(color: Color(0xFF888896), fontSize: 9),
+        ),
+        trailing: const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF651FFF)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+    );
+
+    return LongPressDraggable<_DragPayload>(
+      data: _DragPayload(composite: composite),
+      delay: const Duration(milliseconds: 180),
       feedback: Material(
         color: Colors.transparent,
         child: SizedBox(
@@ -1917,13 +2131,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
               top: 18,
               width: el.size.width,
               height: el.size.height,
-              child: CustomPaint(
-                painter: StudioAlternatingDashedBorderPainter(
-                  strokeWidth: 1.2,
-                  shape: _outlineShapeOf(el),
-                  borderRadius: _outlineBorderRadiusOf(el),
+              child: Transform.rotate(
+                // 选中虚线框与模块本体一起旋转，反馈与实际一致。
+                // Transform.rotate 默认绕自身中心，此处即元素中心。
+                angle: el.rotation * math.pi / 180.0,
+                child: CustomPaint(
+                  painter: StudioAlternatingDashedBorderPainter(
+                    strokeWidth: 1.2,
+                    shape: _outlineShapeOf(el),
+                    borderRadius: _outlineBorderRadiusOf(el),
+                  ),
+                  child: const SizedBox.expand(),
                 ),
-                child: const SizedBox.expand(),
               ),
             ),
 
@@ -2034,10 +2253,35 @@ class _UIStudioPageState extends State<UIStudioPage> {
               _startTouchWidth = el.size.width;
               _startTouchHeight = el.size.height;
               _startTouchGlobalPos = details.globalPosition;
+              if (_transformHandleRotateMode) {
+                // 旋转中心 = 画布上元素的中心点。拖拽过程中 offset/size 不变，
+                // 故中心恒定，按下时算一次即可。
+                _rotationCenter = Offset(
+                  _workspaceOffset.dx + el.offset.dx + el.size.width / 2,
+                  _workspaceOffset.dy + el.offset.dy + el.size.height / 2,
+                );
+                _startHandleAngle =
+                    (details.globalPosition - _rotationCenter).direction;
+                _startRotation = el.rotation;
+              }
             },
             onPanUpdate: (details) {
-              // 旋转模式的拖拽旋转逻辑后续接入；当前仅先占位并避免与缩放/删除冲突。
-              if (_transformHandleRotateMode) return;
+              if (_transformHandleRotateMode) {
+                final currentAngle =
+                    (details.globalPosition - _rotationCenter).direction;
+                var delta = currentAngle - _startHandleAngle;
+                // 角度差归一到 [-π, π]，避免跨过 ±π 时突然反转。
+                while (delta > math.pi) {
+                  delta -= 2 * math.pi;
+                }
+                while (delta < -math.pi) {
+                  delta += 2 * math.pi;
+                }
+                var newRot = _startRotation + delta * 180 / math.pi;
+                newRot = _snapRotation(newRot);
+                _updateElementRotation(el.id, newRot);
+                return;
+              }
               final deltaX = details.globalPosition.dx - _startTouchGlobalPos.dx;
               final deltaY = details.globalPosition.dy - _startTouchGlobalPos.dy;
               final minSize = _minElementSize(el);
