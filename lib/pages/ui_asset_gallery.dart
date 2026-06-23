@@ -24,7 +24,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
     // 模组库预览页只注入基础原材料示例，不再自动注入复合资产。
     _assetService.addModule(UIModule(
       id: 'test_progress',
-      name: '数据条原子预览',
+      name: '数据条原子',
       type: 'progress',
       color: Colors.redAccent,
       properties: {'min': 0, 'max': 100, 'current': 65},
@@ -33,7 +33,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
 
     _assetService.addModule(UIModule(
       id: 'test_surface',
-      name: '表面原子预览',
+      name: '面原子',
       type: 'surface',
       color: Colors.deepPurpleAccent,
       material: UIModuleMaterial.gradient,
@@ -43,7 +43,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
 
     _assetService.addModule(UIModule(
       id: 'test_slider',
-      name: '滑块原子预览',
+      name: '滑块原子',
       type: 'slider',
       color: const Color(0xFF00ACC1),
       properties: {'min': 0, 'max': 100, 'current': 50},
@@ -51,7 +51,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
 
     _assetService.addModule(UIModule(
       id: 'test_button_logic',
-      name: '点击逻辑区预览',
+      name: '点击热区原子',
       type: 'button',
       color: Colors.transparent,
       properties: {'action': 'tap'},

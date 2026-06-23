@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'ui_models.dart';
 
 class UIAssetService {
-  static const String _storageKey = 'global_ui_assets_foundation_v1';
+  static const String _storageKey = 'global_ui_assets_flat_foundation_v2';
 
   // 全局原子模组库
   Map<String, UIModule> _modules = {};
@@ -18,52 +18,26 @@ class UIAssetService {
     _loadAssets();
   }
 
-  // 提供开箱即用的“基础原材料”库。
-  // 当前默认不再内置任何复合资产；复合组件应由复合工作台基于这些
-  // 原材料重新拼装，避免“生命条/攻击键”等具体语义污染基础层。
+  // 提供开箱即用的“扁平化基础原材料”库。
+  // 当前默认不再内置复合资产，也不默认暴露玻璃/光效/高级面等风格化原子；
+  // 如后续确实需要，再从引擎能力中重新开放。
   void _initDefaultAssets() {
-    final dataBarNeutral = UIModule(
-      id: 'atom_data_bar_neutral',
-      name: '数据条原子 / 中性',
-      type: 'progress',
-      color: const Color(0xFF607D8B),
-      properties: {'min': 0, 'max': 100, 'current': 65},
-    );
-    final dataBarAccent = UIModule(
-      id: 'atom_data_bar_accent',
-      name: '数据条原子 / 强调',
+    final dataBar = UIModule(
+      id: 'atom_data_bar',
+      name: '数据条原子',
       type: 'progress',
       color: const Color(0xFFFF4081),
       properties: {'min': 0, 'max': 100, 'current': 65},
     );
-    final dataBarCool = UIModule(
-      id: 'atom_data_bar_cool',
-      name: '数据条原子 / 冷色',
-      type: 'progress',
-      color: const Color(0xFF00E5FF),
-      properties: {'min': 0, 'max': 100, 'current': 65},
-    );
 
-    final surfaceGlass = UIModule(
-      id: 'atom_surface_glass_panel',
-      name: '面原子 / 玻璃',
+    final surfaceBase = UIModule(
+      id: 'atom_surface_base',
+      name: '面原子 / 矩形',
       type: 'surface',
-      color: Colors.white,
-      material: UIModuleMaterial.glass,
-      shape: UIModuleShape.rounded,
-      borderRadius: 18,
-      opacity: 0.78,
-      properties: {},
-    );
-    final surfaceSolid = UIModule(
-      id: 'atom_surface_solid_panel',
-      name: '面原子 / 实色',
-      type: 'surface',
-      color: const Color(0xFF263238),
+      color: const Color(0xFF651FFF),
       material: UIModuleMaterial.solid,
       shape: UIModuleShape.rounded,
       borderRadius: 16,
-      opacity: 0.92,
       properties: {},
     );
     final surfaceCapsule = UIModule(
@@ -71,7 +45,7 @@ class UIAssetService {
       name: '面原子 / 胶囊',
       type: 'surface',
       color: const Color(0xFF651FFF),
-      material: UIModuleMaterial.gradient,
+      material: UIModuleMaterial.solid,
       shape: UIModuleShape.capsule,
       properties: {},
     );
@@ -80,7 +54,7 @@ class UIAssetService {
       name: '面原子 / 椭圆',
       type: 'surface',
       color: const Color(0xFFFF4081),
-      material: UIModuleMaterial.gradient,
+      material: UIModuleMaterial.solid,
       shape: UIModuleShape.circle,
       properties: {},
     );
@@ -95,25 +69,11 @@ class UIAssetService {
       properties: {},
     );
 
-    final textDark = UIModule(
-      id: 'atom_text_dark',
-      name: '文本原子 / 深色',
+    final text = UIModule(
+      id: 'atom_text',
+      name: '文本原子',
       type: 'text',
       color: const Color(0xFF111116),
-      properties: {'text': '文本'},
-    );
-    final textLight = UIModule(
-      id: 'atom_text_light',
-      name: '文本原子 / 浅色',
-      type: 'text',
-      color: Colors.white,
-      properties: {'text': '文本'},
-    );
-    final textAccent = UIModule(
-      id: 'atom_text_accent',
-      name: '文本原子 / 强调色',
-      type: 'text',
-      color: const Color(0xFF00ACC1),
       properties: {'text': '文本'},
     );
 
@@ -134,7 +94,7 @@ class UIAssetService {
 
     final slider = UIModule(
       id: 'atom_slider_basic',
-      name: '交互原子 / 通用滑块',
+      name: '滑块原子',
       type: 'slider',
       color: const Color(0xFF00ACC1),
       properties: {'min': 0, 'max': 100, 'current': 50, 'step': 1},
@@ -142,7 +102,7 @@ class UIAssetService {
 
     final line = UIModule(
       id: 'atom_line_divider',
-      name: '装饰原子 / 分隔线',
+      name: '分隔线原子',
       type: 'primitive_art',
       color: const Color(0xFFB0BEC5),
       properties: {
@@ -159,102 +119,20 @@ class UIAssetService {
       },
     );
 
-    final softGlow = UIModule(
-      id: 'atom_light_soft_glow',
-      name: '光效原子 / 柔光块',
-      type: 'light_effect',
-      color: const Color(0xFF7C4DFF),
-      properties: {
-        'layers': [
-          UIPrimitiveLayer(
-            id: 'glow_0',
-            kind: 'glow',
-            offset: const Offset(0.08, 0.08),
-            size: const Size(0.84, 0.84),
-            color: const Color(0xFF7C4DFF),
-            opacity: 0.45,
-            shape: UIModuleShape.circle,
-            properties: {'blur': 24, 'blendMode': 'plus'},
-          ).toJson(),
-          UIPrimitiveLayer(
-            id: 'glow_core',
-            kind: 'surface',
-            offset: const Offset(0.25, 0.25),
-            size: const Size(0.5, 0.5),
-            color: const Color(0xFFB388FF),
-            opacity: 0.34,
-            shape: UIModuleShape.circle,
-          ).toJson(),
-        ],
-      },
-    );
-
-    final layeredSurface = UIModule(
-      id: 'atom_surface_art_glass_highlight',
-      name: '面原子 / 高光玻璃',
-      type: 'surface_art',
-      color: Colors.white,
-      properties: {
-        'composeMode': 'edgeBlend',
-        'layers': [
-          UIPrimitiveLayer(
-            id: 'base',
-            kind: 'surface',
-            offset: Offset.zero,
-            size: const Size(1, 1),
-            color: const Color(0xFF651FFF),
-            opacity: 0.70,
-            shape: UIModuleShape.rounded,
-            borderRadius: 20,
-          ).toJson(),
-          UIPrimitiveLayer(
-            id: 'highlight',
-            kind: 'highlight',
-            offset: const Offset(0.06, 0.05),
-            size: const Size(0.88, 0.36),
-            color: Colors.white,
-            opacity: 0.45,
-            shape: UIModuleShape.rounded,
-            borderRadius: 18,
-            properties: {'blendMode': 'screen'},
-          ).toJson(),
-          UIPrimitiveLayer(
-            id: 'stroke',
-            kind: 'stroke',
-            offset: const Offset(0.01, 0.01),
-            size: const Size(0.98, 0.98),
-            color: Colors.white,
-            opacity: 0.55,
-            shape: UIModuleShape.rounded,
-            borderRadius: 20,
-            properties: {'width': 1.1},
-          ).toJson(),
-        ],
-      },
-    );
-
     _modules = {
-      dataBarNeutral.id: dataBarNeutral,
-      dataBarAccent.id: dataBarAccent,
-      dataBarCool.id: dataBarCool,
-      surfaceGlass.id: surfaceGlass,
-      surfaceSolid.id: surfaceSolid,
+      dataBar.id: dataBar,
+      surfaceBase.id: surfaceBase,
       surfaceCapsule.id: surfaceCapsule,
       surfaceEllipse.id: surfaceEllipse,
       surfaceOutline.id: surfaceOutline,
-      textDark.id: textDark,
-      textLight.id: textLight,
-      textAccent.id: textAccent,
+      text.id: text,
       buttonLogic.id: buttonLogic,
       inputLogic.id: inputLogic,
       slider.id: slider,
       line.id: line,
-      softGlow.id: softGlow,
-      layeredSurface.id: layeredSurface,
     };
 
-    // 按用户当前阶段要求：默认复合资产清空。
-    // 复合工作台后续只基于基础原材料重新生成通用完型组件。
+    // 默认复合资产清空：复合组件由工作台按需构建。
     _composites = {};
   }
 

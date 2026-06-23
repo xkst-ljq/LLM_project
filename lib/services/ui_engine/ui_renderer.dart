@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -234,7 +234,7 @@ class UIRenderer {
       return ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: container,
         ),
       );
@@ -393,66 +393,6 @@ class UIPrimitiveArtPainter extends CustomPainter {
     for (final layer in layers) {
       _paintLayer(canvas, size, layer);
     }
-
-    final composeMode = properties['composeMode']?.toString();
-    // softBlend 是旧名，保留兼容；当前这套算法本质是“交叠边缘渐变”。
-    if (composeMode == 'edgeBlend' || composeMode == 'softBlend') {
-      _paintEdgeBlendOverlaps(canvas, size, layers);
-    }
-  }
-
-  void _paintEdgeBlendOverlaps(
-    Canvas canvas,
-    Size canvasSize,
-    List<UIPrimitiveLayer> layers,
-  ) {
-    final candidates = layers
-        .where((layer) => _canSoftBlend(layer))
-        .toList(growable: false);
-    if (candidates.length < 2) return;
-
-    for (var i = 0; i < candidates.length; i++) {
-      for (var j = i + 1; j < candidates.length; j++) {
-        final a = candidates[i];
-        final b = candidates[j];
-        final rectA = _layerRect(canvasSize, a);
-        final rectB = _layerRect(canvasSize, b);
-        if (!rectA.overlaps(rectB)) continue;
-        final overlap = rectA.intersect(rectB);
-        if (overlap.width <= 0 || overlap.height <= 0) continue;
-
-        final colorA = a.color.withValues(alpha: a.opacity.clamp(0.0, 1.0).toDouble());
-        final colorB = b.color.withValues(alpha: b.opacity.clamp(0.0, 1.0).toDouble());
-        final centerDelta = rectB.center - rectA.center;
-        final horizontal = centerDelta.dx.abs() >= centerDelta.dy.abs();
-        final begin = horizontal
-            ? (centerDelta.dx >= 0 ? Alignment.centerLeft : Alignment.centerRight)
-            : (centerDelta.dy >= 0 ? Alignment.topCenter : Alignment.bottomCenter);
-        final end = horizontal
-            ? (centerDelta.dx >= 0 ? Alignment.centerRight : Alignment.centerLeft)
-            : (centerDelta.dy >= 0 ? Alignment.bottomCenter : Alignment.topCenter);
-
-        final paint = Paint()
-          ..shader = LinearGradient(
-            begin: begin,
-            end: end,
-            colors: [colorA, Color.lerp(colorA, colorB, 0.5) ?? colorB, colorB],
-            stops: const [0.0, 0.5, 1.0],
-          ).createShader(overlap)
-          ..blendMode = BlendMode.srcOver;
-
-        canvas.save();
-        canvas.clipPath(_shapePath(rectA, a));
-        canvas.clipPath(_shapePath(rectB, b));
-        canvas.drawRect(overlap, paint);
-        canvas.restore();
-      }
-    }
-  }
-
-  bool _canSoftBlend(UIPrimitiveLayer layer) {
-    final kind = layer.kind;
-    return kind == 'surface' || kind == 'highlight';
   }
 
   Rect _layerRect(Size canvasSize, UIPrimitiveLayer layer) {
@@ -485,7 +425,7 @@ class UIPrimitiveArtPainter extends CustomPainter {
       final paint = Paint()
         ..color = color
         ..blendMode = blendMode
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
+        ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, blur);
       _drawShape(canvas, rect, layer, paint);
       return;
     }
@@ -562,7 +502,6 @@ class UIPrimitiveArtPainter extends CustomPainter {
       return;
     }
 
-    // glass 暂时以半透明实色 + 高光描边近似，后续可替换为更完整的材质系统。
     final paint = Paint()
       ..color = color
       ..blendMode = blendMode
@@ -627,29 +566,6 @@ class UIPrimitiveArtPainter extends CustomPainter {
       default:
         return fallback;
     }
-  }
-
-  Path _shapePath(Rect rect, UIPrimitiveLayer layer) {
-    final path = Path();
-    switch (layer.shape) {
-      case UIModuleShape.rectangle:
-        path.addRect(rect);
-        break;
-      case UIModuleShape.circle:
-        path.addOval(rect);
-        break;
-      case UIModuleShape.capsule:
-        path.addRRect(
-          RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
-        );
-        break;
-      case UIModuleShape.rounded:
-        path.addRRect(
-          RRect.fromRectAndRadius(rect, Radius.circular(layer.borderRadius)),
-        );
-        break;
-    }
-    return path;
   }
 
   void _drawShape(Canvas canvas, Rect rect, UIPrimitiveLayer layer, Paint paint) {

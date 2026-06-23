@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,7 +23,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
   final UIAssetService _assetService = UIAssetService();
   final GlobalKey _canvasDropKey = GlobalKey();
   
-  // 独立维护双模式工作台面数据
+  // 历史原子工作台草稿保留用于兼容读取；当前 UI 只使用统一工作台。
   List<UIElement> _atomicWorkspaceElements = [];
   List<UIElement> _compositeWorkspaceElements = [];
   
@@ -34,6 +34,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
   List<LayerScene> _sceneLayers = [LayerScene(id: 0, name: '图层 Level 0')];
   int _activeLayerIndex = 0;
   bool _showLayerManager = false;
+  bool _showConstructionManager = false; // 工作台元素/构造层列表
 
   // 按压瞬间绝对屏幕坐标与初始偏移锚定
   Offset _startTouchScreenPos = Offset.zero;
@@ -54,11 +55,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
   bool _showLeftDrawer = false;  // 左侧基本部件抽屉
   bool _showRightDrawer = false; // 右侧完成资产抽屉
 
-  // 底部工作模式开关 (0: 基础原子部件模式, 1: 复合多重组块模式)
-  int _bottomModeIndex = 0;
-
-  List<UIElement> get _currentElements => 
-      _bottomModeIndex == 0 ? _atomicWorkspaceElements : _compositeWorkspaceElements;
+  // 当前阶段收敛为单一“工作台”。
+  List<UIElement> get _currentElements => _compositeWorkspaceElements;
 
   @override
   void initState() {
@@ -101,46 +99,25 @@ class _UIStudioPageState extends State<UIStudioPage> {
     setState(() {});
   }
 
-  Future<void> _saveWorkspaces() async {
+  Future<void> _saveWorkspaceDraft({bool showMessage = true}) async {
     try {
       _repairSceneLayerData();
 
       final prefs = await SharedPreferences.getInstance();
-      
+
       final layerData = jsonEncode(_sceneLayers.map((e) => e.toJson()).toList());
       await prefs.setString('ui_studio_scene_layers_v4', layerData);
 
+      // 旧原子工作台草稿保留兼容；当前统一工作台使用 composite_workspace。
       final atomicData = jsonEncode(_atomicWorkspaceElements.map((e) => e.toJson()).toList());
       await prefs.setString('ui_studio_atomic_workspace_v4', atomicData);
 
       final compositeData = jsonEncode(_compositeWorkspaceElements.map((e) => e.toJson()).toList());
       await prefs.setString('ui_studio_composite_workspace_v4', compositeData);
-      
-      String savedMessage = '工作台草稿已保存。';
-      if (_bottomModeIndex == 0) {
-        final baked = _bakeAtomicWorkspaceToModule();
-        if (baked != null) {
-          _assetService.addModule(baked);
-          savedMessage = '基础工作台已烘焙为新的基础模组：${baked.name} ✅';
-        } else {
-          savedMessage = '基础工作台草稿已保存；当前没有可烘焙的视觉构造层。';
-        }
-      } else {
-        var count = 0;
-        for (final el in _compositeWorkspaceElements) {
-          if (el.isComposite && el.composite != null) {
-            _assetService.addComposite(el.composite!);
-            count++;
-          }
-        }
-        savedMessage = count > 0
-            ? '复合工作台已保存 $count 个复合组件 ✅'
-            : '复合工作台草稿已保存；当前没有可入库的复合组件。';
-      }
 
-      if (mounted) {
+      if (mounted && showMessage) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(savedMessage), backgroundColor: const Color(0xFF00C853)),
+          const SnackBar(content: Text('工作台草稿已保存 ✅'), backgroundColor: Color(0xFF00C853)),
         );
       }
     } catch (e) {
@@ -151,6 +128,227 @@ class _UIStudioPageState extends State<UIStudioPage> {
       }
     }
   }
+
+  void _showSaveMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final bakeable = _currentElements.where(_isBakeableElement).length;
+        final skipped = _currentElements.length - bakeable;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '保存成果',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF111116)),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '当前工作台元素：${_currentElements.length} 个 · 可烘焙视觉层：$bakeable 个 · 跳过：$skipped 个',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF777783)),
+                ),
+                const SizedBox(height: 14),
+                _buildSaveMenuTile(
+                  icon: Icons.save_alt_rounded,
+                  title: '保存工作台草稿',
+                  subtitle: '只保存当前画布，方便下次继续编辑；不加入资产库。',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _saveWorkspaceDraft();
+                  },
+                ),
+                _buildSaveMenuTile(
+                  icon: Icons.dashboard_customize_rounded,
+                  title: '保存为复合组件',
+                  subtitle: '把当前画布元素保存为一个通用组件，子元素运行时仍独立存在。',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _saveCurrentWorkspaceAsComposite();
+                  },
+                ),
+                _buildSaveMenuTile(
+                  icon: Icons.layers_clear_rounded,
+                  title: '烘焙为面原子',
+                  subtitle: '只合成可烘焙视觉层，文本/数据/交互热区会被跳过。',
+                  onTap: bakeable == 0
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          _bakeCurrentWorkspaceAsAtom();
+                        },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSaveMenuTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+  }) {
+    final enabled = onTap != null;
+    return Card(
+      elevation: 0,
+      color: enabled ? const Color(0xFFF6F6F9) : const Color(0xFFE9E9EF),
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        enabled: enabled,
+        leading: Icon(icon, color: enabled ? const Color(0xFFFF4081) : const Color(0xFFAAAAB4)),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF777783))),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  Rect? _currentWorkspaceBounds({bool onlyBakeable = false}) {
+    final elements = onlyBakeable
+        ? _currentElements.where(_isBakeableElement).toList()
+        : _currentElements.toList();
+    if (elements.isEmpty) return null;
+
+    var bounds = Rect.fromLTWH(
+      elements.first.offset.dx,
+      elements.first.offset.dy,
+      elements.first.size.width,
+      elements.first.size.height,
+    );
+    for (final el in elements.skip(1)) {
+      bounds = bounds.expandToInclude(Rect.fromLTWH(
+        el.offset.dx,
+        el.offset.dy,
+        el.size.width,
+        el.size.height,
+      ));
+    }
+    return bounds.width > 0 && bounds.height > 0 ? bounds : null;
+  }
+
+  Future<String?> _askAssetName({
+    required String title,
+    required String initialValue,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            style: const TextStyle(color: Color(0xFF111116)),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: const Color(0xFFF2F2F6),
+              hintText: initialValue,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消', style: TextStyle(color: Color(0xFF888896))),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('保存', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+    // 注意：不要在 showDialog 返回后立刻 dispose 这个局部 controller。
+    // 在部分 Android/Flutter 版本中，弹窗关闭和键盘/Overlay 退场动画期间
+    // TextField 仍可能触发一次 rebuild，过早 dispose 会导致
+    // “A TextEditingController was used after being disposed”。
+    // 这里是短生命周期命名弹窗，保留给 GC 回收更安全。
+    final name = result?.trim();
+    if (name == null || name.isEmpty) return null;
+    return name;
+  }
+
+  Future<void> _saveCurrentWorkspaceAsComposite() async {
+    if (_currentElements.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前工作台没有可保存的元素。'), backgroundColor: Color(0xFFFF8F00)),
+      );
+      return;
+    }
+
+    final assetName = await _askAssetName(title: '保存为复合组件', initialValue: '未命名复合组件');
+    if (assetName == null) return;
+
+    final bounds = _currentWorkspaceBounds();
+    if (bounds == null) return;
+
+    final children = _currentElements.map((el) {
+      return el.copyWith(
+        offset: Offset(el.offset.dx - bounds.left, el.offset.dy - bounds.top),
+      );
+    }).toList();
+
+    final composite = UIComposite(
+      id: 'custom_comp_${DateTime.now().millisecondsSinceEpoch}',
+      name: assetName,
+      layoutType: 'base_box',
+      color: Colors.transparent,
+      opacity: 0.0,
+      children: children,
+    );
+
+    await _saveWorkspaceDraft(showMessage: false);
+    _assetService.addComposite(composite);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已保存为复合组件：$assetName ✅'), backgroundColor: const Color(0xFF00C853)),
+      );
+    }
+  }
+
+  Future<void> _bakeCurrentWorkspaceAsAtom() async {
+    if (_bakeAtomicWorkspaceToModule() == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有可烘焙的视觉层。'), backgroundColor: Color(0xFFFF8F00)),
+      );
+      return;
+    }
+
+    final assetName = await _askAssetName(title: '烘焙为面原子', initialValue: '面原子 / 自定义');
+    if (assetName == null) return;
+    final baked = _bakeAtomicWorkspaceToModule(name: assetName);
+    if (baked == null) return;
+
+    await _saveWorkspaceDraft(showMessage: false);
+    _assetService.addModule(baked);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已烘焙为面原子：${baked.name} ✅'), backgroundColor: const Color(0xFF00C853)),
+      );
+    }
+  }
+
 
   bool _isBakeableElement(UIElement el) {
     final type = el.module?.type;
@@ -167,9 +365,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
     final type = el.module?.type ?? (el.isComposite ? 'composite' : 'unknown');
     switch (type) {
       case 'surface':
-        return '面 / 简单';
+        return '面';
       case 'surface_art':
-        return '面 / 高级';
+        return '面';
       case 'light_effect':
         return '光效';
       case 'primitive_art':
@@ -195,12 +393,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   void _moveAtomicConstructionLayer(String id, int delta) {
     setState(() {
-      final index = _atomicWorkspaceElements.indexWhere((e) => e.id == id);
+      final index = _currentElements.indexWhere((e) => e.id == id);
       if (index == -1) return;
-      final target = (index + delta).clamp(0, _atomicWorkspaceElements.length - 1);
+      final target = (index + delta).clamp(0, _currentElements.length - 1);
       if (target == index) return;
-      final el = _atomicWorkspaceElements.removeAt(index);
-      _atomicWorkspaceElements.insert(target, el);
+      final el = _currentElements.removeAt(index);
+      _currentElements.insert(target, el);
     });
   }
 
@@ -258,12 +456,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return props;
   }
 
-  UIModule? _bakeAtomicWorkspaceToModule() {
+  UIModule? _bakeAtomicWorkspaceToModule({String name = '面原子 / 自定义'}) {
     final order = <String, int>{};
-    for (var i = 0; i < _atomicWorkspaceElements.length; i++) {
-      order[_atomicWorkspaceElements[i].id] = i;
+    for (var i = 0; i < _currentElements.length; i++) {
+      order[_currentElements[i].id] = i;
     }
-    final elements = _atomicWorkspaceElements
+    final elements = _currentElements
         .where((e) => !e.isComposite && e.module != null)
         .toList()
       ..sort((a, b) {
@@ -301,14 +499,13 @@ class _UIStudioPageState extends State<UIStudioPage> {
     final id = 'custom_atom_${DateTime.now().millisecondsSinceEpoch}';
     return UIModule(
       id: id,
-      name: '面原子 / 自定义基础模组',
+      name: name,
       type: 'surface_art',
       color: Colors.white,
       material: UIModuleMaterial.solid,
       shape: UIModuleShape.rectangle,
       properties: {
         'source': 'basic_workbench_bake',
-        'composeMode': 'edgeBlend',
         'defaultWidth': bounds.width,
         'defaultHeight': bounds.height,
         'layers': layers.map((e) => e.toJson()).toList(),
@@ -513,7 +710,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
         composite: module.type == 'base_box'
             ? UIComposite(
                 id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
-                name: '复合多重边界框',
+                name: '容器边界框',
                 layoutType: 'base_box',
                 children: [],
                 color: const Color(0xFFECEFF1),
@@ -524,11 +721,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
         layerIndex: _activeLayerIndex,
       );
 
-      if (_bottomModeIndex == 0) {
-        _atomicWorkspaceElements.add(newElement);
-      } else {
-        _compositeWorkspaceElements.add(newElement);
-      }
+      _compositeWorkspaceElements.add(newElement);
 
       _selectedTransformationId = newElement.id;
       _transformHandleRotateMode = false;
@@ -537,6 +730,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       _showLeftDrawer = false;
       _showRightDrawer = false;
       _showLayerManager = false;
+      _showConstructionManager = false;
     });
   }
 
@@ -594,11 +788,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   void _deleteElement(String id) {
     setState(() {
-      if (_bottomModeIndex == 0) {
-        _atomicWorkspaceElements.removeWhere((e) => e.id == id);
-      } else {
-        _compositeWorkspaceElements.removeWhere((e) => e.id == id);
-      }
+      _compositeWorkspaceElements.removeWhere((e) => e.id == id);
       if (_selectedTransformationId == id) {
         _selectedTransformationId = null;
         _transformHandleRotateMode = false;
@@ -642,10 +832,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
     }
 
     Map<String, dynamic> props = Map.from(!isComp ? (el.module?.properties ?? {}) : {});
-    String composeMode = props['composeMode']?.toString() ??
-        ((el.module?.type == 'surface' || el.module?.type == 'base_box') ? 'edgeBlend' : 'normal');
-    if (composeMode == 'softBlend') composeMode = 'edgeBlend'; // 旧名兼容
-    if (composeMode != 'normal' && composeMode != 'edgeBlend') composeMode = 'normal';
     String textProp = props['text']?.toString() ?? '';
     String labelProp = props['label']?.toString() ?? props['variable']?.toString() ?? '';
     double maxProp = (props['max'] ?? 100.0).toDouble();
@@ -689,7 +875,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ),
                     const SizedBox(height: 16),
 
-                    const Text('模块所属独立 Z 轴图层 (同层避碰阻止重叠，跨层覆盖)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    const Text('模块所属独立 Z 轴图层（控制大层级显示顺序）', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
                       initialValue: selectedLayer,
@@ -756,25 +942,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       const SizedBox(height: 16),
                     ],
 
-                    if (!isComp && ['surface', 'base_box', 'surface_art', 'primitive_art', 'light_effect'].contains(el.module?.type)) ...[
-                      const Text('融合模式', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<String>(
-                        initialValue: composeMode,
-                        decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                        dropdownColor: Colors.white,
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
-                        items: const [
-                          DropdownMenuItem(value: 'normal', child: Text('普通覆盖')),
-                          DropdownMenuItem(value: 'edgeBlend', child: Text('交叠渐变 edgeBlend')),
-                        ],
-                        onChanged: (v) => setDialogState(() => composeMode = v ?? 'normal'),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text('说明：edgeBlend 会在视觉层交集区域生成渐变过渡；它不是最终液态融合，只是一种可保留的边缘融合风格。', style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25)),
-                      const SizedBox(height: 16),
-                    ],
-
                     const Text('外观调色板', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 8),
                     Wrap(
@@ -814,7 +981,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       activeColor: const Color(0xFFFF4081),
                       onChanged: (v) => setDialogState(() => opacity = v),
                     ),
-                    const Text('提示：普通模块之间不会自动“求交集融合”，需要通过透明度或基础构造层的 blendMode 形成融合效果。', style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25)),
+                    const Text('提示：当前不再提供自动重叠融合；如需柔和过渡，请通过透明度或颜色渐变设计实现。', style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25)),
                     const SizedBox(height: 16),
 
                     Row(
@@ -892,9 +1059,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           }
                           updatedProps['max'] = maxProp;
                           updatedProps['current'] = curProp;
-                          if (['surface', 'base_box', 'surface_art', 'primitive_art', 'light_effect'].contains(el.module!.type)) {
-                            updatedProps['composeMode'] = composeMode;
-                          }
                           updatedProps = _syncArtModuleProperties(
                             module: el.module!,
                             props: updatedProps,
@@ -959,7 +1123,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
         if (layer != 0) return layer;
         return (elementOrder[a.id] ?? 0).compareTo(elementOrder[b.id] ?? 0);
       });
-    final double rightDrawerWidth = _bottomModeIndex == 0 ? 230.0 : 160.0;
+    const double rightDrawerWidth = 160.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F6F9),
@@ -1005,19 +1169,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
                             );
                           }),
 
-                          // 基础工作台实时交叠渐变预览：不改变元素层级，只在重叠区域叠加渐变过渡。
-                          if (_bottomModeIndex == 0)
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: CustomPaint(
-                                  painter: StudioEdgeBlendOverlayPainter(
-                                    elements: sortedElements,
-                                    workspaceOffset: _workspaceOffset,
-                                  ),
-                                ),
-                              ),
-                            ),
-
                           // 当前编辑层辅助层：只把“层号角标 + 细白灰虚线边界”置顶，
                           // 不改变模块本体层级，避免破坏真实预览。
                           ...sortedElements
@@ -1061,39 +1212,48 @@ class _UIStudioPageState extends State<UIStudioPage> {
             ),
           ),
 
-          // 3. 右上角：一键保存成果
+          // 右上角：图层管理
           Positioned(
             top: MediaQuery.of(context).padding.top + 16,
             right: 16,
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFFF4081),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                elevation: 4,
-              ),
-              icon: const Icon(Icons.save_rounded, size: 18),
-              label: const Text('保存成果', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              onPressed: _saveWorkspaces,
-            ),
-          ),
-
-          // 4. 【📑图层管理】专属按键：精准部署在保存按键的正下方 (`top: 68`)！
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 68,
-            right: 16,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF00E5FF),
+                backgroundColor: Colors.white.withValues(alpha: 0.92),
                 foregroundColor: const Color(0xFF111116),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 elevation: 4,
               ),
               icon: const Icon(Icons.layers_rounded, size: 18),
               label: Text('图层 (Level $_activeLayerIndex)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              onPressed: () => setState(() => _showLayerManager = true),
+              onPressed: () => setState(() { _showLayerManager = true; _showConstructionManager = false; _showRightDrawer = false; }),
+            ),
+          ),
+
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 68,
+            right: 16,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.92),
+                foregroundColor: const Color(0xFF111116),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                elevation: 4,
+              ),
+              icon: const Icon(Icons.view_list_rounded, size: 18),
+              label: const Text('构造层', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              onPressed: () => setState(() {
+                _showConstructionManager = true;
+                _showLayerManager = false;
+                _showRightDrawer = false;
+              }),
             ),
           ),
 
@@ -1137,7 +1297,16 @@ class _UIStudioPageState extends State<UIStudioPage> {
             child: _buildDedicatedLayerManagerDrawer(),
           ),
 
-          // 6. 左侧基础部件抽屉
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+            right: _showConstructionManager ? 0 : -260,
+            top: 120, bottom: 120,
+            width: 240,
+            child: _buildAtomicConstructionDrawer(),
+          ),
+
+          // 6. 左侧原材料抽屉
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOut,
@@ -1156,11 +1325,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFF4081).withValues(alpha: 0.9),
+                    color: Colors.white.withValues(alpha: 0.92),
                     borderRadius: const BorderRadius.only(topRight: Radius.circular(14), bottomRight: Radius.circular(14)),
-                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                    border: Border.all(color: Colors.black12),
+                    boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
                   ),
-                  child: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white),
+                  child: const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF111116)),
                 ),
               ),
             ),
@@ -1175,7 +1345,25 @@ class _UIStudioPageState extends State<UIStudioPage> {
             child: _buildRightCompletedAssetsDrawer(),
           ),
 
-          if (!_showRightDrawer && !_showLayerManager)
+          Positioned(
+            right: 16,
+            bottom: MediaQuery.of(context).padding.bottom + 24,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFF4081),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                elevation: 8,
+                shadowColor: Colors.black.withValues(alpha: 0.22),
+              ),
+              icon: const Icon(Icons.save_rounded, size: 20),
+              label: const Text('保存', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              onPressed: _showSaveMenu,
+            ),
+          ),
+
+          if (!_showRightDrawer && !_showLayerManager && !_showConstructionManager)
             Positioned(
               right: 0,
               top: MediaQuery.of(context).size.height / 2 - 24,
@@ -1184,28 +1372,17 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withValues(alpha: 0.9),
+                    color: Colors.white.withValues(alpha: 0.92),
                     borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), bottomLeft: Radius.circular(14)),
-                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                    border: Border.all(color: Colors.black12),
+                    boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
                   ),
                   child: const Icon(Icons.arrow_back_ios, size: 14, color: Color(0xFF111116)),
                 ),
               ),
             ),
 
-          // 8. 底部正中央模式轮盘
-          Positioned(
-            bottom: 24,
-            left: 0, right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildBottomPinkModeButton('原子部件创作台', 0),
-                const SizedBox(width: 16),
-                _buildBottomPinkModeButton('复合多重拼装台', 1),
-              ],
-            ),
-          ),
+
         ],
       ),
     );
@@ -1222,7 +1399,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: ClipRRect(
         borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1290,26 +1467,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
-  Widget _buildBottomPinkModeButton(String label, int modeIndex) {
-    final bool isSel = _bottomModeIndex == modeIndex;
-    return GestureDetector(
-      onTap: () => setState(() {
-        _bottomModeIndex = modeIndex;
-        _selectedTransformationId = null;
-      }),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSel ? const Color(0xFFFF4081) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: (isSel ? const Color(0xFFFF4081) : Colors.black).withValues(alpha: isSel ? 0.4 : 0.05), blurRadius: 10, offset: const Offset(0, 4))],
-          border: Border.all(color: isSel ? const Color(0xFFFF4081) : Colors.black.withValues(alpha: 0.05), width: 1.5),
-        ),
-        child: Text(label, style: TextStyle(color: isSel ? Colors.white : const Color(0xFF555562), fontWeight: FontWeight.bold, fontSize: 13)),
-      ),
-    );
-  }
 
   Widget _buildLeftCompactAssetPreviewDrawer() {
     return Container(
@@ -1322,7 +1479,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: ClipRRect(
         borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1331,7 +1488,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('基础预览', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text('原材料', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
                     InkWell(
                       borderRadius: BorderRadius.circular(8),
                       onTap: () => setState(() => _showLeftDrawer = false),
@@ -1350,20 +1507,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   children: [
-                    if (_bottomModeIndex == 1) ...[
-                      const Text('复合基本边界框', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                      const SizedBox(height: 4),
-                      _buildPreviewDraggableCard(
-                        UIModule(id: 'box', name: '基本边界框', type: 'base_box', properties: {}, color: Colors.cyan),
-                        Container(height: 50, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00ACC1), width: 1.5, style: BorderStyle.none), borderRadius: BorderRadius.circular(8), color: const Color(0xFF00ACC1).withValues(alpha: 0.08)), child: const Center(child: Text('📦 拖出边界框', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 11, fontWeight: FontWeight.bold)))),
-                      ),
-                      const Divider(color: Colors.black12),
-                    ],
-
-                    const Text('纯进度条原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('容器边界框', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'prog', name: '进度条原子', type: 'progress', properties: {'min': 0, 'max': 100, 'current': 75}, color: const Color(0xFFFF4081)),
+                      UIModule(id: 'box', name: '容器边界框', type: 'base_box', properties: {}, color: Colors.cyan),
+                      Container(height: 50, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: const Color(0xFF00ACC1).withValues(alpha: 0.08)), child: const Center(child: Text('📦 拖出边界框', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 11, fontWeight: FontWeight.bold)))),
+                    ),
+                    const Divider(color: Colors.black12),
+
+                    const Text('数据条原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(id: 'prog', name: '数据条原子', type: 'progress', properties: {'min': 0, 'max': 100, 'current': 75}, color: const Color(0xFFFF4081)),
                       Container(
                         height: 28,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
@@ -1377,7 +1532,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('面原子 / 简单面预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('面原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
                       UIModule(id: 'surface', name: '面原子 / 胶囊', type: 'surface', properties: {}, color: const Color(0xFF651FFF), material: UIModuleMaterial.gradient, shape: UIModuleShape.capsule),
@@ -1385,26 +1540,26 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('按钮逻辑区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('点击热区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'btn', name: '按钮点击逻辑区', type: 'button', properties: {'action': 'tap'}, color: Colors.transparent),
-                      Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFFFF4081), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('透明点击热区', style: TextStyle(color: Color(0xFFFF4081), fontSize: 10, fontWeight: FontWeight.bold))),
+                      UIModule(id: 'btn', name: '点击热区原子', type: 'button', properties: {'action': 'tap'}, color: Colors.transparent),
+                      Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFFFF4081), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('点击热区', style: TextStyle(color: Color(0xFFFF4081), fontSize: 10, fontWeight: FontWeight.bold))),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('纯文本原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('文本原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'txt', name: '文本原子', type: 'text', properties: {'text': '传奇勇者标签'}, color: const Color(0xFF00B0FF)),
-                      const SizedBox(height: 30, child: Center(child: Text('传奇勇者标签', style: TextStyle(color: Color(0xFF00B0FF), fontSize: 12, fontWeight: FontWeight.bold)))),
+                      UIModule(id: 'txt', name: '文本原子', type: 'text', properties: {'text': '文本'}, color: const Color(0xFF00B0FF)),
+                      const SizedBox(height: 30, child: Center(child: Text('文本', style: TextStyle(color: Color(0xFF00B0FF), fontSize: 12, fontWeight: FontWeight.bold)))),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('通用滑块原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('滑块原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'slider', name: '通用滑块原子', type: 'slider', properties: {'min': 0, 'max': 100, 'current': 50}, color: const Color(0xFF00ACC1)),
+                      UIModule(id: 'slider', name: '滑块原子', type: 'slider', properties: {'min': 0, 'max': 100, 'current': 50}, color: const Color(0xFF00ACC1)),
                       SizedBox(
                         height: 34,
                         child: Stack(
@@ -1419,36 +1574,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('光效原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text('输入热区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'light', name: '柔光块原子', type: 'light_effect', color: const Color(0xFF7C4DFF),
-                        properties: {'layers': [UIPrimitiveLayer(id: 'g', kind: 'glow', offset: const Offset(0.08, 0.08), size: const Size(0.84, 0.84), color: const Color(0xFF7C4DFF), opacity: 0.45, shape: UIModuleShape.circle, properties: {'blur': 20}).toJson()]},
-                      ),
-                      Container(height: 42, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF7C4DFF).withValues(alpha: 0.28), boxShadow: [BoxShadow(color: const Color(0xFF7C4DFF).withValues(alpha: 0.45), blurRadius: 18)])),
-                    ),
-
-                    const SizedBox(height: 10),
-                    const Text('面原子 / 高级面预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'surface_art', name: '面原子 / 高光玻璃', type: 'surface_art', color: Colors.white,
-                        properties: {'layers': [
-                          UIPrimitiveLayer(id: 'base', kind: 'surface', offset: Offset.zero, size: const Size(1, 1), color: const Color(0xFF651FFF), opacity: 0.70, shape: UIModuleShape.rounded, borderRadius: 18).toJson(),
-                          UIPrimitiveLayer(id: 'hi', kind: 'highlight', offset: const Offset(0.06, 0.05), size: const Size(0.88, 0.38), color: Colors.white, opacity: 0.42, shape: UIModuleShape.rounded, borderRadius: 16).toJson(),
-                        ]},
-                      ),
-                      Container(height: 42, decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), gradient: LinearGradient(colors: [const Color(0xFF651FFF).withValues(alpha: 0.75), const Color(0xFF651FFF).withValues(alpha: 0.45)]))),
-                    ),
-
-                    const SizedBox(height: 10),
-                    const Text('输入逻辑区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(id: 'inp', name: '输入触发逻辑区', type: 'input', properties: {'variable': 'var.input'}, color: Colors.transparent),
-                      Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00ACC1), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('透明输入热区', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 10, fontWeight: FontWeight.bold))),
+                      UIModule(id: 'inp', name: '输入热区原子', type: 'input', properties: {'variable': 'var.input'}, color: Colors.transparent),
+                      Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00ACC1), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('输入热区', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 10, fontWeight: FontWeight.bold))),
                     ),
                   ],
                 ),
@@ -1495,8 +1625,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
 
   Widget _buildAtomicConstructionDrawer() {
-    final bakeable = _atomicWorkspaceElements.where(_isBakeableElement).length;
-    final total = _atomicWorkspaceElements.length;
+    final bakeable = _currentElements.where(_isBakeableElement).length;
+    final total = _currentElements.length;
     final notBakeable = total - bakeable;
 
     return Container(
@@ -1509,7 +1639,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: ClipRRect(
         borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1520,7 +1650,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   children: [
                     InkWell(
                       borderRadius: BorderRadius.circular(8),
-                      onTap: () => setState(() => _showRightDrawer = false),
+                      onTap: () => setState(() => _showConstructionManager = false),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -1535,7 +1665,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         ),
                       ),
                     ),
-                    const Text('基础构造层', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text('元素列表', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
                   ],
                 ),
               ),
@@ -1561,18 +1691,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                 child: Text(
-                  '基础工作台会把可烘焙视觉层合成为一个新的基础模组；文本/数据/交互层暂不参与。',
+                  '可将视觉层烘焙为新的面原子；文本/数据/交互层暂不参与烘焙。',
                   style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25),
                 ),
               ),
               const Divider(color: Colors.black12),
               Expanded(
-                child: _atomicWorkspaceElements.isEmpty
+                child: _currentElements.isEmpty
                     ? const Center(
                         child: Padding(
                           padding: EdgeInsets.all(18.0),
                           child: Text(
-                            '还没有构造层。\n从左侧拖入面、光效等原材料。',
+                            '还没有构造层。\n从左侧拖入面、数据条、文本等原材料。',
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
                           ),
@@ -1580,9 +1710,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        itemCount: _atomicWorkspaceElements.length,
+                        itemCount: _currentElements.length,
                         itemBuilder: (context, index) {
-                          final el = _atomicWorkspaceElements[index];
+                          final el = _currentElements[index];
                           final selected = _selectedTransformationId == el.id;
                           final bake = _isBakeableElement(el);
                           final name = el.module?.name ?? el.composite?.name ?? '未命名层';
@@ -1682,8 +1812,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
   }
 
   Widget _buildRightCompletedAssetsDrawer() {
-    if (_bottomModeIndex == 0) return _buildAtomicConstructionDrawer();
-
     final modules = _assetService.getAllModules();
 
     return Container(
@@ -1696,7 +1824,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: ClipRRect(
         borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1945,146 +2073,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
         ),
       ],
     );
-  }
-}
-
-/// 当前的实时融合预览采用 edgeBlend（交叠边缘渐变）算法。
-/// 它会保留一定边缘感，适合做有美术风格的彩色块交叠；
-/// 后续真正的 softUnion / 液态融合会作为另一种 composeMode 实现。
-class StudioEdgeBlendOverlayPainter extends CustomPainter {
-  final List<UIElement> elements;
-  final Offset workspaceOffset;
-
-  StudioEdgeBlendOverlayPainter({
-    required this.elements,
-    required this.workspaceOffset,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final candidates = elements
-        .where((e) => _canBlend(e))
-        .toList(growable: false);
-    if (candidates.length < 2) return;
-
-    for (var i = 0; i < candidates.length; i++) {
-      for (var j = i + 1; j < candidates.length; j++) {
-        final a = candidates[i];
-        final b = candidates[j];
-        final rectA = _screenRect(a);
-        final rectB = _screenRect(b);
-        if (!rectA.overlaps(rectB)) continue;
-        final overlap = rectA.intersect(rectB);
-        if (overlap.width <= 0 || overlap.height <= 0) continue;
-
-        final modA = a.module!;
-        final modB = b.module!;
-        final colorA = _blendColorFor(a);
-        final colorB = _blendColorFor(b);
-        final centerDelta = rectB.center - rectA.center;
-        final horizontal = centerDelta.dx.abs() >= centerDelta.dy.abs();
-        final begin = horizontal
-            ? (centerDelta.dx >= 0 ? Alignment.centerLeft : Alignment.centerRight)
-            : (centerDelta.dy >= 0 ? Alignment.topCenter : Alignment.bottomCenter);
-        final end = horizontal
-            ? (centerDelta.dx >= 0 ? Alignment.centerRight : Alignment.centerLeft)
-            : (centerDelta.dy >= 0 ? Alignment.bottomCenter : Alignment.topCenter);
-
-        final paint = Paint()
-          ..shader = LinearGradient(
-            begin: begin,
-            end: end,
-            colors: [colorA, Color.lerp(colorA, colorB, 0.5) ?? colorB, colorB],
-            stops: const [0.0, 0.5, 1.0],
-          ).createShader(overlap);
-
-        canvas.save();
-        canvas.clipPath(_shapePath(rectA, modA));
-        canvas.clipPath(_shapePath(rectB, modB));
-        canvas.drawRect(overlap, paint);
-        canvas.restore();
-      }
-    }
-  }
-
-  bool _canBlend(UIElement e) {
-    final module = e.module;
-    final type = module?.type;
-    if (e.isComposite || module == null) return false;
-    if (type != 'surface' && type != 'base_box' && type != 'surface_art') return false;
-    return _composeModeOf(module) == 'edgeBlend';
-  }
-
-  String _composeModeOf(UIModule module) {
-    var mode = module.properties['composeMode']?.toString();
-    if (mode == 'softBlend') mode = 'edgeBlend';
-    if (mode == null && (module.type == 'surface' || module.type == 'base_box')) {
-      return 'edgeBlend';
-    }
-    return mode == 'edgeBlend' ? 'edgeBlend' : 'normal';
-  }
-
-  Color _blendColorFor(UIElement e) {
-    final module = e.module!;
-    final firstSurface = _firstSurfaceLayer(module);
-    if (firstSurface != null) {
-      final alpha = (firstSurface.opacity * module.opacity).clamp(0.0, 1.0).toDouble();
-      return firstSurface.color.withValues(alpha: alpha);
-    }
-    return module.color.withValues(alpha: module.opacity.clamp(0.0, 1.0).toDouble());
-  }
-
-  UIPrimitiveLayer? _firstSurfaceLayer(UIModule module) {
-    final rawLayers = module.properties['layers'];
-    if (rawLayers is! List) return null;
-    for (final raw in rawLayers) {
-      if (raw is Map) {
-        final layer = UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw));
-        if (layer.kind == 'surface' || layer.kind == 'glow') return layer;
-      }
-    }
-    return null;
-  }
-
-  Rect _screenRect(UIElement e) {
-    return Rect.fromLTWH(
-      workspaceOffset.dx + e.offset.dx,
-      workspaceOffset.dy + e.offset.dy,
-      e.size.width,
-      e.size.height,
-    );
-  }
-
-  Path _shapePath(Rect rect, UIModule module) {
-    final path = Path();
-    final surfaceLayer = _firstSurfaceLayer(module);
-    final shape = surfaceLayer?.shape ?? module.shape;
-    final radius = surfaceLayer?.borderRadius ?? module.borderRadius;
-    switch (shape) {
-      case UIModuleShape.rectangle:
-        path.addRect(rect);
-        break;
-      case UIModuleShape.circle:
-        path.addOval(rect);
-        break;
-      case UIModuleShape.capsule:
-        path.addRRect(
-          RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
-        );
-        break;
-      case UIModuleShape.rounded:
-        path.addRRect(
-          RRect.fromRectAndRadius(rect, Radius.circular(radius)),
-        );
-        break;
-    }
-    return path;
-  }
-
-  @override
-  bool shouldRepaint(covariant StudioEdgeBlendOverlayPainter oldDelegate) {
-    return oldDelegate.elements != elements ||
-        oldDelegate.workspaceOffset != workspaceOffset;
   }
 }
 
