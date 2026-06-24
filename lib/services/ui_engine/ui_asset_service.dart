@@ -178,6 +178,11 @@ class UIAssetService {
   UIModule? getModule(String id) => _modules[id];
   List<UIModule> getAllModules() => _modules.values.toList();
 
+  void removeModule(String id) {
+    _modules.remove(id);
+    saveAssets();
+  }
+
   // --- 组合块操作 ---
   void addComposite(UIComposite composite) {
     _composites[composite.id] = composite;
@@ -186,4 +191,9 @@ class UIAssetService {
 
   UIComposite? getComposite(String id) => _composites[id];
   List<UIComposite> getAllComposites() => _composites.values.toList();
+
+  void removeComposite(String id) {
+    _composites.remove(id);
+    saveAssets();
+  }
 }

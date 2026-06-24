@@ -705,14 +705,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return const Size(150, 68);
   }
 
-  void _addElement(UIModule module) {
-    final len = _currentElements.length;
-    // 点击生成仍保留：生成在视野安全中心区。
-    final dx = 180.0 + (len * 35) % 200 - _workspaceOffset.dx;
-    final dy = 140.0 + (len * 25) % 200 - _workspaceOffset.dy;
-    _addElementAt(module, Offset(dx, dy));
-  }
-
   // 从资产区拖到画布时使用：canvasOffset 是工作台坐标系下的左上角位置。
   void _addElementAt(UIModule module, Offset canvasOffset) {
     setState(() {
@@ -788,32 +780,55 @@ class _UIStudioPageState extends State<UIStudioPage> {
   // 从资产库拖出一个已保存的复合组件到画布。
   void _addCompositeAt(UIComposite composite, Offset canvasOffset) {
     setState(() {
-      final bounds = _compositeBoundsRect(composite);
-      final initialSize = (bounds.width > 0 && bounds.height > 0)
-          ? Size(bounds.width, bounds.height)
-          : const Size(200, 120);
+      if (composite.children.length == 1) {
+        // 单子元素：保持复合组件形式，旋转提升到元素层级。
+        final child = composite.children.first;
+        final newElement = UIElement(
+          id: 'el_${DateTime.now().millisecondsSinceEpoch}',
+          isComposite: true,
+          module: null,
+          composite: composite.copyWith(
+            children: [child.copyWith(rotation: 0.0)],
+          ),
+          offset: canvasOffset,
+          size: child.size,
+          rotation: child.rotation,
+          layerIndex: _activeLayerIndex,
+        );
+        _compositeWorkspaceElements.add(newElement);
+        _selectedTransformationId = newElement.id;
+      } else {
+        // 多子元素：展开为各自独立的画布元素，不做大框包裹。
+        // 每个子元素按原始相对位置落在画布上，保持独立可选/可编辑。
+        final baseTime = DateTime.now().millisecondsSinceEpoch;
+        String? lastId;
+        for (var i = 0; i < composite.children.length; i++) {
+          final child = composite.children[i];
+          final elOffset = Offset(
+            canvasOffset.dx + child.offset.dx,
+            canvasOffset.dy + child.offset.dy,
+          );
+          final newElement = UIElement(
+            id: 'el_${baseTime}_$i',
+            isComposite: child.isComposite,
+            module: child.module?.copyWith(),
+            composite: child.composite?.copyWith(
+                    children: child.composite!.children
+                        .map((c) => c.copyWith())
+                        .toList(),
+                  ),
+            offset: elOffset,
+            size: child.size,
+            rotation: child.rotation,
+            layerIndex: _activeLayerIndex,
+          );
+          _compositeWorkspaceElements.add(newElement);
+          lastId = newElement.id;
+        }
+        _selectedTransformationId = lastId;
+      }
 
-      // 子元素 offset 平移到外接矩形左上角，使内容从 (0,0) 开始。
-      // 这样 Stack(0,0)-(w,h) 正好对齐内容范围，边框不再错位。
-      final adjustedChildren = composite.children.map((c) => c.copyWith(
-        offset: Offset(c.offset.dx - bounds.left, c.offset.dy - bounds.top),
-      )).toList();
-
-      final newElement = UIElement(
-        id: 'el_${DateTime.now().millisecondsSinceEpoch}',
-        isComposite: true,
-        module: null,
-        composite: composite.copyWith(children: adjustedChildren),
-        offset: canvasOffset,
-        size: initialSize,
-        layerIndex: _activeLayerIndex,
-      );
-
-      _compositeWorkspaceElements.add(newElement);
-
-      _selectedTransformationId = newElement.id;
       _transformHandleRotateMode = false;
-
       _showLeftDrawer = false;
       _showRightDrawer = false;
       _showLayerManager = false;
@@ -838,11 +853,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   Size _maxElementSize(UIElement el) => const Size(4000, 4000);
 
-  UIModuleShape _outlineShapeOf(UIElement el) {
+  UIModuleShape _outlineShapeOf(UIElement el, [int depth = 0]) {
     // 单子元素复合组件：继承子元素的边框形状，避免圆角矩形框住胶囊/圆形。
     if (el.isComposite && el.composite != null) {
-      if (el.composite!.children.length == 1) {
-        return _outlineShapeOf(el.composite!.children.first);
+      if (el.composite!.children.length == 1 && depth < 8) {
+        return _outlineShapeOf(el.composite!.children.first, depth + 1);
       }
       return UIModuleShape.rounded;
     }
@@ -858,10 +873,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return module.shape;
   }
 
-  double _outlineBorderRadiusOf(UIElement el) {
+  double _outlineBorderRadiusOf(UIElement el, [int depth = 0]) {
     if (el.isComposite && el.composite != null) {
-      if (el.composite!.children.length == 1) {
-        return _outlineBorderRadiusOf(el.composite!.children.first);
+      if (el.composite!.children.length == 1 && depth < 8) {
+        return _outlineBorderRadiusOf(el.composite!.children.first, depth + 1);
       }
       return 12;
     }
@@ -910,7 +925,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
       final list = _currentElements;
       final index = list.indexWhere((e) => e.id == id);
       if (index == -1) return;
-      list[index] = list[index].copyWith(rotation: rotation);
+      // 归一到 (-180, 180]，避免长期旋转后数值无限增大（渲染无影响但持久化更干净）。
+      final normalized =
+          ((rotation + 180) % 360 + 360) % 360 - 180;
+      list[index] = list[index].copyWith(rotation: normalized);
     });
   }
 
@@ -1341,7 +1359,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          // 真实模块层：直接换算为屏幕坐标，避免超大 Transform 画布造成 hitTest 坐标落在 Stack 尺寸外。
+                          // 元素层：Positioned 用旋转后的轴对齐外接矩形(AABB)作为命中区域。
+                          // 如果只给原始尺寸，旋转后把手会移出框外导致断触。
                           ...sortedElements.map((el) {
                             final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
                             return Positioned(
@@ -1350,22 +1369,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
                               width: el.size.width + p * 2,
                               height: el.size.height + p * 2,
                               child: _buildTrueSingleHandleNode(el, p),
-                            );
-                          }),
-
-                          // 当前编辑层辅助层：只把“层号角标 + 细白灰虚线边界”置顶，
-                          // 不改变模块本体层级，避免破坏真实预览。
-                          ...sortedElements
-                              .where((el) => el.layerIndex == _activeLayerIndex)
-                              .map((el) {
-                            final bool selected = el.id == _selectedTransformationId;
-                            return Positioned(
-                              // 辅助层不再外扩覆盖模块颜色；只在元素原始边界内绘制细虚线。
-                              left: _workspaceOffset.dx + el.offset.dx,
-                              top: _workspaceOffset.dy + el.offset.dy - 18,
-                              width: el.size.width,
-                              height: el.size.height + 18,
-                              child: _buildActiveLayerLocatorOverlay(el, selected),
                             );
                           }),
                         ],
@@ -2086,7 +2089,19 @@ class _UIStudioPageState extends State<UIStudioPage> {
           _elementTypeLabel(UIElement(id: 'preview_${module.id}', isComposite: false, module: module)),
           style: const TextStyle(color: Color(0xFF888896), fontSize: 9),
         ),
-        trailing: const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF00E676)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF00E676)),
+            GestureDetector(
+              onTap: () => _confirmDeleteModule(module),
+              child: const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFFF4081)),
+              ),
+            ),
+          ],
+        ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       ),
     );
@@ -2103,6 +2118,29 @@ class _UIStudioPageState extends State<UIStudioPage> {
       ),
       childWhenDragging: Opacity(opacity: 0.38, child: card),
       child: card,
+    );
+  }
+
+  void _confirmDeleteModule(UIModule module) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('删除资产', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+        content: Text('确定删除「${module.name}」吗？', style: const TextStyle(fontSize: 13, color: Color(0xFF555562))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Color(0xFF888896)))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(() => _assetService.removeModule(module.id));
+            },
+            child: const Text('删除', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2126,7 +2164,19 @@ class _UIStudioPageState extends State<UIStudioPage> {
           '复合组件 · ${composite.children.length} 个子元素',
           style: const TextStyle(color: Color(0xFF888896), fontSize: 9),
         ),
-        trailing: const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF651FFF)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF651FFF)),
+            GestureDetector(
+              onTap: () => _confirmDeleteComposite(composite),
+              child: const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFFF4081)),
+              ),
+            ),
+          ],
+        ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       ),
     );
@@ -2146,111 +2196,111 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
-  /// 当前编辑层的置顶定位辅助层。
-  ///
-  /// 未选中时只绘制层号小角标；选中时额外绘制元素边界内侧的白灰交替细虚线。
-  /// 不加阴影、不加半透明蒙版、不重新渲染模块本体，避免影响原始颜色判断。
-  /// 整体 IgnorePointer，避免遮挡原有拖拽、缩放、删除等交互命中。
-  Widget _buildActiveLayerLocatorOverlay(UIElement el, bool selected) {
-    // 选中虚线边框已移入 _buildTrueSingleHandleNode 与内容一体渲染，
-    // 此辅助层只负责层号角标。
-    return IgnorePointer(
-      ignoring: true,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            left: 4,
-            top: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.72),
-                borderRadius: BorderRadius.circular(5),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.88),
-                  width: 0.7,
-                ),
-              ),
-              child: Text(
-                'L${el.layerIndex}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  height: 1.0,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
+  void _confirmDeleteComposite(UIComposite composite) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('删除资产', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+        content: Text('确定删除「${composite.name}」吗？', style: const TextStyle(fontSize: 13, color: Color(0xFF555562))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Color(0xFF888896)))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(() => _assetService.removeComposite(composite.id));
+            },
+            child: const Text('删除', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
   }
 
-  // --- 极其严谨完美的 单一把手 + 当前图层专注锁定法则 节点 ---
+  /// 当前编辑层的置顶定位辅助层。
+  ///
+  /// 未选中时只绘制层号小角标；选中时额外绘制元素边界内侧的白灰交替细虚线。
+  /// 不加阴影、不加半透明蒙版、不重新渲染模块本体，避免影响原始颜色判断。
+  /// 整体 IgnorePointer，避免遮挡原有拖拽、缩放、删除等交互命中。
+  // --- 单一把手节点：内容+边框+层号+把手 统一旋转（真正的一体）---
   Widget _buildTrueSingleHandleNode(UIElement el, double p) {
     final bool isTransformationActive = _selectedTransformationId == el.id;
     final bool isCurrentLayerActive = el.layerIndex == _activeLayerIndex;
 
-    // 极其完美正确的图层专注锁定法则声明，完美保持视觉相对位置静止无偏差！
+    // 非当前层：纯预览，不参与交互。
     if (!isCurrentLayerActive) {
       return IgnorePointer(
-        ignoring: true, // 彻底屏蔽旧图层误触，同时保持真实预览不降透明度。
-        child: Container(
-          margin: EdgeInsets.only(left: p, top: p), // 完美正确的布局参数！
-          width: el.size.width,
-          height: el.size.height,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+        ignoring: true,
+        child: Center(
+          child: SizedBox(
+            width: el.size.width,
+            height: el.size.height,
+            child: UIRenderer.render(context, el),
           ),
-          child: UIRenderer.render(context, el),
         ),
       );
     }
 
-    Widget mainContent = SizedBox(
+    // 传 rotation=0 给 render，内容不单独旋转，由外层 Transform 统一旋转。
+    final elNoRot = el.copyWith(rotation: 0.0);
+
+    // 内容 + 选中边框（不单独旋转）
+    Widget contentArea = SizedBox(
       width: el.size.width,
       height: el.size.height,
-      child: UIRenderer.render(context, el),
-    );
-
-    // 选中时：边框与内容作为一体渲染。
-    // 内容通过 render() 内部 Transform.rotate(el.rotation) 旋转，
-    // 边框用同一个 el.rotation 旋转，两者中心一致 → 永远同步。
-    Widget body = mainContent;
-    if (isTransformationActive) {
-      body = SizedBox(
-        width: el.size.width,
-        height: el.size.height,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            mainContent,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          UIRenderer.render(context, elNoRot),
+          if (isTransformationActive)
             Positioned.fill(
               child: IgnorePointer(
-                child: Transform.rotate(
-                  angle: el.rotation * math.pi / 180.0,
-                  child: CustomPaint(
-                    painter: StudioAlternatingDashedBorderPainter(
-                      strokeWidth: 1.2,
-                      shape: _outlineShapeOf(el),
-                      borderRadius: _outlineBorderRadiusOf(el),
-                    ),
+                child: CustomPaint(
+                  painter: StudioAlternatingDashedBorderPainter(
+                    strokeWidth: 1.2,
+                    shape: _outlineShapeOf(el),
+                    borderRadius: _outlineBorderRadiusOf(el),
                   ),
                 ),
               ),
             ),
-          ],
+        ],
+      ),
+    );
+
+    // 层号角标（随整体旋转）
+    Widget layerBadge = Positioned(
+      left: p + 4,
+      top: p - 14,
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.88),
+              width: 0.7,
+            ),
+          ),
+          child: Text(
+            'L${el.layerIndex}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 9,
+              height: 1.0,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
+          ),
         ),
-      );
-    }
+      ),
+    );
 
-
-    Widget touchableBody = GestureDetector(
-      // 必须显式使用 opaque：button/input 等逻辑型原子本体是透明 SizedBox，
-      // 若沿用默认 deferToChild，透明子树不会参与 hitTest，导致模块看得见但点不动。
+    // 可拖动的内容体
+    Widget touchableContent = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (details) {
         _startTouchElemOffset = el.offset;
@@ -2272,20 +2322,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
       onLongPress: () {
         _showTailoredPrecisionEditorDialog(el);
       },
-      child: body,
+      child: contentArea,
     );
 
-    if (!isTransformationActive) {
-      return touchableBody;
-    }
+    // 组装 Stack 子元素
+    final stackChildren = <Widget>[
+      Positioned(left: p, top: p, child: touchableContent),
+      layerBadge,
+    ];
 
-    return Stack(
-      children: [
-        Positioned(
-          left: p, top: p,
-          child: touchableBody,
-        ),
-
+    // 选中时加把手
+    if (isTransformationActive) {
+      stackChildren.add(
         Positioned(
           right: 0, bottom: 0,
           child: GestureDetector(
@@ -2298,8 +2346,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
               _startTouchHeight = el.size.height;
               _startTouchGlobalPos = details.globalPosition;
               if (_transformHandleRotateMode) {
-                // 旋转中心 = 画布上元素的中心点。拖拽过程中 offset/size 不变，
-                // 故中心恒定，按下时算一次即可。
                 _rotationCenter = Offset(
                   _workspaceOffset.dx + el.offset.dx + el.size.width / 2,
                   _workspaceOffset.dy + el.offset.dy + el.size.height / 2,
@@ -2314,7 +2360,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 final currentAngle =
                     (details.globalPosition - _rotationCenter).direction;
                 var delta = currentAngle - _startHandleAngle;
-                // 角度差归一到 [-π, π]，避免跨过 ±π 时突然反转。
                 while (delta > math.pi) {
                   delta -= 2 * math.pi;
                 }
@@ -2359,8 +2404,32 @@ class _UIStudioPageState extends State<UIStudioPage> {
             ),
           ),
         ),
-      ],
+      );
+    }
+
+    // 节点本体：固定尺寸的 Stack 包含所有子元素
+    Widget node = SizedBox(
+      width: el.size.width + p * 2,
+      height: el.size.height + p * 2,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: stackChildren,
+      ),
     );
+
+    // 统一旋转：内容+边框+层号+把手用同一个 Transform → 真正一体。
+    //
+    // Positioned 尺寸 = node 尺寸(size+p*2)，两者精确匹配，无对齐误差。
+    // 内容放在 Positioned(left:p, top:p)，p 四周均匀，
+    // 故 node 几何中心 = 内容中心，Transform.rotate 默认绕中心旋转即正确。
+    // Transform.rotate 的 transformHitTests 默认 true，旋转后命中测试
+    // 自动跟随旋转，把手在旋转后的位置能被正常点中，无需 AABB。
+    return el.rotation != 0.0
+        ? Transform.rotate(
+            angle: el.rotation * math.pi / 180.0,
+            child: node,
+          )
+        : node;
   }
 }
 
