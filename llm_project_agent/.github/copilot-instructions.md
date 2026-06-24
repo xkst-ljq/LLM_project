@@ -25,6 +25,6 @@ Patch tool: `tools/patch/apply_patch_multi.html`
 Full files to workspace. Chat: Summary → Patch → Paths → Verify.
 "贴全文" → paste complete file immediately.
 
-Project anchors: ui_studio_page.dart >2500 LOC, search `_buildPreviewDraggableCard` / `type: 'linker'`, CharacterCard.entries_json = `character_edit_page.dart`, ID = project util, converter = `lib/tools/character_converter/`, pure Dart.
+Project anchors: ui_studio_page.dart >2500 LOC, search `_buildPreviewDraggableCard`, CharacterCard.entries_json = `lib/pages/character_edit_page.dart`, ID = `IdUtils.timestampId()`, converter = `lib/tools/character_converter/`, pure Dart.
 
-See AGENT.md §1-8.
+See AGENT.md §1-7.

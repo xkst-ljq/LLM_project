@@ -119,7 +119,7 @@
    - 用户说 "贴全文" → 必须立刻贴出完整文件，>800 行分多条发，截断前先警告
    - 禁止静默遗漏
 
-**为什么补丁优先：** 相比全文粘贴省 ~90% token，防止 6.8 MB 聊天爆炸，用户一键工具合并，零遗漏风险。
+**为什么补丁优先：** 相比全文粘贴省 ~90% token，用户一键工具合并，零遗漏风险。
 
 ### R8. 改动总结（每次编辑完必须给）
 ```
@@ -161,11 +161,10 @@
 
 ## 6. LLM_Project 专用锚点
 
-- `ui_studio_page.dart` > 2500 行，改前必须 `sed -n '1650,1850p'` 确认 linker 卡片位置
-- 原子库 / 联动器搜索关键词：`_buildPreviewDraggableCard` / `type: 'linker'`，禁止搜中文 `联动器` / `原子库`
-- `CharacterCard.entries_json` 结构以 `character_edit_page.dart` 为准
-- ID 生成用项目自带 ID 工具
-- 第三方角色卡转换器在 `lib/tools/character_converter/`，保持纯 Dart
+- `ui_studio_page.dart` > 2500 行，原子预览卡片在 ~1740–1830，搜索关键词 `_buildPreviewDraggableCard`，禁止搜中文 UI 文案
+- `CharacterCard.entries_json` 结构以 `lib/pages/character_edit_page.dart` 为准
+- ID 生成：`IdUtils.timestampId()` — `lib/utils/id_utils.dart`
+- 第三方角色卡转换器：`lib/tools/character_converter/`，保持纯 Dart
 - 补丁工具：`tools/patch/apply_patch_multi.html`（拖入项目文件夹 + 粘贴补丁 → 下载 ZIP）
 
 ---
@@ -212,11 +211,5 @@ import 'dart:convert';
 - 生成补丁前先跑 `flutter analyze`
 
 ---
-
-## 8. 翻车备忘
-
-`ui_studio_page.dart` 那次违反了 R1/R2/R3/R6/R7：幻觉编辑 `$1ba/$1bb`、文件截断 1662/2538 未发现、猜测 014 版本、失败 4 次硬试、无报告、全文粘贴炸掉上下文。
-
-成功的 `character_converter (005)` 严格遵守了以上所有规则：调研 → 验证 → 分层纯 Dart → 可追溯报告 → 补丁级交付。
 
 此文件放在仓库根目录，所有 Agent 必须遵守。

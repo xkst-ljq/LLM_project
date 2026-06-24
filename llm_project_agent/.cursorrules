@@ -67,10 +67,9 @@ full new file
     summary + verify steps? workspace updated?
 
 ## LLM_Project anchors
-- ui_studio_page.dart >2500 LOC, check sed 1650-1850 before editing linker
-- Search: `_buildPreviewDraggableCard` / `type: 'linker'`, NOT Chinese
-- CharacterCard.entries_json → `character_edit_page.dart`
-- ID: project ID utility
+- ui_studio_page.dart >2500 LOC, atomic preview ~1740-1830, search `_buildPreviewDraggableCard`, do NOT grep Chinese UI
+- CharacterCard.entries_json → `lib/pages/character_edit_page.dart`
+- ID: `IdUtils.timestampId()` → `lib/utils/id_utils.dart`
 - converter: `lib/tools/character_converter/`, pure Dart
 
 See AGENT.md for full rules.

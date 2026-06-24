@@ -124,7 +124,7 @@ Never start editing while the user is still discussing requirements.
    - User says "贴全文" → MUST paste COMPLETE file content immediately, split across messages if >800 lines, warn before truncating
    - Never silently omit content
 
-**Why patch-first:** saves ~90% context tokens vs full-file paste, prevents 6.8 MB chat blow-up, user applies with one-click tool, zero omission risk.
+**Why patch-first:** saves ~90% context tokens vs full-file paste, user applies with one-click tool, zero omission risk.
 
 ### R8. Change Summary — REQUIRED after every edit
 ```
@@ -167,10 +167,9 @@ If any = NO → DO NOT SUBMIT.
 
 ## 6. LLM_Project Anchors
 
-- `ui_studio_page.dart` > 2500 LOC — before editing: `sed -n '1650,1850p'` confirm linker location
-- Atomic / Linker search: `_buildPreviewDraggableCard` / `type: 'linker'` — DO NOT grep Chinese `联动器` / `原子库`
-- `CharacterCard.entries_json` schema authoritative in `character_edit_page.dart`
-- ID generation: use project ID utility
+- `ui_studio_page.dart` > 2500 LOC — atomic preview cards at ~1740–1830, search `_buildPreviewDraggableCard` — DO NOT grep Chinese UI text
+- `CharacterCard.entries_json` schema authoritative in `lib/pages/character_edit_page.dart`
+- ID generation: `IdUtils.timestampId()` — `lib/utils/id_utils.dart`
 - Converter: `lib/tools/character_converter/` — keep pure Dart
 - Patch tool: `tools/patch/apply_patch_multi.html` (drag project folder + paste patch → download ZIP)
 
@@ -218,11 +217,5 @@ import 'dart:convert';
 - Test: run `flutter analyze` before producing the patch
 
 ---
-
-## 8. Failure Reference
-
-`ui_studio_page.dart` incident violated R1,R2,R3,R6,R7: hallucinated `$1ba/$1bb`, truncated 1662/2538 not detected, guessed version 014, 4× blind retry, no report, full-file paste blew up context.
-
-Successful `character_converter (005)` followed ALL rules above: survey → validate → layered pure-Dart → traceable report → patch-sized delivery.
 
 Keep this file at repo root. All agents MUST follow it.
