@@ -28,9 +28,6 @@ class UIRenderer {
   }
 
   static Widget _renderModule(BuildContext context, UIModule module, Size size) {
-    // 原子部件只渲染自己的单一职责：
-    // progress = 一根条；text = 一段文字；surface/base_box = 一个视觉表面；
-    // button/input = 透明逻辑热区，不自带任何边框或底色。
     switch (module.type) {
       case 'progress':
         return SizedBox(
@@ -73,7 +70,6 @@ class UIRenderer {
           child: _buildButton(module),
         );
       case 'surface':
-      case 'base_box':
         return _applyMaterialAndShape(
           module.material,
           module.shape,
@@ -132,8 +128,6 @@ class UIRenderer {
       case 'base_box':
       default:
         // 复合容器按子元素的绝对 offset 定位。
-        // 子元素 offset 在「保存为复合组件」/「拖出到画布」时已归一化到
-        // 容器左上角，这里用 Positioned 还原，否则全部堆在左上角。
         content = Stack(
           clipBehavior: Clip.none,
           children: composite.children.map((e) {
@@ -150,7 +144,6 @@ class UIRenderer {
     }
 
     // opacity <= 0 且颜色透明的组合块视作“纯布局组”，不额外绘制容器壳。
-    // 这让带文字按钮等复合模板可以只由内部原子决定视觉。
     if (composite.opacity <= 0.0 && composite.color == Colors.transparent) {
       return SizedBox(width: size.width, height: size.height, child: content);
     }
@@ -166,7 +159,6 @@ class UIRenderer {
     );
   }
 
-  // 极其高雅通透的纯白/微光毛玻璃外壳封装，完美契合主 App 主题
   static Widget _applyMaterialAndShape(
     UIModuleMaterial material,
     UIModuleShape shape,
@@ -185,8 +177,6 @@ class UIRenderer {
         radius = BorderRadius.circular(9999.0);
         break;
       case UIModuleShape.circle:
-        // 这里的 circle 作为“椭圆/正圆”处理：宽高相等时是正圆，
-        // 宽高不等时自然成为椭圆。不要与 capsule 胶囊混用。
         radius = BorderRadius.all(
           Radius.elliptical(size.width / 2, size.height / 2),
         );
@@ -229,9 +219,8 @@ class UIRenderer {
         );
         break;
       case UIModuleMaterial.glass:
-        // 高雅纯白物理毛玻璃模糊
         decoration = BoxDecoration(
-          color: color.withValues(alpha: opacity * 0.75), // 明亮通透的底色
+          color: color.withValues(alpha: opacity * 0.75),
           borderRadius: radius,
           border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4))],
@@ -266,7 +255,6 @@ class UIRenderer {
   }
 
   static Widget _buildBaseBox() {
-    // 原子容器只提供容器面，不带说明文字。说明文字属于编辑器预览。
     return const SizedBox.expand();
   }
 
@@ -277,13 +265,6 @@ class UIRenderer {
     final Color fillColor =
         module.color == Colors.white ? const Color(0xFFFF4081) : module.color;
 
-    // 原子进度条只负责显示“条本体”，不显示名称、数值或单位。
-    // 方向固定为横向：竖向进度条以后交给旋转/变换系统处理，避免
-    // 用户仅改变宽高比例时组件语义突然变化。
-    //
-    // 注意：轨道本身负责裁剪成胶囊形，填充块只是一块矩形色块。
-    // 这样在特殊宽高比例下，填充边界不会因为自身也套胶囊圆角而
-    // 和整体轨道/选中虚线边界产生视觉错位。
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: Container(
@@ -308,8 +289,6 @@ class UIRenderer {
     final Color fillColor =
         module.color == Colors.white ? const Color(0xFF00ACC1) : module.color;
 
-    // 基础滑块原语：只提供轨道 + 滑块柄的通用数值控制外观。
-    // 它不命名具体业务变量，变量绑定应在 UI 场景层完成。
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth.isFinite ? constraints.maxWidth : 160.0;
@@ -368,16 +347,30 @@ class UIRenderer {
 
   static Widget _buildButton(UIModule module) {
     // 原子按钮只提供透明点击逻辑热区，不自带视觉外观。
-    // 视觉按钮 = surface + text/icon + button 逻辑区的复合块。
     return const SizedBox.expand();
   }
 
+  /// 构建文本块（支持联动显示表达式）
+  ///
+  /// 优先级：
+  /// 1. displayExpression（联动模板，例如 "{{progress.current}} / {{progress.max}}"）
+  /// 2. properties['text']
+  /// 3. module.name
+  ///
+  /// 目前仅做简单 {{key}} 替换，后续可扩展为完整表达式求值器。
   static Widget _buildTextBlock(UIModule module) {
-    final text = module.properties['text']?.toString() ?? module.name;
+    String rawText = '';
+
+    if (module.displayExpression != null && module.displayExpression!.isNotEmpty) {
+      rawText = _evaluateDisplayExpression(module.displayExpression!, module);
+    } else {
+      rawText = module.properties['text']?.toString() ?? module.name;
+    }
+
     return Container(
       alignment: Alignment.center,
       child: Text(
-        text,
+        rawText,
         style: TextStyle(color: module.color, fontSize: 14, fontWeight: FontWeight.w600),
         textAlign: TextAlign.center,
         overflow: TextOverflow.ellipsis,
@@ -385,14 +378,50 @@ class UIRenderer {
     );
   }
 
-  static Widget _buildInputBlock(UIModule module) {
-    // 原子输入框只提供透明输入逻辑热区，不自带边框、底色或 placeholder。
-    // 视觉输入框 = surface + placeholder text + input 逻辑区的复合块。
-    return const SizedBox.expand();
+  /// 简单显示表达式求值（当前版本为模板替换）
+  /// 
+  /// 支持格式：
+  /// - {{progress.current}}
+  /// - {{slider.value}}
+  /// - {{status.mood}}
+  /// 
+  /// 目前仅从 properties 中查找同名键；完整联动求值将在后续版本由
+  /// UI 运行时状态管理器提供。
+  static String _evaluateDisplayExpression(String expression, UIModule module) {
+    String result = expression;
+
+    // 提取所有 {{...}} 模板
+    final regExp = RegExp(r'\{\{([^}]+)\}\}');
+    final matches = regExp.allMatches(expression);
+
+    for (final match in matches) {
+      final full = match.group(0)!;
+      final key = match.group(1)!.trim();
+
+      // 尝试从当前 module.properties 读取值（简单模拟）
+      // 真实联动时，这里应从外部状态管理器查询
+      dynamic value;
+      final parts = key.split('.');
+      if (parts.length > 1) {
+        // 例如 progress.current
+        final lastKey = parts.last;
+        value = module.properties[lastKey] ?? module.properties[key];
+      } else {
+        value = module.properties[key];
+      }
+
+      final strValue = value?.toString() ?? '?';
+      result = result.replaceAll(full, strValue);
+    }
+
+    return result;
   }
 
+  static Widget _buildInputBlock(UIModule module) {
+    // 原子输入框只提供透明输入逻辑热区，不自带边框、底色或 placeholder。
+    return const SizedBox.expand();
+  }
 }
-
 
 class UIPrimitiveArtPainter extends CustomPainter {
   final Map<String, dynamic> properties;

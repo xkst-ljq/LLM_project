@@ -31,11 +31,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   final UIAssetService _assetService = UIAssetService();
   final GlobalKey _canvasDropKey = GlobalKey();
-  
+
   // 历史原子工作台草稿保留用于兼容读取；当前 UI 只使用统一工作台。
   List<UIElement> _atomicWorkspaceElements = [];
   List<UIElement> _compositeWorkspaceElements = [];
-  
+
   // 绝对跟手无阻尼平移桌面偏移量
   Offset _workspaceOffset = Offset.zero;
 
@@ -65,7 +65,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   // 右下角单一变换把手模式：false=缩放，true=旋转（旋转行为后续接入）。
   bool _transformHandleRotateMode = false;
-  
+
   // 左右边栏抽屉开关状态
   bool _showLeftDrawer = false;  // 左侧基本部件抽屉
   bool _showRightDrawer = false; // 右侧完成资产抽屉
@@ -81,7 +81,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   Future<void> _loadWorkspaces() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // 加载独立图层列表
     final layerData = prefs.getString('ui_studio_scene_layers_v4');
     if (layerData != null) {
@@ -196,9 +196,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   onTap: bakeable == 0
                       ? null
                       : () {
-                          Navigator.pop(ctx);
-                          _bakeCurrentWorkspaceAsAtom();
-                        },
+                    Navigator.pop(ctx);
+                    _bakeCurrentWorkspaceAsAtom();
+                  },
                 ),
               ],
             ),
@@ -540,14 +540,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
 
     Offset normalizeOffset(Offset absolute) => Offset(
-          (absolute.dx - bounds.left) / bounds.width,
-          (absolute.dy - bounds.top) / bounds.height,
-        );
+      (absolute.dx - bounds.left) / bounds.width,
+      (absolute.dy - bounds.top) / bounds.height,
+    );
 
     Size normalizeSize(Size absolute) => Size(
-          absolute.width / bounds.width,
-          absolute.height / bounds.height,
-        );
+      absolute.width / bounds.width,
+      absolute.height / bounds.height,
+    );
 
     UIPrimitiveLayer normalizeLayer(UIPrimitiveLayer layer) {
       final absoluteOffset = Offset(
@@ -716,12 +716,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
         module: module.type != 'base_box' ? module.copyWith() : null,
         composite: module.type == 'base_box'
             ? UIComposite(
-                id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
-                name: '容器边界框',
-                layoutType: 'base_box',
-                children: [],
-                color: const Color(0xFFECEFF1),
-              )
+          id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
+          name: '容器边界框',
+          layoutType: 'base_box',
+          children: [],
+          color: const Color(0xFFECEFF1),
+        )
             : null,
         offset: canvasOffset,
         size: initialSize,
@@ -813,10 +813,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
             isComposite: child.isComposite,
             module: child.module?.copyWith(),
             composite: child.composite?.copyWith(
-                    children: child.composite!.children
-                        .map((c) => c.copyWith())
-                        .toList(),
-                  ),
+              children: child.composite!.children
+                  .map((c) => c.copyWith())
+                  .toList(),
+            ),
             offset: elOffset,
             size: child.size,
             rotation: child.rotation,
@@ -1502,7 +1502,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
             width: 150,
             child: _buildLeftCompactAssetPreviewDrawer(),
           ),
-          
+
           if (!_showLeftDrawer)
             Positioned(
               left: 0,
@@ -1886,98 +1886,98 @@ class _UIStudioPageState extends State<UIStudioPage> {
               Expanded(
                 child: _currentElements.isEmpty
                     ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(18.0),
-                          child: Text(
-                            '还没有构造层。\n从左侧拖入面、数据条、文本等原材料。',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
-                          ),
-                        ),
-                      )
+                  child: Padding(
+                    padding: EdgeInsets.all(18.0),
+                    child: Text(
+                      '还没有构造层。\n从左侧拖入面、数据条、文本等原材料。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
+                    ),
+                  ),
+                )
                     : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        itemCount: _currentElements.length,
-                        itemBuilder: (context, index) {
-                          final el = _currentElements[index];
-                          final selected = _selectedTransformationId == el.id;
-                          final bake = _isBakeableElement(el);
-                          final name = el.module?.name ?? el.composite?.name ?? '未命名层';
-                          return Card(
-                            color: selected ? const Color(0xFF111116) : const Color(0xFFF6F6F9),
-                            elevation: selected ? 3 : 0,
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              side: BorderSide(
-                                color: selected ? const Color(0xFF00E5FF) : Colors.black.withValues(alpha: 0.04),
-                                width: selected ? 1.4 : 1,
-                              ),
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () => setState(() => _selectedTransformationId = el.id),
-                              onLongPress: () => _showTailoredPrecisionEditorDialog(el),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: bake ? const Color(0xFF00C853) : const Color(0xFFFF8F00),
-                                            borderRadius: BorderRadius.circular(5),
-                                          ),
-                                          child: Text(
-                                            bake ? '烘焙' : '跳过',
-                                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: selected ? Colors.white : const Color(0xFF111116),
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  itemCount: _currentElements.length,
+                  itemBuilder: (context, index) {
+                    final el = _currentElements[index];
+                    final selected = _selectedTransformationId == el.id;
+                    final bake = _isBakeableElement(el);
+                    final name = el.module?.name ?? el.composite?.name ?? '未命名层';
+                    return Card(
+                      color: selected ? const Color(0xFF111116) : const Color(0xFFF6F6F9),
+                      elevation: selected ? 3 : 0,
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(
+                          color: selected ? const Color(0xFF00E5FF) : Colors.black.withValues(alpha: 0.04),
+                          width: selected ? 1.4 : 1,
+                        ),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setState(() => _selectedTransformationId = el.id),
+                        onLongPress: () => _showTailoredPrecisionEditorDialog(el),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: bake ? const Color(0xFF00C853) : const Color(0xFFFF8F00),
+                                      borderRadius: BorderRadius.circular(5),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${_elementTypeLabel(el)} · L${el.layerIndex} · ${el.size.width.toStringAsFixed(0)}×${el.size.height.toStringAsFixed(0)}',
+                                    child: Text(
+                                      bake ? '烘焙' : '跳过',
+                                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: selected ? Colors.white70 : const Color(0xFF777783),
-                                        fontSize: 10,
+                                        color: selected ? Colors.white : const Color(0xFF111116),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        _buildLayerMiniButton(Icons.keyboard_arrow_up_rounded, () => _moveAtomicConstructionLayer(el.id, -1), selected),
-                                        _buildLayerMiniButton(Icons.keyboard_arrow_down_rounded, () => _moveAtomicConstructionLayer(el.id, 1), selected),
-                                        _buildLayerMiniButton(Icons.tune_rounded, () => _showTailoredPrecisionEditorDialog(el), selected),
-                                        _buildLayerMiniButton(Icons.delete_outline_rounded, () => _deleteElement(el.id), selected, danger: true),
-                                      ],
-                                    ),
-                                  ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${_elementTypeLabel(el)} · L${el.layerIndex} · ${el.size.width.toStringAsFixed(0)}×${el.size.height.toStringAsFixed(0)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: selected ? Colors.white70 : const Color(0xFF777783),
+                                  fontSize: 10,
                                 ),
                               ),
-                            ),
-                          );
-                        },
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  _buildLayerMiniButton(Icons.keyboard_arrow_up_rounded, () => _moveAtomicConstructionLayer(el.id, -1), selected),
+                                  _buildLayerMiniButton(Icons.keyboard_arrow_down_rounded, () => _moveAtomicConstructionLayer(el.id, 1), selected),
+                                  _buildLayerMiniButton(Icons.tune_rounded, () => _showTailoredPrecisionEditorDialog(el), selected),
+                                  _buildLayerMiniButton(Icons.delete_outline_rounded, () => _deleteElement(el.id), selected, danger: true),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -2039,28 +2039,28 @@ class _UIStudioPageState extends State<UIStudioPage> {
               Expanded(
                 child: isEmpty
                     ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(18.0),
-                          child: Text(
-                            '还没有保存的资产。\n在工作台拖入积木后点「保存」即可入库。',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
-                          ),
-                        ),
-                      )
+                  child: Padding(
+                    padding: EdgeInsets.all(18.0),
+                    child: Text(
+                      '还没有保存的资产。\n在工作台拖入积木后点「保存」即可入库。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
+                    ),
+                  ),
+                )
                     : ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        children: [
-                          ...modules.map(_buildAssetLibraryModuleCard),
-                          if (composites.isNotEmpty) ...[
-                            const Padding(
-                              padding: EdgeInsets.fromLTRB(4, 10, 4, 2),
-                              child: Text('复合组件', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                            ),
-                            ...composites.map(_buildAssetLibraryCompositeCard),
-                          ],
-                        ],
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  children: [
+                    ...modules.map(_buildAssetLibraryModuleCard),
+                    if (composites.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(4, 10, 4, 2),
+                        child: Text('复合组件', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                       ),
+                      ...composites.map(_buildAssetLibraryCompositeCard),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -2426,9 +2426,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
     // 自动跟随旋转，把手在旋转后的位置能被正常点中，无需 AABB。
     return el.rotation != 0.0
         ? Transform.rotate(
-            angle: el.rotation * math.pi / 180.0,
-            child: node,
-          )
+      angle: el.rotation * math.pi / 180.0,
+      child: node,
+    )
         : node;
   }
 }
