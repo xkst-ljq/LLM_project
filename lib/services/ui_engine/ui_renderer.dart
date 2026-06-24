@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -28,6 +27,9 @@ class UIRenderer {
   }
 
   static Widget _renderModule(BuildContext context, UIModule module, Size size) {
+    // 原子部件只渲染自己的单一职责：
+    // progress = 一根条；text = 一段文字；surface/base_box = 一个视觉表面；
+    // button/input = 透明逻辑热区，不自带任何边框或底色。
     switch (module.type) {
       case 'progress':
         return SizedBox(
@@ -70,6 +72,7 @@ class UIRenderer {
           child: _buildButton(module),
         );
       case 'surface':
+      case 'base_box':
         return _applyMaterialAndShape(
           module.material,
           module.shape,
@@ -94,68 +97,28 @@ class UIRenderer {
   }
 
   static Widget _renderComposite(BuildContext context, UIComposite composite, Size size) {
-    Widget content;
-    switch (composite.layoutType) {
-      case 'column':
-        content = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: composite.children.map((e) => render(context, e)).toList(),
-        );
-        break;
-      case 'row':
-        content = Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: composite.children.map((e) => render(context, e)).toList(),
-        );
-        break;
-      case 'stack':
-        content = Stack(
-          alignment: Alignment.center,
-          children: composite.children.map((e) => render(context, e)).toList(),
-        );
-        break;
-      case 'wrap':
-        content = Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
-          children: composite.children.map((e) => render(context, e)).toList(),
-        );
-        break;
-      case 'base_box':
-      default:
-        // 复合容器按子元素的绝对 offset 定位。
-        content = Stack(
-          clipBehavior: Clip.none,
-          children: composite.children.map((e) {
-            return Positioned(
-              left: e.offset.dx,
-              top: e.offset.dy,
-              width: e.size.width,
-              height: e.size.height,
-              child: render(context, e),
-            );
-          }).toList(),
-        );
-        break;
+    // 复合组件渲染其子元素（当前简化实现：stack 布局）
+    final children = <Widget>[];
+    for (final child in composite.children) {
+      final childWidget = render(context, child);
+      children.add(
+        Positioned(
+          left: child.offset.dx,
+          top: child.offset.dy,
+          width: child.size.width,
+          height: child.size.height,
+          child: childWidget,
+        ),
+      );
     }
 
-    // opacity <= 0 且颜色透明的组合块视作“纯布局组”，不额外绘制容器壳。
-    if (composite.opacity <= 0.0 && composite.color == Colors.transparent) {
-      return SizedBox(width: size.width, height: size.height, child: content);
-    }
-
-    return _applyMaterialAndShape(
-      composite.material,
-      UIModuleShape.rounded,
-      composite.color,
-      composite.opacity,
-      composite.borderRadius,
-      content,
-      size,
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: children,
+      ),
     );
   }
 
@@ -164,213 +127,219 @@ class UIRenderer {
     UIModuleShape shape,
     Color color,
     double opacity,
-    double rawRadius,
+    double borderRadius,
     Widget child,
     Size size,
   ) {
-    BorderRadius radius;
-    switch (shape) {
-      case UIModuleShape.rectangle:
-        radius = BorderRadius.zero;
-        break;
-      case UIModuleShape.capsule:
-        radius = BorderRadius.circular(9999.0);
-        break;
-      case UIModuleShape.circle:
-        radius = BorderRadius.all(
-          Radius.elliptical(size.width / 2, size.height / 2),
+    Widget content = child;
+
+    switch (material) {
+      case UIModuleMaterial.glass:
+        content = Container(
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: opacity * 0.25),
+            borderRadius: BorderRadius.circular(borderRadius),
+            border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
+          ),
+          child: child,
         );
         break;
-      case UIModuleShape.rounded:
-        radius = BorderRadius.circular(rawRadius);
-        break;
-    }
-
-    BoxDecoration decoration;
-    switch (material) {
       case UIModuleMaterial.solid:
-        decoration = BoxDecoration(
-          color: color.withValues(alpha: opacity),
-          borderRadius: radius,
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 4))],
-          border: Border.all(color: Colors.black.withValues(alpha: 0.04), width: 0.5),
+        content = Container(
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: opacity),
+            borderRadius: BorderRadius.circular(borderRadius),
+          ),
+          child: child,
         );
         break;
       case UIModuleMaterial.gradient:
-        decoration = BoxDecoration(
-          borderRadius: radius,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              color.withValues(alpha: opacity),
-              color.withValues(alpha: opacity * 0.5),
-            ],
+        content = Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [color.withValues(alpha: opacity), color.withValues(alpha: opacity * 0.6)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(borderRadius),
           ),
-          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 12, offset: const Offset(0, 4))],
-          border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 0.5),
+          child: child,
         );
         break;
       case UIModuleMaterial.outline:
-        decoration = BoxDecoration(
-          color: color.withValues(alpha: 0.05 * opacity),
-          borderRadius: radius,
-          border: Border.all(color: color.withValues(alpha: opacity), width: 1.5),
-        );
-        break;
-      case UIModuleMaterial.glass:
-        decoration = BoxDecoration(
-          color: color.withValues(alpha: opacity * 0.75),
-          borderRadius: radius,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4))],
-        );
-        break;
-    }
-
-    Widget container = Container(
-      width: size.width,
-      height: size.height,
-      decoration: decoration,
-      child: ClipRRect(
-        borderRadius: radius,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+        content = Container(
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(borderRadius),
+            border: Border.all(color: color.withValues(alpha: opacity), width: 2),
+          ),
           child: child,
-        ),
-      ),
-    );
-
-    if (material == UIModuleMaterial.glass) {
-      return ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: container,
-        ),
-      );
+        );
+        break;
     }
 
-    return container;
+    // 形状裁剪
+    switch (shape) {
+      case UIModuleShape.circle:
+        return ClipOval(child: content);
+      case UIModuleShape.capsule:
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: content,
+        );
+      case UIModuleShape.rounded:
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(borderRadius),
+          child: content,
+        );
+      case UIModuleShape.rectangle:
+        return content;
+    }
   }
 
   static Widget _buildBaseBox() {
-    return const SizedBox.expand();
+    return Container(); // 纯视觉表面，内容由外部决定
   }
 
   static Widget _buildProgressBar(UIModule module, Size size) {
-    final double maxVal = (module.properties['max'] ?? 100.0).toDouble();
-    final double curVal = (module.properties['current'] ?? 80.0).toDouble();
-    final double ratio = maxVal > 0 ? (curVal / maxVal).clamp(0.0, 1.0) : 1.0;
-    final Color fillColor =
-        module.color == Colors.white ? const Color(0xFFFF4081) : module.color;
+    final min = (module.properties['min'] ?? 0).toDouble();
+    final max = (module.properties['max'] ?? 100).toDouble();
+    final current = (module.properties['current'] ?? min).toDouble().clamp(min, max);
+    final progress = max > min ? (current - min) / (max - min) : 0.0;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
+    final fillColor = module.color;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: FractionallySizedBox(
         alignment: Alignment.centerLeft,
-        decoration: const BoxDecoration(
-          color: Color(0xFFE2E2E8),
-        ),
-        child: FractionallySizedBox(
-          widthFactor: ratio,
-          heightFactor: 1.0,
-          alignment: Alignment.centerLeft,
-          child: Container(color: fillColor),
+        widthFactor: progress.clamp(0.0, 1.0),
+        child: Container(
+          decoration: BoxDecoration(
+            color: fillColor,
+            borderRadius: BorderRadius.circular(999),
+          ),
         ),
       ),
     );
   }
 
   static Widget _buildSlider(UIModule module) {
-    final double maxVal = (module.properties['max'] ?? 100.0).toDouble();
-    final double curVal = (module.properties['current'] ?? 50.0).toDouble();
-    final double ratio = maxVal > 0 ? (curVal / maxVal).clamp(0.0, 1.0) : 0.5;
-    final Color fillColor =
-        module.color == Colors.white ? const Color(0xFF00ACC1) : module.color;
+    final min = (module.properties['min'] ?? 0).toDouble();
+    final max = (module.properties['max'] ?? 100).toDouble();
+    final current = (module.properties['current'] ?? min).toDouble().clamp(min, max);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth.isFinite ? constraints.maxWidth : 160.0;
-        final h = constraints.maxHeight.isFinite ? constraints.maxHeight : 28.0;
-        final trackHeight = (h * 0.22).clamp(3.0, 10.0);
-        final knobSize = (h * 0.72).clamp(10.0, 28.0);
-        final knobLeft = (w - knobSize) * ratio;
-        return Stack(
-          alignment: Alignment.centerLeft,
-          children: [
-            Positioned(
-              left: knobSize / 2,
-              right: knobSize / 2,
-              top: (h - trackHeight) / 2,
-              height: trackHeight,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: Container(color: const Color(0xFFE2E2E8)),
+    final fillColor = module.color;
+    final h = 32.0;
+    final knobSize = 18.0;
+    final knobLeft = ((current - min) / (max - min)).clamp(0.0, 1.0) * (100.0 - knobSize) + 5;
+
+    return SizedBox(
+      height: h,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 10,
+            right: 10,
+            top: (h - 5) / 2,
+            height: 5,
+            child: Container(color: Colors.grey.shade300),
+          ),
+          Positioned(
+            left: 10,
+            top: (h - 5) / 2,
+            width: knobLeft - 5 + knobSize / 2,
+            height: 5,
+            child: Container(color: fillColor.withValues(alpha: 0.72)),
+          ),
+          Positioned(
+            left: knobLeft,
+            top: (h - knobSize) / 2,
+            width: knobSize,
+            height: knobSize,
+            child: Container(
+              decoration: BoxDecoration(
+                color: fillColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
             ),
-            Positioned(
-              left: knobSize / 2,
-              width: (w - knobSize) * ratio,
-              top: (h - trackHeight) / 2,
-              height: trackHeight,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: Container(color: fillColor.withValues(alpha: 0.72)),
-              ),
-            ),
-            Positioned(
-              left: knobLeft,
-              top: (h - knobSize) / 2,
-              width: knobSize,
-              height: knobSize,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: fillColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
   }
 
   static Widget _buildButton(UIModule module) {
     // 原子按钮只提供透明点击逻辑热区，不自带视觉外观。
+    // 视觉按钮 = surface + text/icon + button 逻辑区的复合块。
     return const SizedBox.expand();
   }
 
-  /// 构建文本块（支持联动显示表达式）
-  ///
-  /// 优先级：
-  /// 1. displayExpression（联动模板，例如 "{{progress.current}} / {{progress.max}}"）
-  /// 2. properties['text']
-  /// 3. module.name
-  ///
-  /// 目前仅做简单 {{key}} 替换，后续可扩展为完整表达式求值器。
-  static Widget _buildTextBlock(UIModule module) {
-    String rawText = '';
-
-    if (module.displayExpression != null && module.displayExpression!.isNotEmpty) {
-      rawText = _evaluateDisplayExpression(module.displayExpression!, module);
-    } else {
-      rawText = module.properties['text']?.toString() ?? module.name;
+  /// 简单显示表达式求值（{{key}} 模板替换）
+  /// 当前阶段使用 module.properties 模拟；后续可扩展为跨元素实时订阅。
+  static String _evaluateDisplayExpression(UIModule module, [Map<String, dynamic>? extraContext]) {
+    final expr = module.displayExpression?.trim() ?? '';
+    if (expr.isEmpty) {
+      return module.properties['text']?.toString() ?? module.name;
     }
+
+    String result = expr;
+    final context = <String, dynamic>{
+      ...module.properties,
+      if (extraContext != null) ...extraContext,
+    };
+
+    // 标准 {{key}} 替换
+    context.forEach((key, value) {
+      if (value == null) return;
+      final pattern = RegExp(r'\{\{\s*' + RegExp.escape(key) + r'\s*\}\}');
+      result = result.replaceAllMapped(pattern, (_) => value.toString());
+    });
+
+    // 常见进度别名支持：{{current}}、{{max}}、{{progress.current}} 等
+    final cur = context['current'] ?? context['progress']?['current'];
+    final mx = context['max'] ?? context['progress']?['max'];
+    if (cur != null) {
+      result = result.replaceAll(RegExp(r'\{\{\s*current\s*\}\}'), cur.toString());
+      result = result.replaceAll(RegExp(r'\{\{\s*progress\.current\s*\}\}'), cur.toString());
+    }
+    if (mx != null) {
+      result = result.replaceAll(RegExp(r'\{\{\s*max\s*\}\}'), mx.toString());
+      result = result.replaceAll(RegExp(r'\{\{\s*progress\.max\s*\}\}'), mx.toString());
+    }
+
+    // 兜底：如果表达式未被替换且有原始 text，则回退
+    if (result == expr) {
+      final fallback = module.properties['text']?.toString();
+      if (fallback != null && fallback.isNotEmpty) {
+        result = fallback;
+      }
+    }
+
+    return result.isEmpty ? module.name : result;
+  }
+
+  static Widget _buildTextBlock(UIModule module) {
+    // 支持 displayExpression 联动显示
+    final displayText = (module.displayExpression != null && module.displayExpression!.trim().isNotEmpty)
+        ? _evaluateDisplayExpression(module)
+        : (module.properties['text']?.toString() ?? module.name);
 
     return Container(
       alignment: Alignment.center,
       child: Text(
-        rawText,
+        displayText,
         style: TextStyle(color: module.color, fontSize: 14, fontWeight: FontWeight.w600),
         textAlign: TextAlign.center,
         overflow: TextOverflow.ellipsis,
@@ -378,50 +347,14 @@ class UIRenderer {
     );
   }
 
-  /// 简单显示表达式求值（当前版本为模板替换）
-  /// 
-  /// 支持格式：
-  /// - {{progress.current}}
-  /// - {{slider.value}}
-  /// - {{status.mood}}
-  /// 
-  /// 目前仅从 properties 中查找同名键；完整联动求值将在后续版本由
-  /// UI 运行时状态管理器提供。
-  static String _evaluateDisplayExpression(String expression, UIModule module) {
-    String result = expression;
-
-    // 提取所有 {{...}} 模板
-    final regExp = RegExp(r'\{\{([^}]+)\}\}');
-    final matches = regExp.allMatches(expression);
-
-    for (final match in matches) {
-      final full = match.group(0)!;
-      final key = match.group(1)!.trim();
-
-      // 尝试从当前 module.properties 读取值（简单模拟）
-      // 真实联动时，这里应从外部状态管理器查询
-      dynamic value;
-      final parts = key.split('.');
-      if (parts.length > 1) {
-        // 例如 progress.current
-        final lastKey = parts.last;
-        value = module.properties[lastKey] ?? module.properties[key];
-      } else {
-        value = module.properties[key];
-      }
-
-      final strValue = value?.toString() ?? '?';
-      result = result.replaceAll(full, strValue);
-    }
-
-    return result;
-  }
-
   static Widget _buildInputBlock(UIModule module) {
     // 原子输入框只提供透明输入逻辑热区，不自带边框、底色或 placeholder。
+    // 视觉输入框 = surface + placeholder text + input 逻辑区的复合块。
     return const SizedBox.expand();
   }
+
 }
+
 
 class UIPrimitiveArtPainter extends CustomPainter {
   final Map<String, dynamic> properties;
@@ -447,183 +380,24 @@ class UIPrimitiveArtPainter extends CustomPainter {
   }
 
   Rect _layerRect(Size canvasSize, UIPrimitiveLayer layer) {
-    return Rect.fromLTWH(
-      layer.offset.dx * canvasSize.width,
-      layer.offset.dy * canvasSize.height,
-      layer.size.width * canvasSize.width,
-      layer.size.height * canvasSize.height,
-    );
+    final x = layer.offset.dx * canvasSize.width;
+    final y = layer.offset.dy * canvasSize.height;
+    final w = layer.size.width * canvasSize.width;
+    final h = layer.size.height * canvasSize.height;
+    return Rect.fromLTWH(x, y, w, h);
   }
 
-  void _paintLayer(Canvas canvas, Size canvasSize, UIPrimitiveLayer layer) {
-    final rect = _layerRect(canvasSize, layer);
+  void _paintLayer(Canvas canvas, Size size, UIPrimitiveLayer layer) {
+    final rect = _layerRect(size, layer);
     if (rect.width <= 0 || rect.height <= 0) return;
 
-    final color = layer.color.withValues(alpha: layer.opacity.clamp(0.0, 1.0).toDouble());
-    final kind = layer.kind;
-    final blendMode = _readBlendMode(
-      layer.properties['blendMode']?.toString(),
-      fallback: _defaultBlendModeForKind(kind),
-    );
-
-    if (kind == 'surface') {
-      _paintSurfaceLayer(canvas, rect, layer, color, blendMode);
-      return;
-    }
-
-    if (kind == 'glow') {
-      final blur = (layer.properties['blur'] as num?)?.toDouble() ?? 18.0;
-      final paint = Paint()
-        ..color = color
-        ..blendMode = blendMode
-        ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, blur);
-      _drawShape(canvas, rect, layer, paint);
-      return;
-    }
-
-    if (kind == 'stroke') {
-      final width = (layer.properties['width'] as num?)?.toDouble() ?? 1.5;
-      final paint = Paint()
-        ..color = color
-        ..blendMode = blendMode
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = width;
-      _drawShape(canvas, rect.deflate(width / 2), layer, paint);
-      return;
-    }
-
-    if (kind == 'highlight') {
-      final paint = Paint()
-        ..blendMode = blendMode
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [color, color.withValues(alpha: 0.0)],
-        ).createShader(rect);
-      _drawShape(canvas, rect, layer, paint);
-      return;
-    }
-
-    if (kind == 'line') {
-      final width = (layer.properties['width'] as num?)?.toDouble() ?? 1.0;
-      final paint = Paint()
-        ..color = color
-        ..blendMode = blendMode
-        ..strokeWidth = width
-        ..strokeCap = StrokeCap.round;
-      canvas.drawLine(rect.centerLeft, rect.centerRight, paint);
-      return;
-    }
-
     final paint = Paint()
-      ..color = color
-      ..blendMode = blendMode
+      ..color = layer.color.withValues(alpha: layer.opacity)
       ..style = PaintingStyle.fill;
-    _drawShape(canvas, rect, layer, paint);
-  }
 
-  void _paintSurfaceLayer(
-    Canvas canvas,
-    Rect rect,
-    UIPrimitiveLayer layer,
-    Color color,
-    BlendMode blendMode,
-  ) {
-    final material = _readMaterial(layer.properties['material']);
-    if (material == UIModuleMaterial.gradient) {
-      final paint = Paint()
-        ..blendMode = blendMode
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [color, color.withValues(alpha: 0.62)],
-        ).createShader(rect);
-      _drawShape(canvas, rect, layer, paint);
-      return;
-    }
+    final r = layer.borderRadius;
 
-    if (material == UIModuleMaterial.outline) {
-      final width = (layer.properties['width'] as num?)?.toDouble() ?? 1.5;
-      final paint = Paint()
-        ..color = color
-        ..blendMode = blendMode
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = width;
-      _drawShape(canvas, rect.deflate(width / 2), layer, paint);
-      return;
-    }
-
-    final paint = Paint()
-      ..color = color
-      ..blendMode = blendMode
-      ..style = PaintingStyle.fill;
-    _drawShape(canvas, rect, layer, paint);
-
-    if (material == UIModuleMaterial.glass) {
-      final stroke = Paint()
-        ..color = Colors.white.withValues(alpha: 0.38)
-        ..blendMode = BlendMode.srcOver
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0;
-      _drawShape(canvas, rect.deflate(0.5), layer, stroke);
-    }
-  }
-
-  UIModuleMaterial _readMaterial(dynamic raw) {
-    if (raw is int && raw >= 0 && raw < UIModuleMaterial.values.length) {
-      return UIModuleMaterial.values[raw];
-    }
-    if (raw is num) {
-      final index = raw.toInt();
-      if (index >= 0 && index < UIModuleMaterial.values.length) {
-        return UIModuleMaterial.values[index];
-      }
-    }
-    return UIModuleMaterial.solid;
-  }
-
-  BlendMode _defaultBlendModeForKind(String kind) {
-    switch (kind) {
-      case 'glow':
-        return BlendMode.plus;
-      case 'highlight':
-        return BlendMode.screen;
-      default:
-        return BlendMode.srcOver;
-    }
-  }
-
-  BlendMode _readBlendMode(String? raw, {BlendMode fallback = BlendMode.srcOver}) {
-    switch (raw) {
-      case 'multiply':
-        return BlendMode.multiply;
-      case 'screen':
-        return BlendMode.screen;
-      case 'overlay':
-        return BlendMode.overlay;
-      case 'plus':
-      case 'add':
-        return BlendMode.plus;
-      case 'darken':
-        return BlendMode.darken;
-      case 'lighten':
-        return BlendMode.lighten;
-      case 'softLight':
-      case 'soft_light':
-        return BlendMode.softLight;
-      case 'normal':
-      case 'srcOver':
-        return BlendMode.srcOver;
-      default:
-        return fallback;
-    }
-  }
-
-  void _drawShape(Canvas canvas, Rect rect, UIPrimitiveLayer layer, Paint paint) {
     switch (layer.shape) {
-      case UIModuleShape.rectangle:
-        canvas.drawRect(rect, paint);
-        break;
       case UIModuleShape.circle:
         canvas.drawOval(rect, paint);
         break;
@@ -634,11 +408,39 @@ class UIPrimitiveArtPainter extends CustomPainter {
         );
         break;
       case UIModuleShape.rounded:
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(rect, Radius.circular(layer.borderRadius)),
-          paint,
-        );
+        canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(r)), paint);
         break;
+      case UIModuleShape.rectangle:
+        canvas.drawRect(rect, paint);
+        break;
+    }
+
+    // 额外描边支持
+    if (layer.properties['stroke'] == true) {
+      final strokePaint = Paint()
+        ..color = (layer.properties['strokeColor'] != null
+                ? Color(layer.properties['strokeColor'])
+                : Colors.black)
+            .withValues(alpha: layer.opacity * 0.8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (layer.properties['strokeWidth'] ?? 1.5).toDouble();
+      switch (layer.shape) {
+        case UIModuleShape.circle:
+          canvas.drawOval(rect, strokePaint);
+          break;
+        case UIModuleShape.capsule:
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
+            strokePaint,
+          );
+          break;
+        case UIModuleShape.rounded:
+          canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(r)), strokePaint);
+          break;
+        case UIModuleShape.rectangle:
+          canvas.drawRect(rect, strokePaint);
+          break;
+      }
     }
   }
 

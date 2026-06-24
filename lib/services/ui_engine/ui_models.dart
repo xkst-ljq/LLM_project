@@ -32,7 +32,7 @@ class LayerScene {
 
   Map<String, dynamic> toJson() => {'id': id, 'name': name};
 
-  factory LayerScene.fromJson(Map<String, dynamic> json) =>
+  factory LayerScene.fromJson(Map<String, dynamic> json) => 
       LayerScene(id: json['id'] ?? 0, name: json['name'] ?? '图层 Level 0');
 }
 
@@ -102,16 +102,10 @@ class UIPrimitiveLayer {
 }
 
 /// UI 模组-原子定义
-/// 
-/// 支持联动显示：
-/// - boundVariable：主动写入会话状态（驱动 Prompt）
-/// - statusFieldMirrorKey：只读镜像状态栏字段
-/// - displayExpression：显示联动表达式（例如 "{{progress.hp}} / {{max}}"）
-/// - linkedSources：显式声明依赖的源变量，用于预览和运行时订阅
 class UIModule {
   final String id;
   final String name;
-  final String type; // 'slider', 'button', 'text', 'progress', 'input', 'surface' 等
+  final String type; // 'slider', 'button', 'text', 'progress', 'input', 'base_box' 等
   final UIModuleMaterial material;
   final UIModuleShape shape;
   final Color color;
@@ -120,16 +114,8 @@ class UIModule {
   final Map<String, dynamic> properties; // 存储特定组件的属性
   final String? boundVariable; // 绑定到 SessionState 的变量名 (主动驱动 Prompt)
   final String? statusFieldMirrorKey; // 纯镜像映射置顶状态栏的字段名 (只读显示)
-
-  // === 联动显示支持（核心新增） ===
-  /// 显示表达式，支持简单 {{var}} 模板替换。
-  /// 示例： "{{progress.current}} / {{progress.max}}"
-  /// 仅用于视觉显示，不直接写入 Prompt。
-  final String? displayExpression;
-
-  /// 显式声明的联动源变量列表（用于循环检测、依赖追踪和运行时订阅）。
-  /// 格式示例： ["progress.current", "status.mood"]
-  final List<String> linkedSources;
+  final String? displayExpression; // 联动显示表达式 e.g. "{{current}} / {{max}} HP" 或 "{{progress.current}}"
+  final List<String> linkedSources; // 联动源ID列表 (同组件内scope)
 
   UIModule({
     required this.id,
@@ -148,7 +134,7 @@ class UIModule {
   })  : material = material ?? UIModuleMaterial.glass,
         shape = shape ?? UIModuleShape.rounded,
         color = color ?? Colors.white,
-        linkedSources = linkedSources ?? const <String>[];
+        linkedSources = linkedSources ?? const [];
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -179,7 +165,7 @@ class UIModule {
     boundVariable: json['boundVariable'],
     statusFieldMirrorKey: json['statusFieldMirrorKey'],
     displayExpression: json['displayExpression'],
-    linkedSources: (json['linkedSources'] as List?)?.cast<String>() ?? const <String>[],
+    linkedSources: (json['linkedSources'] as List?)?.map((e) => e.toString()).toList() ?? const [],
   );
 
   UIModule copyWith({
