@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>补丁合并器 - Patch Applier</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+body{max-width:900px;margin:30px auto;padding:0 20px;background:#f6f7f9;color:#222}
+h1{font-size:20px;margin-bottom:4px} .sub{color:#666;font-size:13px;margin-bottom:18px}
+.card{background:#fff;border:1px solid #ddd;border-radius:12px;padding:20px;margin-bottom:16px}
+label{font-weight:600;font-size:13px;display:block;margin-bottom:6px}
+textarea,input[type=file]{width:100%;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+textarea{border:1px solid #ccc;border-radius:8px;padding:10px;min-height:160px}
+.drop{border:2px dashed #aaa;border-radius:10px;padding:22px;text-align:center;background:#fafafa;cursor:pointer}
+.drop.dragover{border-color:#2563eb;background:#eef4ff}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+button{background:#2563eb;color:#fff;border:none;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:14px}
+button.secondary{background:#e8e8e8;color:#222}
+button:disabled{background:#bbb;cursor:not-allowed}
+pre{background:#1e1e1e;color:#c8e6c9;padding:12px;border-radius:8px;overflow:auto;max-height:320px;font-size:12px;white-space:pre-wrap}
+.ok{color:#15803d} .err{color:#c62828} .warn{color:#b45309}
+small{color:#777}
+code{background:#eee;padding:1px 5px;border-radius:4px;font-size:12px}
+table{font-size:13px;border-collapse:collapse;width:100%} td,th{border-bottom:1px solid #eee;padding:6px;text-align:left}
+.kbd{border:1px solid #bbb;background:#f5f5f5;padding:1px 6px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+
+<h1>补丁合并器 Patch Applier</h1>
+<div class="sub">免安装，纯本地浏览器运行。支持 Search/Replace 块和 Unified Diff。文件不上传。</div>
+
+<div class="card">
+  <label>1. 原文件</label>
+  <div id="drop" class="drop">
+    把原文件 <code>.dart / .js / .txt / 任意</code> 拖到这里，或 <button type="button" class="secondary" id="pickBtn">选择文件</button>
+    <input type="file" id="fileInput" hidden>
+    <div id="fileInfo" style="margin-top:8px;font-size:13px;color:#555"></div>
+  </div>
+  <div style="margin-top:8px"><small>也可以直接粘贴：</small>
+    <textarea id="originalText" placeholder="把原文件内容粘贴到这里也行..." style="min-height:120px"></textarea>
+  </div>
+</div>
+
+<div class="card">
+  <label>2. 补丁内容</label>
+  <small>支持两种格式，自动识别：<br>
+  A. <b>SEARCH/REPLACE 块</b>（推荐，最稳）：<br>
+  <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; SEARCH<br>旧代码<br>=======<br>新代码<br>&gt;&gt;&gt;&gt;&gt;&gt;&gt; REPLACE</code><br>
+  B. <b>Unified Diff</b>：<code>@@ -10,5 +10,7 @@</code> / <code>-旧行 / +新行</code>
+  </small>
+  <textarea id="patchText" placeholder="把 AI 给你的补丁块粘贴到这里...  
+例：
+<<<<<<< SEARCH
+  final name = s('name');
+=======
+  final name = s('name').trim();
+>>>>>>> REPLACE" style="min-height:200px;margin-top:8px"></textarea>
+  <div style="margin-top:8px" class="row">
+    <label style="margin:0;font-weight:normal"><input type="checkbox" id="fuzzy" checked> 模糊匹配（忽略缩进/空行差异）</label>
+    <label style="margin:0;font-weight:normal"><input type="checkbox" id="allOccur"> 替换所有匹配处（默认只替换第1处）</label>
+  </div>
+</div>
+
+<div class="card">
+  <div class="row">
+    <button id="applyBtn">3. 应用补丁 & 预览</button>
+    <button id="dlBtn" class="secondary" disabled>下载合并后文件</button>
+    <span id="status"></span>
+  </div>
+  <div id="log" style="margin-top:10px;font-size:13px"></div>
+  <details style="margin-top:10px"><summary>预览合并结果</summary><pre id="preview"></pre></details>
+</div>
+
+<div class="card">
+  <b>快速用法</b>
+  <table>
+    <tr><th>你</th><th>AI</th></tr>
+    <tr><td>把原文件拖进来</td><td>输出 SEARCH/REPLACE 块</td></tr>
+    <tr><td>Ctrl+V 补丁 → 点“应用”</td><td></td></tr>
+    <tr><td>检查预览 → 下载</td><td></td></tr>
+  </table>
+  <p><small>
+  提示：<br>
+  • 一个补丁文件可以包含多个 SEARCH/REPLACE 块，会按顺序应用<br>
+  • 模糊匹配会忽略行首空格差异，适合 Flutter 这种缩进敏感的文件<br>
+  • 如果匹配失败，会告诉你是第几块失败，不会乱改文件<br>
+  • 右边也放了一个 <code>apply_patch.py</code> 命令行版本，适合批量
+  </small></p>
+</div>
+
+<script>
+let originalName = 'patched.dart';
+let originalContent = '';
+let patchedContent = '';
+
+const $ = s => document.querySelector(s);
+const log = (msg, cls='') => { $('#log').insertAdjacentHTML('beforeend', `<div class="${cls}">${msg}</div>`); };
+
+$('#pickBtn').onclick = () => $('#fileInput').click();
+const drop = $('#drop');
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('dragover'); };
+drop.ondragleave = () => drop.classList.remove('dragover');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('dragover'); loadFile(e.dataTransfer.files[0]); };
+$('#fileInput').onchange = e => loadFile(e.target.files[0]);
+
+function loadFile(f){
+  if(!f) return;
+  originalName = f.name;
+  const r = new FileReader();
+  r.onload = () => {
+    originalContent = r.result;
+    $('#originalText').value = originalContent;
+    $('#fileInfo').textContent = `已加载: ${f.name}  ${(f.size/1024).toFixed(1)} KB  ${originalContent.split('\n').length} 行`;
+  };
+  r.readAsText(f);
+}
+$('#originalText').addEventListener('input', e => { originalContent = e.target.value; });
+
+function normalize(s, fuzzy){
+  if(!fuzzy) return s;
+  // 模糊：统一换行，去掉行尾空格
+  return s.replace(/\r\n/g,'\n').split('\n').map(l=>l.replace(/[ \t]+$/,'')).join('\n');
+}
+
+function findWithFuzzy(haystack, needle, fuzzy){
+  if(!fuzzy) return haystack.indexOf(needle);
+  // 允许缩进差异：把两边按行 trimLeft 后匹配
+  const hLines = haystack.split('\n');
+  const nLines = needle.split('\n');
+  const nTrim = nLines.map(l=>l.trimStart());
+  outer: for(let i=0;i<=hLines.length-nLines.length;i++){
+    for(let j=0;j<nLines.length;j++){
+      const hl = hLines[i+j];
+      // 完全相等 或 去缩进后相等 或 去首尾空白相等
+      if(hl === nLines[j]) continue;
+      if(hl.trimStart() === nTrim[j]) continue;
+      if(hl.trim() === nLines[j].trim() && nLines[j].trim() !== '') continue;
+      continue outer;
+    }
+    // 找到行号，转成字符偏移
+    let pos = 0;
+    for(let k=0;k<i;k++) pos += hLines[k].length + 1;
+    return pos;
+  }
+  return -1;
+}
+
+function applySearchReplace(src, patch, fuzzy, replaceAll){
+  const blocks = [];
+  // 匹配 <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE
+  const re = /<{3,}\s*SEARCH\s*\n([\s\S]*?)\n={3,}\s*\n([\s\S]*?)\n>{3,}\s*REPLACE/g;
+  let m;
+  while(m = re.exec(patch)) blocks.push({old:m[1], neo:m[2]});
+  if(blocks.length===0) return {ok:false, msg:'没找到 SEARCH/REPLACE 块。格式应为：<<<<<<< SEARCH 旧代码 ======= 新代码 >>>>>>> REPLACE'};
+  
+  let out = src;
+  let applied = 0;
+  for(let i=0;i<blocks.length;i++){
+    const b = blocks[i];
+    let oldText = b.old.replace(/\r\n/g,'\n');
+    let newText = b.neo.replace(/\r\n/g,'\n');
+    // 去掉块首尾多余的单个换行（常见复制误差）
+    if(oldText.endsWith('\n') && !src.includes(oldText)) oldText = oldText.replace(/\n$/, '');
+    
+    let idx = findWithFuzzy(out, oldText, fuzzy);
+    if(idx < 0){
+      // 再试一次：trim 整体
+      idx = findWithFuzzy(out, oldText.trim(), fuzzy);
+      if(idx >= 0) oldText = oldText.trim();
+    }
+    if(idx < 0){
+      return {ok:false, msg:`第 ${i+1}/${blocks.length} 块匹配失败。旧文本在原文件中找不到。检查缩进/空白是否一致。`, applied};
+    }
+    if(replaceAll){
+      let count = 0;
+      while(true){
+        idx = findWithFuzzy(out, oldText, fuzzy);
+        if(idx < 0) break;
+        out = out.slice(0, idx) + newText + out.slice(idx + oldText.length);
+        count++;
+        if(count>200) break;
+      }
+      applied += count;
+    } else {
+      out = out.slice(0, idx) + newText + out.slice(idx + oldText.length);
+      applied += 1;
+    }
+  }
+  return {ok:true, content:out, applied};
+}
+
+// 简易 unified diff 应用（只支持单文件，无上下文行号校验的简化版）
+function applyUnifiedDiff(src, patch){
+  const lines = src.split('\n');
+  const pLines = patch.split('\n');
+  let out = [];
+  let srcIdx = 0;
+  let i = 0;
+  let hunks = 0;
+  while(i < pLines.length){
+    if(pLines[i].startsWith('@@')){
+      hunks++;
+      i++;
+      while(i < pLines.length && !pLines[i].startsWith('@@')){
+        const pl = pLines[i];
+        if(pl.startsWith('+') && !pl.startsWith('+++')){
+          out.push(pl.slice(1));
+        } else if(pl.startsWith('-') && !pl.startsWith('---')){
+          srcIdx++; // 跳过原行
+        } else if(pl.startsWith(' ')){
+          out.push(lines[srcIdx] ?? '');
+          srcIdx++;
+        } else if(pl === '' || pl.startsWith('\\')){
+          // no newline marker, ignore
+        } else break;
+        i++;
+      }
+      continue;
+    }
+    i++;
+  }
+  // 把剩余原文件尾部补上
+  while(srcIdx < lines.length) out.push(lines[srcIdx++]);
+  if(hunks === 0) return {ok:false};
+  return {ok:true, content: out.join('\n'), applied: hunks};
+}
+
+$('#applyBtn').onclick = () => {
+  $('#log').innerHTML = '';
+  $('#status').textContent = '';
+  const src = $('#originalText').value || originalContent;
+  if(!src){ log('请先加载原文件', 'err'); return; }
+  const patch = $('#patchText').value.trim();
+  if(!patch){ log('请粘贴补丁', 'err'); return; }
+  originalContent = src;
+
+  const fuzzy = $('#fuzzy').checked;
+  const replaceAll = $('#allOccur').checked;
+
+  let res = applySearchReplace(src, patch, fuzzy, replaceAll);
+  let mode = 'SEARCH/REPLACE';
+  if(!res.ok && patch.includes('@@')){
+    res = applyUnifiedDiff(src, patch);
+    mode = 'Unified Diff';
+  }
+  if(!res.ok){
+    log('❌ ' + (res.msg || '补丁应用失败'), 'err');
+    $('#status').textContent = '失败';
+    $('#dlBtn').disabled = true;
+    return;
+  }
+  patchedContent = res.content;
+  log(`✅ ${mode} 应用成功，共 ${res.applied} 处修改`, 'ok');
+  $('#status').textContent = `成功 · ${res.applied} 处`;
+  $('#preview').textContent = patchedContent.slice(0, 8000) + (patchedContent.length > 8000 ? '\n\n...（预览截断，下载看全文）' : '');
+  $('#dlBtn').disabled = false;
+};
+
+$('#dlBtn').onclick = () => {
+  const blob = new Blob([patchedContent], {type:'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = originalName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+</script>
+</body>
+</html>

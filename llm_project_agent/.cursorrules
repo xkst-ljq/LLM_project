@@ -1,0 +1,76 @@
+# Cursor Rules - LLM_Project
+# Canonical: ./AGENT.md (English)
+# Chinese ref: ./AGENT.zh.md
+# Patch tool: ./tools/patch/apply_patch_multi.html
+
+Think in English. Respond in Chinese.
+
+## Modes
+- Default = DISCUSS: read/grep only, NO file writes
+- EDIT only after: "开始编辑" / "动手改" / "执行" / "go edit"
+- After edit: return to DISCUSS, deliver Patch + Change Summary
+
+## Pre-edit
+1. Survey first: read data models + import/export + real JSON in parallel (3-5 files). Report understanding before coding. 0 LOC until done.
+2. No hallucination: SEARCH old_text MUST be verbatim from file. NO $1 / ... / // keep rest.
+   Missing version? ASK. Files >1500 LOC: read target ±80 lines.
+3. Hard parts (binary parse / format mapping): prototype → validate → production.
+
+## Edit
+4. Flutter zero-defect: `dart format .` + `flutter analyze --no-fatal-infos` clean.
+   const where possible. mounted guard before setState. Null safety complete.
+5. Overflow/conflict checklist:
+   Layout: Expanded/Flexible, TextOverflow.ellipsis, bounded Lists
+   State: mounted guard, no mutation in build()
+   IDs/Keys: project ID util, no duplicates
+   Responsive: 360px / 1200px
+   Schema: entries_json matches character_edit_page.dart
+6. Tool discipline: grep → read → copy old_text → edit → verify.
+   One logical change per SEARCH block. 2 failures → STOP.
+   Chinese grep 0 → switch to English symbols.
+
+## Post-edit — PATCH-FIRST
+7. Output: Multi-File SEARCH/REPLACE total patch
+```
+--- File: lib/a.dart
+<<<<<<< SEARCH
+old code, verbatim, 3-5 lines context
+=======
+new code
+>>>>>>> REPLACE
+--- File: lib/b.dart (new)
+<<<<<<< SEARCH
+=======
+full new file
+>>>>>>> REPLACE
+--- File: lib/old.dart (delete)
+```
+   - Batch ALL changed files into ONE patch
+   - Full files to workspace (downloadable)
+   - Chat order: 1. Change Summary 2. Total Patch 3. Workspace paths 4. Verify steps
+   - New file <500 LOC → MAY paste full
+   - User says "贴全文" → paste COMPLETE file immediately
+   - Patch tool: tools/patch/apply_patch_multi.html
+
+8. Change Summary REQUIRED:
+   本次改动：- 文件A: xxx
+   如何验证：1. flutter analyze 2. flutter run ...
+   预期结果：xxx
+   受影响文件：...
+
+9. Layering: models / parser / mapper separate. Pure Dart preferred.
+   Unsupported → disabled custom entry, never drop.
+   Provide toReport().
+
+10. Self-check: context read? verbatim old_text? analyze clean?
+    overflow checklist? patch includes ALL files? (new)/(delete) marked?
+    summary + verify steps? workspace updated?
+
+## LLM_Project anchors
+- ui_studio_page.dart >2500 LOC, check sed 1650-1850 before editing linker
+- Search: `_buildPreviewDraggableCard` / `type: 'linker'`, NOT Chinese
+- CharacterCard.entries_json → `character_edit_page.dart`
+- ID: project ID utility
+- converter: `lib/tools/character_converter/`, pure Dart
+
+See AGENT.md for full rules.

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多文件补丁合并器</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+body{max-width:980px;margin:28px auto;padding:0 18px;background:#f6f7f9;color:#222}
+h1{font-size:20px} .sub{color:#666;font-size:13px;margin-bottom:16px}
+.card{background:#fff;border:1px solid #ddd;border-radius:12px;padding:18px;margin-bottom:14px}
+textarea{width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;border:1px solid #ccc;border-radius:8px;padding:10px}
+button{background:#2563eb;color:#fff;border:none;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:14px}
+button.secondary{background:#e8e8e8;color:#222}
+button:disabled{background:#bbb}
+pre{background:#1e1e1e;color:#c8e6c9;padding:12px;border-radius:8px;overflow:auto;max-height:360px;font-size:12px;white-space:pre-wrap}
+.ok{color:#15803d} .err{color:#c62828} .warn{color:#b45309}
+table{width:100%;border-collapse:collapse;font-size:13px} td,th{border-bottom:1px solid #eee;padding:6px;text-align:left}
+.file-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f0f0f0}
+.file-row .tag{font-size:11px;padding:2px 7px;border-radius:4px;color:#fff}
+.tag-mod{background:#2563eb} .tag-new{background:#16a34a} .tag-del{background:#dc2626}
+small{color:#777}
+code{background:#eee;padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<h1>多文件补丁合并器</h1>
+<div class="sub">支持一次打多个文件的总补丁：新增 / 修改 / 删除。纯本地浏览器运行，文件不上传。</div>
+
+<div class="card">
+<b>第一步：加载原项目文件夹</b><br>
+<small>选你的项目根目录（比如 LLM_project 文件夹），浏览器会读取里面需要改的文件。不会上传。</small><br><br>
+<input type="file" id="dirPicker" webkitdirectory multiple>
+<div id="dirInfo" style="font-size:13px;color:#555;margin-top:6px"></div>
+</div>
+
+<div class="card">
+<b>第二步：粘贴总补丁</b><br>
+<small>支持格式：<br>
+1. <b>Multi-File SEARCH/REPLACE（推荐）</b><br>
+<code>--- File: lib/pages/ui_studio_page.dart<br>&lt;&lt;&lt;&lt;&lt;&lt;&lt; SEARCH<br>旧代码<br>=======<br>新代码<br>&gt;&gt;&gt;&gt;&gt;&gt;&gt; REPLACE</code><br>
+<code>--- File: lib/tools/new_helper.dart (new)<br>&lt;&lt;&lt;&lt;&lt;&lt;&lt; SEARCH<br>=======<br>新文件全部内容<br>&gt;&gt;&gt;&gt;&gt;&gt;&gt; REPLACE</code><br>
+<code>--- File: lib/old_file.dart (delete)</code><br>
+可包含多个文件，一个接一个。<br>
+2. git unified diff（实验性）
+</small>
+<textarea id="patchText" style="min-height:220px" placeholder="把 AI 给你的总补丁粘贴到这里..."></textarea>
+<div style="margin-top:6px">
+<label><input type="checkbox" id="fuzzy" checked> 模糊匹配（忽略缩进差异）</label>
+</div>
+<p>
+<button id="parseBtn">解析补丁</button>
+<button id="applyBtn" disabled>应用补丁 & 预览</button>
+</p>
+<div id="fileList"></div>
+</div>
+
+<div class="card" id="resultCard" style="display:none">
+<b>结果</b>
+<div id="resultLog" style="font-size:13px;margin:8px 0"></div>
+<button id="dlZipBtn">下载全部修改文件 (ZIP)</button>
+<button id="dlPatchBtn" class="secondary">下载合并后单个文件</button>
+<div style="margin-top:10px"><small>ZIP 里保持原目录结构，可直接解压覆盖到项目里。原文件不会被浏览器修改，放心。</small></div>
+<details style="margin-top:10px"><summary>预览</summary><pre id="preview"></pre></details>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+const fileMap = new Map(); // path -> content
+let parsedFiles = [];
+let patchedOutputs = new Map();
+
+const $ = s => document.querySelector(s);
+const log = (msg, cls='') => { const d=document.createElement('div'); d.className=cls; d.textContent=msg; $('#resultLog').appendChild(d); };
+
+$('#dirPicker').onchange = async e => {
+  fileMap.clear();
+  const files = Array.from(e.target.files);
+  for(const f of files){
+    const rel = f.webkitRelativePath.split('/').slice(1).join('/');
+    if(!rel) continue;
+    const text = await f.text().catch(()=>null);
+    if(text !== null) fileMap.set(rel.replace(/\\/g,'/'), text);
+  }
+  $('#dirInfo').textContent = `已加载 ${fileMap.size} 个文件。没选也没关系，修改的文件会直接按补丁内容生成，新增文件也能处理。`;
+};
+
+function parseMultiSR(patch){
+  const files = [];
+  const parts = patch.split(/^--- File:\s*(.+?)\s*$/m);
+  if(parts.length < 3) return [];
+  for(let i=1;i<parts.length;i+=2){
+    let rawPath = parts[i].trim();
+    const content = parts[i+1] || '';
+    let mode='modify';
+    if(rawPath.endsWith('(new)')){ mode='new'; rawPath = rawPath.slice(0,-5).trim(); }
+    else if(rawPath.endsWith('(delete)')){ mode='delete'; rawPath = rawPath.slice(0,-8).trim(); }
+    const path = rawPath.replace(/["']/g,'').trim();
+    const blocks=[];
+    const re = /<{3,}\s*SEARCH\s*\n([\s\S]*?)\n={3,}\s*\n([\s\S]*?)\n>{3,}\s*REPLACE/g;
+    let m;
+    while(m = re.exec(content)) blocks.push([m[1], m[2]]);
+    if(mode==='new' && blocks.length===0){
+      const stripped = content.trim();
+      if(stripped && !stripped.includes('<<<<<<<')) blocks.push(['', stripped]);
+    }
+    files.push({path, mode, blocks, raw:content});
+  }
+  return files;
+}
+
+function findFuzzy(haystack, needle){
+  let idx = haystack.indexOf(needle);
+  if(idx >= 0) return {idx, old:needle};
+  // 模糊：按行去缩进匹配
+  const hLines = haystack.split('\n');
+  const nLines = needle.split('\n');
+  const nTrim = nLines.map(l=>l.trimStart());
+  outer: for(let i=0;i<=hLines.length-nLines.length;i++){
+    for(let j=0;j<nLines.length;j++){
+      if(hLines[i+j] === nLines[j]) continue;
+      if(hLines[i+j].trimStart() === nTrim[j]) continue;
+      if(hLines[i+j].trim() === nLines[j].trim() && nLines[j].trim()!=='') continue;
+      continue outer;
+    }
+    let pos=0; for(let k=0;k<i;k++) pos += hLines[k].length+1;
+    const realOld = hLines.slice(i, i+nLines.length).join('\n');
+    return {idx: pos, old: realOld};
+  }
+  return {idx:-1, old:needle};
+}
+
+function applySR(src, blocks, fuzzy){
+  let out = src;
+  for(const [oldRaw, neo] of blocks){
+    const old = oldRaw.replace(/\r\n/g,'\n');
+    const nw = neo.replace(/\r\n/g,'\n');
+    const {idx, old:realOld} = fuzzy ? findFuzzy(out, old) : {idx: out.indexOf(old), old};
+    if(idx < 0) return {ok:false, err:`找不到匹配块:\n${old.slice(0,120)}`};
+    out = out.slice(0, idx) + nw + out.slice(idx + realOld.length);
+  }
+  return {ok:true, content:out};
+}
+
+$('#parseBtn').onclick = () => {
+  const patch = $('#patchText').value.trim();
+  if(!patch){ alert('先粘贴补丁'); return; }
+  parsedFiles = parseMultiSR(patch);
+  if(parsedFiles.length===0){ alert('没解析到文件。格式应为 --- File: path/to/file.dart 开头'); return; }
+  let html = '<table><tr><th>文件</th><th>类型</th><th>块数</th><th>本地有原文件?</th></tr>';
+  for(const f of parsedFiles){
+    const has = fileMap.has(f.path) ? '✓' : (f.mode==='new' ? '新建' : '<span class="warn">无（会用空文件尝试）</span>');
+    const tag = f.mode==='new' ? '<span class="tag tag-new">NEW</span>' : f.mode==='delete' ? '<span class="tag tag-del">DEL</span>' : '<span class="tag tag-mod">MOD</span>';
+    html += `<tr><td><code>${f.path}</code></td><td>${tag}</td><td>${f.blocks.length}</td><td>${has}</td></tr>`;
+  }
+  html += '</table>';
+  $('#fileList').innerHTML = html;
+  $('#applyBtn').disabled = false;
+  $('#resultCard').style.display='none';
+};
+
+$('#applyBtn').onclick = () => {
+  $('#resultLog').innerHTML = '';
+  patchedOutputs.clear();
+  const fuzzy = $('#fuzzy').checked;
+  let okCount = 0;
+  for(const f of parsedFiles){
+    if(f.mode==='delete'){
+      patchedOutputs.set(f.path, null);
+      log(`✓ ${f.path}  — 标记删除`, 'ok');
+      okCount++; continue;
+    }
+    let src = fileMap.get(f.path) || '';
+    if(f.mode==='new'){
+      const content = f.blocks[0] ? f.blocks[0][1] : '';
+      patchedOutputs.set(f.path, content);
+      log(`✓ ${f.path}  — 新建，${content.length} 字符`, 'ok');
+      okCount++; continue;
+    }
+    if(!src && !fileMap.has(f.path)){
+      log(`✗ ${f.path}  — 本地没找到原文件，无法应用修改。请先在第一步加载项目文件夹。`, 'err');
+      continue;
+    }
+    const res = applySR(src, f.blocks, fuzzy);
+    if(!res.ok){
+      log(`✗ ${f.path}  — ${res.err}`, 'err');
+      continue;
+    }
+    patchedOutputs.set(f.path, res.content);
+    log(`✓ ${f.path}  — 应用 ${f.blocks.length} 块，${src.length} → ${res.content.length} 字符`, 'ok');
+    okCount++;
+  }
+  if(okCount === 0){ log('全部失败', 'err'); return; }
+  $('#resultCard').style.display = '';
+  const preview = Array.from(patchedOutputs.entries())
+    .filter(([,v])=>v!==null).slice(0,2)
+    .map(([p,v])=>`=== ${p} ===\n${v.slice(0,1200)}`).join('\n\n');
+  $('#preview').textContent = preview + '\n\n...';
+};
+
+$('#dlZipBtn').onclick = async () => {
+  const zip = new JSZip();
+  for(const [path, content] of patchedOutputs){
+    if(content === null) continue; // 删除的文件不打进 zip
+    zip.file(path, content);
+  }
+  // 再加一个删除清单
+  const dels = Array.from(patchedOutputs.entries()).filter(([,v])=>v===null).map(([p])=>p);
+  if(dels.length) zip.file('_DELETE_THESE.txt', '以下文件在此补丁中被标记为删除，请手动删除：\n\n' + dels.join('\n'));
+  
+  const blob = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'patched_files.zip';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+$('#dlPatchBtn').onclick = () => {
+  // 下载第一个修改过的文件，方便单文件场景
+  const first = Array.from(patchedOutputs.entries()).find(([,v])=>v!==null);
+  if(!first){ alert('没有可下载的文件'); return; }
+  const [path, content] = first;
+  const blob = new Blob([content], {type:'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = path.split('/').pop();
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+</script>
+</body>
+</html>
