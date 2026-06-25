@@ -3982,7 +3982,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 }
 
                 var newRot = _startRotation + delta * 180 / math.pi;
-                newRot = _snapRotation(newRot);
                 _updateElementRotation(el.id, newRot);
                 return;
               }
