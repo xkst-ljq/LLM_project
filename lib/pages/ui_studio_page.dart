@@ -412,6 +412,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
         return '容器面';
       case 'composite':
         return '复合组件';
+      case 'linker':
+        return '联动器';
       default:
         return type;
     }
@@ -713,6 +715,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
     if (module.type == 'primitive_art') return const Size(160, 18);
     if (module.type == 'slider') return const Size(180, 32);
     if (module.type == 'text') return const Size(150, 34);
+    if (module.type == 'linker') return const Size(160, 52); // 联动器推荐尺寸
     return const Size(150, 68);
   }
 
@@ -1123,6 +1126,41 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
                         decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
                         onChanged: (v) => labelProp = v,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // === Linker（联动器）专用配置区（MVP）===
+                    if (!isComp && el.module?.type == 'linker') ...[
+                      const Text('联动器配置（MVP）', style: TextStyle(fontSize: 12, color: Color(0xFF555562), fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F8FC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.black12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('当前传输方案', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
+                            const SizedBox(height: 4),
+                            Text(
+                              (el.module!.properties['linker']?['scheme'] ?? 'current_to_text').toString(),
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF00ACC1), fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text('端口信息（后续版本支持自动解析与拖拽连线）', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+                            const SizedBox(height: 4),
+                            Text(
+                              '源端口: ${el.module!.properties['linker']?['sourcePort'] ?? 'current'}  →  目标端口: ${el.module!.properties['linker']?['targetPort'] ?? 'text'}',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF555562)),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text('提示：目前仅支持 progress.current → text.text，后续将支持可视化接线与多方案选择。', style: TextStyle(fontSize: 9, color: Color(0xFF888896), fontStyle: FontStyle.italic)),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -1809,6 +1847,54 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     _buildPreviewDraggableCard(
                       UIModule(id: 'inp', name: '输入热区原子', type: 'input', properties: {'variable': 'var.input'}, color: Colors.transparent),
                       Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00ACC1), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('输入热区', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 10, fontWeight: FontWeight.bold))),
+                    ),
+
+                    const SizedBox(height: 10),
+                    const Text('联动器节点', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(
+                        id: 'linker_mvp',
+                        name: '联动器',
+                        type: 'linker',
+                        properties: {
+                          'linker': {
+                            'sourceModuleId': '',
+                            'sourcePort': 'current',
+                            'sourceType': 'number',
+                            'targetModuleId': '',
+                            'targetPort': 'text',
+                            'targetType': 'string',
+                            'scheme': 'current_to_text',
+                            'enabled': true,
+                          }
+                        },
+                        color: const Color(0xFF00ACC1),
+                      ),
+                      Container(
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF00ACC1).withValues(alpha: 0.4), width: 1.5),
+                        ),
+                        child: Stack(
+                          children: [
+                            Positioned(left: 8, top: 6, child: Row(children: [
+                              Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFF00ACC1), shape: BoxShape.circle)),
+                              const SizedBox(width: 3),
+                              const Text('current', style: TextStyle(fontSize: 8, color: Color(0xFF555562))),
+                            ])),
+                            Positioned(right: 8, top: 6, child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Text('text', style: TextStyle(fontSize: 8, color: Color(0xFF555562))),
+                              const SizedBox(width: 3),
+                              Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFF00ACC1), shape: BoxShape.circle)),
+                            ])),
+                            const Center(child: Text('current→text', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF111116)))),
+                            const Positioned(bottom: 3, left: 0, right: 0, child: Center(child: Text('联动器', style: TextStyle(fontSize: 7, color: Color(0xFF00ACC1))))),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),

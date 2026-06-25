@@ -105,7 +105,22 @@ class UIPrimitiveLayer {
 class UIModule {
   final String id;
   final String name;
-  final String type; // 'slider', 'button', 'text', 'progress', 'input', 'base_box' 等
+  final String type; // 'slider', 'button', 'text', 'progress', 'input', 'base_box', 'linker' 等
+  //
+  // === Linker（联动器）端口元数据建议结构（放在 properties['linker'] 中）===
+  // {
+  //   "linker": {
+  //     "sourceModuleId": "el_xxx",
+  //     "sourcePort": "current",
+  //     "sourceType": "number",
+  //     "targetModuleId": "el_yyy",
+  //     "targetPort": "text",
+  //     "targetType": "string",
+  //     "scheme": "current_to_text",
+  //     "enabled": true
+  //   }
+  // }
+  // 这是最高效且易扩展的扁平结构，后续可轻松增加 filter / transform 等字段。
   final UIModuleMaterial material;
   final UIModuleShape shape;
   final Color color;

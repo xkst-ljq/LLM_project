@@ -82,6 +82,12 @@ class UIRenderer {
           _buildBaseBox(),
           size,
         );
+      case 'linker':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildLinkerNode(module, size),
+        );
       default:
         return SizedBox(
           width: size.width,
@@ -351,6 +357,121 @@ class UIRenderer {
     // 原子输入框只提供透明输入逻辑热区，不自带边框、底色或 placeholder。
     // 视觉输入框 = surface + placeholder text + input 逻辑区的复合块。
     return const SizedBox.expand();
+  }
+
+  /// 联动器节点渲染（MVP）
+  /// 样式：圆角矩形 + 左右端口原点 + 右上角端口标签 + 中间传输方案
+  static Widget _buildLinkerNode(UIModule module, Size size) {
+    final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>() ?? {};
+    
+    final sourcePort = linkerData['sourcePort']?.toString() ?? '—';
+    final targetPort = linkerData['targetPort']?.toString() ?? '—';
+    final scheme = linkerData['scheme']?.toString() ?? '未配置';
+
+    final portColor = module.color.withValues(alpha: 0.9);
+    final borderColor = module.color.withValues(alpha: 0.35);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // 左端口原点 + 右上角源端口标签
+          Positioned(
+            left: 8,
+            top: 8,
+            child: Row(
+              children: [
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: portColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  sourcePort,
+                  style: const TextStyle(fontSize: 9, color: Color(0xFF555562), fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+
+          // 右端口原点 + 右上角目标端口标签
+          Positioned(
+            right: 8,
+            top: 8,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  targetPort,
+                  style: const TextStyle(fontSize: 9, color: Color(0xFF555562), fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: portColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 中间传输方案
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 2),
+              child: Text(
+                scheme,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF111116),
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+
+          // 底部提示
+          Positioned(
+            bottom: 4,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Text(
+                '联动器',
+                style: TextStyle(
+                  fontSize: 8,
+                  color: module.color.withValues(alpha: 0.6),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
 }
