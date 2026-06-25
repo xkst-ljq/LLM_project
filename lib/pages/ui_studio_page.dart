@@ -1048,12 +1048,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
     _autoSave();
   }
 
-  double _snapRotation(double deg) {
-    final snapped = ((deg / 90).round()) * 90.0;
-    if ((deg - snapped).abs() <= 3.0) return snapped; // 降低吸附阈值，减少 0° 附近打断
-    return deg;
-  }
-
   void _deleteElement(String id) {
     setState(() {
       _compositeWorkspaceElements.removeWhere((e) => e.id == id);
@@ -3901,14 +3895,27 @@ class _UIStudioPageState extends State<UIStudioPage> {
     Widget touchableContent = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (details) {
+        // 关键修复：旋转模式下禁用元素拖拽
+        if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
+          return;
+        }
         _startTouchElemOffset = el.offset;
         _startTouchScreenPos = details.globalPosition;
       },
       onPanUpdate: (details) {
+        // 关键修复：旋转模式下禁用元素拖拽
+        if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
+          return;
+        }
         final delta = details.globalPosition - _startTouchScreenPos;
         _updateElementGeometry(el.id, _startTouchElemOffset + delta, el.size);
       },
-      onPanEnd: (_) => _startTouchElemOffset = Offset.zero,
+      onPanEnd: (_) {
+        if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
+          return;
+        }
+        _startTouchElemOffset = Offset.zero;
+      },
       onTap: () {
         setState(() {
           if (_selectedTransformationId != el.id) {
@@ -3916,7 +3923,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
           }
           _selectedTransformationId = el.id;
 
-          // 联动器强制禁用旋转模式
           if (el.module?.type == 'linker') {
             _transformHandleRotateMode = false;
           }
