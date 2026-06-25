@@ -74,8 +74,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   // === 联动器连线模式状态 ===
   bool _isLinkingMode = false;
-  String? _linkingFromElementId; // 当前连线起始元素ID
-  String? _linkingFromPort; // 当前连线起始端口名
+
+  // === 连线拖拽状态（按住端口拖拽连线）===
+  bool _isDraggingConnection = false;
+  String? _draggingSourceId;           // 拖拽起始元素 ID（可以是 linker 或其他模块）
+  String? _draggingSourcePort;         // 起始端口名
+  String? _draggingSourceType;         // 'output' 或 'input'
+  Offset? _dragConnectionEnd;          // 手指当前坐标（用于绘制临时连线）
+  String? _hoveringTargetId;           // 当前悬停的目标元素 ID（用于高亮）
+  String? _hoveringTargetPort;         // 悬停的目标端口名
 
   // 当前阶段收敛为单一“工作台”。
   List<UIElement> get _currentElements => _compositeWorkspaceElements;
@@ -2105,14 +2112,37 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onPanUpdate: (details) {
+                      if (_isDraggingConnection) {
+                        setState(() {
+                          _dragConnectionEnd = details.globalPosition;
+                        });
+                        _updateConnectionHover(details.globalPosition);
+                        return;
+                      }
                       setState(() => _workspaceOffset += details.delta);
+                    },
+                    onPanEnd: (details) {
+                      if (_isDraggingConnection) {
+                        // 完成连接
+                        if (_hoveringTargetId != null) {
+                          _completeConnection();
+                        }
+                        setState(() {
+                          _isDraggingConnection = false;
+                          _draggingSourceId = null;
+                          _draggingSourcePort = null;
+                          _draggingSourceType = null;
+                          _dragConnectionEnd = null;
+                          _hoveringTargetId = null;
+                          _hoveringTargetPort = null;
+                        });
+                        return;
+                      }
                     },
                     onTap: () {
                       if (_isLinkingMode) {
                         setState(() {
                           _isLinkingMode = false;
-                          _linkingFromElementId = null;
-                          _linkingFromPort = null;
                         });
                       } else {
                         setState(() => _selectedTransformationId = null);
@@ -2124,14 +2154,16 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            // 1. 绘制联动器连线（贝塞尔曲线）
+                            // 1. 已保存的联动器连线
                             ..._buildLinkerConnectionsLayer(),
 
-                            // 2. 更新 LinkerService 快照 + 渲染元素
+                            // 2. 拖拽中的临时连线
+                            if (_isDraggingConnection && _dragConnectionEnd != null)
+                              _buildTemporaryConnectionLine(),
+
+                            // 3. 渲染元素
                             ...() {
-                              LinkerService.updateElementSnapshot(
-                                sortedElements,
-                              );
+                              LinkerService.updateElementSnapshot(sortedElements,);
                               return sortedElements.map((el) {
                                 final double p =
                                     el.id == _selectedTransformationId
@@ -3389,15 +3421,24 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
       if (fromEl == null || toEl == null) continue;
 
-      final fromX = _workspaceOffset.dx + fromEl.offset.dx + fromEl.size.width;
+      // 根据连接类型确定起点和终点
+      double fromX, toX;
       final fromY = _workspaceOffset.dy + fromEl.offset.dy + fromEl.size.height / 2;
-
-      final toX = _workspaceOffset.dx + toEl.offset.dx;
       final toY = _workspaceOffset.dy + toEl.offset.dy + toEl.size.height / 2;
 
+      if (lineType == 'input') {
+        // 输入线：source 右侧 → linker 左侧
+        fromX = _workspaceOffset.dx + fromEl.offset.dx + fromEl.size.width;
+        toX = _workspaceOffset.dx + toEl.offset.dx;
+      } else {
+        // 输出线：linker 右侧 → target 左侧
+        fromX = _workspaceOffset.dx + fromEl.offset.dx + fromEl.size.width;
+        toX = _workspaceOffset.dx + toEl.offset.dx;
+      }
+
       final lineColor = lineType == 'input'
-          ? const Color(0xFF00ACC1)
-          : const Color(0xFF66BB6A);
+          ? const Color(0xFF00ACC1) // 青色输入线
+          : const Color(0xFF66BB6A); // 绿色输出线
 
       widgets.add(
         CustomPaint(
@@ -3411,6 +3452,41 @@ class _UIStudioPageState extends State<UIStudioPage> {
     }
 
     return widgets;
+  }
+
+  /// 绘制拖拽中的临时连线
+  Widget _buildTemporaryConnectionLine() {
+    if (_dragConnectionEnd == null || _draggingSourceId == null) {
+      return const SizedBox.shrink();
+    }
+
+    final sourceEl = _currentElements.firstWhere(
+          (e) => e.id == _draggingSourceId,
+      orElse: () => UIElement(id: '', isComposite: false),
+    );
+
+    if (sourceEl.id.isEmpty) return const SizedBox.shrink();
+
+    // 计算起始端口坐标
+    final isLeftPort = _draggingSourcePort == 'left';
+    final startX = _workspaceOffset.dx +
+        (isLeftPort
+            ? sourceEl.offset.dx
+            : sourceEl.offset.dx + sourceEl.size.width);
+    final startY = _workspaceOffset.dy + sourceEl.offset.dy + sourceEl.size.height / 2;
+
+    // 根据是否悬停在有效目标上改变颜色
+    final lineColor = _hoveringTargetId != null
+        ? const Color(0xFF00E676)  // 绿色表示可以连接
+        : const Color(0xFF00ACC1); // 青色表示拖拽中
+
+    return CustomPaint(
+      painter: LinkerConnectionPainter(
+        start: Offset(startX, startY),
+        end: _dragConnectionEnd!,
+        color: lineColor,
+      ),
+    );
   }
 
   /// 获取可作为联动源的模块列表（progress、slider 等输出 number 的模块）
@@ -3481,6 +3557,273 @@ class _UIStudioPageState extends State<UIStudioPage> {
       }
     }
     return connections;
+  }
+
+  /// 检测拖拽目标（判断是否可以连接）
+  void _updateConnectionHover(Offset globalPosition) {
+    if (!_isDraggingConnection) return;
+
+    // 遍历所有元素，检测哪个端口被悬停
+    for (final el in _currentElements) {
+      if (el.id == _draggingSourceId) continue; // 跳过自己
+
+      final elLeft = _workspaceOffset.dx + el.offset.dx;
+      final elRight = elLeft + el.size.width;
+      final elTop = _workspaceOffset.dy + el.offset.dy;
+      final elCenterY = elTop + el.size.height / 2;
+
+      // 检测左端口（输入端口）
+      final leftPortPos = Offset(elLeft, elCenterY);
+      if ((globalPosition - leftPortPos).distance < 24) {
+        if (_canConnectTo(el, 'input')) {
+          setState(() {
+            _hoveringTargetId = el.id;
+            _hoveringTargetPort = 'input';
+          });
+          return;
+        }
+      }
+
+      // 检测右端口（输出端口）
+      final rightPortPos = Offset(elRight, elCenterY);
+      if ((globalPosition - rightPortPos).distance < 24) {
+        if (_canConnectTo(el, 'output')) {
+          setState(() {
+            _hoveringTargetId = el.id;
+            _hoveringTargetPort = 'output';
+          });
+          return;
+        }
+      }
+    }
+
+    // 没有悬停在任何有效端口上
+    if (_hoveringTargetId != null) {
+      setState(() {
+        _hoveringTargetId = null;
+        _hoveringTargetPort = null;
+      });
+    }
+  }
+
+  /// 判断是否可以连接到目标元素
+  /// 连接规则：
+  ///   - linker 左侧（输入端口）→ 连接 progress/slider 右侧（输出端口）
+  ///   - linker 右侧（输出端口）→ 连接 text 左侧（输入端口）
+  ///   - progress/slider 右侧（输出端口）→ 连接 linker 左侧（输入端口）
+  ///   - text 左侧（输入端口）→ 连接 linker 右侧（输出端口）
+  bool _canConnectTo(UIElement target, String portDirection) {
+    final sourceElement = _currentElements.firstWhere(
+      (e) => e.id == _draggingSourceId,
+      orElse: () => UIElement(id: '', isComposite: false),
+    );
+
+    if (sourceElement.id.isEmpty) return false;
+
+    final sourceType = sourceElement.module?.type;
+    final targetType = target.module?.type;
+
+    if (sourceType == null || targetType == null) return false;
+
+    // linker 左侧（输入端口）→ progress/slider 右侧（输出端口）
+    if (sourceType == 'linker' && _draggingSourceType == 'input') {
+      return (targetType == 'progress' || targetType == 'slider') && portDirection == 'output';
+    }
+
+    // linker 右侧（输出端口）→ text 左侧（输入端口）
+    if (sourceType == 'linker' && _draggingSourceType == 'output') {
+      return targetType == 'text' && portDirection == 'input';
+    }
+
+    // progress/slider 右侧（输出端口）→ linker 左侧（输入端口）
+    if ((sourceType == 'progress' || sourceType == 'slider') && _draggingSourceType == 'output') {
+      return targetType == 'linker' && portDirection == 'input';
+    }
+
+    // text 左侧（输入端口）→ linker 右侧（输出端口）
+    if (sourceType == 'text' && _draggingSourceType == 'input') {
+      return targetType == 'linker' && portDirection == 'output';
+    }
+
+    return false;
+  }
+
+  /// 完成连接
+  void _completeConnection() {
+    if (_hoveringTargetId == null || _draggingSourceId == null) return;
+
+    final sourceElement = _currentElements.firstWhere(
+      (e) => e.id == _draggingSourceId,
+      orElse: () => UIElement(id: '', isComposite: false),
+    );
+
+    final targetElement = _currentElements.firstWhere(
+      (e) => e.id == _hoveringTargetId,
+      orElse: () => UIElement(id: '', isComposite: false),
+    );
+
+    if (sourceElement.id.isEmpty || targetElement.id.isEmpty) return;
+
+    final sourceType = sourceElement.module?.type;
+    final targetType = targetElement.module?.type;
+
+    // 场景 1: linker 右侧（输出端口）→ text 左侧（输入端口）
+    if (sourceType == 'linker' && _draggingSourceType == 'output' &&
+        targetType == 'text' && _hoveringTargetPort == 'input') {
+      _updateLinkerConnection(
+        linkerId: sourceElement.id,
+        targetModuleId: targetElement.id,
+        targetPort: 'text',
+        targetType: 'string',
+        connectionType: 'output',
+      );
+    }
+    // 场景 2: linker 左侧（输入端口）← progress/slider 右侧（输出端口）
+    else if (sourceType == 'linker' && _draggingSourceType == 'input' &&
+             (targetType == 'progress' || targetType == 'slider') &&
+             _hoveringTargetPort == 'output') {
+      _updateLinkerConnection(
+        linkerId: sourceElement.id,
+        sourceModuleId: targetElement.id,
+        sourcePort: 'current',
+        sourceType: 'number',
+        connectionType: 'input',
+      );
+    }
+    // 场景 3: progress/slider 右侧（输出端口）→ linker 左侧（输入端口）
+    else if ((sourceType == 'progress' || sourceType == 'slider') &&
+             _draggingSourceType == 'output' &&
+             targetType == 'linker' && _hoveringTargetPort == 'input') {
+      _updateLinkerConnection(
+        linkerId: targetElement.id,
+        sourceModuleId: sourceElement.id,
+        sourcePort: 'current',
+        sourceType: 'number',
+        connectionType: 'input',
+      );
+    }
+    // 场景 4: text 左侧（输入端口）← linker 右侧（输出端口）
+    else if (sourceType == 'text' && _draggingSourceType == 'input' &&
+             targetType == 'linker' && _hoveringTargetPort == 'output') {
+      _updateLinkerConnection(
+        linkerId: targetElement.id,
+        targetModuleId: sourceElement.id,
+        targetPort: 'text',
+        targetType: 'string',
+        connectionType: 'output',
+      );
+    }
+
+    _autoSave();
+  }
+
+  /// 更新联动器的连接数据
+  void _updateLinkerConnection({
+    required String linkerId,
+    String? sourceModuleId,
+    String? sourcePort,
+    String? sourceType,
+    String? targetModuleId,
+    String? targetPort,
+    String? targetType,
+    required String connectionType,
+  }) {
+    setState(() {
+      final index = _currentElements.indexWhere((e) => e.id == linkerId);
+      if (index == -1) return;
+
+      final linkerElement = _currentElements[index];
+      if (linkerElement.module?.type != 'linker') return;
+
+      final linkerData = Map<String, dynamic>.from(
+        linkerElement.module!.properties['linker'] ?? {},
+      );
+
+      if (connectionType == 'input' && sourceModuleId != null) {
+        linkerData['sourceModuleId'] = sourceModuleId;
+        linkerData['sourcePort'] = sourcePort ?? 'current';
+        linkerData['sourceType'] = sourceType ?? 'number';
+      } else if (connectionType == 'output' && targetModuleId != null) {
+        linkerData['targetModuleId'] = targetModuleId;
+        linkerData['targetPort'] = targetPort ?? 'text';
+        linkerData['targetType'] = targetType ?? 'string';
+      }
+
+      // 如果两端都连接了，设置默认传输方案
+      if (linkerData['sourceModuleId'] != null && linkerData['targetModuleId'] != null) {
+        linkerData['scheme'] ??= 'current_to_text';
+        linkerData['enabled'] = true;
+      }
+
+      final updatedProps = Map<String, dynamic>.from(linkerElement.module!.properties);
+      updatedProps['linker'] = linkerData;
+
+      final updatedModule = linkerElement.module!.copyWith(properties: updatedProps);
+      _currentElements[index] = linkerElement.copyWith(module: updatedModule);
+    });
+  }
+
+  /// 构建端口可视化组件
+  Widget _buildPortWidget({
+    required bool isInput,
+    bool isHovered = false,
+    bool isConnected = false,
+    String? label,
+  }) {
+    final Color portColor;
+    if (isHovered) {
+      portColor = const Color(0xFF00E676); // 绿色高亮
+    } else if (isConnected) {
+      portColor = const Color(0xFF00ACC1); // 青色已连接
+    } else {
+      portColor = const Color(0xFF888896); // 灰色未连接
+    }
+
+    return Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: portColor,
+          width: isHovered ? 3 : 2,
+        ),
+        boxShadow: isHovered
+            ? [
+                BoxShadow(
+                  color: portColor.withValues(alpha: 0.5),
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+              ]
+            : null,
+      ),
+      child: Center(
+        child: Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: portColor,
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 检查联动器的端口是否已连接
+  bool _isPortConnected(UIElement linkerElement, String portDirection) {
+    if (linkerElement.module?.type != 'linker') return false;
+
+    final linkerData = linkerElement.module!.properties['linker'] as Map?;
+    if (linkerData == null) return false;
+
+    if (portDirection == 'input') {
+      return linkerData['sourceModuleId'] != null;
+    } else {
+      return linkerData['targetModuleId'] != null;
+    }
   }
 
   Widget _buildRightCompletedAssetsDrawer() {
@@ -3841,6 +4184,16 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
     final elNoRot = el.copyWith(rotation: 0.0);
 
+    // 判断是否显示端口
+    final bool showPorts = isTransformationActive && el.module != null;
+    final bool isLinker = el.module?.type == 'linker';
+    final bool isProgress = el.module?.type == 'progress';
+    final bool isSlider = el.module?.type == 'slider';
+    final bool isText = el.module?.type == 'text';
+
+    // 判断是否被悬停（高亮端口）
+    final bool isHoveredAsTarget = _hoveringTargetId == el.id;
+
     Widget contentArea = SizedBox(
       width: el.size.width,
       height: el.size.height,
@@ -3860,6 +4213,39 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 ),
               ),
             ),
+          // 端口可视化
+          if (showPorts) ...[
+            // 左侧端口（输入）
+            if (isLinker || isText)
+              Positioned(
+                left: -8,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: _buildPortWidget(
+                    isInput: true,
+                    isHovered: isHoveredAsTarget && _hoveringTargetPort == 'input',
+                    isConnected: isLinker && _isPortConnected(el, 'input'),
+                    label: isLinker ? 'IN' : null,
+                  ),
+                ),
+              ),
+            // 右侧端口（输出）
+            if (isLinker || isProgress || isSlider)
+              Positioned(
+                right: -8,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: _buildPortWidget(
+                    isInput: false,
+                    isHovered: isHoveredAsTarget && _hoveringTargetPort == 'output',
+                    isConnected: isLinker && _isPortConnected(el, 'output'),
+                    label: isLinker ? 'OUT' : null,
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -3895,6 +4281,52 @@ class _UIStudioPageState extends State<UIStudioPage> {
     Widget touchableContent = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (details) {
+        // 联动器端口拖拽连线
+        if (el.module?.type == 'linker' && _selectedTransformationId == el.id) {
+          final localX = details.localPosition.dx;
+          final isLeftPort = localX < el.size.width / 2;
+
+          setState(() {
+            _isDraggingConnection = true;
+            _draggingSourceId = el.id;
+            _draggingSourcePort = isLeftPort ? 'left' : 'right';
+            // 左侧端口 = 输入端口（接收数据），右侧端口 = 输出端口（发送数据）
+            _draggingSourceType = isLeftPort ? 'input' : 'output';
+            _dragConnectionEnd = details.globalPosition;
+          });
+          return;
+        }
+        // progress/slider 输出端口拖拽
+        if ((el.module?.type == 'progress' || el.module?.type == 'slider') &&
+            _selectedTransformationId == el.id) {
+          final localX = details.localPosition.dx;
+          // 右侧 20% 区域视为输出端口
+          if (localX > el.size.width * 0.8) {
+            setState(() {
+              _isDraggingConnection = true;
+              _draggingSourceId = el.id;
+              _draggingSourcePort = 'right';
+              _draggingSourceType = 'output';
+              _dragConnectionEnd = details.globalPosition;
+            });
+            return;
+          }
+        }
+        // text 输入端口拖拽
+        if (el.module?.type == 'text' && _selectedTransformationId == el.id) {
+          final localX = details.localPosition.dx;
+          // 左侧 20% 区域视为输入端口
+          if (localX < el.size.width * 0.2) {
+            setState(() {
+              _isDraggingConnection = true;
+              _draggingSourceId = el.id;
+              _draggingSourcePort = 'left';
+              _draggingSourceType = 'input';
+              _dragConnectionEnd = details.globalPosition;
+            });
+            return;
+          }
+        }
         // 关键修复：旋转模式下禁用元素拖拽
         if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
           return;
@@ -3903,6 +4335,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
         _startTouchScreenPos = details.globalPosition;
       },
       onPanUpdate: (details) {
+        // 关键修复：连线模式下禁止元素拖拽
+        if (_isDraggingConnection) return;
         // 关键修复：旋转模式下禁用元素拖拽
         if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
           return;
@@ -3911,6 +4345,22 @@ class _UIStudioPageState extends State<UIStudioPage> {
         _updateElementGeometry(el.id, _startTouchElemOffset + delta, el.size);
       },
       onPanEnd: (_) {
+        // 关键修复：连线模式下在此处理结束逻辑（因为元素捕获了手势，画布 onPanEnd 不会触发）
+        if (_isDraggingConnection) {
+          if (_hoveringTargetId != null) {
+            _completeConnection();
+          }
+          setState(() {
+            _isDraggingConnection = false;
+            _draggingSourceId = null;
+            _draggingSourcePort = null;
+            _draggingSourceType = null;
+            _dragConnectionEnd = null;
+            _hoveringTargetId = null;
+            _hoveringTargetPort = null;
+          });
+          return;
+        }
         if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
           return;
         }
