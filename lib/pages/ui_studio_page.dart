@@ -1050,7 +1050,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   double _snapRotation(double deg) {
     final snapped = ((deg / 90).round()) * 90.0;
-    if ((deg - snapped).abs() <= 5.0) return snapped;
+    if ((deg - snapped).abs() <= 3.0) return snapped; // 降低吸附阈值，减少 0° 附近打断
     return deg;
   }
 
@@ -1510,7 +1510,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                             },
                           );
                         },
-                      ),
+                      ), // ← 注意这里是 }), 正确闭合
                       const SizedBox(height: 12),
 
                       // 目标模块选择
@@ -2133,7 +2133,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                             // 1. 绘制联动器连线（贝塞尔曲线）
                             ..._buildLinkerConnectionsLayer(),
 
-                            // 2. 渲染所有 UI 元素
+                            // 2. 更新 LinkerService 快照 + 渲染元素
                             ...() {
                               LinkerService.updateElementSnapshot(
                                 sortedElements,
@@ -3371,7 +3371,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
-  /// 绘制所有联动器连线（中转模式：两条线）
+  /// 绘制所有联动器连线（中转模式）
   List<Widget> _buildLinkerConnectionsLayer() {
     final connections = _getAllLinkerConnections();
     if (connections.isEmpty) return const [];
@@ -3395,15 +3395,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
       if (fromEl == null || toEl == null) continue;
 
-      // 计算端口坐标
       final fromX = _workspaceOffset.dx + fromEl.offset.dx + fromEl.size.width;
-      final fromY =
-          _workspaceOffset.dy + fromEl.offset.dy + fromEl.size.height / 2;
+      final fromY = _workspaceOffset.dy + fromEl.offset.dy + fromEl.size.height / 2;
 
       final toX = _workspaceOffset.dx + toEl.offset.dx;
       final toY = _workspaceOffset.dy + toEl.offset.dy + toEl.size.height / 2;
 
-      // 输入线用蓝色，输出线用绿色（可后续调整）
       final lineColor = lineType == 'input'
           ? const Color(0xFF00ACC1)
           : const Color(0xFF66BB6A);
@@ -3452,8 +3449,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
         .toList();
   }
 
-  /// 获取所有联动器的连线数据（中转模式）
-  /// 返回两条线：source → linker + linker → target
+  /// 获取所有联动器的连线数据（中转模式：两条线）
   List<Map<String, dynamic>> _getAllLinkerConnections() {
     final connections = <Map<String, dynamic>>[];
 
@@ -3473,7 +3469,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
         connections.add({
           'from': sourceId,
           'fromPort': sourcePort,
-          'to': el.id, // 联动器自身
+          'to': el.id,
           'toPort': 'input',
           'linkerId': el.id,
           'type': 'input',
@@ -3481,7 +3477,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
         // 输出线：linker → target
         connections.add({
-          'from': el.id, // 联动器自身
+          'from': el.id,
           'fromPort': 'output',
           'to': targetId,
           'toPort': targetPort,
@@ -3953,10 +3949,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
               _startTouchWidth = el.size.width;
               _startTouchHeight = el.size.height;
               _startTouchGlobalPos = details.globalPosition;
-              // 联动器禁止旋转
+
               if (el.module?.type == 'linker') {
                 _transformHandleRotateMode = false;
               }
+
               if (_transformHandleRotateMode) {
                 _rotationCenter = Offset(
                   _workspaceOffset.dx + el.offset.dx + el.size.width / 2,
@@ -3968,38 +3965,43 @@ class _UIStudioPageState extends State<UIStudioPage> {
               }
             },
             onPanUpdate: (details) {
-              // 联动器禁止旋转
               if (el.module?.type == 'linker') {
                 _transformHandleRotateMode = false;
-                // 直接走缩放逻辑
               }
+
               if (_transformHandleRotateMode) {
                 final currentAngle =
                     (details.globalPosition - _rotationCenter).direction;
                 var delta = currentAngle - _startHandleAngle;
+
                 while (delta > math.pi) {
                   delta -= 2 * math.pi;
                 }
                 while (delta < -math.pi) {
                   delta += 2 * math.pi;
                 }
+
                 var newRot = _startRotation + delta * 180 / math.pi;
                 newRot = _snapRotation(newRot);
                 _updateElementRotation(el.id, newRot);
                 return;
               }
+
               final deltaX =
                   details.globalPosition.dx - _startTouchGlobalPos.dx;
               final deltaY =
                   details.globalPosition.dy - _startTouchGlobalPos.dy;
+
               final minSize = _minElementSize(el);
               final maxSize = _maxElementSize(el);
+
               final newWidth = (_startTouchWidth + deltaX)
                   .clamp(minSize.width, maxSize.width)
                   .toDouble();
               final newHeight = (_startTouchHeight + deltaY)
                   .clamp(minSize.height, maxSize.height)
                   .toDouble();
+
               _updateElementGeometry(
                 el.id,
                 el.offset,
@@ -4007,12 +4009,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
               );
             },
             child: Container(
-              width: 40,
-              height: 40,
+              width: 52,
+              height: 52,
               alignment: Alignment.center,
               child: Container(
-                width: 22,
-                height: 22,
+                width: 26,
+                height: 26,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color:
@@ -4029,7 +4031,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   (el.module?.type == 'linker' || !_transformHandleRotateMode)
                       ? Icons.open_with
                       : Icons.rotate_right_rounded,
-                  size: 12,
+                  size: 14,
                   color:
                       (el.module?.type == 'linker' ||
                           !_transformHandleRotateMode)
@@ -4131,7 +4133,7 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
   }
 }
 
-/// 联动器连线绘制器（贝塞尔曲线）
+/// 联动器连线绘制器（贝塞尔曲线 + 中点箭头）
 class LinkerConnectionPainter extends CustomPainter {
   final Offset start;
   final Offset end;
@@ -4154,7 +4156,6 @@ class LinkerConnectionPainter extends CustomPainter {
     final path = Path();
     path.moveTo(start.dx, start.dy);
 
-    // 贝塞尔曲线控制点
     final controlOffset = (end.dx - start.dx).abs() * 0.4;
     final cp1 = Offset(start.dx + controlOffset, start.dy);
     final cp2 = Offset(end.dx - controlOffset, end.dy);
@@ -4163,18 +4164,15 @@ class LinkerConnectionPainter extends CustomPainter {
 
     canvas.drawPath(path, paint);
 
-    // ==================== 关键修改：箭头放在曲线中点 ====================
-    // 计算 t=0.5 处的点和切线方向
+    // === 箭头绘制在中点 ===
     final t = 0.5;
     final midX = _bezierPoint(start.dx, cp1.dx, cp2.dx, end.dx, t);
     final midY = _bezierPoint(start.dy, cp1.dy, cp2.dy, end.dy, t);
 
-    // 计算切线方向（用于箭头朝向）
     final dx = _bezierDerivative(start.dx, cp1.dx, cp2.dx, end.dx, t);
     final dy = _bezierDerivative(start.dy, cp1.dy, cp2.dy, end.dy, t);
     final angle = math.atan2(dy, dx);
 
-    // 绘制箭头
     final arrowPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
@@ -4196,7 +4194,6 @@ class LinkerConnectionPainter extends CustomPainter {
     canvas.drawPath(arrowPath, arrowPaint);
   }
 
-  // 贝塞尔曲线点计算（t ∈ [0,1]）
   double _bezierPoint(double p0, double p1, double p2, double p3, double t) {
     final mt = 1 - t;
     return mt * mt * mt * p0 +
@@ -4205,14 +4202,7 @@ class LinkerConnectionPainter extends CustomPainter {
         t * t * t * p3;
   }
 
-  // 贝塞尔曲线导数（用于计算切线方向）
-  double _bezierDerivative(
-    double p0,
-    double p1,
-    double p2,
-    double p3,
-    double t,
-  ) {
+  double _bezierDerivative(double p0, double p1, double p2, double p3, double t) {
     final mt = 1 - t;
     return 3 * mt * mt * (p1 - p0) +
         6 * mt * t * (p2 - p1) +
