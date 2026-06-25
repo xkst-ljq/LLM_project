@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'linker_service.dart';
 import 'ui_models.dart';
 
 class UIRenderer {
@@ -338,9 +339,17 @@ class UIRenderer {
 
   static Widget _buildTextBlock(UIModule module) {
     // 支持 displayExpression 联动显示
-    final displayText = (module.displayExpression != null && module.displayExpression!.trim().isNotEmpty)
+    String displayText = (module.displayExpression != null && module.displayExpression!.trim().isNotEmpty)
         ? _evaluateDisplayExpression(module)
         : (module.properties['text']?.toString() ?? module.name);
+
+    // === Linker MVP 联动支持：如果该 text 被 linker 指向，则尝试显示联动后的值 ===
+    // 注意：当前为简单实现，后续会接入真正的 LinkerService
+    // 目前仅支持 progress.current → text.text 的场景
+    final linkedValue = _resolveLinkerValueForText(module);
+    if (linkedValue != null) {
+      displayText = linkedValue;
+    }
 
     return Container(
       alignment: Alignment.center,
@@ -353,6 +362,13 @@ class UIRenderer {
     );
   }
 
+  /// Linker MVP：尝试解析当前 text 是否被 linker 指向，并返回联动后的值
+  /// 目前仅支持 progress.current → text.text
+  static String? _resolveLinkerValueForText(UIModule textModule) {
+    // 调用 LinkerService 进行解析
+    return LinkerService.resolveLinkedTextValue(textModule);
+  }
+
   static Widget _buildInputBlock(UIModule module) {
     // 原子输入框只提供透明输入逻辑热区，不自带边框、底色或 placeholder。
     // 视觉输入框 = surface + placeholder text + input 逻辑区的复合块。
@@ -360,7 +376,8 @@ class UIRenderer {
   }
 
   /// 联动器节点渲染（MVP）
-  /// 样式：圆角矩形 + 左右端口原点 + 右上角端口标签 + 中间传输方案
+  /// 样式：圆角矩形 + 左右端口原点（垂直居中）+ 端口旁标签 + 中间传输方案
+  /// 端口已放大并移至中点，方便后续拖拽接线
   static Widget _buildLinkerNode(UIModule module, Size size) {
     final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>() ?? {};
     
@@ -368,12 +385,13 @@ class UIRenderer {
     final targetPort = linkerData['targetPort']?.toString() ?? '—';
     final scheme = linkerData['scheme']?.toString() ?? '未配置';
 
-    final portColor = module.color.withValues(alpha: 0.9);
+    final portColor = module.color.withValues(alpha: 0.95);
     final borderColor = module.color.withValues(alpha: 0.35);
+    const double portSize = 15.0; // 放大端口，方便接线交互
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
+        color: Colors.white.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: borderColor, width: 1.5),
         boxShadow: [
@@ -386,59 +404,74 @@ class UIRenderer {
       ),
       child: Stack(
         children: [
-          // 左端口原点 + 右上角源端口标签
+          // 左上角端口标签
           Positioned(
             left: 8,
-            top: 8,
-            child: Row(
-              children: [
-                Container(
-                  width: 9,
-                  height: 9,
-                  decoration: BoxDecoration(
-                    color: portColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  sourcePort,
-                  style: const TextStyle(fontSize: 9, color: Color(0xFF555562), fontWeight: FontWeight.w600),
-                ),
-              ],
+            top: 6,
+            child: Text(
+              sourcePort,
+              style: const TextStyle(fontSize: 9, color: Color(0xFF444455), fontWeight: FontWeight.w700),
             ),
           ),
 
-          // 右端口原点 + 右上角目标端口标签
+          // 左侧端口（垂直居中）
+          Positioned(
+            left: 6,
+            top: (size.height - portSize) / 2,
+            child: Container(
+              width: portSize,
+              height: portSize,
+              decoration: BoxDecoration(
+                color: portColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 右上角端口标签
           Positioned(
             right: 8,
-            top: 8,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  targetPort,
-                  style: const TextStyle(fontSize: 9, color: Color(0xFF555562), fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 4),
-                Container(
-                  width: 9,
-                  height: 9,
-                  decoration: BoxDecoration(
-                    color: portColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
+            top: 6,
+            child: Text(
+              targetPort,
+              style: const TextStyle(fontSize: 9, color: Color(0xFF444455), fontWeight: FontWeight.w700),
+            ),
+          ),
+
+          // 右侧端口（垂直居中）
+          Positioned(
+            right: 6,
+            top: (size.height - portSize) / 2,
+            child: Container(
+              width: portSize,
+              height: portSize,
+              decoration: BoxDecoration(
+                color: portColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 
           // 中间传输方案
           Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 2),
               child: Text(
                 scheme,
                 style: const TextStyle(
@@ -455,7 +488,7 @@ class UIRenderer {
 
           // 底部提示
           Positioned(
-            bottom: 4,
+            bottom: 3,
             left: 0,
             right: 0,
             child: Center(
@@ -463,7 +496,7 @@ class UIRenderer {
                 '联动器',
                 style: TextStyle(
                   fontSize: 8,
-                  color: module.color.withValues(alpha: 0.6),
+                  color: module.color.withValues(alpha: 0.55),
                   fontWeight: FontWeight.w500,
                 ),
               ),

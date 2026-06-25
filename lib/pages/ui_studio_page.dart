@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/ui_engine/linker_service.dart';
 import '../services/ui_engine/ui_asset_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
@@ -715,7 +716,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
     if (module.type == 'primitive_art') return const Size(160, 18);
     if (module.type == 'slider') return const Size(180, 32);
     if (module.type == 'text') return const Size(150, 34);
-    if (module.type == 'linker') return const Size(160, 52); // 联动器推荐尺寸
+    if (module.type == 'linker') return const Size(170, 56); // 联动器推荐尺寸（端口居中后略微增大）
     return const Size(150, 68);
   }
 
@@ -1130,36 +1131,136 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       const SizedBox(height: 16),
                     ],
 
-                    // === Linker（联动器）专用配置区（MVP）===
+                    // === Linker（联动器）专用配置区（增强版）===
                     if (!isComp && el.module?.type == 'linker') ...[
-                      const Text('联动器配置（MVP）', style: TextStyle(fontSize: 12, color: Color(0xFF555562), fontWeight: FontWeight.bold)),
+                      const Text('联动器配置', style: TextStyle(fontSize: 12, color: Color(0xFF555562), fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8F8FC),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.black12),
+
+                      // 源模块选择
+                      const Text('数据源模块（输出方）', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
+                      const SizedBox(height: 4),
+                      Builder(builder: (_) {
+                        final sourceModules = _getLinkableSourceModules();
+                        final currentSourceId = el.module!.properties['linker']?['sourceModuleId']?.toString();
+                        final validSourceValue = sourceModules.any((m) => m['id'] == currentSourceId) ? currentSourceId : null;
+
+                        return DropdownButtonFormField<String>(
+                          initialValue: validSourceValue,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: const Color(0xFFF2F2F6),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: sourceModules.map((moduleInfo) {
+                            return DropdownMenuItem<String>(
+                              value: moduleInfo['id'],
+                              child: Text('${moduleInfo['name']} (${moduleInfo['type']})', style: const TextStyle(fontSize: 12)),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setDialogState(() {
+                              final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
+                              linkerData['sourceModuleId'] = value;
+
+                              final sourceType = sourceModules.firstWhere((m) => m['id'] == value)['type'];
+                              if (sourceType == 'progress' || sourceType == 'slider') {
+                                linkerData['sourcePort'] = 'current';
+                                linkerData['sourceType'] = 'number';
+                              }
+
+                              if (linkerData['targetModuleId'] != null) {
+                                linkerData['scheme'] = 'current_to_text';
+                              }
+
+                              props['linker'] = linkerData;
+                            });
+                          },
+                        );
+                      }),
+                      const SizedBox(height: 12),
+
+                      // 目标模块选择
+                      const Text('目标模块（接收方）', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
+                      const SizedBox(height: 4),
+                      Builder(builder: (_) {
+                        final targetModules = _getLinkableTargetModules();
+                        final currentTargetId = el.module!.properties['linker']?['targetModuleId']?.toString();
+                        final validTargetValue = targetModules.any((m) => m['id'] == currentTargetId) ? currentTargetId : null;
+
+                        return DropdownButtonFormField<String>(
+                          initialValue: validTargetValue,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: const Color(0xFFF2F2F6),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: targetModules.map((moduleInfo) {
+                            return DropdownMenuItem<String>(
+                              value: moduleInfo['id'],
+                              child: Text('${moduleInfo['name']} (${moduleInfo['type']})', style: const TextStyle(fontSize: 12)),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setDialogState(() {
+                              final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
+                              linkerData['targetModuleId'] = value;
+
+                              final targetType = targetModules.firstWhere((m) => m['id'] == value)['type'];
+                              if (targetType == 'text') {
+                                linkerData['targetPort'] = 'text';
+                                linkerData['targetType'] = 'string';
+                              }
+
+                              if (linkerData['sourceModuleId'] != null) {
+                                linkerData['scheme'] = 'current_to_text';
+                              }
+
+                              props['linker'] = linkerData;
+                            });
+                          },
+                        );
+                      }),
+                      const SizedBox(height: 12),
+
+                      // 传输方案
+                      const Text('传输方案', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
+                      const SizedBox(height: 4),
+                      DropdownButtonFormField<String>(
+                        initialValue: el.module!.properties['linker']?['scheme']?.toString() ?? 'current_to_text',
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: const Color(0xFFF2F2F6),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('当前传输方案', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
-                            const SizedBox(height: 4),
-                            Text(
-                              (el.module!.properties['linker']?['scheme'] ?? 'current_to_text').toString(),
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF00ACC1), fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text('端口信息（后续版本支持自动解析与拖拽连线）', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
-                            const SizedBox(height: 4),
-                            Text(
-                              '源端口: ${el.module!.properties['linker']?['sourcePort'] ?? 'current'}  →  目标端口: ${el.module!.properties['linker']?['targetPort'] ?? 'text'}',
-                              style: const TextStyle(fontSize: 11, color: Color(0xFF555562)),
-                            ),
-                            const SizedBox(height: 6),
-                            const Text('提示：目前仅支持 progress.current → text.text，后续将支持可视化接线与多方案选择。', style: TextStyle(fontSize: 9, color: Color(0xFF888896), fontStyle: FontStyle.italic)),
-                          ],
+                        items: const [
+                          DropdownMenuItem(value: 'current_to_text', child: Text('current → text', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 'max_to_text', child: Text('max → text', style: TextStyle(fontSize: 12))),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() {
+                            final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
+                            linkerData['scheme'] = value;
+                            props['linker'] = linkerData;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F5E9),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          '提示：选择源模块和目标模块后，端口会自动填充。后续版本将支持可视化拖拽连线。',
+                          style: TextStyle(fontSize: 10, color: Color(0xFF2E7D32)),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -1305,6 +1406,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       if (index != -1) {
                         if (!isComp) {
                           Map<String, dynamic> updatedProps = Map.from(el.module!.properties);
+                          // === 关键修复：合并 linker 配置 ===
+                          if (el.module!.type == 'linker' && props['linker'] != null) {
+                            updatedProps['linker'] = props['linker'];
+                          }
+
                           updatedProps['text'] = textProp;
                           if (el.module!.type == 'input') {
                             updatedProps['variable'] = labelProp;
@@ -1314,6 +1420,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           }
                           updatedProps['max'] = maxProp;
                           updatedProps['current'] = curProp;
+
                           updatedProps = _syncArtModuleProperties(
                             module: el.module!,
                             props: updatedProps,
@@ -1381,6 +1488,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
     for (var i = 0; i < _currentElements.length; i++) {
       elementOrder[_currentElements[i].id] = i;
     }
+    // 每次 build 时更新 linker 快照
+    LinkerService.updateElementSnapshot(_currentElements);
+
     final sortedElements = _currentElements.toList()
       ..sort((a, b) {
         final layer = a.layerIndex.compareTo(b.layerIndex);
@@ -1441,16 +1551,20 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            ...sortedElements.map((el) {
-                              final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
-                              return Positioned(
-                                left: _workspaceOffset.dx + el.offset.dx - p,
-                                top: _workspaceOffset.dy + el.offset.dy - p,
-                                width: el.size.width + p * 2,
-                                height: el.size.height + p * 2,
-                                child: _buildTrueSingleHandleNode(el, p),
-                              );
-                            }),
+                            // 更新 LinkerService 快照（支持联动器数据同步）
+                            ...() {
+                              LinkerService.updateElementSnapshot(sortedElements);
+                              return sortedElements.map((el) {
+                                final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
+                                return Positioned(
+                                  left: _workspaceOffset.dx + el.offset.dx - p,
+                                  top: _workspaceOffset.dy + el.offset.dy - p,
+                                  width: el.size.width + p * 2,
+                                  height: el.size.height + p * 2,
+                                  child: _buildTrueSingleHandleNode(el, p),
+                                );
+                              });
+                            }(),
                           ],
                         ),
                       ),
@@ -2124,6 +2238,32 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
+  /// 获取可作为联动源的模块列表（progress、slider 等输出 number 的模块）
+  List<Map<String, String>> _getLinkableSourceModules() {
+    return _currentElements
+        .where((el) => !el.isComposite && el.module != null)
+        .where((el) => ['progress', 'slider'].contains(el.module!.type))
+        .map((el) => {
+              'id': el.id,
+              'name': el.module!.name,
+              'type': el.module!.type,
+            })
+        .toList();
+  }
+
+  /// 获取可作为联动目标的模块列表（text 等接收 string 的模块）
+  List<Map<String, String>> _getLinkableTargetModules() {
+    return _currentElements
+        .where((el) => !el.isComposite && el.module != null)
+        .where((el) => ['text'].contains(el.module!.type))
+        .map((el) => {
+              'id': el.id,
+              'name': el.module!.name,
+              'type': el.module!.type,
+            })
+        .toList();
+  }
+
   Widget _buildRightCompletedAssetsDrawer() {
     final modules = _assetService.getAllModules();
     final composites = _assetService.getAllComposites();
@@ -2434,6 +2574,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
             _transformHandleRotateMode = false;
           }
           _selectedTransformationId = el.id;
+
+          // 联动器强制禁用旋转模式
+          if (el.module?.type == 'linker') {
+            _transformHandleRotateMode = false;
+          }
         });
       },
       onLongPress: () {
@@ -2460,6 +2605,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
               _startTouchWidth = el.size.width;
               _startTouchHeight = el.size.height;
               _startTouchGlobalPos = details.globalPosition;
+              // 联动器禁止旋转
+              if (el.module?.type == 'linker') {
+                _transformHandleRotateMode = false;
+              }
               if (_transformHandleRotateMode) {
                 _rotationCenter = Offset(
                   _workspaceOffset.dx + el.offset.dx + el.size.width / 2,
@@ -2471,6 +2620,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
               }
             },
             onPanUpdate: (details) {
+              // 联动器禁止旋转
+              if (el.module?.type == 'linker') {
+                _transformHandleRotateMode = false;
+                // 直接走缩放逻辑
+              }
               if (_transformHandleRotateMode) {
                 final currentAngle =
                     (details.globalPosition - _rotationCenter).direction;
@@ -2505,15 +2659,21 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 width: 22, height: 22,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: _transformHandleRotateMode ? const Color(0xFF00E5FF) : const Color(0xFFFF4081),
+                  color: _transformHandleRotateMode && el.module?.type != 'linker'
+                      ? const Color(0xFF00E5FF)
+                      : const Color(0xFFFF4081),
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2),
                   boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
                 ),
                 child: Icon(
-                  _transformHandleRotateMode ? Icons.rotate_right_rounded : Icons.open_with,
+                  (el.module?.type == 'linker' || !_transformHandleRotateMode)
+                      ? Icons.open_with
+                      : Icons.rotate_right_rounded,
                   size: 12,
-                  color: _transformHandleRotateMode ? const Color(0xFF111116) : Colors.white,
+                  color: (el.module?.type == 'linker' || !_transformHandleRotateMode)
+                      ? Colors.white
+                      : const Color(0xFF111116),
                 ),
               ),
             ),
