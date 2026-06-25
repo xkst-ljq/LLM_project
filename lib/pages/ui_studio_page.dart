@@ -15,6 +15,7 @@ import '../services/ui_engine/ui_renderer.dart';
 class _DragPayload {
   final UIModule? module;
   final UIComposite? composite;
+
   _DragPayload({this.module, this.composite});
 }
 
@@ -32,11 +33,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   final UIAssetService _assetService = UIAssetService();
   final GlobalKey _canvasDropKey = GlobalKey();
-  
+
   // 历史原子工作台草稿保留用于兼容读取；当前 UI 只使用统一工作台。
   List<UIElement> _atomicWorkspaceElements = [];
   List<UIElement> _compositeWorkspaceElements = [];
-  
+
   // 绝对跟手无阻尼平移桌面偏移量
   Offset _workspaceOffset = Offset.zero;
 
@@ -66,10 +67,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   // 右下角单一变换把手模式：false=缩放，true=旋转（旋转行为后续接入）。
   bool _transformHandleRotateMode = false;
-  
+
   // 左右边栏抽屉开关状态
-  bool _showLeftDrawer = false;  // 左侧基本部件抽屉
+  bool _showLeftDrawer = false; // 左侧基本部件抽屉
   bool _showRightDrawer = false; // 右侧完成资产抽屉
+
+  // === 联动器连线模式状态 ===
+  bool _isLinkingMode = false;
+  String? _linkingFromElementId; // 当前连线起始元素ID
+  String? _linkingFromPort; // 当前连线起始端口名
 
   // 当前阶段收敛为单一“工作台”。
   List<UIElement> get _currentElements => _compositeWorkspaceElements;
@@ -89,7 +95,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
   Future<void> _loadWorkspaces() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // 加载独立图层列表
     final layerData = prefs.getString('ui_studio_scene_layers_v4');
     if (layerData != null) {
@@ -105,7 +111,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
     if (atomicData != null) {
       try {
         final List list = jsonDecode(atomicData);
-        _atomicWorkspaceElements = list.map((e) => UIElement.fromJson(e)).toList();
+        _atomicWorkspaceElements = list
+            .map((e) => UIElement.fromJson(e))
+            .toList();
       } catch (_) {}
     }
 
@@ -113,12 +121,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
     if (compositeData != null) {
       try {
         final List list = jsonDecode(compositeData);
-        _compositeWorkspaceElements = list.map((e) => UIElement.fromJson(e)).toList();
+        _compositeWorkspaceElements = list
+            .map((e) => UIElement.fromJson(e))
+            .toList();
       } catch (_) {}
     }
 
     // 兼容迁移：如果统一工作台为空但旧原子数据存在，则迁移
-    if (_compositeWorkspaceElements.isEmpty && _atomicWorkspaceElements.isNotEmpty) {
+    if (_compositeWorkspaceElements.isEmpty &&
+        _atomicWorkspaceElements.isNotEmpty) {
       _compositeWorkspaceElements = List.from(_atomicWorkspaceElements);
     }
 
@@ -133,25 +144,37 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
       final prefs = await SharedPreferences.getInstance();
 
-      final layerData = jsonEncode(_sceneLayers.map((e) => e.toJson()).toList());
+      final layerData = jsonEncode(
+        _sceneLayers.map((e) => e.toJson()).toList(),
+      );
       await prefs.setString('ui_studio_scene_layers_v4', layerData);
 
       // 旧原子工作台草稿保留兼容；当前统一工作台使用 composite_workspace。
-      final atomicData = jsonEncode(_atomicWorkspaceElements.map((e) => e.toJson()).toList());
+      final atomicData = jsonEncode(
+        _atomicWorkspaceElements.map((e) => e.toJson()).toList(),
+      );
       await prefs.setString('ui_studio_atomic_workspace_v4', atomicData);
 
-      final compositeData = jsonEncode(_compositeWorkspaceElements.map((e) => e.toJson()).toList());
+      final compositeData = jsonEncode(
+        _compositeWorkspaceElements.map((e) => e.toJson()).toList(),
+      );
       await prefs.setString('ui_studio_composite_workspace_v4', compositeData);
 
       if (mounted && showMessage) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('工作台草稿已保存 ✅'), backgroundColor: Color(0xFF00C853)),
+          const SnackBar(
+            content: Text('工作台草稿已保存 ✅'),
+            backgroundColor: Color(0xFF00C853),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败：$e'), backgroundColor: const Color(0xFFD32F2F)),
+          SnackBar(
+            content: Text('保存失败：$e'),
+            backgroundColor: const Color(0xFFD32F2F),
+          ),
         );
       }
     }
@@ -181,12 +204,19 @@ class _UIStudioPageState extends State<UIStudioPage> {
               children: [
                 const Text(
                   '保存成果',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF111116)),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF111116),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   '当前工作台元素：${_currentElements.length} 个 · 可烘焙视觉层：$bakeable 个 · 跳过：$skipped 个',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF777783)),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF777783),
+                  ),
                 ),
                 const SizedBox(height: 14),
                 _buildSaveMenuTile(
@@ -240,9 +270,21 @@ class _UIStudioPageState extends State<UIStudioPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: ListTile(
         enabled: enabled,
-        leading: Icon(icon, color: enabled ? const Color(0xFFFF4081) : const Color(0xFFAAAAB4)),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111116))),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF777783))),
+        leading: Icon(
+          icon,
+          color: enabled ? const Color(0xFFFF4081) : const Color(0xFFAAAAB4),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF111116),
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(fontSize: 11, color: Color(0xFF777783)),
+        ),
         onTap: onTap,
       ),
     );
@@ -261,12 +303,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
       elements.first.size.height,
     );
     for (final el in elements.skip(1)) {
-      bounds = bounds.expandToInclude(Rect.fromLTWH(
-        el.offset.dx,
-        el.offset.dy,
-        el.size.width,
-        el.size.height,
-      ));
+      bounds = bounds.expandToInclude(
+        Rect.fromLTWH(
+          el.offset.dx,
+          el.offset.dy,
+          el.size.width,
+          el.size.height,
+        ),
+      );
     }
     return bounds.width > 0 && bounds.height > 0 ? bounds : null;
   }
@@ -281,8 +325,16 @@ class _UIStudioPageState extends State<UIStudioPage> {
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF111116),
+            ),
+          ),
           content: TextField(
             controller: controller,
             autofocus: true,
@@ -291,20 +343,37 @@ class _UIStudioPageState extends State<UIStudioPage> {
               filled: true,
               fillColor: const Color(0xFFF2F2F6),
               hintText: initialValue,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
             ),
             onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消', style: TextStyle(color: Color(0xFF888896))),
+              child: const Text(
+                '取消',
+                style: TextStyle(color: Color(0xFF888896)),
+              ),
             ),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFF4081),
+              ),
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('保存', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text(
+                '保存',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         );
@@ -318,12 +387,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
   Future<void> _saveCurrentWorkspaceAsComposite() async {
     if (_currentElements.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前工作台没有可保存的元素。'), backgroundColor: Color(0xFFFF8F00)),
+        const SnackBar(
+          content: Text('当前工作台没有可保存的元素。'),
+          backgroundColor: Color(0xFFFF8F00),
+        ),
       );
       return;
     }
 
-    final assetName = await _askAssetName(title: '保存为复合组件', initialValue: '未命名复合组件');
+    final assetName = await _askAssetName(
+      title: '保存为复合组件',
+      initialValue: '未命名复合组件',
+    );
     if (assetName == null) return;
 
     final bounds = _currentWorkspaceBounds();
@@ -349,7 +424,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已保存为复合组件：$assetName ✅'), backgroundColor: const Color(0xFF00C853)),
+        SnackBar(
+          content: Text('已保存为复合组件：$assetName ✅'),
+          backgroundColor: const Color(0xFF00C853),
+        ),
       );
     }
   }
@@ -357,12 +435,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
   Future<void> _bakeCurrentWorkspaceAsAtom() async {
     if (_bakeAtomicWorkspaceToModule() == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有可烘焙的视觉层。'), backgroundColor: Color(0xFFFF8F00)),
+        const SnackBar(
+          content: Text('没有可烘焙的视觉层。'),
+          backgroundColor: Color(0xFFFF8F00),
+        ),
       );
       return;
     }
 
-    final assetName = await _askAssetName(title: '烘焙为面原子', initialValue: '面原子 / 自定义');
+    final assetName = await _askAssetName(
+      title: '烘焙为面原子',
+      initialValue: '面原子 / 自定义',
+    );
     if (assetName == null) return;
     final baked = _bakeAtomicWorkspaceToModule(name: assetName);
     if (baked == null) return;
@@ -372,7 +456,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已烘焙为面原子：${baked.name} ✅'), backgroundColor: const Color(0xFF00C853)),
+        SnackBar(
+          content: Text('已烘焙为面原子：${baked.name} ✅'),
+          backgroundColor: const Color(0xFF00C853),
+        ),
       );
     }
   }
@@ -442,7 +529,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
     required double borderRadius,
   }) {
     final type = module.type;
-    if (type != 'surface_art' && type != 'primitive_art' && type != 'light_effect') {
+    if (type != 'surface_art' &&
+        type != 'primitive_art' &&
+        type != 'light_effect') {
       return props;
     }
 
@@ -457,10 +546,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
         continue;
       }
       final layer = UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw));
-      final shouldUpdate = !updatedOne &&
+      final shouldUpdate =
+          !updatedOne &&
           ((type == 'surface_art' && layer.kind == 'surface') ||
-              (type == 'light_effect' && (layer.kind == 'glow' || layer.kind == 'surface')) ||
-              (type == 'primitive_art' && (layer.kind == 'line' || layer.kind == 'stroke' || layer.kind == 'surface')));
+              (type == 'light_effect' &&
+                  (layer.kind == 'glow' || layer.kind == 'surface')) ||
+              (type == 'primitive_art' &&
+                  (layer.kind == 'line' ||
+                      layer.kind == 'stroke' ||
+                      layer.kind == 'surface')));
       if (!shouldUpdate) {
         updatedLayers.add(layer.toJson());
         continue;
@@ -468,17 +562,19 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
       final layerProps = Map<String, dynamic>.from(layer.properties);
       layerProps['material'] = material.index;
-      updatedLayers.add(UIPrimitiveLayer(
-        id: layer.id,
-        kind: layer.kind,
-        offset: layer.offset,
-        size: layer.size,
-        color: color,
-        opacity: opacity,
-        shape: shape,
-        borderRadius: borderRadius,
-        properties: layerProps,
-      ).toJson());
+      updatedLayers.add(
+        UIPrimitiveLayer(
+          id: layer.id,
+          kind: layer.kind,
+          offset: layer.offset,
+          size: layer.size,
+          color: color,
+          opacity: opacity,
+          shape: shape,
+          borderRadius: borderRadius,
+          properties: layerProps,
+        ).toJson(),
+      );
       updatedOne = true;
     }
 
@@ -491,14 +587,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
     for (var i = 0; i < _currentElements.length; i++) {
       order[_currentElements[i].id] = i;
     }
-    final elements = _currentElements
-        .where((e) => !e.isComposite && e.module != null)
-        .toList()
-      ..sort((a, b) {
-        final layer = a.layerIndex.compareTo(b.layerIndex);
-        if (layer != 0) return layer;
-        return (order[a.id] ?? 0).compareTo(order[b.id] ?? 0);
-      });
+    final elements =
+        _currentElements
+            .where((e) => !e.isComposite && e.module != null)
+            .toList()
+          ..sort((a, b) {
+            final layer = a.layerIndex.compareTo(b.layerIndex);
+            if (layer != 0) return layer;
+            return (order[a.id] ?? 0).compareTo(order[b.id] ?? 0);
+          });
     if (elements.isEmpty) return null;
 
     final supportedElements = elements.where(_isBakeableElement).toList();
@@ -511,12 +608,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
       supportedElements.first.size.height,
     );
     for (final el in supportedElements.skip(1)) {
-      bounds = bounds.expandToInclude(Rect.fromLTWH(
-        el.offset.dx,
-        el.offset.dy,
-        el.size.width,
-        el.size.height,
-      ));
+      bounds = bounds.expandToInclude(
+        Rect.fromLTWH(
+          el.offset.dx,
+          el.offset.dy,
+          el.size.width,
+          el.size.height,
+        ),
+      );
     }
     if (bounds.width <= 0 || bounds.height <= 0) return null;
 
@@ -543,7 +642,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
-  List<UIPrimitiveLayer> _bakeElementToPrimitiveLayers(UIElement el, Rect bounds) {
+  List<UIPrimitiveLayer> _bakeElementToPrimitiveLayers(
+    UIElement el,
+    Rect bounds,
+  ) {
     final module = el.module;
     if (module == null) return const [];
 
@@ -555,14 +657,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
 
     Offset normalizeOffset(Offset absolute) => Offset(
-          (absolute.dx - bounds.left) / bounds.width,
-          (absolute.dy - bounds.top) / bounds.height,
-        );
+      (absolute.dx - bounds.left) / bounds.width,
+      (absolute.dy - bounds.top) / bounds.height,
+    );
 
-    Size normalizeSize(Size absolute) => Size(
-          absolute.width / bounds.width,
-          absolute.height / bounds.height,
-        );
+    Size normalizeSize(Size absolute) =>
+        Size(absolute.width / bounds.width, absolute.height / bounds.height);
 
     UIPrimitiveLayer normalizeLayer(UIPrimitiveLayer layer) {
       final absoluteOffset = Offset(
@@ -608,9 +708,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
       final out = <UIPrimitiveLayer>[];
       for (final raw in rawLayers) {
         if (raw is Map) {
-          out.add(normalizeLayer(
-            UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw)),
-          ));
+          out.add(
+            normalizeLayer(
+              UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw)),
+            ),
+          );
         }
       }
       return out;
@@ -651,7 +753,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
           continue;
         }
         if (!existingIds.contains(el.layerIndex)) {
-          _sceneLayers.add(LayerScene(id: el.layerIndex, name: '图层 Level ${el.layerIndex}'));
+          _sceneLayers.add(
+            LayerScene(id: el.layerIndex, name: '图层 Level ${el.layerIndex}'),
+          );
           existingIds.add(el.layerIndex);
         }
       }
@@ -716,7 +820,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
     if (module.type == 'primitive_art') return const Size(160, 18);
     if (module.type == 'slider') return const Size(180, 32);
     if (module.type == 'text') return const Size(150, 34);
-    if (module.type == 'linker') return const Size(170, 56); // 联动器推荐尺寸（端口居中后略微增大）
+    if (module.type == 'linker') {
+      return const Size(170, 56); // 联动器推荐尺寸（端口居中后略微增大）
+    }
     return const Size(150, 68);
   }
 
@@ -754,14 +860,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
       _showLayerManager = false;
       _showConstructionManager = false;
     });
-    _autoSave();   // ← 关键修复：拖入后立即持久化
+    _autoSave(); // ← 关键修复：拖入后立即持久化
   }
 
   // 拖拽统一载荷：原子模组 或 复合组件二选一。
   Rect _childRotatedAABB(UIElement el) {
     if (el.rotation == 0.0) {
       return Rect.fromLTWH(
-          el.offset.dx, el.offset.dy, el.size.width, el.size.height);
+        el.offset.dx,
+        el.offset.dy,
+        el.size.width,
+        el.size.height,
+      );
     }
     final cx = el.offset.dx + el.size.width / 2;
     final cy = el.offset.dy + el.size.height / 2;
@@ -821,10 +931,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
             isComposite: child.isComposite,
             module: child.module?.copyWith(),
             composite: child.composite?.copyWith(
-                    children: child.composite!.children
-                        .map((c) => c.copyWith())
-                        .toList(),
-                  ),
+              children: child.composite!.children
+                  .map((c) => c.copyWith())
+                  .toList(),
+            ),
             offset: elOffset,
             size: child.size,
             rotation: child.rotation,
@@ -842,7 +952,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       _showLayerManager = false;
       _showConstructionManager = false;
     });
-    _autoSave();   // ← 关键修复
+    _autoSave(); // ← 关键修复
   }
 
   Size _minElementSize(UIElement el) {
@@ -916,12 +1026,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
         }).toList();
         final newComp = targetEl.composite!.copyWith(children: scaledChildren);
         list[index] = targetEl.copyWith(
-            offset: newOffset, size: newSize, composite: newComp);
+          offset: newOffset,
+          size: newSize,
+          composite: newComp,
+        );
       } else {
         list[index] = targetEl.copyWith(offset: newOffset, size: newSize);
       }
     });
-    _autoSave();   // ← 关键修复：拖拽/缩放后立即保存
+    _autoSave(); // ← 关键修复：拖拽/缩放后立即保存
   }
 
   void _updateElementRotation(String id, double rotation) {
@@ -929,8 +1042,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       final list = _currentElements;
       final index = list.indexWhere((e) => e.id == id);
       if (index == -1) return;
-      final normalized =
-          ((rotation + 180) % 360 + 360) % 360 - 180;
+      final normalized = ((rotation + 180) % 360 + 360) % 360 - 180;
       list[index] = list[index].copyWith(rotation: normalized);
     });
     _autoSave();
@@ -950,7 +1062,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
         _transformHandleRotateMode = false;
       }
     });
-    _autoSave();   // ← 关键修复
+    _autoSave(); // ← 关键修复
   }
 
   void _deleteSelectedElement() {
@@ -978,10 +1090,17 @@ class _UIStudioPageState extends State<UIStudioPage> {
   void _showTailoredPrecisionEditorDialog(UIElement el) {
     final bool isComp = el.isComposite;
     String name = isComp ? (el.composite?.name ?? '') : (el.module?.name ?? '');
-    Color color = (isComp ? el.composite?.color : el.module?.color) ?? Colors.white;
-    UIModuleShape shape = (!isComp ? el.module?.shape : null) ?? UIModuleShape.rounded;
-    UIModuleMaterial material = (isComp ? el.composite?.material : el.module?.material) ?? UIModuleMaterial.glass;
-    double opacity = ((isComp ? el.composite?.opacity : el.module?.opacity) ?? 1.0).clamp(0.0, 1.0).toDouble();
+    Color color =
+        (isComp ? el.composite?.color : el.module?.color) ?? Colors.white;
+    UIModuleShape shape =
+        (!isComp ? el.module?.shape : null) ?? UIModuleShape.rounded;
+    UIModuleMaterial material =
+        (isComp ? el.composite?.material : el.module?.material) ??
+        UIModuleMaterial.glass;
+    double opacity =
+        ((isComp ? el.composite?.opacity : el.module?.opacity) ?? 1.0)
+            .clamp(0.0, 1.0)
+            .toDouble();
     int selectedLayer = el.layerIndex;
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex)
@@ -989,11 +1108,13 @@ class _UIStudioPageState extends State<UIStudioPage> {
           : _sceneLayers.first.id;
     }
 
-    Map<String, dynamic> props = Map.from(!isComp ? (el.module?.properties ?? {}) : {});
-    double rotation =
-        ((el.rotation + 180) % 360 + 360) % 360 - 180;
+    Map<String, dynamic> props = Map.from(
+      !isComp ? (el.module?.properties ?? {}) : {},
+    );
+    double rotation = ((el.rotation + 180) % 360 + 360) % 360 - 180;
     String textProp = props['text']?.toString() ?? '';
-    String labelProp = props['label']?.toString() ?? props['variable']?.toString() ?? '';
+    String labelProp =
+        props['label']?.toString() ?? props['variable']?.toString() ?? '';
     double maxProp = (props['max'] ?? 100.0).toDouble();
     double curProp = (props['current'] ?? 75.0).toDouble();
 
@@ -1009,13 +1130,27 @@ class _UIStudioPageState extends State<UIStudioPage> {
           builder: (ctx, setDialogState) {
             return AlertDialog(
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: Colors.black.withValues(alpha: 0.05)),
+              ),
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('全局模组资产规格配置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                  const Text(
+                    '全局模组资产规格配置',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF111116),
+                    ),
+                  ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 18, color: Color(0xFF888896)),
+                    icon: const Icon(
+                      Icons.close,
+                      size: 18,
+                      color: Color(0xFF888896),
+                    ),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
@@ -1025,56 +1160,144 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    const Text(
+                      '模块标识名称',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF555562)),
+                    ),
                     const SizedBox(height: 6),
                     TextField(
-                      controller: TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length),
-                      style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                      controller: TextEditingController(text: name)
+                        ..selection = TextSelection.collapsed(
+                          offset: name.length,
+                        ),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF111116),
+                      ),
                       decoration: InputDecoration(
-                        filled: true, fillColor: const Color(0xFFF2F2F6),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                        filled: true,
+                        fillColor: const Color(0xFFF2F2F6),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                       onChanged: (v) => name = v,
                     ),
                     const SizedBox(height: 16),
 
-                    const Text('模块所属独立 Z 轴图层（控制大层级显示顺序）', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    const Text(
+                      '模块所属独立 Z 轴图层（控制大层级显示顺序）',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF555562)),
+                    ),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
                       initialValue: selectedLayer,
-                      decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFFF2F2F6),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                      ),
                       dropdownColor: Colors.white,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF111116),
+                      ),
                       items: _sceneLayers.map((ly) {
-                        return DropdownMenuItem<int>(value: ly.id, child: Text('${ly.name}${ly.id == _activeLayerIndex ? " (当前创作层)" : ""}'));
+                        return DropdownMenuItem<int>(
+                          value: ly.id,
+                          child: Text(
+                            '${ly.name}${ly.id == _activeLayerIndex ? " (当前创作层)" : ""}',
+                          ),
+                        );
                       }).toList(),
-                      onChanged: (v) => setDialogState(() => selectedLayer = v ?? _activeLayerIndex),
+                      onChanged: (v) => setDialogState(
+                        () => selectedLayer = v ?? _activeLayerIndex,
+                      ),
                     ),
                     const SizedBox(height: 16),
 
                     if (!isComp && el.module?.type == 'progress') ...[
-                      const Text('进度条范围设定 (最大值 / 当前预览值)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const Text(
+                        '进度条范围设定 (最大值 / 当前预览值)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF555562),
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
-                              controller: TextEditingController(text: maxProp.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: maxProp.toStringAsFixed(0).length),
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                              controller:
+                                  TextEditingController(
+                                      text: maxProp.toStringAsFixed(0),
+                                    )
+                                    ..selection = TextSelection.collapsed(
+                                      offset: maxProp.toStringAsFixed(0).length,
+                                    ),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF111116),
+                              ),
                               keyboardType: TextInputType.number,
-                              decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), labelText: '最大值', labelStyle: const TextStyle(color: Color(0xFF888896)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
-                              onChanged: (v) => maxProp = double.tryParse(v) ?? 100.0,
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: const Color(0xFFF2F2F6),
+                                labelText: '最大值',
+                                labelStyle: const TextStyle(
+                                  color: Color(0xFF888896),
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                              onChanged: (v) =>
+                                  maxProp = double.tryParse(v) ?? 100.0,
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: TextField(
-                              controller: TextEditingController(text: curProp.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: curProp.toStringAsFixed(0).length),
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                              controller:
+                                  TextEditingController(
+                                      text: curProp.toStringAsFixed(0),
+                                    )
+                                    ..selection = TextSelection.collapsed(
+                                      offset: curProp.toStringAsFixed(0).length,
+                                    ),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF111116),
+                              ),
                               keyboardType: TextInputType.number,
-                              decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), labelText: '预览值', labelStyle: const TextStyle(color: Color(0xFF888896)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
-                              onChanged: (v) => curProp = double.tryParse(v) ?? 75.0,
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: const Color(0xFFF2F2F6),
+                                labelText: '预览值',
+                                labelStyle: const TextStyle(
+                                  color: Color(0xFF888896),
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                              onChanged: (v) =>
+                                  curProp = double.tryParse(v) ?? 75.0,
                             ),
                           ),
                         ],
@@ -1083,29 +1306,74 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     ],
 
                     if (!isComp && el.module?.type == 'text') ...[
-                      const Text('文本显示内容', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const Text(
+                        '文本显示内容',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF555562),
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       TextField(
-                        controller: TextEditingController(text: textProp)..selection = TextSelection.collapsed(offset: textProp.length),
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
-                        decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+                        controller: TextEditingController(text: textProp)
+                          ..selection = TextSelection.collapsed(
+                            offset: textProp.length,
+                          ),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF111116),
+                        ),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: const Color(0xFFF2F2F6),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
                         onChanged: (v) => textProp = v,
                       ),
                       const SizedBox(height: 16),
 
                       // D126-006 linkage editor (inside text branch only)
-                      const Text('显示联动表达式（可选）', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const Text(
+                        '显示联动表达式（可选）',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF555562),
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       TextField(
-                        controller: TextEditingController(text: displayExpr)..selection = TextSelection.collapsed(offset: displayExpr.length),
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                        controller: TextEditingController(text: displayExpr)
+                          ..selection = TextSelection.collapsed(
+                            offset: displayExpr.length,
+                          ),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF111116),
+                        ),
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: const Color(0xFFF2F2F6),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                          helperText: '示例："{{current}} / {{max}} HP"  或  "{{progress.current}}/{{max}}"',
-                          helperStyle: const TextStyle(fontSize: 10, color: Color(0xFF888896)),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                          helperText:
+                              '示例："{{current}} / {{max}} HP"  或  "{{progress.current}}/{{max}}"',
+                          helperStyle: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF888896),
+                          ),
                         ),
                         onChanged: (v) => setDialogState(() => displayExpr = v),
                       ),
@@ -1113,19 +1381,46 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         const SizedBox(height: 4),
                         Text(
                           '实时预览（属性模拟）：${displayExpr.replaceAllMapped(RegExp(r'\{\{\s*(current|progress\.current)\s*\}\}'), (_) => '75').replaceAllMapped(RegExp(r'\{\{\s*(max|progress\.max)\s*\}\}'), (_) => '100')}',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF00ACC1), fontStyle: FontStyle.italic),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF00ACC1),
+                            fontStyle: FontStyle.italic,
+                          ),
                         ),
                       ],
                       const SizedBox(height: 16),
                     ],
 
                     if (!isComp && el.module?.type == 'input') ...[
-                      const Text('输入逻辑变量名（可选）', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const Text(
+                        '输入逻辑变量名（可选）',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF555562),
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       TextField(
-                        controller: TextEditingController(text: labelProp)..selection = TextSelection.collapsed(offset: labelProp.length),
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
-                        decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+                        controller: TextEditingController(text: labelProp)
+                          ..selection = TextSelection.collapsed(
+                            offset: labelProp.length,
+                          ),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF111116),
+                        ),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: const Color(0xFFF2F2F6),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
                         onChanged: (v) => labelProp = v,
                       ),
                       const SizedBox(height: 16),
@@ -1133,118 +1428,213 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
                     // === Linker（联动器）专用配置区（增强版）===
                     if (!isComp && el.module?.type == 'linker') ...[
-                      const Text('联动器配置', style: TextStyle(fontSize: 12, color: Color(0xFF555562), fontWeight: FontWeight.bold)),
+                      const Text(
+                        '联动器配置',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF555562),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       const SizedBox(height: 8),
 
                       // 源模块选择
-                      const Text('数据源模块（输出方）', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
+                      const Text(
+                        '数据源模块（输出方）',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF555562),
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      Builder(builder: (_) {
-                        final sourceModules = _getLinkableSourceModules();
-                        final currentSourceId = el.module!.properties['linker']?['sourceModuleId']?.toString();
-                        final validSourceValue = sourceModules.any((m) => m['id'] == currentSourceId) ? currentSourceId : null;
+                      Builder(
+                        builder: (_) {
+                          final sourceModules = _getLinkableSourceModules();
+                          final currentSourceId = el
+                              .module!
+                              .properties['linker']?['sourceModuleId']
+                              ?.toString();
+                          final validSourceValue =
+                              sourceModules.any(
+                                (m) => m['id'] == currentSourceId,
+                              )
+                              ? currentSourceId
+                              : null;
 
-                        return DropdownButtonFormField<String>(
-                          initialValue: validSourceValue,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: const Color(0xFFF2F2F6),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          ),
-                          items: sourceModules.map((moduleInfo) {
-                            return DropdownMenuItem<String>(
-                              value: moduleInfo['id'],
-                              child: Text('${moduleInfo['name']} (${moduleInfo['type']})', style: const TextStyle(fontSize: 12)),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setDialogState(() {
-                              final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
-                              linkerData['sourceModuleId'] = value;
+                          return DropdownButtonFormField<String>(
+                            initialValue: validSourceValue,
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: const Color(0xFFF2F2F6),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            items: sourceModules.map((moduleInfo) {
+                              return DropdownMenuItem<String>(
+                                value: moduleInfo['id'],
+                                child: Text(
+                                  '${moduleInfo['name']} (${moduleInfo['type']})',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setDialogState(() {
+                                final linkerData = Map<String, dynamic>.from(
+                                  el.module!.properties['linker'] ?? {},
+                                );
+                                linkerData['sourceModuleId'] = value;
 
-                              final sourceType = sourceModules.firstWhere((m) => m['id'] == value)['type'];
-                              if (sourceType == 'progress' || sourceType == 'slider') {
-                                linkerData['sourcePort'] = 'current';
-                                linkerData['sourceType'] = 'number';
-                              }
+                                final sourceType = sourceModules.firstWhere(
+                                  (m) => m['id'] == value,
+                                )['type'];
+                                if (sourceType == 'progress' ||
+                                    sourceType == 'slider') {
+                                  linkerData['sourcePort'] = 'current';
+                                  linkerData['sourceType'] = 'number';
+                                }
 
-                              if (linkerData['targetModuleId'] != null) {
-                                linkerData['scheme'] = 'current_to_text';
-                              }
+                                if (linkerData['targetModuleId'] != null) {
+                                  linkerData['scheme'] = 'current_to_text';
+                                }
 
-                              props['linker'] = linkerData;
-                            });
-                          },
-                        );
-                      }),
+                                props['linker'] = linkerData;
+                              });
+                            },
+                          );
+                        },
+                      ),
                       const SizedBox(height: 12),
 
                       // 目标模块选择
-                      const Text('目标模块（接收方）', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
+                      const Text(
+                        '目标模块（接收方）',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF555562),
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      Builder(builder: (_) {
-                        final targetModules = _getLinkableTargetModules();
-                        final currentTargetId = el.module!.properties['linker']?['targetModuleId']?.toString();
-                        final validTargetValue = targetModules.any((m) => m['id'] == currentTargetId) ? currentTargetId : null;
+                      Builder(
+                        builder: (_) {
+                          final targetModules = _getLinkableTargetModules();
+                          final currentTargetId = el
+                              .module!
+                              .properties['linker']?['targetModuleId']
+                              ?.toString();
+                          final validTargetValue =
+                              targetModules.any(
+                                (m) => m['id'] == currentTargetId,
+                              )
+                              ? currentTargetId
+                              : null;
 
-                        return DropdownButtonFormField<String>(
-                          initialValue: validTargetValue,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: const Color(0xFFF2F2F6),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          ),
-                          items: targetModules.map((moduleInfo) {
-                            return DropdownMenuItem<String>(
-                              value: moduleInfo['id'],
-                              child: Text('${moduleInfo['name']} (${moduleInfo['type']})', style: const TextStyle(fontSize: 12)),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setDialogState(() {
-                              final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
-                              linkerData['targetModuleId'] = value;
+                          return DropdownButtonFormField<String>(
+                            initialValue: validTargetValue,
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: const Color(0xFFF2F2F6),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            items: targetModules.map((moduleInfo) {
+                              return DropdownMenuItem<String>(
+                                value: moduleInfo['id'],
+                                child: Text(
+                                  '${moduleInfo['name']} (${moduleInfo['type']})',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setDialogState(() {
+                                final linkerData = Map<String, dynamic>.from(
+                                  el.module!.properties['linker'] ?? {},
+                                );
+                                linkerData['targetModuleId'] = value;
 
-                              final targetType = targetModules.firstWhere((m) => m['id'] == value)['type'];
-                              if (targetType == 'text') {
-                                linkerData['targetPort'] = 'text';
-                                linkerData['targetType'] = 'string';
-                              }
+                                final targetType = targetModules.firstWhere(
+                                  (m) => m['id'] == value,
+                                )['type'];
+                                if (targetType == 'text') {
+                                  linkerData['targetPort'] = 'text';
+                                  linkerData['targetType'] = 'string';
+                                }
 
-                              if (linkerData['sourceModuleId'] != null) {
-                                linkerData['scheme'] = 'current_to_text';
-                              }
+                                if (linkerData['sourceModuleId'] != null) {
+                                  linkerData['scheme'] = 'current_to_text';
+                                }
 
-                              props['linker'] = linkerData;
-                            });
-                          },
-                        );
-                      }),
+                                props['linker'] = linkerData;
+                              });
+                            },
+                          );
+                        },
+                      ),
                       const SizedBox(height: 12),
 
                       // 传输方案
-                      const Text('传输方案', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
+                      const Text(
+                        '传输方案',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF555562),
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       DropdownButtonFormField<String>(
-                        initialValue: el.module!.properties['linker']?['scheme']?.toString() ?? 'current_to_text',
+                        initialValue:
+                            el.module!.properties['linker']?['scheme']
+                                ?.toString() ??
+                            'current_to_text',
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: const Color(0xFFF2F2F6),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'current_to_text', child: Text('current → text', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 'max_to_text', child: Text('max → text', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                            value: 'current_to_text',
+                            child: Text(
+                              'current → text',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'max_to_text',
+                            child: Text(
+                              'max → text',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
                         ],
                         onChanged: (value) {
                           if (value == null) return;
                           setDialogState(() {
-                            final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
+                            final linkerData = Map<String, dynamic>.from(
+                              el.module!.properties['linker'] ?? {},
+                            );
                             linkerData['scheme'] = value;
                             props['linker'] = linkerData;
                           });
@@ -1260,41 +1650,81 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         ),
                         child: const Text(
                           '提示：选择源模块和目标模块后，端口会自动填充。后续版本将支持可视化拖拽连线。',
-                          style: TextStyle(fontSize: 10, color: Color(0xFF2E7D32)),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF2E7D32),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
                     ],
 
-                    const Text('外观调色板', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    const Text(
+                      '外观调色板',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF555562)),
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
-                      spacing: 8, runSpacing: 8,
-                      children: [
-                        Colors.white, const Color(0xFFFF4081), const Color(0xFFFF6E40),
-                        const Color(0xFFFFD740), const Color(0xFF00E676), const Color(0xFF00E5FF),
-                        const Color(0xFF2979FF), const Color(0xFF651FFF), const Color(0xFF37474F)
-                      ].map((c) {
-                        return GestureDetector(
-                          onTap: () => setDialogState(() => color = c),
-                          child: Container(
-                            width: 28, height: 28,
-                            decoration: BoxDecoration(
-                              color: c, shape: BoxShape.circle,
-                              border: Border.all(color: color == c ? const Color(0xFF111116) : Colors.black12, width: color == c ? 2.5 : 1),
-                              boxShadow: [if (color == c) const BoxShadow(color: Colors.black26, blurRadius: 6)],
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                      spacing: 8,
+                      runSpacing: 8,
+                      children:
+                          [
+                            Colors.white,
+                            const Color(0xFFFF4081),
+                            const Color(0xFFFF6E40),
+                            const Color(0xFFFFD740),
+                            const Color(0xFF00E676),
+                            const Color(0xFF00E5FF),
+                            const Color(0xFF2979FF),
+                            const Color(0xFF651FFF),
+                            const Color(0xFF37474F),
+                          ].map((c) {
+                            return GestureDetector(
+                              onTap: () => setDialogState(() => color = c),
+                              child: Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: c,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: color == c
+                                        ? const Color(0xFF111116)
+                                        : Colors.black12,
+                                    width: color == c ? 2.5 : 1,
+                                  ),
+                                  boxShadow: [
+                                    if (color == c)
+                                      const BoxShadow(
+                                        color: Colors.black26,
+                                        blurRadius: 6,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
                     ),
                     const SizedBox(height: 16),
 
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('透明度 / 融合强度', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                        Text('${(opacity * 100).round()}%', style: const TextStyle(fontSize: 11, color: Color(0xFF888896), fontWeight: FontWeight.bold)),
+                        const Text(
+                          '透明度 / 融合强度',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF555562),
+                          ),
+                        ),
+                        Text(
+                          '${(opacity * 100).round()}%',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF888896),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
                     Slider(
@@ -1305,7 +1735,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       activeColor: const Color(0xFFFF4081),
                       onChanged: (v) => setDialogState(() => opacity = v),
                     ),
-                    const Text('提示：当前不再提供自动重叠融合；如需柔和过渡，请通过透明度或颜色渐变设计实现。', style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25)),
+                    const Text(
+                      '提示：当前不再提供自动重叠融合；如需柔和过渡，请通过透明度或颜色渐变设计实现。',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF888896),
+                        height: 1.25,
+                      ),
+                    ),
                     const SizedBox(height: 16),
 
                     Row(
@@ -1314,20 +1751,54 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('渲染材质皮肤', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                              const Text(
+                                '渲染材质皮肤',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF555562),
+                                ),
+                              ),
                               const SizedBox(height: 6),
                               DropdownButtonFormField<UIModuleMaterial>(
                                 initialValue: material,
-                                decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                                decoration: InputDecoration(
+                                  filled: true,
+                                  fillColor: const Color(0xFFF2F2F6),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                ),
                                 dropdownColor: Colors.white,
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF111116),
+                                ),
                                 items: const [
-                                  DropdownMenuItem(value: UIModuleMaterial.glass, child: Text('毛玻璃质感')),
-                                  DropdownMenuItem(value: UIModuleMaterial.solid, child: Text('纯色实心')),
-                                  DropdownMenuItem(value: UIModuleMaterial.gradient, child: Text('科技渐变')),
-                                  DropdownMenuItem(value: UIModuleMaterial.outline, child: Text('极简描边')),
+                                  DropdownMenuItem(
+                                    value: UIModuleMaterial.glass,
+                                    child: Text('毛玻璃质感'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: UIModuleMaterial.solid,
+                                    child: Text('纯色实心'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: UIModuleMaterial.gradient,
+                                    child: Text('科技渐变'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: UIModuleMaterial.outline,
+                                    child: Text('极简描边'),
+                                  ),
                                 ],
-                                onChanged: (v) => setDialogState(() => material = v ?? UIModuleMaterial.glass),
+                                onChanged: (v) => setDialogState(
+                                  () => material = v ?? UIModuleMaterial.glass,
+                                ),
                               ),
                             ],
                           ),
@@ -1338,20 +1809,54 @@ class _UIStudioPageState extends State<UIStudioPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('几何外延', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                                const Text(
+                                  '几何外延',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF555562),
+                                  ),
+                                ),
                                 const SizedBox(height: 6),
                                 DropdownButtonFormField<UIModuleShape>(
                                   initialValue: shape,
-                                  decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF2F2F6), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                                  decoration: InputDecoration(
+                                    filled: true,
+                                    fillColor: const Color(0xFFF2F2F6),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                  ),
                                   dropdownColor: Colors.white,
-                                  style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF111116),
+                                  ),
                                   items: const [
-                                    DropdownMenuItem(value: UIModuleShape.rectangle, child: Text('直角')),
-                                    DropdownMenuItem(value: UIModuleShape.rounded, child: Text('圆角')),
-                                    DropdownMenuItem(value: UIModuleShape.capsule, child: Text('胶囊')),
-                                    DropdownMenuItem(value: UIModuleShape.circle, child: Text('椭圆 / 正圆')),
+                                    DropdownMenuItem(
+                                      value: UIModuleShape.rectangle,
+                                      child: Text('直角'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: UIModuleShape.rounded,
+                                      child: Text('圆角'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: UIModuleShape.capsule,
+                                      child: Text('胶囊'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: UIModuleShape.circle,
+                                      child: Text('椭圆 / 正圆'),
+                                    ),
                                   ],
-                                  onChanged: (v) => setDialogState(() => shape = v ?? UIModuleShape.rounded),
+                                  onChanged: (v) => setDialogState(
+                                    () => shape = v ?? UIModuleShape.rounded,
+                                  ),
                                 ),
                               ],
                             ),
@@ -1364,18 +1869,46 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('旋转角度 (绕中心)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                        const Text(
+                          '旋转角度 (绕中心)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF555562),
+                          ),
+                        ),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('${rotation.round()}°', style: const TextStyle(fontSize: 11, color: Color(0xFF888896), fontWeight: FontWeight.bold)),
+                            Text(
+                              '${rotation.round()}°',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF888896),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             const SizedBox(width: 8),
                             InkWell(
                               onTap: () => setDialogState(() => rotation = 0.0),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(color: const Color(0xFFFF4081).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                                child: const Text('复位', style: TextStyle(fontSize: 10, color: Color(0xFFFF4081), fontWeight: FontWeight.bold)),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFFFF4081,
+                                  ).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  '复位',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Color(0xFFFF4081),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -1390,14 +1923,32 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       activeColor: const Color(0xFFFF4081),
                       onChanged: (v) => setDialogState(() => rotation = v),
                     ),
-                    const Text('提示：画布上拖右下角把手(青色旋转模式)可自由旋转，接近水平/垂直会自动吸附。', style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25)),
+                    const Text(
+                      '提示：画布上拖右下角把手(青色旋转模式)可自由旋转，接近水平/垂直会自动吸附。',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF888896),
+                        height: 1.25,
+                      ),
+                    ),
                   ],
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Color(0xFF888896)))),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text(
+                    '取消',
+                    style: TextStyle(color: Color(0xFF888896)),
+                  ),
+                ),
                 FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF4081),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                   onPressed: () {
                     Navigator.pop(ctx);
                     setState(() {
@@ -1405,12 +1956,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       final index = list.indexWhere((e) => e.id == el.id);
                       if (index != -1) {
                         if (!isComp) {
-                          Map<String, dynamic> updatedProps = Map.from(el.module!.properties);
-                          // === 关键修复：合并 linker 配置 ===
-                          if (el.module!.type == 'linker' && props['linker'] != null) {
-                            updatedProps['linker'] = props['linker'];
-                          }
-
+                          Map<String, dynamic> updatedProps = Map.from(
+                            el.module!.properties,
+                          );
                           updatedProps['text'] = textProp;
                           if (el.module!.type == 'input') {
                             updatedProps['variable'] = labelProp;
@@ -1420,7 +1968,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           }
                           updatedProps['max'] = maxProp;
                           updatedProps['current'] = curProp;
-
                           updatedProps = _syncArtModuleProperties(
                             module: el.module!,
                             props: updatedProps,
@@ -1438,19 +1985,40 @@ class _UIStudioPageState extends State<UIStudioPage> {
                             opacity: opacity,
                             properties: updatedProps,
                             displayExpression: (el.module!.type == 'text')
-                                ? (displayExpr.trim().isNotEmpty ? displayExpr.trim() : null)
+                                ? (displayExpr.trim().isNotEmpty
+                                      ? displayExpr.trim()
+                                      : null)
                                 : el.module!.displayExpression,
                           );
-                          list[index] = el.copyWith(module: newMod, layerIndex: selectedLayer, rotation: rotation);
+                          list[index] = el.copyWith(
+                            module: newMod,
+                            layerIndex: selectedLayer,
+                            rotation: rotation,
+                          );
                         } else {
-                          final newComp = el.composite!.copyWith(name: name, color: color, material: material, opacity: opacity);
-                          list[index] = el.copyWith(composite: newComp, layerIndex: selectedLayer, rotation: rotation);
+                          final newComp = el.composite!.copyWith(
+                            name: name,
+                            color: color,
+                            material: material,
+                            opacity: opacity,
+                          );
+                          list[index] = el.copyWith(
+                            composite: newComp,
+                            layerIndex: selectedLayer,
+                            rotation: rotation,
+                          );
                         }
                       }
                     });
-                    _autoSave();   // ← 关键修复：编辑器保存后立即持久化
+                    _autoSave(); // ← 关键修复：编辑器保存后立即持久化
                   },
-                  child: const Text('确定应用', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                  child: const Text(
+                    '确定应用',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ],
             );
@@ -1488,9 +2056,6 @@ class _UIStudioPageState extends State<UIStudioPage> {
     for (var i = 0; i < _currentElements.length; i++) {
       elementOrder[_currentElements[i].id] = i;
     }
-    // 每次 build 时更新 linker 快照
-    LinkerService.updateElementSnapshot(_currentElements);
-
     final sortedElements = _currentElements.toList()
       ..sort((a, b) {
         final layer = a.layerIndex.compareTo(b.layerIndex);
@@ -1516,7 +2081,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
               child: DragTarget<_DragPayload>(
                 key: _canvasDropKey,
                 onAcceptWithDetails: (details) {
-                  final box = _canvasDropKey.currentContext?.findRenderObject() as RenderBox?;
+                  final box =
+                      _canvasDropKey.currentContext?.findRenderObject()
+                          as RenderBox?;
                   if (box == null) return;
                   final local = box.globalToLocal(details.offset);
                   final payload = details.data;
@@ -1524,12 +2091,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   if (payload.module != null) {
                     payloadSize = _initialSizeForModule(payload.module!);
                   } else if (payload.composite != null) {
-                    payloadSize = _compositeBounds(payload.composite!) ??
+                    payloadSize =
+                        _compositeBounds(payload.composite!) ??
                         const Size(200, 120);
                   } else {
                     payloadSize = const Size(150, 68);
                   }
-                  final canvasOffset = local -
+                  final canvasOffset =
+                      local -
                       _workspaceOffset -
                       Offset(payloadSize.width / 2, payloadSize.height / 2);
                   if (payload.module != null) {
@@ -1544,18 +2113,36 @@ class _UIStudioPageState extends State<UIStudioPage> {
                     onPanUpdate: (details) {
                       setState(() => _workspaceOffset += details.delta);
                     },
-                    onTap: () => setState(() => _selectedTransformationId = null),
+                    onTap: () {
+                      if (_isLinkingMode) {
+                        setState(() {
+                          _isLinkingMode = false;
+                          _linkingFromElementId = null;
+                          _linkingFromPort = null;
+                        });
+                      } else {
+                        setState(() => _selectedTransformationId = null);
+                      }
+                    },
                     child: ClipRect(
                       child: CustomPaint(
                         painter: StudioWarmGridPainter(_workspaceOffset),
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            // 更新 LinkerService 快照（支持联动器数据同步）
+                            // 1. 绘制联动器连线（贝塞尔曲线）
+                            ..._buildLinkerConnectionsLayer(),
+
+                            // 2. 渲染所有 UI 元素
                             ...() {
-                              LinkerService.updateElementSnapshot(sortedElements);
+                              LinkerService.updateElementSnapshot(
+                                sortedElements,
+                              );
                               return sortedElements.map((el) {
-                                final double p = el.id == _selectedTransformationId ? 20.0 : 0.0;
+                                final double p =
+                                    el.id == _selectedTransformationId
+                                    ? 20.0
+                                    : 0.0;
                                 return Positioned(
                                   left: _workspaceOffset.dx + el.offset.dx - p,
                                   top: _workspaceOffset.dy + el.offset.dy - p,
@@ -1580,14 +2167,21 @@ class _UIStudioPageState extends State<UIStudioPage> {
               left: 16,
               child: Material(
                 color: Colors.white.withValues(alpha: 0.9),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.black.withValues(alpha: 0.05))),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: Colors.black.withValues(alpha: 0.05)),
+                ),
                 elevation: 4,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(14),
                   onTap: () => Navigator.pop(context),
                   child: const Padding(
                     padding: EdgeInsets.all(10.0),
-                    child: Icon(Icons.reply_rounded, color: Color(0xFF111116), size: 26),
+                    child: Icon(
+                      Icons.reply_rounded,
+                      color: Color(0xFF111116),
+                      size: 26,
+                    ),
                   ),
                 ),
               ),
@@ -1603,14 +2197,29 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   foregroundColor: const Color(0xFF111116),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+                    side: BorderSide(
+                      color: Colors.black.withValues(alpha: 0.06),
+                    ),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   elevation: 4,
                 ),
                 icon: const Icon(Icons.layers_rounded, size: 18),
-                label: Text('图层 (Level $_activeLayerIndex)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                onPressed: () => setState(() { _showLayerManager = true; _showConstructionManager = false; _showRightDrawer = false; }),
+                label: Text(
+                  '图层 (Level $_activeLayerIndex)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                onPressed: () => setState(() {
+                  _showLayerManager = true;
+                  _showConstructionManager = false;
+                  _showRightDrawer = false;
+                }),
               ),
             ),
 
@@ -1623,13 +2232,21 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   foregroundColor: const Color(0xFF111116),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+                    side: BorderSide(
+                      color: Colors.black.withValues(alpha: 0.06),
+                    ),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
                   elevation: 4,
                 ),
                 icon: const Icon(Icons.view_list_rounded, size: 18),
-                label: const Text('构造层', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                label: const Text(
+                  '构造层',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
                 onPressed: () => setState(() {
                   _showConstructionManager = true;
                   _showLayerManager = false;
@@ -1673,7 +2290,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOut,
               right: _showLayerManager ? 0 : -260,
-              top: 100, bottom: 100,
+              top: 100,
+              bottom: 100,
               width: 240,
               child: _buildDedicatedLayerManagerDrawer(),
             ),
@@ -1682,7 +2300,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOut,
               right: _showConstructionManager ? 0 : -260,
-              top: 120, bottom: 120,
+              top: 120,
+              bottom: 120,
               width: 240,
               child: _buildAtomicConstructionDrawer(),
             ),
@@ -1692,11 +2311,12 @@ class _UIStudioPageState extends State<UIStudioPage> {
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOut,
               left: _showLeftDrawer ? 0 : -150,
-              top: 100, bottom: 100,
+              top: 100,
+              bottom: 100,
               width: 150,
               child: _buildLeftCompactAssetPreviewDrawer(),
             ),
-            
+
             if (!_showLeftDrawer)
               Positioned(
                 left: 0,
@@ -1704,14 +2324,26 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 child: GestureDetector(
                   onTap: () => setState(() => _showLeftDrawer = true),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 16,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: const BorderRadius.only(topRight: Radius.circular(14), bottomRight: Radius.circular(14)),
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(14),
+                        bottomRight: Radius.circular(14),
+                      ),
                       border: Border.all(color: Colors.black12),
-                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black12, blurRadius: 8),
+                      ],
                     ),
-                    child: const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF111116)),
+                    child: const Icon(
+                      Icons.arrow_forward_ios,
+                      size: 14,
+                      color: Color(0xFF111116),
+                    ),
                   ),
                 ),
               ),
@@ -1721,7 +2353,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOut,
               right: _showRightDrawer ? 0 : -rightDrawerWidth,
-              top: 120, bottom: 120,
+              top: 120,
+              bottom: 120,
               width: rightDrawerWidth,
               child: _buildRightCompletedAssetsDrawer(),
             ),
@@ -1733,32 +2366,54 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFFF4081),
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
                   elevation: 8,
                   shadowColor: Colors.black.withValues(alpha: 0.22),
                 ),
                 icon: const Icon(Icons.save_rounded, size: 20),
-                label: const Text('保存', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                label: const Text(
+                  '保存',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
                 onPressed: _showSaveMenu,
               ),
             ),
 
-            if (!_showRightDrawer && !_showLayerManager && !_showConstructionManager)
+            if (!_showRightDrawer &&
+                !_showLayerManager &&
+                !_showConstructionManager)
               Positioned(
                 right: 0,
                 top: MediaQuery.of(context).size.height / 2 - 24,
                 child: GestureDetector(
                   onTap: () => setState(() => _showRightDrawer = true),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 16,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), bottomLeft: Radius.circular(14)),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(14),
+                        bottomLeft: Radius.circular(14),
+                      ),
                       border: Border.all(color: Colors.black12),
-                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black12, blurRadius: 8),
+                      ],
                     ),
-                    child: const Icon(Icons.arrow_back_ios, size: 14, color: Color(0xFF111116)),
+                    child: const Icon(
+                      Icons.arrow_back_ios,
+                      size: 14,
+                      color: Color(0xFF111116),
+                    ),
                   ),
                 ),
               ),
@@ -1775,12 +2430,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.95),
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          bottomLeft: Radius.circular(24),
+        ),
         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 25)],
         border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
       child: ClipRRect(
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          bottomLeft: Radius.circular(24),
+        ),
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Column(
@@ -1795,48 +2456,128 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       borderRadius: BorderRadius.circular(8),
                       onTap: () => setState(() => _showLayerManager = false),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: const Color(0xFF00E5FF).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
-                        child: const Row(children: [Icon(Icons.arrow_forward_ios, size: 10, color: Color(0xFF00ACC1)), Text(' 收回', style: TextStyle(fontSize: 10, color: Color(0xFF00ACC1), fontWeight: FontWeight.bold))]),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 10,
+                              color: Color(0xFF00ACC1),
+                            ),
+                            Text(
+                              ' 收回',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFF00ACC1),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const Text('动态图层总览', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text(
+                      '动态图层总览',
+                      style: TextStyle(
+                        color: Color(0xFF111116),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                 ),
               ),
               const Divider(color: Colors.black12),
 
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 child: FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF00E676), foregroundColor: const Color(0xFF111116), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF00E676),
+                    foregroundColor: const Color(0xFF111116),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                   icon: const Icon(Icons.add_circle, size: 18),
-                  label: const Text('新建图层', style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text(
+                    '新建图层',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   onPressed: _createNewSceneLayer,
                 ),
               ),
 
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                child: Text('图层专注模式：仅激活选中层，屏蔽旧图层误触', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+                child: Text(
+                  '图层专注模式：仅激活选中层，屏蔽旧图层误触',
+                  style: TextStyle(fontSize: 10, color: Color(0xFF888896)),
+                ),
               ),
               const Divider(color: Colors.black12),
 
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   children: _sceneLayers.map((ly) {
                     final bool isSel = _activeLayerIndex == ly.id;
                     return Card(
-                      color: isSel ? const Color(0xFF111116) : const Color(0xFFF6F6F9),
+                      color: isSel
+                          ? const Color(0xFF111116)
+                          : const Color(0xFFF6F6F9),
                       elevation: isSel ? 4 : 0,
                       margin: const EdgeInsets.symmetric(vertical: 4),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: isSel ? const Color(0xFF00E5FF) : Colors.black.withValues(alpha: 0.05), width: isSel ? 1.5 : 1)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(
+                          color: isSel
+                              ? const Color(0xFF00E5FF)
+                              : Colors.black.withValues(alpha: 0.05),
+                          width: isSel ? 1.5 : 1,
+                        ),
+                      ),
                       child: ListTile(
-                        leading: Icon(Icons.layers, color: isSel ? const Color(0xFF00E5FF) : const Color(0xFF888896), size: 18),
-                        title: Text(ly.name, style: TextStyle(color: isSel ? Colors.white : const Color(0xFF111116), fontSize: 12, fontWeight: FontWeight.bold)),
-                        trailing: isSel ? const Icon(Icons.check_circle, color: Color(0xFF00E5FF), size: 18) : null,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                        leading: Icon(
+                          Icons.layers,
+                          color: isSel
+                              ? const Color(0xFF00E5FF)
+                              : const Color(0xFF888896),
+                          size: 18,
+                        ),
+                        title: Text(
+                          ly.name,
+                          style: TextStyle(
+                            color: isSel
+                                ? Colors.white
+                                : const Color(0xFF111116),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        trailing: isSel
+                            ? const Icon(
+                                Icons.check_circle,
+                                color: Color(0xFF00E5FF),
+                                size: 18,
+                              )
+                            : null,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                        ),
                         onTap: () => _switchActiveSceneLayer(ly.id),
                       ),
                     );
@@ -1854,12 +2595,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.85),
-        borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 20)],
         border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
       child: ClipRRect(
-        borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Column(
@@ -1870,14 +2617,43 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('原材料', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text(
+                      '原材料',
+                      style: TextStyle(
+                        color: Color(0xFF111116),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
                     InkWell(
                       borderRadius: BorderRadius.circular(8),
                       onTap: () => setState(() => _showLeftDrawer = false),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: const Color(0xFFFF4081).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                        child: const Row(children: [Text('收回 ', style: TextStyle(fontSize: 10, color: Color(0xFFFF4081), fontWeight: FontWeight.bold)), Icon(Icons.arrow_back_ios, size: 10, color: Color(0xFFFF4081))]),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF4081).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Text(
+                              '收回 ',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFFFF4081),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_back_ios,
+                              size: 10,
+                              color: Color(0xFFFF4081),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -1887,84 +2663,269 @@ class _UIStudioPageState extends State<UIStudioPage> {
 
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   children: [
-                    const Text('容器边界框', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text(
+                      '容器边界框',
+                      style: TextStyle(color: Color(0xFF888896), fontSize: 10),
+                    ),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'box', name: '容器边界框', type: 'base_box', properties: {}, color: Colors.cyan),
-                      Container(height: 50, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: const Color(0xFF00ACC1).withValues(alpha: 0.08)), child: const Center(child: Text('📦 拖出边界框', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 11, fontWeight: FontWeight.bold)))),
+                      UIModule(
+                        id: 'box',
+                        name: '容器边界框',
+                        type: 'base_box',
+                        properties: {},
+                        color: Colors.cyan,
+                      ),
+                      Container(
+                        height: 50,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          color: const Color(
+                            0xFF00ACC1,
+                          ).withValues(alpha: 0.08),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '📦 拖出边界框',
+                            style: TextStyle(
+                              color: Color(0xFF00ACC1),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                     const Divider(color: Colors.black12),
 
-                    const Text('数据条原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text(
+                      '数据条原子预览',
+                      style: TextStyle(color: Color(0xFF888896), fontSize: 10),
+                    ),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'prog', name: '数据条原子', type: 'progress', properties: {'min': 0, 'max': 100, 'current': 75}, color: const Color(0xFFFF4081)),
+                      UIModule(
+                        id: 'prog',
+                        name: '数据条原子',
+                        type: 'progress',
+                        properties: {'min': 0, 'max': 100, 'current': 75},
+                        color: const Color(0xFFFF4081),
+                      ),
                       Container(
                         height: 28,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: FractionallySizedBox(
                           alignment: Alignment.centerLeft,
                           widthFactor: 0.75,
-                          child: Container(decoration: BoxDecoration(color: const Color(0xFFFF4081), borderRadius: BorderRadius.circular(99))),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF4081),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
                         ),
                       ),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('面原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text(
+                      '面原子预览',
+                      style: TextStyle(color: Color(0xFF888896), fontSize: 10),
+                    ),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'surface', name: '面原子 / 胶囊', type: 'surface', properties: {}, color: const Color(0xFF651FFF), material: UIModuleMaterial.gradient, shape: UIModuleShape.capsule),
-                      Container(height: 34, decoration: BoxDecoration(color: const Color(0xFF651FFF), borderRadius: BorderRadius.circular(999))),
+                      UIModule(
+                        id: 'surface',
+                        name: '面原子 / 胶囊',
+                        type: 'surface',
+                        properties: {},
+                        color: const Color(0xFF651FFF),
+                        material: UIModuleMaterial.gradient,
+                        shape: UIModuleShape.capsule,
+                      ),
+                      Container(
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF651FFF),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('点击热区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text(
+                      '点击热区原子预览',
+                      style: TextStyle(color: Color(0xFF888896), fontSize: 10),
+                    ),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'btn', name: '点击热区原子', type: 'button', properties: {'action': 'tap'}, color: Colors.transparent),
-                      Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFFFF4081), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('点击热区', style: TextStyle(color: Color(0xFFFF4081), fontSize: 10, fontWeight: FontWeight.bold))),
+                      UIModule(
+                        id: 'btn',
+                        name: '点击热区原子',
+                        type: 'button',
+                        properties: {'action': 'tap'},
+                        color: Colors.transparent,
+                      ),
+                      Container(
+                        height: 34,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: const Color(0xFFFF4081),
+                            width: 1,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          '点击热区',
+                          style: TextStyle(
+                            color: Color(0xFFFF4081),
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('文本原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text(
+                      '文本原子预览',
+                      style: TextStyle(color: Color(0xFF888896), fontSize: 10),
+                    ),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'txt', name: '文本原子', type: 'text', properties: {'text': '文本'}, color: const Color(0xFF00B0FF)),
-                      const SizedBox(height: 30, child: Center(child: Text('文本', style: TextStyle(color: Color(0xFF00B0FF), fontSize: 12, fontWeight: FontWeight.bold)))),
+                      UIModule(
+                        id: 'txt',
+                        name: '文本原子',
+                        type: 'text',
+                        properties: {'text': '文本'},
+                        color: const Color(0xFF00B0FF),
+                      ),
+                      const SizedBox(
+                        height: 30,
+                        child: Center(
+                          child: Text(
+                            '文本',
+                            style: TextStyle(
+                              color: Color(0xFF00B0FF),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('滑块原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text(
+                      '滑块原子预览',
+                      style: TextStyle(color: Color(0xFF888896), fontSize: 10),
+                    ),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'slider', name: '滑块原子', type: 'slider', properties: {'min': 0, 'max': 100, 'current': 50}, color: const Color(0xFF00ACC1)),
+                      UIModule(
+                        id: 'slider',
+                        name: '滑块原子',
+                        type: 'slider',
+                        properties: {'min': 0, 'max': 100, 'current': 50},
+                        color: const Color(0xFF00ACC1),
+                      ),
                       SizedBox(
                         height: 34,
                         child: Stack(
                           alignment: Alignment.centerLeft,
                           children: [
-                            Container(height: 5, margin: const EdgeInsets.symmetric(horizontal: 10), decoration: BoxDecoration(color: const Color(0xFFE2E2E8), borderRadius: BorderRadius.circular(99))),
-                            Container(height: 5, width: 62, margin: const EdgeInsets.only(left: 10), decoration: BoxDecoration(color: const Color(0xFF00ACC1), borderRadius: BorderRadius.circular(99))),
-                            Positioned(left: 58, child: Container(width: 18, height: 18, decoration: BoxDecoration(color: const Color(0xFF00ACC1), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)))),
+                            Container(
+                              height: 5,
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE2E2E8),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                            ),
+                            Container(
+                              height: 5,
+                              width: 62,
+                              margin: const EdgeInsets.only(left: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00ACC1),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                            ),
+                            Positioned(
+                              left: 58,
+                              child: Container(
+                                width: 18,
+                                height: 18,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00ACC1),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('输入热区原子预览', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text(
+                      '输入热区原子预览',
+                      style: TextStyle(color: Color(0xFF888896), fontSize: 10),
+                    ),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
-                      UIModule(id: 'inp', name: '输入热区原子', type: 'input', properties: {'variable': 'var.input'}, color: Colors.transparent),
-                      Container(height: 34, decoration: BoxDecoration(border: Border.all(color: const Color(0xFF00ACC1), width: 1), borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: const Text('输入热区', style: TextStyle(color: Color(0xFF00ACC1), fontSize: 10, fontWeight: FontWeight.bold))),
+                      UIModule(
+                        id: 'inp',
+                        name: '输入热区原子',
+                        type: 'input',
+                        properties: {'variable': 'var.input'},
+                        color: Colors.transparent,
+                      ),
+                      Container(
+                        height: 34,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: const Color(0xFF00ACC1),
+                            width: 1,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          '输入热区',
+                          style: TextStyle(
+                            color: Color(0xFF00ACC1),
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('联动器节点', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const Text(
+                      '联动器节点',
+                      style: TextStyle(color: Color(0xFF888896), fontSize: 10),
+                    ),
                     const SizedBox(height: 4),
                     _buildPreviewDraggableCard(
                       UIModule(
@@ -1981,7 +2942,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
                             'targetType': 'string',
                             'scheme': 'current_to_text',
                             'enabled': true,
-                          }
+                          },
                         },
                         color: const Color(0xFF00ACC1),
                       ),
@@ -1990,22 +2951,88 @@ class _UIStudioPageState extends State<UIStudioPage> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFF00ACC1).withValues(alpha: 0.4), width: 1.5),
+                          border: Border.all(
+                            color: const Color(
+                              0xFF00ACC1,
+                            ).withValues(alpha: 0.4),
+                            width: 1.5,
+                          ),
                         ),
                         child: Stack(
                           children: [
-                            Positioned(left: 8, top: 6, child: Row(children: [
-                              Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFF00ACC1), shape: BoxShape.circle)),
-                              const SizedBox(width: 3),
-                              const Text('current', style: TextStyle(fontSize: 8, color: Color(0xFF555562))),
-                            ])),
-                            Positioned(right: 8, top: 6, child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              const Text('text', style: TextStyle(fontSize: 8, color: Color(0xFF555562))),
-                              const SizedBox(width: 3),
-                              Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFF00ACC1), shape: BoxShape.circle)),
-                            ])),
-                            const Center(child: Text('current→text', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF111116)))),
-                            const Positioned(bottom: 3, left: 0, right: 0, child: Center(child: Text('联动器', style: TextStyle(fontSize: 7, color: Color(0xFF00ACC1))))),
+                            Positioned(
+                              left: 8,
+                              top: 6,
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF00ACC1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  const Text(
+                                    'current',
+                                    style: TextStyle(
+                                      fontSize: 8,
+                                      color: Color(0xFF555562),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Positioned(
+                              right: 8,
+                              top: 6,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'text',
+                                    style: TextStyle(
+                                      fontSize: 8,
+                                      color: Color(0xFF555562),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF00ACC1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Center(
+                              child: Text(
+                                'current→text',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF111116),
+                                ),
+                              ),
+                            ),
+                            const Positioned(
+                              bottom: 3,
+                              left: 0,
+                              right: 0,
+                              child: Center(
+                                child: Text(
+                                  '联动器',
+                                  style: TextStyle(
+                                    fontSize: 7,
+                                    color: Color(0xFF00ACC1),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -2025,7 +3052,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
+        ],
       ),
       child: visualPreview,
     );
@@ -2044,10 +3073,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.38, child: card),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.grab,
-        child: card,
-      ),
+      child: MouseRegion(cursor: SystemMouseCursors.grab, child: card),
     );
   }
 
@@ -2059,12 +3085,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.88),
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          bottomLeft: Radius.circular(24),
+        ),
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 20)],
         border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
       child: ClipRRect(
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          bottomLeft: Radius.circular(24),
+        ),
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Column(
@@ -2077,38 +3109,69 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   children: [
                     InkWell(
                       borderRadius: BorderRadius.circular(8),
-                      onTap: () => setState(() => _showConstructionManager = false),
+                      onTap: () =>
+                          setState(() => _showConstructionManager = false),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                          color: const Color(
+                            0xFF00E5FF,
+                          ).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Row(
                           children: [
-                            Icon(Icons.arrow_forward_ios, size: 10, color: Color(0xFF00ACC1)),
-                            Text(' 收回', style: TextStyle(fontSize: 10, color: Color(0xFF00ACC1), fontWeight: FontWeight.bold)),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 10,
+                              color: Color(0xFF00ACC1),
+                            ),
+                            Text(
+                              ' 收回',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFF00ACC1),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
-                    const Text('元素列表', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text(
+                      '元素列表',
+                      style: TextStyle(
+                        color: Color(0xFF111116),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF6F6F9),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.04),
+                    ),
                   ),
                   child: Text(
                     '可烘焙 $bakeable 层 · 不参与 $notBakeable 层',
                     style: TextStyle(
-                      color: notBakeable > 0 ? const Color(0xFFFF8F00) : const Color(0xFF00A86B),
+                      color: notBakeable > 0
+                          ? const Color(0xFFFF8F00)
+                          : const Color(0xFF00A86B),
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                     ),
@@ -2119,7 +3182,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                 child: Text(
                   '可将视觉层烘焙为新的面原子；文本/数据/交互层暂不参与烘焙。',
-                  style: TextStyle(fontSize: 10, color: Color(0xFF888896), height: 1.25),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF888896),
+                    height: 1.25,
+                  ),
                 ),
               ),
               const Divider(color: Colors.black12),
@@ -2131,49 +3198,78 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           child: Text(
                             '还没有构造层。\n从左侧拖入面、数据条、文本等原材料。',
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF888896),
+                              height: 1.35,
+                            ),
                           ),
                         ),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         itemCount: _currentElements.length,
                         itemBuilder: (context, index) {
                           final el = _currentElements[index];
                           final selected = _selectedTransformationId == el.id;
                           final bake = _isBakeableElement(el);
-                          final name = el.module?.name ?? el.composite?.name ?? '未命名层';
+                          final name =
+                              el.module?.name ?? el.composite?.name ?? '未命名层';
                           return Card(
-                            color: selected ? const Color(0xFF111116) : const Color(0xFFF6F6F9),
+                            color: selected
+                                ? const Color(0xFF111116)
+                                : const Color(0xFFF6F6F9),
                             elevation: selected ? 3 : 0,
                             margin: const EdgeInsets.symmetric(vertical: 4),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                               side: BorderSide(
-                                color: selected ? const Color(0xFF00E5FF) : Colors.black.withValues(alpha: 0.04),
+                                color: selected
+                                    ? const Color(0xFF00E5FF)
+                                    : Colors.black.withValues(alpha: 0.04),
                                 width: selected ? 1.4 : 1,
                               ),
                             ),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(10),
-                              onTap: () => setState(() => _selectedTransformationId = el.id),
-                              onLongPress: () => _showTailoredPrecisionEditorDialog(el),
+                              onTap: () => setState(
+                                () => _selectedTransformationId = el.id,
+                              ),
+                              onLongPress: () =>
+                                  _showTailoredPrecisionEditorDialog(el),
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 7,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 5,
+                                            vertical: 2,
+                                          ),
                                           decoration: BoxDecoration(
-                                            color: bake ? const Color(0xFF00C853) : const Color(0xFFFF8F00),
-                                            borderRadius: BorderRadius.circular(5),
+                                            color: bake
+                                                ? const Color(0xFF00C853)
+                                                : const Color(0xFFFF8F00),
+                                            borderRadius: BorderRadius.circular(
+                                              5,
+                                            ),
                                           ),
                                           child: Text(
                                             bake ? '烘焙' : '跳过',
-                                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(width: 6),
@@ -2183,7 +3279,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: selected ? Colors.white : const Color(0xFF111116),
+                                              color: selected
+                                                  ? Colors.white
+                                                  : const Color(0xFF111116),
                                               fontSize: 11,
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -2197,7 +3295,9 @@ class _UIStudioPageState extends State<UIStudioPage> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: selected ? Colors.white70 : const Color(0xFF777783),
+                                        color: selected
+                                            ? Colors.white70
+                                            : const Color(0xFF777783),
                                         fontSize: 10,
                                       ),
                                     ),
@@ -2205,10 +3305,36 @@ class _UIStudioPageState extends State<UIStudioPage> {
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
-                                        _buildLayerMiniButton(Icons.keyboard_arrow_up_rounded, () => _moveAtomicConstructionLayer(el.id, -1), selected),
-                                        _buildLayerMiniButton(Icons.keyboard_arrow_down_rounded, () => _moveAtomicConstructionLayer(el.id, 1), selected),
-                                        _buildLayerMiniButton(Icons.tune_rounded, () => _showTailoredPrecisionEditorDialog(el), selected),
-                                        _buildLayerMiniButton(Icons.delete_outline_rounded, () => _deleteElement(el.id), selected, danger: true),
+                                        _buildLayerMiniButton(
+                                          Icons.keyboard_arrow_up_rounded,
+                                          () => _moveAtomicConstructionLayer(
+                                            el.id,
+                                            -1,
+                                          ),
+                                          selected,
+                                        ),
+                                        _buildLayerMiniButton(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          () => _moveAtomicConstructionLayer(
+                                            el.id,
+                                            1,
+                                          ),
+                                          selected,
+                                        ),
+                                        _buildLayerMiniButton(
+                                          Icons.tune_rounded,
+                                          () =>
+                                              _showTailoredPrecisionEditorDialog(
+                                                el,
+                                              ),
+                                          selected,
+                                        ),
+                                        _buildLayerMiniButton(
+                                          Icons.delete_outline_rounded,
+                                          () => _deleteElement(el.id),
+                                          selected,
+                                          danger: true,
+                                        ),
                                       ],
                                     ),
                                   ],
@@ -2226,8 +3352,15 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
-  Widget _buildLayerMiniButton(IconData icon, VoidCallback onTap, bool selected, {bool danger = false}) {
-    final color = danger ? const Color(0xFFFF4081) : (selected ? Colors.white : const Color(0xFF555562));
+  Widget _buildLayerMiniButton(
+    IconData icon,
+    VoidCallback onTap,
+    bool selected, {
+    bool danger = false,
+  }) {
+    final color = danger
+        ? const Color(0xFFFF4081)
+        : (selected ? Colors.white : const Color(0xFF555562));
     return InkWell(
       borderRadius: BorderRadius.circular(6),
       onTap: onTap,
@@ -2238,16 +3371,69 @@ class _UIStudioPageState extends State<UIStudioPage> {
     );
   }
 
+  /// 绘制所有联动器连线（中转模式：两条线）
+  List<Widget> _buildLinkerConnectionsLayer() {
+    final connections = _getAllLinkerConnections();
+    if (connections.isEmpty) return const [];
+
+    final widgets = <Widget>[];
+
+    for (final conn in connections) {
+      final fromId = conn['from'] as String?;
+      final toId = conn['to'] as String?;
+      final lineType = conn['type'] as String? ?? 'input';
+
+      if (fromId == null || toId == null) continue;
+
+      UIElement? fromEl;
+      UIElement? toEl;
+
+      for (final el in _currentElements) {
+        if (el.id == fromId) fromEl = el;
+        if (el.id == toId) toEl = el;
+      }
+
+      if (fromEl == null || toEl == null) continue;
+
+      // 计算端口坐标
+      final fromX = _workspaceOffset.dx + fromEl.offset.dx + fromEl.size.width;
+      final fromY =
+          _workspaceOffset.dy + fromEl.offset.dy + fromEl.size.height / 2;
+
+      final toX = _workspaceOffset.dx + toEl.offset.dx;
+      final toY = _workspaceOffset.dy + toEl.offset.dy + toEl.size.height / 2;
+
+      // 输入线用蓝色，输出线用绿色（可后续调整）
+      final lineColor = lineType == 'input'
+          ? const Color(0xFF00ACC1)
+          : const Color(0xFF66BB6A);
+
+      widgets.add(
+        CustomPaint(
+          painter: LinkerConnectionPainter(
+            start: Offset(fromX, fromY),
+            end: Offset(toX, toY),
+            color: lineColor,
+          ),
+        ),
+      );
+    }
+
+    return widgets;
+  }
+
   /// 获取可作为联动源的模块列表（progress、slider 等输出 number 的模块）
   List<Map<String, String>> _getLinkableSourceModules() {
     return _currentElements
         .where((el) => !el.isComposite && el.module != null)
         .where((el) => ['progress', 'slider'].contains(el.module!.type))
-        .map((el) => {
-              'id': el.id,
-              'name': el.module!.name,
-              'type': el.module!.type,
-            })
+        .map(
+          (el) => {
+            'id': el.id,
+            'name': el.module!.name,
+            'type': el.module!.type,
+          },
+        )
         .toList();
   }
 
@@ -2256,12 +3442,55 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return _currentElements
         .where((el) => !el.isComposite && el.module != null)
         .where((el) => ['text'].contains(el.module!.type))
-        .map((el) => {
-              'id': el.id,
-              'name': el.module!.name,
-              'type': el.module!.type,
-            })
+        .map(
+          (el) => {
+            'id': el.id,
+            'name': el.module!.name,
+            'type': el.module!.type,
+          },
+        )
         .toList();
+  }
+
+  /// 获取所有联动器的连线数据（中转模式）
+  /// 返回两条线：source → linker + linker → target
+  List<Map<String, dynamic>> _getAllLinkerConnections() {
+    final connections = <Map<String, dynamic>>[];
+
+    for (final el in _currentElements) {
+      if (el.isComposite || el.module?.type != 'linker') continue;
+
+      final linkerData = el.module!.properties['linker'] as Map?;
+      if (linkerData == null) continue;
+
+      final sourceId = linkerData['sourceModuleId']?.toString();
+      final targetId = linkerData['targetModuleId']?.toString();
+      final sourcePort = linkerData['sourcePort']?.toString() ?? 'current';
+      final targetPort = linkerData['targetPort']?.toString() ?? 'text';
+
+      if (sourceId != null && targetId != null) {
+        // 输入线：source → linker
+        connections.add({
+          'from': sourceId,
+          'fromPort': sourcePort,
+          'to': el.id, // 联动器自身
+          'toPort': 'input',
+          'linkerId': el.id,
+          'type': 'input',
+        });
+
+        // 输出线：linker → target
+        connections.add({
+          'from': el.id, // 联动器自身
+          'fromPort': 'output',
+          'to': targetId,
+          'toPort': targetPort,
+          'linkerId': el.id,
+          'type': 'output',
+        });
+      }
+    }
+    return connections;
   }
 
   Widget _buildRightCompletedAssetsDrawer() {
@@ -2272,12 +3501,18 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.85),
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          bottomLeft: Radius.circular(24),
+        ),
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 20)],
         border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
       child: ClipRRect(
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), bottomLeft: Radius.circular(24)),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          bottomLeft: Radius.circular(24),
+        ),
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Column(
@@ -2292,12 +3527,43 @@ class _UIStudioPageState extends State<UIStudioPage> {
                       borderRadius: BorderRadius.circular(8),
                       onTap: () => setState(() => _showRightDrawer = false),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: const Color(0xFF00E5FF).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                        child: const Row(children: [Icon(Icons.arrow_forward_ios, size: 10, color: Color(0xFF00ACC1)), Text(' 收回', style: TextStyle(fontSize: 10, color: Color(0xFF00ACC1), fontWeight: FontWeight.bold))]),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFF00E5FF,
+                          ).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 10,
+                              color: Color(0xFF00ACC1),
+                            ),
+                            Text(
+                              ' 收回',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFF00ACC1),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const Text('完成资产库', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text(
+                      '完成资产库',
+                      style: TextStyle(
+                        color: Color(0xFF111116),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -2310,18 +3576,31 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           child: Text(
                             '还没有保存的资产。\n在工作台拖入积木后点「保存」即可入库。',
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 11, color: Color(0xFF888896), height: 1.35),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF888896),
+                              height: 1.35,
+                            ),
                           ),
                         ),
                       )
                     : ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         children: [
                           ...modules.map(_buildAssetLibraryModuleCard),
                           if (composites.isNotEmpty) ...[
                             const Padding(
                               padding: EdgeInsets.fromLTRB(4, 10, 4, 2),
-                              child: Text('复合组件', style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                              child: Text(
+                                '复合组件',
+                                style: TextStyle(
+                                  color: Color(0xFF888896),
+                                  fontSize: 10,
+                                ),
+                              ),
                             ),
                             ...composites.map(_buildAssetLibraryCompositeCard),
                           ],
@@ -2347,23 +3626,41 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: ListTile(
         title: Text(
           module.name,
-          style: const TextStyle(color: Color(0xFF111116), fontSize: 11, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Color(0xFF111116),
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          _elementTypeLabel(UIElement(id: 'preview_${module.id}', isComposite: false, module: module)),
+          _elementTypeLabel(
+            UIElement(
+              id: 'preview_${module.id}',
+              isComposite: false,
+              module: module,
+            ),
+          ),
           style: const TextStyle(color: Color(0xFF888896), fontSize: 9),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF00E676)),
+            const Icon(
+              Icons.drag_indicator_rounded,
+              size: 16,
+              color: Color(0xFF00E676),
+            ),
             GestureDetector(
               onTap: () => _confirmDeleteModule(module),
               child: const Padding(
                 padding: EdgeInsets.only(left: 4),
-                child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFFF4081)),
+                child: Icon(
+                  Icons.delete_outline_rounded,
+                  size: 16,
+                  color: Color(0xFFFF4081),
+                ),
               ),
             ),
           ],
@@ -2377,10 +3674,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       delay: const Duration(milliseconds: 180),
       feedback: Material(
         color: Colors.transparent,
-        child: SizedBox(
-          width: 150,
-          child: Opacity(opacity: 0.9, child: card),
-        ),
+        child: SizedBox(width: 150, child: Opacity(opacity: 0.9, child: card)),
       ),
       childWhenDragging: Opacity(opacity: 0.38, child: card),
       child: card,
@@ -2393,18 +3687,39 @@ class _UIStudioPageState extends State<UIStudioPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('删除资产', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
-        content: Text('确定删除「${module.name}」吗？', style: const TextStyle(fontSize: 13, color: Color(0xFF555562))),
+        title: const Text(
+          '删除资产',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF111116),
+          ),
+        ),
+        content: Text(
+          '确定删除「${module.name}」吗？',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF555562)),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Color(0xFF888896)))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF888896))),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF4081),
+            ),
             onPressed: () {
               Navigator.pop(ctx);
               setState(() => _assetService.removeModule(module.id));
               _autoSave();
             },
-            child: const Text('删除', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '删除',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -2423,7 +3738,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
       child: ListTile(
         title: Text(
           composite.name,
-          style: const TextStyle(color: Color(0xFF111116), fontSize: 11, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Color(0xFF111116),
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -2434,12 +3753,20 @@ class _UIStudioPageState extends State<UIStudioPage> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.drag_indicator_rounded, size: 16, color: Color(0xFF651FFF)),
+            const Icon(
+              Icons.drag_indicator_rounded,
+              size: 16,
+              color: Color(0xFF651FFF),
+            ),
             GestureDetector(
               onTap: () => _confirmDeleteComposite(composite),
               child: const Padding(
                 padding: EdgeInsets.only(left: 4),
-                child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFFF4081)),
+                child: Icon(
+                  Icons.delete_outline_rounded,
+                  size: 16,
+                  color: Color(0xFFFF4081),
+                ),
               ),
             ),
           ],
@@ -2453,10 +3780,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
       delay: const Duration(milliseconds: 180),
       feedback: Material(
         color: Colors.transparent,
-        child: SizedBox(
-          width: 150,
-          child: Opacity(opacity: 0.9, child: card),
-        ),
+        child: SizedBox(width: 150, child: Opacity(opacity: 0.9, child: card)),
       ),
       childWhenDragging: Opacity(opacity: 0.38, child: card),
       child: card,
@@ -2469,18 +3793,39 @@ class _UIStudioPageState extends State<UIStudioPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('删除资产', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
-        content: Text('确定删除「${composite.name}」吗？', style: const TextStyle(fontSize: 13, color: Color(0xFF555562))),
+        title: const Text(
+          '删除资产',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF111116),
+          ),
+        ),
+        content: Text(
+          '确定删除「${composite.name}」吗？',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF555562)),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Color(0xFF888896)))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF888896))),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF4081),
+            ),
             onPressed: () {
               Navigator.pop(ctx);
               setState(() => _assetService.removeComposite(composite.id));
               _autoSave();
             },
-            child: const Text('删除', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '删除',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -2595,11 +3940,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
     if (isTransformationActive) {
       stackChildren.add(
         Positioned(
-          right: 0, bottom: 0,
+          right: 0,
+          bottom: 0,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
-              setState(() => _transformHandleRotateMode = !_transformHandleRotateMode);
+              setState(
+                () => _transformHandleRotateMode = !_transformHandleRotateMode,
+              );
             },
             onPanStart: (details) {
               _startTouchWidth = el.size.width;
@@ -2640,8 +3988,10 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 _updateElementRotation(el.id, newRot);
                 return;
               }
-              final deltaX = details.globalPosition.dx - _startTouchGlobalPos.dx;
-              final deltaY = details.globalPosition.dy - _startTouchGlobalPos.dy;
+              final deltaX =
+                  details.globalPosition.dx - _startTouchGlobalPos.dx;
+              final deltaY =
+                  details.globalPosition.dy - _startTouchGlobalPos.dy;
               final minSize = _minElementSize(el);
               final maxSize = _maxElementSize(el);
               final newWidth = (_startTouchWidth + deltaX)
@@ -2650,28 +4000,39 @@ class _UIStudioPageState extends State<UIStudioPage> {
               final newHeight = (_startTouchHeight + deltaY)
                   .clamp(minSize.height, maxSize.height)
                   .toDouble();
-              _updateElementGeometry(el.id, el.offset, Size(newWidth, newHeight));
+              _updateElementGeometry(
+                el.id,
+                el.offset,
+                Size(newWidth, newHeight),
+              );
             },
             child: Container(
-              width: 40, height: 40,
+              width: 40,
+              height: 40,
               alignment: Alignment.center,
               child: Container(
-                width: 22, height: 22,
+                width: 22,
+                height: 22,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: _transformHandleRotateMode && el.module?.type != 'linker'
+                  color:
+                      _transformHandleRotateMode && el.module?.type != 'linker'
                       ? const Color(0xFF00E5FF)
                       : const Color(0xFFFF4081),
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2),
-                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black26, blurRadius: 4),
+                  ],
                 ),
                 child: Icon(
                   (el.module?.type == 'linker' || !_transformHandleRotateMode)
                       ? Icons.open_with
                       : Icons.rotate_right_rounded,
                   size: 12,
-                  color: (el.module?.type == 'linker' || !_transformHandleRotateMode)
+                  color:
+                      (el.module?.type == 'linker' ||
+                          !_transformHandleRotateMode)
                       ? Colors.white
                       : const Color(0xFF111116),
                 ),
@@ -2685,17 +4046,11 @@ class _UIStudioPageState extends State<UIStudioPage> {
     Widget node = SizedBox(
       width: el.size.width + p * 2,
       height: el.size.height + p * 2,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: stackChildren,
-      ),
+      child: Stack(clipBehavior: Clip.none, children: stackChildren),
     );
 
     return el.rotation != 0.0
-        ? Transform.rotate(
-            angle: el.rotation * math.pi / 180.0,
-            child: node,
-          )
+        ? Transform.rotate(angle: el.rotation * math.pi / 180.0, child: node)
         : node;
   }
 }
@@ -2726,18 +4081,12 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
         break;
       case UIModuleShape.capsule:
         path.addRRect(
-          RRect.fromRectAndRadius(
-            rect,
-            Radius.circular(rect.shortestSide / 2),
-          ),
+          RRect.fromRectAndRadius(rect, Radius.circular(rect.shortestSide / 2)),
         );
         break;
       case UIModuleShape.rounded:
         path.addRRect(
-          RRect.fromRectAndRadius(
-            rect,
-            Radius.circular(borderRadius),
-          ),
+          RRect.fromRectAndRadius(rect, Radius.circular(borderRadius)),
         );
         break;
     }
@@ -2761,7 +4110,9 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
       var distance = 0.0;
       var drawWhite = false;
       while (distance < metric.length) {
-        final next = (distance + dashLength).clamp(0.0, metric.length).toDouble();
+        final next = (distance + dashLength)
+            .clamp(0.0, metric.length)
+            .toDouble();
         final dashPath = metric.extractPath(distance, next);
         canvas.drawPath(dashPath, drawWhite ? whitePaint : greyPaint);
         distance = next + gapLength;
@@ -2771,21 +4122,119 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant StudioAlternatingDashedBorderPainter oldDelegate) {
+  bool shouldRepaint(
+    covariant StudioAlternatingDashedBorderPainter oldDelegate,
+  ) {
     return oldDelegate.strokeWidth != strokeWidth ||
         oldDelegate.shape != shape ||
         oldDelegate.borderRadius != borderRadius;
   }
 }
 
+/// 联动器连线绘制器（贝塞尔曲线）
+class LinkerConnectionPainter extends CustomPainter {
+  final Offset start;
+  final Offset end;
+  final Color color;
+
+  LinkerConnectionPainter({
+    required this.start,
+    required this.end,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path();
+    path.moveTo(start.dx, start.dy);
+
+    // 贝塞尔曲线控制点
+    final controlOffset = (end.dx - start.dx).abs() * 0.4;
+    final cp1 = Offset(start.dx + controlOffset, start.dy);
+    final cp2 = Offset(end.dx - controlOffset, end.dy);
+
+    path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, end.dx, end.dy);
+
+    canvas.drawPath(path, paint);
+
+    // ==================== 关键修改：箭头放在曲线中点 ====================
+    // 计算 t=0.5 处的点和切线方向
+    final t = 0.5;
+    final midX = _bezierPoint(start.dx, cp1.dx, cp2.dx, end.dx, t);
+    final midY = _bezierPoint(start.dy, cp1.dy, cp2.dy, end.dy, t);
+
+    // 计算切线方向（用于箭头朝向）
+    final dx = _bezierDerivative(start.dx, cp1.dx, cp2.dx, end.dx, t);
+    final dy = _bezierDerivative(start.dy, cp1.dy, cp2.dy, end.dy, t);
+    final angle = math.atan2(dy, dx);
+
+    // 绘制箭头
+    final arrowPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    const arrowSize = 9.0;
+
+    final arrowPath = Path();
+    arrowPath.moveTo(midX, midY);
+    arrowPath.lineTo(
+      midX - arrowSize * math.cos(angle - 0.5),
+      midY - arrowSize * math.sin(angle - 0.5),
+    );
+    arrowPath.lineTo(
+      midX - arrowSize * math.cos(angle + 0.5),
+      midY - arrowSize * math.sin(angle + 0.5),
+    );
+    arrowPath.close();
+
+    canvas.drawPath(arrowPath, arrowPaint);
+  }
+
+  // 贝塞尔曲线点计算（t ∈ [0,1]）
+  double _bezierPoint(double p0, double p1, double p2, double p3, double t) {
+    final mt = 1 - t;
+    return mt * mt * mt * p0 +
+        3 * mt * mt * t * p1 +
+        3 * mt * t * t * p2 +
+        t * t * t * p3;
+  }
+
+  // 贝塞尔曲线导数（用于计算切线方向）
+  double _bezierDerivative(
+    double p0,
+    double p1,
+    double p2,
+    double p3,
+    double t,
+  ) {
+    final mt = 1 - t;
+    return 3 * mt * mt * (p1 - p0) +
+        6 * mt * t * (p2 - p1) +
+        3 * t * t * (p3 - p2);
+  }
+
+  @override
+  bool shouldRepaint(covariant LinkerConnectionPainter oldDelegate) {
+    return oldDelegate.start != start || oldDelegate.end != end;
+  }
+}
+
 class StudioWarmGridPainter extends CustomPainter {
   final Offset offset;
+
   StudioWarmGridPainter(this.offset);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paintLine = Paint()
-      ..color = const Color(0xFFD0D0D8) // 稍微加深一点，更容易看到网格
+      ..color =
+          const Color(0xFFD0D0D8) // 稍微加深一点，更容易看到网格
       ..strokeWidth = 1.0;
 
     const double step = 40.0;
@@ -2808,5 +4257,6 @@ class StudioWarmGridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant StudioWarmGridPainter oldDelegate) => oldDelegate.offset != offset;
+  bool shouldRepaint(covariant StudioWarmGridPainter oldDelegate) =>
+      oldDelegate.offset != offset;
 }

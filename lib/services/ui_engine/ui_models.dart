@@ -108,18 +108,32 @@ class UIModule {
   final String type; // 'slider', 'button', 'text', 'progress', 'input', 'base_box', 'linker' 等
   //
   // === Linker（联动器）端口元数据建议结构（放在 properties['linker'] 中）===
-  // {
-  //   "linker": {
-  //     "sourceModuleId": "el_xxx",
-  //     "sourcePort": "current",
-  //     "sourceType": "number",
-  //     "targetModuleId": "el_yyy",
-  //     "targetPort": "text",
-  //     "targetType": "string",
-  //     "scheme": "current_to_text",
-  //     "enabled": true
-  //   }
-  // }
+// {
+//   "linker": {
+//     "sourceModuleId": "el_xxx",      // 源模块（progress）
+//     "sourcePort": "current",
+//     "sourceType": "number",
+//     "targetModuleId": "el_yyy",      // 目标模块（text）
+//     "targetPort": "text",
+//     "targetType": "string",
+//     "scheme": "current_to_text",
+//     "enabled": true,
+//
+//     // === 新增：中转连线结构 ===
+//     "inputConnection": {
+//       "from": "el_xxx",              // sourceModuleId
+//       "fromPort": "current",
+//       "to": "linker自身ID",
+//       "toPort": "input"
+//     },
+//     "outputConnection": {
+//       "from": "linker自身ID",
+//       "fromPort": "output",
+//       "to": "el_yyy",                // targetModuleId
+//       "toPort": "text"
+//     }
+//   }
+// }
   // 这是最高效且易扩展的扁平结构，后续可轻松增加 filter / transform 等字段。
   final UIModuleMaterial material;
   final UIModuleShape shape;
