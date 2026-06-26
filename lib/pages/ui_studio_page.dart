@@ -962,22 +962,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
     _autoSave(); // ← 关键修复
   }
 
-  Size _minElementSize(UIElement el) {
-    final type = el.module?.type;
-    if (type == 'progress') return const Size(8, 2);
-    if (type == 'button') return const Size(4, 4);
-    if (type == 'input') return const Size(4, 4);
-    if (type == 'text') return const Size(8, 8);
-    if (type == 'surface') return const Size(4, 4);
-    if (type == 'surface_art') return const Size(12, 12);
-    if (type == 'light_effect') return const Size(8, 8);
-    if (type == 'primitive_art') return const Size(4, 1);
-    if (type == 'slider') return const Size(20, 8);
-    if (type == 'base_box' || el.isComposite) return const Size(12, 12);
-    return const Size(4, 4);
-  }
 
-  Size _maxElementSize(UIElement el) => const Size(4000, 4000);
 
   UIModuleShape _outlineShapeOf(UIElement el, [int depth = 0]) {
     if (el.isComposite && el.composite != null) {
@@ -1011,49 +996,7 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return module.borderRadius;
   }
 
-  void _updateElementGeometry(String id, Offset newOffset, Size newSize) {
-    setState(() {
-      final list = _currentElements;
-      final index = list.indexWhere((e) => e.id == id);
-      if (index == -1) return;
 
-      final targetEl = list[index];
-
-      if (targetEl.isComposite &&
-          targetEl.composite != null &&
-          targetEl.size.width > 0 &&
-          targetEl.size.height > 0) {
-        final scaleX = newSize.width / targetEl.size.width;
-        final scaleY = newSize.height / targetEl.size.height;
-        final scaledChildren = targetEl.composite!.children.map((c) {
-          return c.copyWith(
-            offset: Offset(c.offset.dx * scaleX, c.offset.dy * scaleY),
-            size: Size(c.size.width * scaleX, c.size.height * scaleY),
-          );
-        }).toList();
-        final newComp = targetEl.composite!.copyWith(children: scaledChildren);
-        list[index] = targetEl.copyWith(
-          offset: newOffset,
-          size: newSize,
-          composite: newComp,
-        );
-      } else {
-        list[index] = targetEl.copyWith(offset: newOffset, size: newSize);
-      }
-    });
-    _autoSave(); // ← 关键修复：拖拽/缩放后立即保存
-  }
-
-  void _updateElementRotation(String id, double rotation) {
-    setState(() {
-      final list = _currentElements;
-      final index = list.indexWhere((e) => e.id == id);
-      if (index == -1) return;
-      final normalized = ((rotation + 180) % 360 + 360) % 360 - 180;
-      list[index] = list[index].copyWith(rotation: normalized);
-    });
-    _autoSave();
-  }
 
   void _deleteElement(String id) {
     setState(() {
@@ -2109,21 +2052,19 @@ class _UIStudioPageState extends State<UIStudioPage> {
                   }
                 },
                 builder: (context, candidateData, rejectedData) {
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanUpdate: (details) {
+                  return Listener(
+                    // 【关键】Listener 不参与手势竞争，始终能捕获 pointer 事件
+                    onPointerMove: (event) {
                       if (_isDraggingConnection) {
                         setState(() {
-                          _dragConnectionEnd = details.globalPosition;
+                          _dragConnectionEnd = event.position;
                         });
-                        _updateConnectionHover(details.globalPosition);
-                        return;
+                        _updateConnectionHover(event.position);
                       }
-                      setState(() => _workspaceOffset += details.delta);
                     },
-                    onPanEnd: (details) {
+                    onPointerUp: (event) {
                       if (_isDraggingConnection) {
-                        // 完成连接
+                        _updateConnectionHover(event.position);
                         if (_hoveringTargetId != null) {
                           _completeConnection();
                         }
@@ -2136,54 +2077,77 @@ class _UIStudioPageState extends State<UIStudioPage> {
                           _hoveringTargetId = null;
                           _hoveringTargetPort = null;
                         });
-                        return;
                       }
                     },
-                    onTap: () {
-                      if (_isLinkingMode) {
+                    onPointerCancel: (event) {
+                      if (_isDraggingConnection) {
                         setState(() {
-                          _isLinkingMode = false;
+                          _isDraggingConnection = false;
+                          _draggingSourceId = null;
+                          _draggingSourcePort = null;
+                          _draggingSourceType = null;
+                          _dragConnectionEnd = null;
+                          _hoveringTargetId = null;
+                          _hoveringTargetPort = null;
                         });
-                      } else {
-                        setState(() => _selectedTransformationId = null);
                       }
                     },
-                    child: ClipRect(
-                      child: CustomPaint(
-                        painter: StudioWarmGridPainter(_workspaceOffset),
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            // 1. 已保存的联动器连线
-                            ..._buildLinkerConnectionsLayer(),
-
-                            // 2. 拖拽中的临时连线
-                            if (_isDraggingConnection && _dragConnectionEnd != null)
-                              _buildTemporaryConnectionLine(),
-
-                            // 3. 渲染元素
-                            ...() {
-                              LinkerService.updateElementSnapshot(sortedElements,);
-                              return sortedElements.map((el) {
-                                final double p =
-                                    el.id == _selectedTransformationId
-                                    ? 20.0
-                                    : 0.0;
-                                return Positioned(
-                                  left: _workspaceOffset.dx + el.offset.dx - p,
-                                  top: _workspaceOffset.dy + el.offset.dy - p,
-                                  width: el.size.width + p * 2,
-                                  height: el.size.height + p * 2,
-                                  child: _buildTrueSingleHandleNode(el, p),
-                                );
-                              });
-                            }(),
-                          ],
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanUpdate: (details) {
+                        // 如果正在拖拽连接线，不要移动画布
+                        if (_isDraggingConnection) return;
+                        setState(() => _workspaceOffset += details.delta);
+                      },
+                      onPanEnd: (details) {
+                        // 连接线的结束在 Listener.onPointerUp 中处理
+                        if (_isDraggingConnection) return;
+                      },
+                      onTap: () {
+                        if (_isLinkingMode) {
+                          setState(() {
+                            _isLinkingMode = false;
+                          });
+                        } else {
+                          setState(() => _selectedTransformationId = null);
+                        }
+                      },
+                      child: ClipRect(
+                        child: CustomPaint(
+                          painter: StudioWarmGridPainter(_workspaceOffset),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              // 1. 已保存的联动器连线
+                              ..._buildLinkerConnectionsLayer(),
+                              // 2. 拖拽中的临时连线
+                              if (_isDraggingConnection && _dragConnectionEnd != null)
+                                _buildTemporaryConnectionLine(),
+                              // 3. 渲染元素
+                              ...() {
+                                LinkerService.updateElementSnapshot(sortedElements);
+                                return sortedElements.map((el) {
+                                  final double p =
+                                  el.id == _selectedTransformationId
+                                      ? 20.0
+                                      : 0.0;
+                                  return Positioned(
+                                    left: _workspaceOffset.dx + el.offset.dx - p,
+                                    top: _workspaceOffset.dy + el.offset.dy - p,
+                                    width: el.size.width + p * 2,
+                                    height: el.size.height + p * 2,
+                                    child: _buildTrueSingleHandleNode(el, p),
+                                  );
+                                });
+                              }(),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   );
                 },
+
               ),
             ),
 
@@ -3559,94 +3523,105 @@ class _UIStudioPageState extends State<UIStudioPage> {
     return connections;
   }
 
-  /// 检测拖拽目标（判断是否可以连接）
+  /// 检测拖拽目标（判断是否可以连接）- 修复版
   void _updateConnectionHover(Offset globalPosition) {
     if (!_isDraggingConnection) return;
 
+    String? newHoverTargetId;
+    String? newHoverTargetPort;
+
     // 遍历所有元素，检测哪个端口被悬停
     for (final el in _currentElements) {
-      if (el.id == _draggingSourceId) continue; // 跳过自己
+      // 跳过自己
+      if (el.id == _draggingSourceId) continue;
 
+      // 跳过不在当前图层的元素
+      if (el.layerIndex != _activeLayerIndex) continue;
+
+      // 计算元素在屏幕上的位置
       final elLeft = _workspaceOffset.dx + el.offset.dx;
       final elRight = elLeft + el.size.width;
       final elTop = _workspaceOffset.dy + el.offset.dy;
       final elCenterY = elTop + el.size.height / 2;
 
-      // 检测左端口（输入端口）
-      final leftPortPos = Offset(elLeft, elCenterY);
-      if ((globalPosition - leftPortPos).distance < 24) {
-        if (_canConnectTo(el, 'input')) {
-          setState(() {
-            _hoveringTargetId = el.id;
-            _hoveringTargetPort = 'input';
-          });
-          return;
+      final elType = el.module?.type;
+
+      // 定义端口的检测半径（调大一点让连接更容易）
+      const double hitRadius = 35.0;
+
+      // 检测左端口（输入端口）- 只有 linker 和 text 有左端口
+      if (elType == 'linker' || elType == 'text') {
+        final leftPortPos = Offset(elLeft, elCenterY);
+        final distance = (globalPosition - leftPortPos).distance;
+
+        if (distance < hitRadius) {
+          // 检查连接兼容性
+          if (_canConnect(el, 'input')) {
+            newHoverTargetId = el.id;
+            newHoverTargetPort = 'input';
+            break; // 找到一个就够了
+          }
         }
       }
 
-      // 检测右端口（输出端口）
-      final rightPortPos = Offset(elRight, elCenterY);
-      if ((globalPosition - rightPortPos).distance < 24) {
-        if (_canConnectTo(el, 'output')) {
-          setState(() {
-            _hoveringTargetId = el.id;
-            _hoveringTargetPort = 'output';
-          });
-          return;
+      // 检测右端口（输出端口）- 只有 linker、progress、slider 有右端口
+      if (elType == 'linker' || elType == 'progress' || elType == 'slider') {
+        final rightPortPos = Offset(elRight, elCenterY);
+        final distance = (globalPosition - rightPortPos).distance;
+
+        if (distance < hitRadius) {
+          // 检查连接兼容性
+          if (_canConnect(el, 'output')) {
+            newHoverTargetId = el.id;
+            newHoverTargetPort = 'output';
+            break;
+          }
         }
       }
     }
 
-    // 没有悬停在任何有效端口上
-    if (_hoveringTargetId != null) {
+    // 只有在状态变化时才 setState，避免不必要的重建
+    if (newHoverTargetId != _hoveringTargetId ||
+        newHoverTargetPort != _hoveringTargetPort) {
       setState(() {
-        _hoveringTargetId = null;
-        _hoveringTargetPort = null;
+        _hoveringTargetId = newHoverTargetId;
+        _hoveringTargetPort = newHoverTargetPort;
       });
     }
   }
 
-  /// 判断是否可以连接到目标元素
-  /// 连接规则：
-  ///   - linker 左侧（输入端口）→ 连接 progress/slider 右侧（输出端口）
-  ///   - linker 右侧（输出端口）→ 连接 text 左侧（输入端口）
-  ///   - progress/slider 右侧（输出端口）→ 连接 linker 左侧（输入端口）
-  ///   - text 左侧（输入端口）→ 连接 linker 右侧（输出端口）
-  bool _canConnectTo(UIElement target, String portDirection) {
+  bool _canConnect(UIElement target, String portDirection) {
+    if (_draggingSourceId == null || _draggingSourceType == null) return false;
     final sourceElement = _currentElements.firstWhere(
-      (e) => e.id == _draggingSourceId,
+          (e) => e.id == _draggingSourceId,
       orElse: () => UIElement(id: '', isComposite: false),
     );
-
     if (sourceElement.id.isEmpty) return false;
-
     final sourceType = sourceElement.module?.type;
     final targetType = target.module?.type;
-
+    final dragType = _draggingSourceType; // 'input' 或 'output'
     if (sourceType == null || targetType == null) return false;
-
-    // linker 左侧（输入端口）→ progress/slider 右侧（输出端口）
-    if (sourceType == 'linker' && _draggingSourceType == 'input') {
-      return (targetType == 'progress' || targetType == 'slider') && portDirection == 'output';
+    // 规则 1: linker 左端口(input) → progress/slider 右端口(output)
+    if (sourceType == 'linker' && dragType == 'input') {
+      return (targetType == 'progress' || targetType == 'slider') &&
+          portDirection == 'output';
     }
-
-    // linker 右侧（输出端口）→ text 左侧（输入端口）
-    if (sourceType == 'linker' && _draggingSourceType == 'output') {
+    // 规则 2: linker 右端口(output) → text 左端口(input)
+    if (sourceType == 'linker' && dragType == 'output') {
       return targetType == 'text' && portDirection == 'input';
     }
-
-    // progress/slider 右侧（输出端口）→ linker 左侧（输入端口）
-    if ((sourceType == 'progress' || sourceType == 'slider') && _draggingSourceType == 'output') {
+    // 规则 3: progress/slider 右端口(output) → linker 左端口(input)
+    if ((sourceType == 'progress' || sourceType == 'slider') &&
+        dragType == 'output') {
       return targetType == 'linker' && portDirection == 'input';
     }
-
-    // text 左侧（输入端口）→ linker 右侧（输出端口）
-    if (sourceType == 'text' && _draggingSourceType == 'input') {
+    // 规则 4: text 左端口(input) → linker 右端口(output)
+    if (sourceType == 'text' && dragType == 'input') {
       return targetType == 'linker' && portDirection == 'output';
     }
-
     return false;
   }
+
 
   /// 完成连接
   void _completeConnection() {
@@ -3717,6 +3692,8 @@ class _UIStudioPageState extends State<UIStudioPage> {
     _autoSave();
   }
 
+
+
   /// 更新联动器的连接数据
   void _updateLinkerConnection({
     required String linkerId,
@@ -3763,49 +3740,78 @@ class _UIStudioPageState extends State<UIStudioPage> {
     });
   }
 
-  /// 构建端口可视化组件
-  Widget _buildPortWidget({
+
+  /// 构建可交互的端口（使用 Listener 捕获 onPointerDown）
+  Widget _buildInteractivePort({
+    required UIElement element,
     required bool isInput,
     bool isHovered = false,
     bool isConnected = false,
-    String? label,
   }) {
-    final Color portColor;
-    if (isHovered) {
-      portColor = const Color(0xFF00E676); // 绿色高亮
-    } else if (isConnected) {
-      portColor = const Color(0xFF00ACC1); // 青色已连接
-    } else {
-      portColor = const Color(0xFF888896); // 灰色未连接
-    }
+    return Listener(
+      onPointerDown: (event) {
+        // 先选中该元素
+        setState(() {
+          _selectedTransformationId = element.id;
+        });
 
-    return Container(
-      width: 16,
-      height: 16,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: portColor,
-          width: isHovered ? 3 : 2,
-        ),
-        boxShadow: isHovered
-            ? [
-                BoxShadow(
-                  color: portColor.withValues(alpha: 0.5),
-                  blurRadius: 8,
-                  spreadRadius: 2,
-                ),
-              ]
-            : null,
-      ),
-      child: Center(
-        child: Container(
-          width: 8,
-          height: 8,
+        // 开始拖拽连接线
+        setState(() {
+          _isDraggingConnection = true;
+          _draggingSourceId = element.id;
+          _draggingSourcePort = isInput ? 'input' : 'output';
+          _draggingSourceType = isInput ? 'input' : 'output';
+          _dragConnectionEnd = event.position;
+        });
+
+        debugPrint('🔗 开始拖拽: ${element.id}, port=${isInput ? "input" : "output"}');
+      },
+      child: Container(
+        width: 36,
+        height: 36,
+        color: Colors.transparent,
+        alignment: Alignment.center,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: isHovered ? 22 : 18,
+          height: isHovered ? 22 : 18,
           decoration: BoxDecoration(
-            color: portColor,
+            color: Colors.white,
             shape: BoxShape.circle,
+            border: Border.all(
+              color: isHovered
+                  ? const Color(0xFF00E676)
+                  : isConnected
+                  ? const Color(0xFF00ACC1)
+                  : const Color(0xFF888896),
+              width: isHovered ? 3 : 2,
+            ),
+            boxShadow: [
+              if (isHovered)
+                BoxShadow(
+                  color: const Color(0xFF00E676).withValues(alpha: 0.5),
+                  blurRadius: 10,
+                  spreadRadius: 3,
+                ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: isHovered ? 10 : 8,
+              height: isHovered ? 10 : 8,
+              decoration: BoxDecoration(
+                color: (isConnected || isHovered)
+                    ? (isHovered ? const Color(0xFF00E676) : const Color(0xFF00ACC1))
+                    : Colors.transparent,
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
         ),
       ),
@@ -4213,35 +4219,35 @@ class _UIStudioPageState extends State<UIStudioPage> {
                 ),
               ),
             ),
-          // 端口可视化
+          // 【修改】端口使用独立的可交互 Widget
           if (showPorts) ...[
             // 左侧端口（输入）
             if (isLinker || isText)
               Positioned(
-                left: -8,
+                left: -18, // 向左偏移，让端口在元素外面
                 top: 0,
                 bottom: 0,
                 child: Center(
-                  child: _buildPortWidget(
+                  child: _buildInteractivePort(
+                    element: el,
                     isInput: true,
                     isHovered: isHoveredAsTarget && _hoveringTargetPort == 'input',
                     isConnected: isLinker && _isPortConnected(el, 'input'),
-                    label: isLinker ? 'IN' : null,
                   ),
                 ),
               ),
             // 右侧端口（输出）
             if (isLinker || isProgress || isSlider)
               Positioned(
-                right: -8,
+                right: -18, // 向右偏移
                 top: 0,
                 bottom: 0,
                 child: Center(
-                  child: _buildPortWidget(
+                  child: _buildInteractivePort(
+                    element: el,
                     isInput: false,
                     isHovered: isHoveredAsTarget && _hoveringTargetPort == 'output',
                     isConnected: isLinker && _isPortConnected(el, 'output'),
-                    label: isLinker ? 'OUT' : null,
                   ),
                 ),
               ),
@@ -4278,117 +4284,64 @@ class _UIStudioPageState extends State<UIStudioPage> {
       ),
     );
 
+    // 【修改】元素拖动的 GestureDetector 不再处理端口逻辑
     Widget touchableContent = GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onTap: () {
+        // 点击选中元素
+        setState(() {
+          _selectedTransformationId = el.id;
+        });
+      },
       onPanStart: (details) {
-        // 联动器端口拖拽连线
-        if (el.module?.type == 'linker' && _selectedTransformationId == el.id) {
-          final localX = details.localPosition.dx;
-          final isLeftPort = localX < el.size.width / 2;
+        // 【关键】如果正在拖拽连接线，不要启动元素拖动
+        if (_isDraggingConnection) return;
 
-          setState(() {
-            _isDraggingConnection = true;
-            _draggingSourceId = el.id;
-            _draggingSourcePort = isLeftPort ? 'left' : 'right';
-            // 左侧端口 = 输入端口（接收数据），右侧端口 = 输出端口（发送数据）
-            _draggingSourceType = isLeftPort ? 'input' : 'output';
-            _dragConnectionEnd = details.globalPosition;
-          });
-          return;
-        }
-        // progress/slider 输出端口拖拽
-        if ((el.module?.type == 'progress' || el.module?.type == 'slider') &&
-            _selectedTransformationId == el.id) {
-          final localX = details.localPosition.dx;
-          // 右侧 20% 区域视为输出端口
-          if (localX > el.size.width * 0.8) {
-            setState(() {
-              _isDraggingConnection = true;
-              _draggingSourceId = el.id;
-              _draggingSourcePort = 'right';
-              _draggingSourceType = 'output';
-              _dragConnectionEnd = details.globalPosition;
-            });
-            return;
-          }
-        }
-        // text 输入端口拖拽
-        if (el.module?.type == 'text' && _selectedTransformationId == el.id) {
-          final localX = details.localPosition.dx;
-          // 左侧 20% 区域视为输入端口
-          if (localX < el.size.width * 0.2) {
-            setState(() {
-              _isDraggingConnection = true;
-              _draggingSourceId = el.id;
-              _draggingSourcePort = 'left';
-              _draggingSourceType = 'input';
-              _dragConnectionEnd = details.globalPosition;
-            });
-            return;
-          }
-        }
-        // 关键修复：旋转模式下禁用元素拖拽
-        if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
-          return;
-        }
-        _startTouchElemOffset = el.offset;
+        // 元素整体拖动逻辑
         _startTouchScreenPos = details.globalPosition;
+        _startTouchElemOffset = el.offset;
+        setState(() {
+          _selectedTransformationId = el.id;
+        });
       },
       onPanUpdate: (details) {
-        // 关键修复：连线模式下禁止元素拖拽
+        // 【关键】如果正在拖拽连接线，不要更新元素位置
         if (_isDraggingConnection) return;
-        // 关键修复：旋转模式下禁用元素拖拽
-        if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
-          return;
-        }
-        final delta = details.globalPosition - _startTouchScreenPos;
-        _updateElementGeometry(el.id, _startTouchElemOffset + delta, el.size);
-      },
-      onPanEnd: (_) {
-        // 关键修复：连线模式下在此处理结束逻辑（因为元素捕获了手势，画布 onPanEnd 不会触发）
-        if (_isDraggingConnection) {
-          if (_hoveringTargetId != null) {
-            _completeConnection();
-          }
-          setState(() {
-            _isDraggingConnection = false;
-            _draggingSourceId = null;
-            _draggingSourcePort = null;
-            _draggingSourceType = null;
-            _dragConnectionEnd = null;
-            _hoveringTargetId = null;
-            _hoveringTargetPort = null;
-          });
-          return;
-        }
-        if (_selectedTransformationId == el.id && _transformHandleRotateMode) {
-          return;
-        }
-        _startTouchElemOffset = Offset.zero;
-      },
-      onTap: () {
-        setState(() {
-          if (_selectedTransformationId != el.id) {
-            _transformHandleRotateMode = false;
-          }
-          _selectedTransformationId = el.id;
 
-          if (el.module?.type == 'linker') {
-            _transformHandleRotateMode = false;
+        // 元素拖动更新
+        final delta = details.globalPosition - _startTouchScreenPos;
+        setState(() {
+          final idx = _currentElements.indexWhere((e) => e.id == el.id);
+          if (idx != -1) {
+            _currentElements[idx] = el.copyWith(
+              offset: _startTouchElemOffset + delta,
+            );
           }
         });
       },
-      onLongPress: () {
-        _showTailoredPrecisionEditorDialog(el);
+      onPanEnd: (details) {
+        // 【关键】如果正在拖拽连接线，什么都不做
+        if (_isDraggingConnection) return;
+
+        _autoSave();
       },
       child: contentArea,
     );
+
+    // 应用旋转
+    if (el.rotation != 0.0) {
+      touchableContent = Transform.rotate(
+        angle: el.rotation * math.pi / 180.0,
+        child: touchableContent,
+      );
+    }
 
     final stackChildren = <Widget>[
       Positioned(left: p, top: p, child: touchableContent),
       layerBadge,
     ];
 
+    // 变换把手（缩放/旋转）
     if (isTransformationActive) {
       stackChildren.add(
         Positioned(
@@ -4397,102 +4350,84 @@ class _UIStudioPageState extends State<UIStudioPage> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
-              setState(
-                () => _transformHandleRotateMode = !_transformHandleRotateMode,
-              );
+              setState(() => _transformHandleRotateMode = !_transformHandleRotateMode);
             },
             onPanStart: (details) {
               _startTouchWidth = el.size.width;
               _startTouchHeight = el.size.height;
               _startTouchGlobalPos = details.globalPosition;
-
               if (el.module?.type == 'linker') {
                 _transformHandleRotateMode = false;
               }
-
               if (_transformHandleRotateMode) {
                 _rotationCenter = Offset(
                   _workspaceOffset.dx + el.offset.dx + el.size.width / 2,
                   _workspaceOffset.dy + el.offset.dy + el.size.height / 2,
                 );
-                _startHandleAngle =
-                    (details.globalPosition - _rotationCenter).direction;
+                _startHandleAngle = (details.globalPosition - _rotationCenter).direction;
                 _startRotation = el.rotation;
               }
             },
             onPanUpdate: (details) {
+              if (_isDraggingConnection) return;
               if (el.module?.type == 'linker') {
                 _transformHandleRotateMode = false;
               }
-
               if (_transformHandleRotateMode) {
-                final currentAngle =
-                    (details.globalPosition - _rotationCenter).direction;
+                final currentAngle = (details.globalPosition - _rotationCenter).direction;
                 var delta = currentAngle - _startHandleAngle;
-
                 while (delta > math.pi) {
                   delta -= 2 * math.pi;
                 }
                 while (delta < -math.pi) {
                   delta += 2 * math.pi;
                 }
-
-                var newRot = _startRotation + delta * 180 / math.pi;
-                _updateElementRotation(el.id, newRot);
-                return;
+                final newRotation = _startRotation + delta * 180 / math.pi;
+                setState(() {
+                  final idx = _currentElements.indexWhere((e) => e.id == el.id);
+                  if (idx != -1) {
+                    _currentElements[idx] = el.copyWith(rotation: newRotation);
+                  }
+                });
+              } else {
+                // 缩放
+                final dx = details.globalPosition.dx - _startTouchGlobalPos.dx;
+                final dy = details.globalPosition.dy - _startTouchGlobalPos.dy;
+                final newWidth = (_startTouchWidth + dx).clamp(40.0, 600.0);
+                final newHeight = (_startTouchHeight + dy).clamp(20.0, 400.0);
+                setState(() {
+                  final idx = _currentElements.indexWhere((e) => e.id == el.id);
+                  if (idx != -1) {
+                    _currentElements[idx] = el.copyWith(
+                      size: Size(newWidth, newHeight),
+                    );
+                  }
+                });
               }
-
-              final deltaX =
-                  details.globalPosition.dx - _startTouchGlobalPos.dx;
-              final deltaY =
-                  details.globalPosition.dy - _startTouchGlobalPos.dy;
-
-              final minSize = _minElementSize(el);
-              final maxSize = _maxElementSize(el);
-
-              final newWidth = (_startTouchWidth + deltaX)
-                  .clamp(minSize.width, maxSize.width)
-                  .toDouble();
-              final newHeight = (_startTouchHeight + deltaY)
-                  .clamp(minSize.height, maxSize.height)
-                  .toDouble();
-
-              _updateElementGeometry(
-                el.id,
-                el.offset,
-                Size(newWidth, newHeight),
-              );
             },
+            onPanEnd: (_) => _autoSave(),
             child: Container(
-              width: 52,
-              height: 52,
-              alignment: Alignment.center,
-              child: Container(
-                width: 26,
-                height: 26,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color:
-                      _transformHandleRotateMode && el.module?.type != 'linker'
-                      ? const Color(0xFF00E5FF)
-                      : const Color(0xFFFF4081),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black26, blurRadius: 4),
-                  ],
-                ),
-                child: Icon(
-                  (el.module?.type == 'linker' || !_transformHandleRotateMode)
-                      ? Icons.open_with
-                      : Icons.rotate_right_rounded,
-                  size: 14,
-                  color:
-                      (el.module?.type == 'linker' ||
-                          !_transformHandleRotateMode)
-                      ? Colors.white
-                      : const Color(0xFF111116),
-                ),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: _transformHandleRotateMode
+                    ? const Color(0xFF651FFF)
+                    : const Color(0xFFFF4081),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 4,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _transformHandleRotateMode
+                    ? Icons.rotate_right_rounded
+                    : Icons.open_in_full_rounded,
+                size: 14,
+                color: Colors.white,
               ),
             ),
           ),
@@ -4500,15 +4435,14 @@ class _UIStudioPageState extends State<UIStudioPage> {
       );
     }
 
-    Widget node = SizedBox(
+    return SizedBox(
       width: el.size.width + p * 2,
       height: el.size.height + p * 2,
-      child: Stack(clipBehavior: Clip.none, children: stackChildren),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: stackChildren,
+      ),
     );
-
-    return el.rotation != 0.0
-        ? Transform.rotate(angle: el.rotation * math.pi / 180.0, child: node)
-        : node;
   }
 }
 
@@ -4704,4 +4638,67 @@ class StudioWarmGridPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant StudioWarmGridPainter oldDelegate) =>
       oldDelegate.offset != offset;
+}
+/// 连接线绘制器（贝塞尔曲线）
+class ConnectionLinePainter extends CustomPainter {
+  final Offset start;
+  final Offset end;
+  final Color color;
+  final bool isDashed;
+
+  ConnectionLinePainter({
+    required this.start,
+    required this.end,
+    required this.color,
+    this.isDashed = false,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final midX = (start.dx + end.dx) / 2;
+
+    final path = Path()
+      ..moveTo(start.dx, start.dy)
+      ..cubicTo(midX, start.dy, midX, end.dy, end.dx, end.dy);
+
+    if (isDashed) {
+      _drawDashedPath(canvas, path, paint, 8, 4);
+    } else {
+      canvas.drawPath(path, paint);
+    }
+
+    final dotPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(start, 5, dotPaint);
+    canvas.drawCircle(end, 5, dotPaint);
+  }
+
+  void _drawDashedPath(Canvas canvas, Path path, Paint paint, double dashWidth, double dashGap) {
+    final metrics = path.computeMetrics();
+    for (final metric in metrics) {
+      double distance = 0;
+      while (distance < metric.length) {
+        final len = (distance + dashWidth < metric.length)
+            ? dashWidth
+            : metric.length - distance;
+        canvas.drawPath(metric.extractPath(distance, distance + len), paint);
+        distance += dashWidth + dashGap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(ConnectionLinePainter oldDelegate) {
+    return oldDelegate.start != start ||
+        oldDelegate.end != end ||
+        oldDelegate.color != color ||
+        oldDelegate.isDashed != isDashed;
+  }
 }
