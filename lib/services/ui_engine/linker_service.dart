@@ -1,12 +1,8 @@
 import 'ui_models.dart';
 
 /// LinkerService（联动器服务）
-/// MVP 阶段：支持最简单的 progress.current → text.text 联动
-/// 
-/// 后续会扩展为支持多端口、过滤规则、可视化接线等
 class LinkerService {
-  /// 全局元素快照（由外部传入）
-  /// 目前采用简单 Map 结构：elementId → UIModule
+  /// 全局元素快照：elementId → UIModule
   static final Map<String, UIModule> _elementModules = {};
 
   /// 更新元素快照（每次渲染前调用）
@@ -19,51 +15,79 @@ class LinkerService {
     }
   }
 
-  /// 解析 text 模块的联动值（MVP）
-  /// 目前仅支持：progress.current → text.text
-  static String? resolveLinkedTextValue(UIModule textModule) {
-    // 查找是否有 linker 指向这个 textModule
+  /// 查找目标模块对应的元素 ID
+  static String? _findElementIdForModule(UIModule targetModule) {
     for (final entry in _elementModules.entries) {
-      final module = entry.value;
+      if (entry.value == targetModule || entry.value.id == targetModule.id) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  /// 获取目标模块上游连接源的属性上下文（用于模板表达式解析）
+  static Map<String, dynamic>? getSourceContextForTarget(UIModule targetModule) {
+    final targetElId = _findElementIdForModule(targetModule);
+    if (targetElId == null) return null;
+
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (linkerData == null) continue;
+
+      if (linkerData['targetModuleId']?.toString() == targetElId) {
+        final sourceId = linkerData['sourceModuleId']?.toString();
+        if (sourceId != null && _elementModules.containsKey(sourceId)) {
+          final sourceMod = _elementModules[sourceId]!;
+          return Map<String, dynamic>.from(sourceMod.properties);
+        }
+      }
+    }
+    return null;
+  }
+
+  /// 解析 text 模块的联动值
+  static String? resolveLinkedTextValue(UIModule textModule) {
+    final targetElId = _findElementIdForModule(textModule);
+    if (targetElId == null) return null;
+
+    for (final module in _elementModules.values) {
       if (module.type != 'linker') continue;
 
       final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
       if (linkerData == null) continue;
 
-      final targetModuleId = linkerData['targetModuleId']?.toString();
-      final targetPort = linkerData['targetPort']?.toString();
-      final scheme = linkerData['scheme']?.toString();
+      final targetId = linkerData['targetModuleId']?.toString();
+      if (targetId == null || targetId != targetElId) continue;
 
-      // 匹配目标
-      if (targetModuleId == null || targetPort != 'text') continue;
+      final sourceId = linkerData['sourceModuleId']?.toString();
+      if (sourceId == null || !_elementModules.containsKey(sourceId)) continue;
 
-      // 查找源模块（progress）
-      final sourceModuleId = linkerData['sourceModuleId']?.toString();
-      if (sourceModuleId == null || !_elementModules.containsKey(sourceModuleId)) continue;
+      final sourceModule = _elementModules[sourceId]!;
+      final scheme = linkerData['scheme']?.toString() ?? 'current_to_text';
 
-      final sourceModule = _elementModules[sourceModuleId]!;
-      if (sourceModule.type != 'progress') continue;
-
-      // 当前仅支持 current_to_text 方案
-      if (scheme != 'current_to_text') continue;
-
-      // 获取 progress 的 current 值
-      final current = sourceModule.properties['current'];
-      if (current == null) continue;
-
-      // 返回联动后的字符串
-      return current.toString();
+      if (scheme == 'current_to_text') {
+        final val = sourceModule.properties['current'];
+        if (val != null) {
+          return val is num ? val.toStringAsFixed(0) : val.toString();
+        }
+      } else if (scheme == 'max_to_text') {
+        final val = sourceModule.properties['max'];
+        if (val != null) {
+          return val is num ? val.toStringAsFixed(0) : val.toString();
+        }
+      }
     }
 
     return null;
   }
 
-  /// 判断一个模块是否被 linker 链接（用于渲染优化）
+  /// 判断一个模块是否被 linker 链接
   static bool isModuleLinked(String moduleId) {
     for (final module in _elementModules.values) {
       if (module.type != 'linker') continue;
       final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
-      if (linkerData?['sourceModuleId'] == moduleId || 
+      if (linkerData?['sourceModuleId'] == moduleId ||
           linkerData?['targetModuleId'] == moduleId) {
         return true;
       }

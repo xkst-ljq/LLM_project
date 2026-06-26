@@ -130,14 +130,14 @@ class UIRenderer {
   }
 
   static Widget _applyMaterialAndShape(
-    UIModuleMaterial material,
-    UIModuleShape shape,
-    Color color,
-    double opacity,
-    double borderRadius,
-    Widget child,
-    Size size,
-  ) {
+      UIModuleMaterial material,
+      UIModuleShape shape,
+      Color color,
+      double opacity,
+      double borderRadius,
+      Widget child,
+      Size size,
+      ) {
     Widget content = child;
 
     switch (material) {
@@ -293,9 +293,8 @@ class UIRenderer {
     return const SizedBox.expand();
   }
 
-  /// 简单显示表达式求值（{{key}} 模板替换）
-  /// 当前阶段使用 module.properties 模拟；后续可扩展为跨元素实时订阅。
-  static String _evaluateDisplayExpression(UIModule module, [Map<String, dynamic>? extraContext]) {
+  /// 显示表达式求值（{{key}} 模板替换）
+  static String evaluateDisplayExpression(UIModule module, [Map<String, dynamic>? extraContext]) {
     final expr = module.displayExpression?.trim() ?? '';
     if (expr.isEmpty) {
       return module.properties['text']?.toString() ?? module.name;
@@ -310,20 +309,23 @@ class UIRenderer {
     // 标准 {{key}} 替换
     context.forEach((key, value) {
       if (value == null) return;
+      final valStr = value is num ? value.toStringAsFixed(0) : value.toString();
       final pattern = RegExp(r'\{\{\s*' + RegExp.escape(key) + r'\s*\}\}');
-      result = result.replaceAllMapped(pattern, (_) => value.toString());
+      result = result.replaceAllMapped(pattern, (_) => valStr);
     });
 
     // 常见进度别名支持：{{current}}、{{max}}、{{progress.current}} 等
     final cur = context['current'] ?? context['progress']?['current'];
     final mx = context['max'] ?? context['progress']?['max'];
     if (cur != null) {
-      result = result.replaceAll(RegExp(r'\{\{\s*current\s*\}\}'), cur.toString());
-      result = result.replaceAll(RegExp(r'\{\{\s*progress\.current\s*\}\}'), cur.toString());
+      final curStr = cur is num ? cur.toStringAsFixed(0) : cur.toString();
+      result = result.replaceAll(RegExp(r'\{\{\s*current\s*\}\}'), curStr);
+      result = result.replaceAll(RegExp(r'\{\{\s*progress\.current\s*\}\}'), curStr);
     }
     if (mx != null) {
-      result = result.replaceAll(RegExp(r'\{\{\s*max\s*\}\}'), mx.toString());
-      result = result.replaceAll(RegExp(r'\{\{\s*progress\.max\s*\}\}'), mx.toString());
+      final mxStr = mx is num ? mx.toStringAsFixed(0) : mx.toString();
+      result = result.replaceAll(RegExp(r'\{\{\s*max\s*\}\}'), mxStr);
+      result = result.replaceAll(RegExp(r'\{\{\s*progress\.max\s*\}\}'), mxStr);
     }
 
     // 兜底：如果表达式未被替换且有原始 text，则回退
@@ -338,16 +340,15 @@ class UIRenderer {
   }
 
   static Widget _buildTextBlock(UIModule module) {
-    // 支持 displayExpression 联动显示
-    String displayText = (module.displayExpression != null && module.displayExpression!.trim().isNotEmpty)
-        ? _evaluateDisplayExpression(module)
-        : (module.properties['text']?.toString() ?? module.name);
-
-    // === Linker MVP 联动支持：如果该 text 被 linker 指向，则尝试显示联动后的值 ===
-    // 注意：当前为简单实现，后续会接入真正的 LinkerService
-    // 目前仅支持 progress.current → text.text 的场景
+    String displayText = module.properties['text']?.toString() ?? module.name;
     final linkedValue = _resolveLinkerValueForText(module);
-    if (linkedValue != null) {
+
+    if (module.displayExpression != null && module.displayExpression!.trim().isNotEmpty) {
+      displayText = evaluateDisplayExpression(
+        module,
+        LinkerService.getSourceContextForTarget(module),
+      );
+    } else if (linkedValue != null) {
       displayText = linkedValue;
     }
 
@@ -363,9 +364,7 @@ class UIRenderer {
   }
 
   /// Linker MVP：尝试解析当前 text 是否被 linker 指向，并返回联动后的值
-  /// 目前仅支持 progress.current → text.text
   static String? _resolveLinkerValueForText(UIModule textModule) {
-    // 调用 LinkerService 进行解析
     return LinkerService.resolveLinkedTextValue(textModule);
   }
 
@@ -380,7 +379,7 @@ class UIRenderer {
   /// 端口已放大并移至中点，方便后续拖拽接线
   static Widget _buildLinkerNode(UIModule module, Size size) {
     final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>() ?? {};
-    
+
     final sourcePort = linkerData['sourcePort']?.toString() ?? '—';
     final targetPort = linkerData['targetPort']?.toString() ?? '—';
     final scheme = linkerData['scheme']?.toString() ?? '未配置';
@@ -573,8 +572,8 @@ class UIPrimitiveArtPainter extends CustomPainter {
     if (layer.properties['stroke'] == true) {
       final strokePaint = Paint()
         ..color = (layer.properties['strokeColor'] != null
-                ? Color(layer.properties['strokeColor'])
-                : Colors.black)
+            ? Color(layer.properties['strokeColor'])
+            : Colors.black)
             .withValues(alpha: layer.opacity * 0.8)
         ..style = PaintingStyle.stroke
         ..strokeWidth = (layer.properties['strokeWidth'] ?? 1.5).toDouble();
