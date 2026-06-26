@@ -5,7 +5,7 @@ import 'backup_restore_page.dart';
 import 'character_converter_page.dart';
 import 'prompt_settings_page.dart';
 import 'tutorial_home_page.dart';
-import 'ui_studio_page.dart';
+import 'ui_studio_page/ui_studio_page.dart';
 import 'user_settings_page.dart';
 
 
