@@ -154,7 +154,8 @@ class _UIStudioPageState extends State<UIStudioPage>
                                 LinkerService.updateElementSnapshot(sortedElements);
                                 return sortedElements.map((el) {
                                   final double p =
-                                  el.id == _selectedTransformationId
+                                  (el.id == _selectedTransformationId &&
+                                      el.module?.type != 'linker')
                                       ? 20.0
                                       : 0.0;
                                   return Positioned(
@@ -372,12 +373,7 @@ class _UIStudioPageState extends State<UIStudioPage>
     }
 
     final elNoRot = el.copyWith(rotation: 0.0);
-    final bool showPorts = isTransformationActive && el.module != null;
     final bool isLinker = el.module?.type == 'linker';
-    final bool isProgress = el.module?.type == 'progress';
-    final bool isSlider = el.module?.type == 'slider';
-    final bool isText = el.module?.type == 'text';
-    final bool isHoveredAsTarget = _hoveringTargetId == el.id;
 
     Widget contentArea = SizedBox(
       width: el.size.width,
@@ -386,7 +382,7 @@ class _UIStudioPageState extends State<UIStudioPage>
         clipBehavior: Clip.none,
         children: [
           UIRenderer.render(context, elNoRot),
-          if (isTransformationActive)
+          if (isTransformationActive && !isLinker)
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
@@ -398,36 +394,6 @@ class _UIStudioPageState extends State<UIStudioPage>
                 ),
               ),
             ),
-          if (showPorts && !isLinker) ...[
-            if (isText)
-              Positioned(
-                left: -18,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: _buildInteractivePort(
-                    element: el,
-                    isInput: true,
-                    isHovered: isHoveredAsTarget && _hoveringTargetPort == 'input',
-                    isConnected: false,
-                  ),
-                ),
-              ),
-            if (isProgress || isSlider)
-              Positioned(
-                right: -18,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: _buildInteractivePort(
-                    element: el,
-                    isInput: false,
-                    isHovered: isHoveredAsTarget && _hoveringTargetPort == 'output',
-                    isConnected: false,
-                  ),
-                ),
-              ),
-          ],
         ],
       ),
     );
@@ -591,7 +557,7 @@ class _UIStudioPageState extends State<UIStudioPage>
       layerBadge,
     ];
 
-    if (isTransformationActive) {
+    if (isTransformationActive && !isLinker) {
       stackChildren.add(
         Positioned(
           right: 0,

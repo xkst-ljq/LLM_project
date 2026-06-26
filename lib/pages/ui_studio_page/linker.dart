@@ -75,9 +75,12 @@ mixin _UIStudioLinker on _UIStudioLogic {
         (isLeftPort ? sourceEl.offset.dx : sourceEl.offset.dx + sourceEl.size.width);
     final startY = _workspaceOffset.dy + sourceEl.offset.dy + sourceEl.size.height / 2;
 
+    final dragColor = isLeftPort
+        ? const Color(0xFF00ACC1)
+        : const Color(0xFF66BB6A);
     final lineColor = _hoveringTargetId != null
         ? const Color(0xFF00E676)
-        : const Color(0xFF00ACC1);
+        : dragColor;
 
     return CustomPaint(
       painter: LinkerConnectionPainter(
@@ -135,31 +138,29 @@ mixin _UIStudioLinker on _UIStudioLogic {
       if (el.layerIndex != _activeLayerIndex) continue;
 
       final elLeft = _workspaceOffset.dx + el.offset.dx;
-      final elRight = elLeft + el.size.width;
       final elTop = _workspaceOffset.dy + el.offset.dy;
-      final elCenterY = elTop + el.size.height / 2;
       final elType = el.module?.type;
-      const double hitRadius = 35.0;
+      final elRect = Rect.fromLTWH(
+        elLeft - 15,
+        elTop - 15,
+        el.size.width + 30,
+        el.size.height + 30,
+      );
+      final bool hitCard = elRect.contains(globalPosition);
 
-      if (elType == 'linker' || elType == 'text') {
-        final leftPortPos = Offset(elLeft, elCenterY);
-        if ((globalPosition - leftPortPos).distance < hitRadius) {
-          if (_canConnect(el, 'input')) {
-            newHoverTargetId = el.id;
-            newHoverTargetPort = 'input';
-            break;
-          }
+      if (hitCard && (elType == 'linker' || elType == 'text')) {
+        if (_canConnect(el, 'input')) {
+          newHoverTargetId = el.id;
+          newHoverTargetPort = 'input';
+          break;
         }
       }
 
-      if (elType == 'linker' || elType == 'progress' || elType == 'slider') {
-        final rightPortPos = Offset(elRight, elCenterY);
-        if ((globalPosition - rightPortPos).distance < hitRadius) {
-          if (_canConnect(el, 'output')) {
-            newHoverTargetId = el.id;
-            newHoverTargetPort = 'output';
-            break;
-          }
+      if (hitCard && (elType == 'linker' || elType == 'progress' || elType == 'slider')) {
+        if (_canConnect(el, 'output')) {
+          newHoverTargetId = el.id;
+          newHoverTargetPort = 'output';
+          break;
         }
       }
     }
@@ -326,88 +327,4 @@ mixin _UIStudioLinker on _UIStudioLogic {
       _currentElements[index] = linkerElement.copyWith(module: updatedModule);
     });
   }
-
-  bool _isPortConnected(UIElement linkerElement, String portDirection) {
-    if (linkerElement.module?.type != 'linker') return false;
-    final linkerData = linkerElement.module!.properties['linker'] as Map?;
-    if (linkerData == null) return false;
-    if (portDirection == 'input') {
-      return linkerData['sourceModuleId'] != null;
-    } else {
-      return linkerData['targetModuleId'] != null;
-    }
-  }
-
-  // ===== 端口 Widget =====
-  Widget _buildInteractivePort({
-    required UIElement element,
-    required bool isInput,
-    bool isHovered = false,
-    bool isConnected = false,
-  }) {
-    return Listener(
-      onPointerDown: (event) {
-        setState(() => _selectedTransformationId = element.id);
-        setState(() {
-          _isDraggingConnection = true;
-          _draggingSourceId = element.id;
-          _draggingSourcePort = isInput ? 'input' : 'output';
-          _draggingSourceType = isInput ? 'input' : 'output';
-          _dragConnectionEnd = event.position;
-        });
-      },
-      child: Container(
-        width: 36,
-        height: 36,
-        color: Colors.transparent,
-        alignment: Alignment.center,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: isHovered ? 22 : 18,
-          height: isHovered ? 22 : 18,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isHovered
-                  ? const Color(0xFF00E676)
-                  : isConnected
-                  ? const Color(0xFF00ACC1)
-                  : const Color(0xFF888896),
-              width: isHovered ? 3 : 2,
-            ),
-            boxShadow: [
-              if (isHovered)
-                BoxShadow(
-                  color: const Color(0xFF00E676).withValues(alpha: 0.5),
-                  blurRadius: 10,
-                  spreadRadius: 3,
-                ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.2),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              width: isHovered ? 10 : 8,
-              height: isHovered ? 10 : 8,
-              decoration: BoxDecoration(
-                color: (isConnected || isHovered)
-                    ? (isHovered
-                    ? const Color(0xFF00E676)
-                    : const Color(0xFF00ACC1))
-                    : Colors.transparent,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
 }
