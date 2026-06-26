@@ -86,7 +86,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                 key: _canvasDropKey,
                 onAcceptWithDetails: (details) {
                   final box = _canvasDropKey.currentContext?.findRenderObject()
-                      as RenderBox?;
+                  as RenderBox?;
                   if (box == null) return;
                   final local = box.globalToLocal(details.offset);
                   final payload = details.data;
@@ -110,6 +110,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                 },
                 builder: (context, candidateData, rejectedData) {
                   return Listener(
+                    behavior: HitTestBehavior.translucent,
                     onPointerMove: (event) {
                       if (_isDraggingConnection) {
                         setState(() => _dragConnectionEnd = event.position);
@@ -153,9 +154,9 @@ class _UIStudioPageState extends State<UIStudioPage>
                                 LinkerService.updateElementSnapshot(sortedElements);
                                 return sortedElements.map((el) {
                                   final double p =
-                                      el.id == _selectedTransformationId
-                                          ? 20.0
-                                          : 0.0;
+                                  el.id == _selectedTransformationId
+                                      ? 20.0
+                                      : 0.0;
                                   return Positioned(
                                     left: _workspaceOffset.dx + el.offset.dx - p,
                                     top: _workspaceOffset.dy + el.offset.dy - p,
@@ -397,8 +398,8 @@ class _UIStudioPageState extends State<UIStudioPage>
                 ),
               ),
             ),
-          if (showPorts) ...[
-            if (isLinker || isText)
+          if (showPorts && !isLinker) ...[
+            if (isText)
               Positioned(
                 left: -18,
                 top: 0,
@@ -408,11 +409,11 @@ class _UIStudioPageState extends State<UIStudioPage>
                     element: el,
                     isInput: true,
                     isHovered: isHoveredAsTarget && _hoveringTargetPort == 'input',
-                    isConnected: isLinker && _isPortConnected(el, 'input'),
+                    isConnected: false,
                   ),
                 ),
               ),
-            if (isLinker || isProgress || isSlider)
+            if (isProgress || isSlider)
               Positioned(
                 right: -18,
                 top: 0,
@@ -422,7 +423,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                     element: el,
                     isInput: false,
                     isHovered: isHoveredAsTarget && _hoveringTargetPort == 'output',
-                    isConnected: isLinker && _isPortConnected(el, 'output'),
+                    isConnected: false,
                   ),
                 ),
               ),
@@ -459,33 +460,124 @@ class _UIStudioPageState extends State<UIStudioPage>
       ),
     );
 
-    Widget touchableContent = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _selectedTransformationId = el.id),
-      onPanStart: (details) {
-        if (_isDraggingConnection) return;
-        _startTouchScreenPos = details.globalPosition;
-        _startTouchElemOffset = el.offset;
-        setState(() => _selectedTransformationId = el.id);
-      },
-      onPanUpdate: (details) {
-        if (_isDraggingConnection) return;
-        final delta = details.globalPosition - _startTouchScreenPos;
-        setState(() {
-          final idx = _currentElements.indexWhere((e) => e.id == el.id);
-          if (idx != -1) {
-            _currentElements[idx] = el.copyWith(
-              offset: _startTouchElemOffset + delta,
-            );
-          }
-        });
-      },
-      onPanEnd: (_) {
-        if (_isDraggingConnection) return;
-        _autoSave();
-      },
-      child: contentArea,
-    );
+    Widget touchableContent;
+    if (isLinker) {
+      touchableContent = SizedBox(
+        width: el.size.width,
+        height: el.size.height,
+        child: Stack(
+          children: [
+            contentArea,
+            Positioned.fill(
+              child: Row(
+                children: [
+                  Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (event) {
+                      setState(() => _selectedTransformationId = el.id);
+                      setState(() {
+                        _isDraggingConnection = true;
+                        _draggingSourceId = el.id;
+                        _draggingSourcePort = 'input';
+                        _draggingSourceType = 'input';
+                        _dragConnectionEnd = event.position;
+                      });
+                    },
+                    child: Container(
+                      width: 32,
+                      height: double.infinity,
+                      color: Colors.transparent,
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        setState(() => _selectedTransformationId = el.id);
+                        _showLinkerSchemeQuickSelectDialog(el);
+                      },
+                      onPanStart: (details) {
+                        if (_isDraggingConnection) _cancelConnection();
+                        _startTouchScreenPos = details.globalPosition;
+                        _startTouchElemOffset = el.offset;
+                        setState(() => _selectedTransformationId = el.id);
+                      },
+                      onPanUpdate: (details) {
+                        if (_isDraggingConnection) return;
+                        final delta = details.globalPosition - _startTouchScreenPos;
+                        setState(() {
+                          final idx = _currentElements.indexWhere((e) => e.id == el.id);
+                          if (idx != -1) {
+                            _currentElements[idx] = el.copyWith(
+                              offset: _startTouchElemOffset + delta,
+                            );
+                          }
+                        });
+                      },
+                      onPanEnd: (_) {
+                        if (_isDraggingConnection) return;
+                        _autoSave();
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        color: Colors.transparent,
+                      ),
+                    ),
+                  ),
+                  Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (event) {
+                      setState(() => _selectedTransformationId = el.id);
+                      setState(() {
+                        _isDraggingConnection = true;
+                        _draggingSourceId = el.id;
+                        _draggingSourcePort = 'output';
+                        _draggingSourceType = 'output';
+                        _dragConnectionEnd = event.position;
+                      });
+                    },
+                    child: Container(
+                      width: 32,
+                      height: double.infinity,
+                      color: Colors.transparent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      touchableContent = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _selectedTransformationId = el.id),
+        onPanStart: (details) {
+          if (_isDraggingConnection) return;
+          _startTouchScreenPos = details.globalPosition;
+          _startTouchElemOffset = el.offset;
+          setState(() => _selectedTransformationId = el.id);
+        },
+        onPanUpdate: (details) {
+          if (_isDraggingConnection) return;
+          final delta = details.globalPosition - _startTouchScreenPos;
+          setState(() {
+            final idx = _currentElements.indexWhere((e) => e.id == el.id);
+            if (idx != -1) {
+              _currentElements[idx] = el.copyWith(
+                offset: _startTouchElemOffset + delta,
+              );
+            }
+          });
+        },
+        onPanEnd: (_) {
+          if (_isDraggingConnection) return;
+          _autoSave();
+        },
+        child: contentArea,
+      );
+    }
 
     if (el.rotation != 0.0) {
       touchableContent = Transform.rotate(
@@ -507,7 +599,7 @@ class _UIStudioPageState extends State<UIStudioPage>
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => setState(() => _transformHandleRotateMode =
-                !_transformHandleRotateMode),
+            !_transformHandleRotateMode),
             onPanStart: (details) {
               _startTouchWidth = el.size.width;
               _startTouchHeight = el.size.height;
@@ -650,17 +742,17 @@ class _UIStudioPageState extends State<UIStudioPage>
   }
 
   ButtonStyle get _glassButtonStyle => FilledButton.styleFrom(
-        backgroundColor: Colors.white.withValues(alpha: 0.92),
-        foregroundColor: const Color(0xFF111116),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(
-            color: Colors.black.withValues(alpha: 0.06),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        elevation: 4,
-      );
+    backgroundColor: Colors.white.withValues(alpha: 0.92),
+    foregroundColor: const Color(0xFF111116),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(14),
+      side: BorderSide(
+        color: Colors.black.withValues(alpha: 0.06),
+      ),
+    ),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    elevation: 4,
+  );
 
   Widget _buildEdgeOpenButton({
     required IconData icon,

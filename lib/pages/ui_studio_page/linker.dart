@@ -65,12 +65,12 @@ mixin _UIStudioLinker on _UIStudioLogic {
     }
 
     final sourceEl = _currentElements.firstWhere(
-      (e) => e.id == _draggingSourceId,
+          (e) => e.id == _draggingSourceId,
       orElse: () => UIElement(id: '', isComposite: false),
     );
     if (sourceEl.id.isEmpty) return const SizedBox.shrink();
 
-    final isLeftPort = _draggingSourcePort == 'left';
+    final isLeftPort = _draggingSourcePort == 'input';
     final startX = _workspaceOffset.dx +
         (isLeftPort ? sourceEl.offset.dx : sourceEl.offset.dx + sourceEl.size.width);
     final startY = _workspaceOffset.dy + sourceEl.offset.dy + sourceEl.size.height / 2;
@@ -176,7 +176,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
   bool _canConnect(UIElement target, String portDirection) {
     if (_draggingSourceId == null || _draggingSourceType == null) return false;
     final sourceElement = _currentElements.firstWhere(
-      (e) => e.id == _draggingSourceId,
+          (e) => e.id == _draggingSourceId,
       orElse: () => UIElement(id: '', isComposite: false),
     );
     if (sourceElement.id.isEmpty) return false;
@@ -207,11 +207,11 @@ mixin _UIStudioLinker on _UIStudioLogic {
     if (_hoveringTargetId == null || _draggingSourceId == null) return;
 
     final sourceElement = _currentElements.firstWhere(
-      (e) => e.id == _draggingSourceId,
+          (e) => e.id == _draggingSourceId,
       orElse: () => UIElement(id: '', isComposite: false),
     );
     final targetElement = _currentElements.firstWhere(
-      (e) => e.id == _hoveringTargetId,
+          (e) => e.id == _hoveringTargetId,
       orElse: () => UIElement(id: '', isComposite: false),
     );
     if (sourceElement.id.isEmpty || targetElement.id.isEmpty) return;
@@ -318,11 +318,11 @@ mixin _UIStudioLinker on _UIStudioLogic {
       }
 
       final updatedProps =
-          Map<String, dynamic>.from(linkerElement.module!.properties);
+      Map<String, dynamic>.from(linkerElement.module!.properties);
       updatedProps['linker'] = linkerData;
 
       final updatedModule =
-          linkerElement.module!.copyWith(properties: updatedProps);
+      linkerElement.module!.copyWith(properties: updatedProps);
       _currentElements[index] = linkerElement.copyWith(module: updatedModule);
     });
   }
@@ -372,8 +372,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
               color: isHovered
                   ? const Color(0xFF00E676)
                   : isConnected
-                      ? const Color(0xFF00ACC1)
-                      : const Color(0xFF888896),
+                  ? const Color(0xFF00ACC1)
+                  : const Color(0xFF888896),
               width: isHovered ? 3 : 2,
             ),
             boxShadow: [
@@ -398,8 +398,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
               decoration: BoxDecoration(
                 color: (isConnected || isHovered)
                     ? (isHovered
-                        ? const Color(0xFF00E676)
-                        : const Color(0xFF00ACC1))
+                    ? const Color(0xFF00E676)
+                    : const Color(0xFF00ACC1))
                     : Colors.transparent,
                 shape: BoxShape.circle,
               ),

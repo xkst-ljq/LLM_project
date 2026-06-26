@@ -62,9 +62,9 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                   onTap: bakeable == 0
                       ? null
                       : () {
-                          Navigator.pop(ctx);
-                          _bakeCurrentWorkspaceAsAtom();
-                        },
+                    Navigator.pop(ctx);
+                    _bakeCurrentWorkspaceAsAtom();
+                  },
                 ),
               ],
             ),
@@ -118,11 +118,11 @@ mixin _UIStudioDialogs on _UIStudioLogic {
         (!isComp ? el.module?.shape : null) ?? UIModuleShape.rounded;
     UIModuleMaterial material =
         (isComp ? el.composite?.material : el.module?.material) ??
-        UIModuleMaterial.glass;
+            UIModuleMaterial.glass;
     double opacity =
-        ((isComp ? el.composite?.opacity : el.module?.opacity) ?? 1.0)
-            .clamp(0.0, 1.0)
-            .toDouble();
+    ((isComp ? el.composite?.opacity : el.module?.opacity) ?? 1.0)
+        .clamp(0.0, 1.0)
+        .toDouble();
     int selectedLayer = el.layerIndex;
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex)
@@ -212,7 +212,7 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                         );
                       }).toList(),
                       onChanged: (v) => setDialogState(
-                        () => selectedLayer = v ?? _activeLayerIndex,
+                            () => selectedLayer = v ?? _activeLayerIndex,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -275,11 +275,11 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                       TextField(
                         controller: TextEditingController(text: displayExpr)
                           ..selection =
-                              TextSelection.collapsed(offset: displayExpr.length),
+                          TextSelection.collapsed(offset: displayExpr.length),
                         style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
                         decoration: _softInputDecoration(
                           helperText:
-                              '示例："{{current}} / {{max}} HP"  或  "{{progress.current}}/{{max}}"',
+                          '示例："{{current}} / {{max}} HP"  或  "{{progress.current}}/{{max}}"',
                         ),
                         onChanged: (v) => setDialogState(() => displayExpr = v),
                       ),
@@ -338,8 +338,8 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                       const SizedBox(height: 4),
                       DropdownButtonFormField<String>(
                         initialValue:
-                            el.module!.properties['linker']?['scheme']?.toString() ??
-                                'current_to_text',
+                        el.module!.properties['linker']?['scheme']?.toString() ??
+                            'current_to_text',
                         decoration: _softInputDecoration(),
                         items: const [
                           DropdownMenuItem(
@@ -493,7 +493,7 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                                       child: Text('极简描边')),
                                 ],
                                 onChanged: (v) => setDialogState(
-                                    () => material = v ?? UIModuleMaterial.glass),
+                                        () => material = v ?? UIModuleMaterial.glass),
                               ),
                             ],
                           ),
@@ -529,7 +529,7 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                                         child: Text('椭圆 / 正圆')),
                                   ],
                                   onChanged: (v) => setDialogState(
-                                      () => shape = v ?? UIModuleShape.rounded),
+                                          () => shape = v ?? UIModuleShape.rounded),
                                 ),
                               ],
                             ),
@@ -622,7 +622,7 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                       if (index != -1) {
                         if (!isComp) {
                           Map<String, dynamic> updatedProps =
-                              Map.from(el.module!.properties);
+                          Map.from(el.module!.properties);
                           updatedProps['text'] = textProp;
                           if (el.module!.type == 'input') {
                             updatedProps['variable'] = labelProp;
@@ -650,8 +650,8 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                             properties: updatedProps,
                             displayExpression: (el.module!.type == 'text')
                                 ? (displayExpr.trim().isNotEmpty
-                                    ? displayExpr.trim()
-                                    : null)
+                                ? displayExpr.trim()
+                                : null)
                                 : el.module!.displayExpression,
                           );
                           list[index] = el.copyWith(
@@ -709,14 +709,14 @@ mixin _UIStudioDialogs on _UIStudioLogic {
   }
 
   Widget _buildSourceModuleDropdown(
-    UIElement el,
-    void Function(void Function()) setDialogState,
-    Map<String, dynamic> props,
-  ) {
+      UIElement el,
+      void Function(void Function()) setDialogState,
+      Map<String, dynamic> props,
+      ) {
     final sourceModules = _getLinkableSourceModules();
     final currentSourceId = el.module!.properties['linker']?['sourceModuleId']?.toString();
     final validSourceValue =
-        sourceModules.any((m) => m['id'] == currentSourceId) ? currentSourceId : null;
+    sourceModules.any((m) => m['id'] == currentSourceId) ? currentSourceId : null;
 
     return DropdownButtonFormField<String>(
       initialValue: validSourceValue,
@@ -752,14 +752,14 @@ mixin _UIStudioDialogs on _UIStudioLogic {
   }
 
   Widget _buildTargetModuleDropdown(
-    UIElement el,
-    void Function(void Function()) setDialogState,
-    Map<String, dynamic> props,
-  ) {
+      UIElement el,
+      void Function(void Function()) setDialogState,
+      Map<String, dynamic> props,
+      ) {
     final targetModules = _getLinkableTargetModules();
     final currentTargetId = el.module!.properties['linker']?['targetModuleId']?.toString();
     final validTargetValue =
-        targetModules.any((m) => m['id'] == currentTargetId) ? currentTargetId : null;
+    targetModules.any((m) => m['id'] == currentTargetId) ? currentTargetId : null;
 
     return DropdownButtonFormField<String>(
       initialValue: validTargetValue,
@@ -875,6 +875,99 @@ mixin _UIStudioDialogs on _UIStudioLogic {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ===== Linker 快捷传输方案选择弹窗 =====
+  void _showLinkerSchemeQuickSelectDialog(UIElement el) {
+    if (el.module?.type != 'linker') return;
+    final props = Map<String, dynamic>.from(el.module!.properties);
+    final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
+    final currentScheme = linkerData['scheme']?.toString() ?? 'current_to_text';
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            '选择联动器传输类型',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116)),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildSchemeOptionTile(ctx, el, 'current_to_text', 'current → text (当前数值转文本)', currentScheme),
+              const SizedBox(height: 8),
+              _buildSchemeOptionTile(ctx, el, 'max_to_text', 'max → text (最大数值转文本)', currentScheme),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('关闭', style: TextStyle(color: Color(0xFF888896))),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSchemeOptionTile(BuildContext ctx, UIElement el, String schemeValue, String label, String currentScheme) {
+    final isSelected = schemeValue == currentScheme;
+    return InkWell(
+      onTap: () {
+        Navigator.pop(ctx);
+        setState(() {
+          final idx = _currentElements.indexWhere((e) => e.id == el.id);
+          if (idx != -1) {
+            final targetEl = _currentElements[idx];
+            if (targetEl.module != null) {
+              final newProps = Map<String, dynamic>.from(targetEl.module!.properties);
+              final newLinker = Map<String, dynamic>.from(newProps['linker'] ?? {});
+              newLinker['scheme'] = schemeValue;
+              newProps['linker'] = newLinker;
+              _currentElements[idx] = targetEl.copyWith(
+                module: targetEl.module!.copyWith(properties: newProps),
+              );
+            }
+          }
+        });
+        _autoSave();
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF00ACC1).withValues(alpha: 0.1) : const Color(0xFFF5F5F7),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF00ACC1) : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              size: 18,
+              color: isSelected ? const Color(0xFF00ACC1) : const Color(0xFF888896),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: const Color(0xFF111116),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
