@@ -211,7 +211,14 @@ class UIRenderer {
   static Widget _buildProgressBar(UIModule module, Size size) {
     final min = (module.properties['min'] ?? 0).toDouble();
     final max = (module.properties['max'] ?? 100).toDouble();
-    final current = (module.properties['current'] ?? min).toDouble().clamp(min, max);
+    double current = (module.properties['current'] ?? min).toDouble();
+
+    final linkedVal = LinkerService.resolveTargetValue(module);
+    if (linkedVal != null && linkedVal is num) {
+      current = linkedVal.toDouble();
+    }
+    current = current.clamp(min, max).toDouble();
+
     final progress = max > min ? (current - min) / (max - min) : 0.0;
 
     final fillColor = module.color;
@@ -237,7 +244,13 @@ class UIRenderer {
   static Widget _buildSlider(UIModule module) {
     final min = (module.properties['min'] ?? 0).toDouble();
     final max = (module.properties['max'] ?? 100).toDouble();
-    final current = (module.properties['current'] ?? min).toDouble().clamp(min, max);
+    double current = (module.properties['current'] ?? min).toDouble();
+
+    final linkedVal = LinkerService.resolveTargetValue(module);
+    if (linkedVal != null && linkedVal is num) {
+      current = linkedVal.toDouble();
+    }
+    current = current.clamp(min, max).toDouble();
 
     final fillColor = module.color;
     final h = 32.0;

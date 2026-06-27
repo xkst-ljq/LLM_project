@@ -217,9 +217,9 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                     ),
                     const SizedBox(height: 16),
 
-                    // --- progress 配置 ---
-                    if (!isComp && el.module?.type == 'progress') ...[
-                      const Text('进度条范围设定 (最大值 / 当前预览值)',
+                    // --- progress / slider 配置 ---
+                    if (!isComp && ['progress', 'slider'].contains(el.module?.type)) ...[
+                      const Text('范围与初值设定 (最大值 / 当前预览值)',
                           style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                       const SizedBox(height: 6),
                       Row(
@@ -963,7 +963,9 @@ mixin _UIStudioDialogs on _UIStudioLogic {
 
     final options = <Map<String, String>>[];
 
-    if ((sType == 'progress' || sType == 'slider') && tType == 'text') {
+    if (['progress', 'slider'].contains(sType) && ['progress', 'slider'].contains(tType)) {
+      options.add({'id': 'num_to_current', 'label': '数值驱动实时进度 (num → current)'});
+    } else if (['progress', 'slider'].contains(sType) && tType == 'text') {
       options.add({'id': 'current_to_text', 'label': 'current → text (当前进度/数值转文本)'});
       options.add({'id': 'max_to_text', 'label': 'max → text (最大值转文本)'});
     } else if (sType == 'input' && tType == 'text') {

@@ -25,6 +25,15 @@ class LinkerService {
     return null;
   }
 
+  /// 解析源模块的动态生效属性（支持递归溯源与环路检测）
+  static dynamic _getEffectivePropertyValue(UIModule sourceModule, String propKey, Set<String> visitedSet) {
+    if (propKey == 'current' || propKey == 'value') {
+      final incoming = resolveTargetValue(sourceModule, visitedSet);
+      if (incoming != null) return incoming;
+    }
+    return sourceModule.properties[propKey];
+  }
+
   /// 获取目标模块上游连接源的属性上下文（用于模板表达式解析）
   static Map<String, dynamic>? getSourceContextForTarget(UIModule targetModule) {
     final targetElId = _findElementIdForModule(targetModule);
@@ -42,17 +51,27 @@ class LinkerService {
         final sourceId = linkerData['sourceModuleId']?.toString();
         if (sourceId != null && _elementModules.containsKey(sourceId)) {
           final sourceMod = _elementModules[sourceId]!;
-          return Map<String, dynamic>.from(sourceMod.properties);
+          final contextDict = Map<String, dynamic>.from(sourceMod.properties);
+          final effectiveCur = _getEffectivePropertyValue(sourceMod, 'current', <String>{targetElId});
+          if (effectiveCur != null) {
+            contextDict['current'] = effectiveCur;
+            contextDict['value'] = effectiveCur;
+          }
+          return contextDict;
         }
       }
     }
     return null;
   }
 
-  /// 解析 text 模块的联动值
-  static String? resolveLinkedTextValue(UIModule textModule) {
-    final targetElId = _findElementIdForModule(textModule);
+  /// 解析任一目标模块接收到的联动数值或字面量
+  static dynamic resolveTargetValue(UIModule targetModule, [Set<String>? visited]) {
+    final targetElId = _findElementIdForModule(targetModule);
     if (targetElId == null) return null;
+
+    final visitedSet = visited != null ? Set<String>.from(visited) : <String>{};
+    if (visitedSet.contains(targetElId)) return null;
+    visitedSet.add(targetElId);
 
     for (final module in _elementModules.values) {
       if (module.type != 'linker') continue;
@@ -70,15 +89,23 @@ class LinkerService {
       final scheme = linkerData['scheme']?.toString();
       if (scheme == null || scheme.trim().isEmpty || scheme == '未配置') continue;
 
-      if (scheme == 'current_to_text' || scheme == 'to_string') {
-        final val = sourceModule.properties['current'] ?? sourceModule.properties['text'] ?? sourceModule.properties['value'];
+      if (['current_to_text', 'to_string', 'num_to_current'].contains(scheme)) {
+        final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            sourceModule.properties['text'];
         if (val != null) {
-          return val is num ? val.toStringAsFixed(0) : val.toString();
+          if (targetModule.type == 'text') {
+            return val is num ? val.toStringAsFixed(0) : val.toString();
+          }
+          return val is num ? val.toDouble() : double.tryParse(val.toString());
         }
       } else if (scheme == 'max_to_text') {
         final val = sourceModule.properties['max'];
         if (val != null) {
-          return val is num ? val.toStringAsFixed(0) : val.toString();
+          if (targetModule.type == 'text') {
+            return val is num ? val.toStringAsFixed(0) : val.toString();
+          }
+          return val is num ? val.toDouble() : double.tryParse(val.toString());
         }
       } else if (scheme == 'text_to_text') {
         final val = sourceModule.properties['text'] ?? sourceModule.properties['value'];
@@ -89,6 +116,11 @@ class LinkerService {
     }
 
     return null;
+  }
+
+  /// 解析 text 模块的联动值
+  static String? resolveLinkedTextValue(UIModule textModule) {
+    return resolveTargetValue(textModule)?.toString();
   }
 
   /// 判断一个模块是否被 linker 链接

@@ -173,7 +173,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final elType = el.module?.type;
       final bool hitCard = _isPointInsideRotatedRect(globalPosition, el);
 
-      if (hitCard && (elType == 'linker' || elType == 'text')) {
+      if (hitCard && ['linker', 'text', 'progress', 'slider'].contains(elType)) {
         if (_canConnect(el, 'input')) {
           newHoverTargetId = el.id;
           newHoverTargetPort = 'input';
@@ -181,7 +181,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
         }
       }
 
-      if (hitCard && (elType == 'linker' || elType == 'progress' || elType == 'slider')) {
+      if (hitCard && ['linker', 'progress', 'slider', 'input', 'button'].contains(elType)) {
         if (_canConnect(el, 'output')) {
           newHoverTargetId = el.id;
           newHoverTargetPort = 'output';
