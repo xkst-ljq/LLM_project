@@ -30,17 +30,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
       }
       if (fromEl == null || toEl == null) continue;
 
-      double fromX, toX;
-      final fromY = _workspaceOffset.dy + fromEl.offset.dy + fromEl.size.height / 2;
-      final toY = _workspaceOffset.dy + toEl.offset.dy + toEl.size.height / 2;
-
-      if (lineType == 'input') {
-        fromX = _workspaceOffset.dx + fromEl.offset.dx + fromEl.size.width;
-        toX = _workspaceOffset.dx + toEl.offset.dx;
-      } else {
-        fromX = _workspaceOffset.dx + fromEl.offset.dx + fromEl.size.width;
-        toX = _workspaceOffset.dx + toEl.offset.dx;
-      }
+      final startOffset = _resolvePortGlobalOffset(fromEl, false);
+      final endOffset = _resolvePortGlobalOffset(toEl, true);
 
       final lineColor = lineType == 'input'
           ? const Color(0xFF00ACC1)
@@ -49,14 +40,56 @@ mixin _UIStudioLinker on _UIStudioLogic {
       widgets.add(
         CustomPaint(
           painter: LinkerConnectionPainter(
-            start: Offset(fromX, fromY),
-            end: Offset(toX, toY),
+            start: startOffset,
+            end: endOffset,
             color: lineColor,
           ),
         ),
       );
     }
     return widgets;
+  }
+
+  Offset _resolvePortGlobalOffset(UIElement el, bool isInput) {
+    final elLeft = _workspaceOffset.dx + el.offset.dx;
+    final elTop = _workspaceOffset.dy + el.offset.dy;
+    final cx = elLeft + el.size.width / 2;
+    final cy = elTop + el.size.height / 2;
+
+    if (el.rotation == 0.0) {
+      return Offset(isInput ? elLeft : elLeft + el.size.width, cy);
+    }
+
+    final rad = el.rotation * math.pi / 180.0;
+    final sign = isInput ? -1.0 : 1.0;
+    final halfWidth = el.size.width / 2;
+
+    return Offset(
+      cx + sign * halfWidth * math.cos(rad),
+      cy + sign * halfWidth * math.sin(rad),
+    );
+  }
+
+  bool _isPointInsideRotatedRect(Offset point, UIElement el) {
+    final elLeft = _workspaceOffset.dx + el.offset.dx;
+    final elTop = _workspaceOffset.dy + el.offset.dy;
+    final cx = elLeft + el.size.width / 2;
+    final cy = elTop + el.size.height / 2;
+
+    if (el.rotation == 0.0) {
+      final rect = Rect.fromLTWH(elLeft - 15, elTop - 15, el.size.width + 30, el.size.height + 30);
+      return rect.contains(point);
+    }
+
+    final rad = -el.rotation * math.pi / 180.0;
+    final dx = point.dx - cx;
+    final dy = point.dy - cy;
+
+    final unrotatedX = cx + dx * math.cos(rad) - dy * math.sin(rad);
+    final unrotatedY = cy + dx * math.sin(rad) + dy * math.cos(rad);
+
+    final rect = Rect.fromLTWH(elLeft - 15, elTop - 15, el.size.width + 30, el.size.height + 30);
+    return rect.contains(Offset(unrotatedX, unrotatedY));
   }
 
   Widget _buildTemporaryConnectionLine() {
@@ -71,9 +104,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
     if (sourceEl.id.isEmpty) return const SizedBox.shrink();
 
     final isLeftPort = _draggingSourcePort == 'input';
-    final startX = _workspaceOffset.dx +
-        (isLeftPort ? sourceEl.offset.dx : sourceEl.offset.dx + sourceEl.size.width);
-    final startY = _workspaceOffset.dy + sourceEl.offset.dy + sourceEl.size.height / 2;
+    final startOffset = _resolvePortGlobalOffset(sourceEl, isLeftPort);
 
     final dragColor = isLeftPort
         ? const Color(0xFF00ACC1)
@@ -84,7 +115,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     return CustomPaint(
       painter: LinkerConnectionPainter(
-        start: Offset(startX, startY),
+        start: startOffset,
         end: _dragConnectionEnd!,
         color: lineColor,
       ),
@@ -139,16 +170,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
       if (el.id == _draggingSourceId) continue;
       if (el.layerIndex != _activeLayerIndex) continue;
 
-      final elLeft = _workspaceOffset.dx + el.offset.dx;
-      final elTop = _workspaceOffset.dy + el.offset.dy;
       final elType = el.module?.type;
-      final elRect = Rect.fromLTWH(
-        elLeft - 15,
-        elTop - 15,
-        el.size.width + 30,
-        el.size.height + 30,
-      );
-      final bool hitCard = elRect.contains(globalPosition);
+      final bool hitCard = _isPointInsideRotatedRect(globalPosition, el);
 
       if (hitCard && (elType == 'linker' || elType == 'text')) {
         if (_canConnect(el, 'input')) {
