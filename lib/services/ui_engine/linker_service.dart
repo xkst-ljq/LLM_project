@@ -18,7 +18,7 @@ class LinkerService {
   /// 查找目标模块对应的元素 ID
   static String? _findElementIdForModule(UIModule targetModule) {
     for (final entry in _elementModules.entries) {
-      if (entry.value == targetModule || entry.value.id == targetModule.id) {
+      if (identical(entry.value, targetModule) || entry.value.id == targetModule.id) {
         return entry.key;
       }
     }

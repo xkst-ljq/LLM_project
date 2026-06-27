@@ -462,6 +462,10 @@ class _UIStudioPageState extends State<UIStudioPage>
                         setState(() => _selectedTransformationId = el.id);
                         _showLinkerSchemeQuickSelectDialog(el);
                       },
+                      onLongPress: () {
+                        setState(() => _selectedTransformationId = el.id);
+                        _showTailoredPrecisionEditorDialog(el);
+                      },
                       onPanStart: (details) {
                         if (_isDraggingConnection) _cancelConnection();
                         _startTouchScreenPos = details.globalPosition;
@@ -519,6 +523,10 @@ class _UIStudioPageState extends State<UIStudioPage>
       touchableContent = GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() => _selectedTransformationId = el.id),
+        onLongPress: () {
+          setState(() => _selectedTransformationId = el.id);
+          _showTailoredPrecisionEditorDialog(el);
+        },
         onPanStart: (details) {
           if (_isDraggingConnection) return;
           _startTouchScreenPos = details.globalPosition;

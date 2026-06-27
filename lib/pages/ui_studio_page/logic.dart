@@ -76,11 +76,11 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       await prefs.setString('ui_studio_scene_layers_v4', layerData);
 
       final atomicData =
-          jsonEncode(_atomicWorkspaceElements.map((e) => e.toJson()).toList());
+      jsonEncode(_atomicWorkspaceElements.map((e) => e.toJson()).toList());
       await prefs.setString('ui_studio_atomic_workspace_v4', atomicData);
 
       final compositeData =
-          jsonEncode(_compositeWorkspaceElements.map((e) => e.toJson()).toList());
+      jsonEncode(_compositeWorkspaceElements.map((e) => e.toJson()).toList());
       await prefs.setString('ui_studio_composite_workspace_v4', compositeData);
 
       if (mounted && showMessage) {
@@ -210,18 +210,19 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   void _addElementAt(UIModule module, Offset canvasOffset) {
     setState(() {
       final initialSize = _initialSizeForModule(module);
+      final newElId = 'el_${DateTime.now().millisecondsSinceEpoch}';
       final newElement = UIElement(
-        id: 'el_${DateTime.now().millisecondsSinceEpoch}',
+        id: newElId,
         isComposite: module.type == 'base_box',
-        module: module.type != 'base_box' ? module.copyWith() : null,
+        module: module.type != 'base_box' ? module.copyWith(id: 'mod_$newElId') : null,
         composite: module.type == 'base_box'
             ? UIComposite(
-                id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
-                name: '容器边界框',
-                layoutType: 'base_box',
-                children: [],
-                color: const Color(0xFFECEFF1),
-              )
+          id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
+          name: '容器边界框',
+          layoutType: 'base_box',
+          children: [],
+          color: const Color(0xFFECEFF1),
+        )
             : null,
         offset: canvasOffset,
         size: initialSize,
@@ -610,9 +611,9 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   }
 
   List<UIPrimitiveLayer> _bakeElementToPrimitiveLayers(
-    UIElement el,
-    Rect bounds,
-  ) {
+      UIElement el,
+      Rect bounds,
+      ) {
     final module = el.module;
     if (module == null) return const [];
 
@@ -717,13 +718,13 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       final layer = UIPrimitiveLayer.fromJson(Map<String, dynamic>.from(raw));
       final shouldUpdate =
           !updatedOne &&
-          ((type == 'surface_art' && layer.kind == 'surface') ||
-              (type == 'light_effect' &&
-                  (layer.kind == 'glow' || layer.kind == 'surface')) ||
-              (type == 'primitive_art' &&
-                  (layer.kind == 'line' ||
-                      layer.kind == 'stroke' ||
-                      layer.kind == 'surface')));
+              ((type == 'surface_art' && layer.kind == 'surface') ||
+                  (type == 'light_effect' &&
+                      (layer.kind == 'glow' || layer.kind == 'surface')) ||
+                  (type == 'primitive_art' &&
+                      (layer.kind == 'line' ||
+                          layer.kind == 'stroke' ||
+                          layer.kind == 'surface')));
       if (!shouldUpdate) {
         updatedLayers.add(layer.toJson());
         continue;
@@ -827,10 +828,10 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         .where((el) => !el.isComposite && el.module != null)
         .where((el) => ['progress', 'slider'].contains(el.module!.type))
         .map((el) => {
-              'id': el.id,
-              'name': el.module!.name,
-              'type': el.module!.type,
-            })
+      'id': el.id,
+      'name': el.module!.name,
+      'type': el.module!.type,
+    })
         .toList();
   }
 
@@ -839,10 +840,10 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         .where((el) => !el.isComposite && el.module != null)
         .where((el) => ['text'].contains(el.module!.type))
         .map((el) => {
-              'id': el.id,
-              'name': el.module!.name,
-              'type': el.module!.type,
-            })
+      'id': el.id,
+      'name': el.module!.name,
+      'type': el.module!.type,
+    })
         .toList();
   }
 }

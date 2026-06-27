@@ -32,7 +32,7 @@ class LayerScene {
 
   Map<String, dynamic> toJson() => {'id': id, 'name': name};
 
-  factory LayerScene.fromJson(Map<String, dynamic> json) => 
+  factory LayerScene.fromJson(Map<String, dynamic> json) =>
       LayerScene(id: json['id'] ?? 0, name: json['name'] ?? '图层 Level 0');
 }
 
@@ -67,16 +67,16 @@ class UIPrimitiveLayer {
         properties = properties ?? <String, dynamic>{};
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'kind': kind,
-        'offset': {'x': offset.dx, 'y': offset.dy},
-        'size': {'width': size.width, 'height': size.height},
-        'color': color.toARGB32(),
-        'opacity': opacity,
-        'shape': shape.index,
-        'borderRadius': borderRadius,
-        'properties': properties,
-      };
+    'id': id,
+    'kind': kind,
+    'offset': {'x': offset.dx, 'y': offset.dy},
+    'size': {'width': size.width, 'height': size.height},
+    'color': color.toARGB32(),
+    'opacity': opacity,
+    'shape': shape.index,
+    'borderRadius': borderRadius,
+    'properties': properties,
+  };
 
   factory UIPrimitiveLayer.fromJson(Map<String, dynamic> json) {
     final offsetData = json['offset'] as Map<String, dynamic>? ?? {};
@@ -198,6 +198,7 @@ class UIModule {
   );
 
   UIModule copyWith({
+    String? id,
     String? name,
     UIModuleMaterial? material,
     UIModuleShape? shape,
@@ -211,7 +212,7 @@ class UIModule {
     List<String>? linkedSources,
   }) {
     return UIModule(
-      id: id,
+      id: id ?? this.id,
       name: name ?? this.name,
       type: type,
       material: material ?? this.material,
@@ -308,7 +309,7 @@ class UIElement {
   final bool isComposite;
   final UIModule? module;
   final UIComposite? composite;
-  
+
   final Offset offset;
   final Size size;
   final int layerIndex; // 动态所属的图层 ID
@@ -346,7 +347,7 @@ class UIElement {
     final isComposite = json['isComposite'] ?? false;
     final offsetData = json['offset'] as Map<String, dynamic>? ?? {};
     final sizeData = json['size'] as Map<String, dynamic>? ?? {};
-    
+
     return UIElement(
       id: json['id'] ?? 'el_${DateTime.now().millisecondsSinceEpoch}',
       isComposite: isComposite,
