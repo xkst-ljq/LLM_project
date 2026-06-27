@@ -34,12 +34,12 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       try {
         final data = jsonDecode(saved) as Map<String, dynamic>;
         final layers = (data['layers'] as List?)
-                ?.map((e) => LayerScene.fromJson(e as Map<String, dynamic>))
-                .toList() ??
+            ?.map((e) => LayerScene.fromJson(e as Map<String, dynamic>))
+            .toList() ??
             [];
         final elements = (data['elements'] as List?)
-                ?.map((e) => UIElement.fromJson(e as Map<String, dynamic>))
-                .toList() ??
+            ?.map((e) => UIElement.fromJson(e as Map<String, dynamic>))
+            .toList() ??
             [];
         final offsetX = (data['offsetX'] as num?)?.toDouble() ?? 0.0;
         final offsetY = (data['offsetY'] as num?)?.toDouble() ?? 0.0;
@@ -71,6 +71,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   }
 
   Future<void> _saveWorkspaceDraft({bool showMessage = true}) async {
+    _ensureContainerBoundaryMarker();
     final prefs = await SharedPreferences.getInstance();
     final data = {
       'layers': _sceneLayers.map((e) => e.toJson()).toList(),
@@ -275,15 +276,74 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         type == 'slider';
   }
 
+  void _ensureContainerBoundaryMarker() {
+    bool hasBoundary = false;
+    for (final el in _currentElements) {
+      if (el.module?.properties['is_container_boundary'] == true) {
+        if (!hasBoundary) {
+          hasBoundary = true;
+        } else {
+          el.module!.properties.remove('is_container_boundary');
+        }
+      }
+    }
+    if (!hasBoundary) {
+      for (final el in _currentElements) {
+        final t = el.module?.type;
+        if (t == 'surface' || t == 'surface_art' || t == 'primitive_art') {
+          el.module!.properties['is_container_boundary'] = true;
+          break;
+        }
+      }
+    }
+  }
+
+  UIElement? _findRootContainerSurface(List<UIElement> elements) {
+    for (final el in elements) {
+      if (el.module?.properties['is_container_boundary'] == true) {
+        return el;
+      }
+    }
+    for (final el in elements) {
+      final t = el.module?.type;
+      if (t == 'surface' || t == 'surface_art' || t == 'primitive_art') {
+        return el;
+      }
+    }
+    return null;
+  }
+
   // ============================================================
   //  保存相关
   // ============================================================
   Future<void> _saveCurrentWorkspaceAsComposite() async {
+    _ensureContainerBoundaryMarker();
+    final rootSurface = _findRootContainerSurface(_currentElements);
+
+    if (rootSurface == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('保存失败：当前工作台中未找到可作为组件边框底面的视觉面。'),
+            backgroundColor: Color(0xFFFF8F00),
+          ),
+        );
+      }
+      return;
+    }
+
+    final rootOffset = rootSurface.offset;
+    final children = _currentElements.map((el) {
+      return el.copyWith(
+        offset: Offset(el.offset.dx - rootOffset.dx, el.offset.dy - rootOffset.dy),
+      );
+    }).toList();
+
     final composite = UIComposite(
       id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
       name: '复合组件 ${_assetService.getAllComposites().length + 1}',
       layoutType: 'stack',
-      children: List.from(_currentElements),
+      children: children,
       color: const Color(0xFF651FFF),
       material: UIModuleMaterial.glass,
       opacity: 1.0,
@@ -298,16 +358,36 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   }
 
   Future<void> _bakeCurrentWorkspaceAsAtom() async {
-    final bakeableElements =
-        _currentElements.where(_isBakeableElement).toList();
+    _ensureContainerBoundaryMarker();
+    final bakeableElements = _currentElements.where(_isBakeableElement).toList();
     if (bakeableElements.isEmpty) return;
+
+    final rootSurface = _findRootContainerSurface(bakeableElements);
+    if (rootSurface == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('烘焙失败：可烘焙队列中未找到作为标准外框的视觉面。'),
+            backgroundColor: Color(0xFFFF8F00),
+          ),
+        );
+      }
+      return;
+    }
+
+    final rootOffset = rootSurface.offset;
+    final normalizedElements = bakeableElements.map((el) {
+      return el.copyWith(
+        offset: Offset(el.offset.dx - rootOffset.dx, el.offset.dy - rootOffset.dy),
+      );
+    }).toList();
 
     final module = UIModule(
       id: 'baked_${DateTime.now().millisecondsSinceEpoch}',
       name: '烘焙面原子 ${_assetService.getAllModules().length + 1}',
       type: 'surface_art',
       properties: {
-        'baked_from': bakeableElements.map((e) => e.toJson()).toList(),
+        'baked_from': normalizedElements.map((e) => e.toJson()).toList(),
       },
       color: const Color(0xFF651FFF),
       material: UIModuleMaterial.gradient,

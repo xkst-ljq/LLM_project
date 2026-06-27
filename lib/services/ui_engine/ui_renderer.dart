@@ -199,6 +199,12 @@ class UIRenderer {
           borderRadius: BorderRadius.circular(borderRadius),
           child: content,
         );
+      case UIModuleShape.heart:
+        return ClipPath(clipper: _PathClipper(_getHeartPath), child: content);
+      case UIModuleShape.star5:
+        return ClipPath(clipper: _PathClipper((r) => _getStarPath(r, 5, 0.45)), child: content);
+      case UIModuleShape.star4:
+        return ClipPath(clipper: _PathClipper((r) => _getStarPath(r, 4, 0.4)), child: content);
       case UIModuleShape.rectangle:
         return content;
     }
@@ -522,6 +528,52 @@ class UIRenderer {
 }
 
 
+Path _getHeartPath(Rect rect) {
+  final w = rect.width;
+  final h = rect.height;
+  final l = rect.left;
+  final t = rect.top;
+  final path = Path();
+  path.moveTo(l + 0.5 * w, t + h * 0.35);
+  path.cubicTo(l + 0.2 * w, t + h * 0.1, l - 0.25 * w, t + h * 0.6, l + 0.5 * w, t + h);
+  path.cubicTo(l + 1.25 * w, t + h * 0.6, l + 0.8 * w, t + h * 0.1, l + 0.5 * w, t + h * 0.35);
+  path.close();
+  return path;
+}
+
+Path _getStarPath(Rect rect, int points, double innerRatio) {
+  final cx = rect.center.dx;
+  final cy = rect.center.dy;
+  final rx = rect.width / 2;
+  final ry = rect.height / 2;
+  final path = Path();
+  final step = math.pi / points;
+  var angle = -math.pi / 2;
+
+  for (var i = 0; i < points * 2; i++) {
+    final rRatio = (i % 2 == 0) ? 1.0 : innerRatio;
+    final x = cx + rx * rRatio * math.cos(angle);
+    final y = cy + ry * rRatio * math.sin(angle);
+    if (i == 0) {
+      path.moveTo(x, y);
+    } else {
+      path.lineTo(x, y);
+    }
+    angle += step;
+  }
+  path.close();
+  return path;
+}
+
+class _PathClipper extends CustomClipper<Path> {
+  final Path Function(Rect rect) getPathFunc;
+  _PathClipper(this.getPathFunc);
+  @override
+  Path getClip(Size size) => getPathFunc(Rect.fromLTWH(0, 0, size.width, size.height));
+  @override
+  bool shouldReclip(covariant _PathClipper oldClipper) => false;
+}
+
 class UIPrimitiveArtPainter extends CustomPainter {
   final Map<String, dynamic> properties;
 
@@ -576,6 +628,15 @@ class UIPrimitiveArtPainter extends CustomPainter {
       case UIModuleShape.rounded:
         canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(r)), paint);
         break;
+      case UIModuleShape.heart:
+        canvas.drawPath(_getHeartPath(rect), paint);
+        break;
+      case UIModuleShape.star5:
+        canvas.drawPath(_getStarPath(rect, 5, 0.45), paint);
+        break;
+      case UIModuleShape.star4:
+        canvas.drawPath(_getStarPath(rect, 4, 0.4), paint);
+        break;
       case UIModuleShape.rectangle:
         canvas.drawRect(rect, paint);
         break;
@@ -602,6 +663,15 @@ class UIPrimitiveArtPainter extends CustomPainter {
           break;
         case UIModuleShape.rounded:
           canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(r)), strokePaint);
+          break;
+        case UIModuleShape.heart:
+          canvas.drawPath(_getHeartPath(rect), strokePaint);
+          break;
+        case UIModuleShape.star5:
+          canvas.drawPath(_getStarPath(rect, 5, 0.45), strokePaint);
+          break;
+        case UIModuleShape.star4:
+          canvas.drawPath(_getStarPath(rect, 4, 0.4), strokePaint);
           break;
         case UIModuleShape.rectangle:
           canvas.drawRect(rect, strokePaint);

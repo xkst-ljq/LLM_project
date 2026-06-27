@@ -62,6 +62,9 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
         );
         break;
       case UIModuleShape.rounded:
+      case UIModuleShape.heart:
+      case UIModuleShape.star5:
+      case UIModuleShape.star4:
         path.addRRect(
           RRect.fromRectAndRadius(rect, Radius.circular(borderRadius)),
         );
@@ -88,7 +91,7 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
       var drawWhite = false;
       while (distance < metric.length) {
         final next =
-            (distance + dashLength).clamp(0.0, metric.length).toDouble();
+        (distance + dashLength).clamp(0.0, metric.length).toDouble();
         final dashPath = metric.extractPath(distance, next);
         canvas.drawPath(dashPath, drawWhite ? whitePaint : greyPaint);
         distance = next + gapLength;

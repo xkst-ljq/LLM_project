@@ -13,7 +13,10 @@ enum UIModuleShape {
   rectangle,  // 矩形
   rounded,    // 圆角矩形
   capsule,    // 胶囊形
-  circle      // 圆形
+  circle,     // 圆形
+  heart,      // 心形
+  star5,      // 五角星
+  star4       // 四角星
 }
 
 /// UI 场景的运行时接管/渲染模式

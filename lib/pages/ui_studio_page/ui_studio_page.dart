@@ -414,7 +414,7 @@ class _UIStudioPageState extends State<UIStudioPage>
             ),
           ),
           child: Text(
-            isContainerBoundary ? '📦 容器面 (L${el.layerIndex})' : 'L${el.layerIndex}',
+            isContainerBoundary ? '容器面 (L${el.layerIndex})' : 'L${el.layerIndex}',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 9,

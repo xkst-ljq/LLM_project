@@ -108,8 +108,12 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     );
   }
 
-  // ===== 元素编辑器（最大对话框，原样迁移） =====
+  // ===== 元素编辑器 =====
   void _showTailoredPrecisionEditorDialog(UIElement el) {
+    if (!el.isComposite && ['surface', 'surface_art', 'primitive_art'].contains(el.module?.type)) {
+      _showCompactSurfaceEditorDialog(el);
+      return;
+    }
     final bool isComp = el.isComposite;
     String name = isComp ? (el.composite?.name ?? '') : (el.module?.name ?? '');
     Color color =
@@ -1069,6 +1073,301 @@ mixin _UIStudioDialogs on _UIStudioLogic {
           ],
         ),
       ),
+    );
+  }
+
+  // ===== 紧凑型视觉面专属参数设置界面 =====
+  void _showCompactSurfaceEditorDialog(UIElement el) {
+    if (el.module == null) return;
+    final mod = el.module!;
+    String name = mod.name;
+    int selectedLayer = el.layerIndex;
+    if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
+      selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex) ? _activeLayerIndex : _sceneLayers.first.id;
+    }
+    double offsetX = el.offset.dx;
+    double offsetY = el.offset.dy;
+
+    final props = Map<String, dynamic>.from(mod.properties);
+    bool isContainer = props['is_container_boundary'] == true;
+
+    UIModuleShape shape = mod.shape;
+    UIModuleMaterial material = mod.material;
+    Color color = mod.color;
+    double opacity = mod.opacity.clamp(0.0, 1.0).toDouble();
+    double rotation = ((el.rotation + 180) % 360 + 360) % 360 - 180;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              contentPadding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('视觉面规格编辑器', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18, color: Color(0xFF888896)),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 行1：名称 + 图层
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 7,
+                          child: TextField(
+                            controller: TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length),
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                            decoration: _softInputDecoration(label: '模块名称'),
+                            onChanged: (v) => name = v,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 4,
+                          child: DropdownButtonFormField<int>(
+                            initialValue: selectedLayer,
+                            decoration: _softInputDecoration(label: '独立图层'),
+                            dropdownColor: Colors.white,
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                            items: _sceneLayers.map((ly) => DropdownMenuItem<int>(value: ly.id, child: Text(ly.name, overflow: TextOverflow.ellipsis))).toList(),
+                            onChanged: (v) => setDialogState(() => selectedLayer = v ?? _activeLayerIndex),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // 行2：坐标X, Y + 边框底面开关
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length),
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                            keyboardType: TextInputType.number,
+                            decoration: _softInputDecoration(label: 'X坐标'),
+                            onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length),
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                            keyboardType: TextInputType.number,
+                            decoration: _softInputDecoration(label: 'Y坐标'),
+                            onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 5,
+                          child: Container(
+                            height: 42,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            decoration: BoxDecoration(color: isContainer ? const Color(0xFFFFF3E0) : const Color(0xFFF5F5F7), borderRadius: BorderRadius.circular(10)),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('设为容器面', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF333333))),
+                                Switch(
+                                  value: isContainer,
+                                  activeThumbColor: const Color(0xFFE65100),
+                                  onChanged: (v) {
+                                    setDialogState(() {
+                                      isContainer = v;
+                                      if (v) {
+                                        for (final elem in _currentElements) {
+                                          elem.module?.properties.remove('is_container_boundary');
+                                        }
+                                        props['is_container_boundary'] = true;
+                                      } else {
+                                        props.remove('is_container_boundary');
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // 行3：形状 + 材质
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<UIModuleShape>(
+                            initialValue: shape,
+                            decoration: _softInputDecoration(label: '外延形状'),
+                            dropdownColor: Colors.white,
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                            items: const [
+                              DropdownMenuItem(value: UIModuleShape.rectangle, child: Text('直角')),
+                              DropdownMenuItem(value: UIModuleShape.rounded, child: Text('圆角')),
+                              DropdownMenuItem(value: UIModuleShape.capsule, child: Text('胶囊')),
+                              DropdownMenuItem(value: UIModuleShape.circle, child: Text('正圆/椭圆')),
+                              DropdownMenuItem(value: UIModuleShape.heart, child: Text('心形')),
+                              DropdownMenuItem(value: UIModuleShape.star5, child: Text('五角星')),
+                              DropdownMenuItem(value: UIModuleShape.star4, child: Text('四角星')),
+                            ],
+                            onChanged: (v) => setDialogState(() => shape = v ?? UIModuleShape.rounded),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<UIModuleMaterial>(
+                            initialValue: material,
+                            decoration: _softInputDecoration(label: '视觉质感'),
+                            dropdownColor: Colors.white,
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                            items: const [
+                              DropdownMenuItem(value: UIModuleMaterial.glass, child: Text('毛玻璃')),
+                              DropdownMenuItem(value: UIModuleMaterial.solid, child: Text('磨砂纯色')),
+                              DropdownMenuItem(value: UIModuleMaterial.gradient, child: Text('渐变')),
+                              DropdownMenuItem(value: UIModuleMaterial.outline, child: Text('极简描边')),
+                            ],
+                            onChanged: (v) => setDialogState(() => material = v ?? UIModuleMaterial.glass),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // 行4：紧凑横向调色板
+                    SizedBox(
+                      height: 30,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          Colors.white,
+                          const Color(0xFFFF4081),
+                          const Color(0xFFFF6E40),
+                          const Color(0xFFFFD740),
+                          const Color(0xFF00E676),
+                          const Color(0xFF00E5FF),
+                          const Color(0xFF2979FF),
+                          const Color(0xFF651FFF),
+                          const Color(0xFF37474F),
+                          Colors.black,
+                        ].map((c) {
+                          final sel = color == c;
+                          return GestureDetector(
+                            onTap: () => setDialogState(() => color = c),
+                            child: Container(
+                              width: 28,
+                              height: 28,
+                              margin: const EdgeInsets.only(right: 6),
+                              decoration: BoxDecoration(
+                                color: c,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: sel ? const Color(0xFF00ACC1) : Colors.black12, width: sel ? 2.5 : 1),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // 行5：透明度 + 旋转角
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('透明度 (${(opacity * 100).toStringAsFixed(0)}%)', style: const TextStyle(fontSize: 10, color: Color(0xFF777783))),
+                              Slider(
+                                value: opacity,
+                                min: 0.0,
+                                max: 1.0,
+                                onChanged: (v) => setDialogState(() => opacity = v),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('旋转角 (${rotation.toStringAsFixed(0)}°)', style: const TextStyle(fontSize: 10, color: Color(0xFF777783))),
+                                  InkWell(
+                                    onTap: () => setDialogState(() => rotation = 0.0),
+                                    child: const Text('复位', style: TextStyle(fontSize: 10, color: Color(0xFFFF4081), fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: rotation.clamp(-180.0, 180.0).toDouble(),
+                                min: -180,
+                                max: 180,
+                                onChanged: (v) => setDialogState(() => rotation = v),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Color(0xFF888896)))),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    setState(() {
+                      final idx = _currentElements.indexWhere((e) => e.id == el.id);
+                      if (idx != -1) {
+                        final updatedMod = mod.copyWith(
+                          name: name,
+                          color: color,
+                          shape: shape,
+                          material: material,
+                          opacity: opacity,
+                          properties: props,
+                        );
+                        _currentElements[idx] = el.copyWith(
+                          offset: Offset(offsetX, offsetY),
+                          layerIndex: selectedLayer,
+                          rotation: rotation,
+                          module: updatedMod,
+                        );
+                      }
+                    });
+                    _autoSave();
+                  },
+                  child: const Text('保存配置'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }
