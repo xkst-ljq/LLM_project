@@ -129,7 +129,7 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                         ),
                         trailing: isSel
                             ? const Icon(Icons.check_circle,
-                                color: Color(0xFF00E5FF), size: 18)
+                            color: Color(0xFF00E5FF), size: 18)
                             : null,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10),
                         onTap: () => _switchActiveSceneLayer(ly.id),
@@ -454,7 +454,6 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                             'targetModuleId': '',
                             'targetPort': 'text',
                             'targetType': 'string',
-                            'scheme': 'current_to_text',
                             'enabled': true,
                           },
                         },
@@ -696,143 +695,143 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
               Expanded(
                 child: _currentElements.isEmpty
                     ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(18.0),
-                          child: Text(
-                            '还没有构造层。\n从左侧拖入面、数据条、文本等原材料。',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF888896),
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      )
+                  child: Padding(
+                    padding: EdgeInsets.all(18.0),
+                    child: Text(
+                      '还没有构造层。\n从左侧拖入面、数据条、文本等原材料。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF888896),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                )
                     : ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        itemCount: _currentElements.length,
-                        itemBuilder: (context, index) {
-                          final el = _currentElements[index];
-                          final selected = _selectedTransformationId == el.id;
-                          final bake = _isBakeableElement(el);
-                          final name =
-                              el.module?.name ?? el.composite?.name ?? '未命名层';
-                          return Card(
-                            color: selected
-                                ? const Color(0xFF111116)
-                                : const Color(0xFFF6F6F9),
-                            elevation: selected ? 3 : 0,
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              side: BorderSide(
-                                color: selected
-                                    ? const Color(0xFF00E5FF)
-                                    : Colors.black.withValues(alpha: 0.04),
-                                width: selected ? 1.4 : 1,
-                              ),
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () => setState(
-                                  () => _selectedTransformationId = el.id),
-                              onLongPress: () =>
-                                  _showTailoredPrecisionEditorDialog(el),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 7),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 5, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: bake
-                                                ? const Color(0xFF00C853)
-                                                : const Color(0xFFFF8F00),
-                                            borderRadius:
-                                                BorderRadius.circular(5),
-                                          ),
-                                          child: Text(
-                                            bake ? '烘焙' : '跳过',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: selected
-                                                  ? Colors.white
-                                                  : const Color(0xFF111116),
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  itemCount: _currentElements.length,
+                  itemBuilder: (context, index) {
+                    final el = _currentElements[index];
+                    final selected = _selectedTransformationId == el.id;
+                    final bake = _isBakeableElement(el);
+                    final name =
+                        el.module?.name ?? el.composite?.name ?? '未命名层';
+                    return Card(
+                      color: selected
+                          ? const Color(0xFF111116)
+                          : const Color(0xFFF6F6F9),
+                      elevation: selected ? 3 : 0,
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(
+                          color: selected
+                              ? const Color(0xFF00E5FF)
+                              : Colors.black.withValues(alpha: 0.04),
+                          width: selected ? 1.4 : 1,
+                        ),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setState(
+                                () => _selectedTransformationId = el.id),
+                        onLongPress: () =>
+                            _showTailoredPrecisionEditorDialog(el),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 7),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: bake
+                                          ? const Color(0xFF00C853)
+                                          : const Color(0xFFFF8F00),
+                                      borderRadius:
+                                      BorderRadius.circular(5),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${_elementTypeLabel(el)} · L${el.layerIndex} · ${el.size.width.toStringAsFixed(0)}×${el.size.height.toStringAsFixed(0)}',
+                                    child: Text(
+                                      bake ? '烘焙' : '跳过',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         color: selected
-                                            ? Colors.white70
-                                            : const Color(0xFF777783),
-                                        fontSize: 10,
+                                            ? Colors.white
+                                            : const Color(0xFF111116),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        _buildLayerMiniButton(
-                                          Icons.keyboard_arrow_up_rounded,
-                                          () => _moveAtomicConstructionLayer(
-                                              el.id, -1),
-                                          selected,
-                                        ),
-                                        _buildLayerMiniButton(
-                                          Icons.keyboard_arrow_down_rounded,
-                                          () => _moveAtomicConstructionLayer(
-                                              el.id, 1),
-                                          selected,
-                                        ),
-                                        _buildLayerMiniButton(
-                                          Icons.tune_rounded,
-                                          () => _showTailoredPrecisionEditorDialog(
-                                              el),
-                                          selected,
-                                        ),
-                                        _buildLayerMiniButton(
-                                          Icons.delete_outline_rounded,
-                                          () => _deleteElement(el.id),
-                                          selected,
-                                          danger: true,
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${_elementTypeLabel(el)} · L${el.layerIndex} · ${el.size.width.toStringAsFixed(0)}×${el.size.height.toStringAsFixed(0)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: selected
+                                      ? Colors.white70
+                                      : const Color(0xFF777783),
+                                  fontSize: 10,
                                 ),
                               ),
-                            ),
-                          );
-                        },
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  _buildLayerMiniButton(
+                                    Icons.keyboard_arrow_up_rounded,
+                                        () => _moveAtomicConstructionLayer(
+                                        el.id, -1),
+                                    selected,
+                                  ),
+                                  _buildLayerMiniButton(
+                                    Icons.keyboard_arrow_down_rounded,
+                                        () => _moveAtomicConstructionLayer(
+                                        el.id, 1),
+                                    selected,
+                                  ),
+                                  _buildLayerMiniButton(
+                                    Icons.tune_rounded,
+                                        () => _showTailoredPrecisionEditorDialog(
+                                        el),
+                                    selected,
+                                  ),
+                                  _buildLayerMiniButton(
+                                    Icons.delete_outline_rounded,
+                                        () => _deleteElement(el.id),
+                                    selected,
+                                    danger: true,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -842,11 +841,11 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
   }
 
   Widget _buildLayerMiniButton(
-    IconData icon,
-    VoidCallback onTap,
-    bool selected, {
-    bool danger = false,
-  }) {
+      IconData icon,
+      VoidCallback onTap,
+      bool selected, {
+        bool danger = false,
+      }) {
     final color = danger
         ? const Color(0xFFFF4081)
         : (selected ? Colors.white : const Color(0xFF555562));
@@ -932,39 +931,39 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
               Expanded(
                 child: isEmpty
                     ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(18.0),
-                          child: Text(
-                            '还没有保存的资产。\n在工作台拖入积木后点「保存」即可入库。',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF888896),
-                              height: 1.35,
-                            ),
+                  child: Padding(
+                    padding: EdgeInsets.all(18.0),
+                    child: Text(
+                      '还没有保存的资产。\n在工作台拖入积木后点「保存」即可入库。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF888896),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                )
+                    : ListView(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  children: [
+                    ...modules.map(_buildAssetLibraryModuleCard),
+                    if (composites.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(4, 10, 4, 2),
+                        child: Text(
+                          '复合组件',
+                          style: TextStyle(
+                            color: Color(0xFF888896),
+                            fontSize: 10,
                           ),
                         ),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        children: [
-                          ...modules.map(_buildAssetLibraryModuleCard),
-                          if (composites.isNotEmpty) ...[
-                            const Padding(
-                              padding: EdgeInsets.fromLTRB(4, 10, 4, 2),
-                              child: Text(
-                                '复合组件',
-                                style: TextStyle(
-                                  color: Color(0xFF888896),
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ),
-                            ...composites.map(_buildAssetLibraryCompositeCard),
-                          ],
-                        ],
                       ),
+                      ...composites.map(_buildAssetLibraryCompositeCard),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),

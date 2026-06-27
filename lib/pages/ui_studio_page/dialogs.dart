@@ -754,9 +754,6 @@ mixin _UIStudioDialogs on _UIStudioLogic {
               linkerData['sourcePort'] = 'current';
               linkerData['sourceType'] = 'number';
             }
-            if (linkerData['targetModuleId'] != null) {
-              linkerData['scheme'] = 'current_to_text';
-            }
           }
           props['linker'] = linkerData;
         });
@@ -809,9 +806,6 @@ mixin _UIStudioDialogs on _UIStudioLogic {
             if (targetType == 'text') {
               linkerData['targetPort'] = 'text';
               linkerData['targetType'] = 'string';
-            }
-            if (linkerData['sourceModuleId'] != null) {
-              linkerData['scheme'] = 'current_to_text';
             }
           }
           props['linker'] = linkerData;
@@ -910,7 +904,18 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     if (el.module?.type != 'linker') return;
     final props = Map<String, dynamic>.from(el.module!.properties);
     final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
-    final currentScheme = linkerData['scheme']?.toString() ?? 'current_to_text';
+    final currentScheme = linkerData['scheme']?.toString();
+
+    final sourceId = linkerData['sourceModuleId']?.toString();
+    final targetId = linkerData['targetModuleId']?.toString();
+
+    UIElement? sourceEl, targetEl;
+    for (final e in _currentElements) {
+      if (e.id == sourceId) sourceEl = e;
+      if (e.id == targetId) targetEl = e;
+    }
+
+    final bool isFullyConnected = sourceEl != null && targetEl != null;
 
     showDialog<void>(
       context: context,
@@ -922,14 +927,19 @@ mixin _UIStudioDialogs on _UIStudioLogic {
             '选择联动器传输类型',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116)),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildSchemeOptionTile(ctx, el, 'current_to_text', 'current → text (当前数值转文本)', currentScheme),
-              const SizedBox(height: 8),
-              _buildSchemeOptionTile(ctx, el, 'max_to_text', 'max → text (最大数值转文本)', currentScheme),
-            ],
-          ),
+          content: !isFullyConnected
+              ? Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9C4),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              '⚠️ 请先连接【数据来源】与【目标端点】，系统将根据双方组件规格自动推导可用的方案。',
+              style: TextStyle(fontSize: 13, color: Color(0xFFF57F17), height: 1.4),
+            ),
+          )
+              : _buildAvailableSchemesList(ctx, el, sourceEl!, targetEl!, currentScheme),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -938,6 +948,44 @@ mixin _UIStudioDialogs on _UIStudioLogic {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildAvailableSchemesList(
+      BuildContext ctx,
+      UIElement linkerEl,
+      UIElement sourceEl,
+      UIElement targetEl,
+      String? currentScheme,
+      ) {
+    final sType = sourceEl.module?.type;
+    final tType = targetEl.module?.type;
+
+    final options = <Map<String, String>>[];
+
+    if ((sType == 'progress' || sType == 'slider') && tType == 'text') {
+      options.add({'id': 'current_to_text', 'label': 'current → text (当前进度/数值转文本)'});
+      options.add({'id': 'max_to_text', 'label': 'max → text (最大值转文本)'});
+    } else if (sType == 'input' && tType == 'text') {
+      options.add({'id': 'text_to_text', 'label': 'text → text (输入框内容直接转文本)'});
+    } else {
+      options.add({'id': 'to_string', 'label': '通用标准字面量流转 (to_string)'});
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: options.map((opt) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _buildSchemeOptionTile(
+            ctx,
+            linkerEl,
+            opt['id']!,
+            opt['label']!,
+            currentScheme ?? '',
+          ),
+        );
+      }).toList(),
     );
   }
 

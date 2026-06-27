@@ -822,11 +822,11 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     return name;
   }
 
-  // ===== 联动器数据查询（原在 linker.dart，为跨 mixin 共享移至此） =====
+  // ===== 联动器数据查询 =====
   List<Map<String, String>> _getLinkableSourceModules() {
     return _currentElements
         .where((el) => !el.isComposite && el.module != null)
-        .where((el) => ['progress', 'slider'].contains(el.module!.type))
+        .where((el) => ['progress', 'slider', 'input', 'button'].contains(el.module!.type))
         .map((el) => {
       'id': el.id,
       'name': el.module!.name,
@@ -838,7 +838,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   List<Map<String, String>> _getLinkableTargetModules() {
     return _currentElements
         .where((el) => !el.isComposite && el.module != null)
-        .where((el) => ['text'].contains(el.module!.type))
+        .where((el) => ['text', 'progress', 'slider'].contains(el.module!.type))
         .map((el) => {
       'id': el.id,
       'name': el.module!.name,

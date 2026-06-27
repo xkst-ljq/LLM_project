@@ -36,6 +36,9 @@ class LinkerService {
       if (linkerData == null) continue;
 
       if (linkerData['targetModuleId']?.toString() == targetElId) {
+        final scheme = linkerData['scheme']?.toString();
+        if (scheme == null || scheme.trim().isEmpty || scheme == '未配置') continue;
+
         final sourceId = linkerData['sourceModuleId']?.toString();
         if (sourceId != null && _elementModules.containsKey(sourceId)) {
           final sourceMod = _elementModules[sourceId]!;
@@ -64,10 +67,11 @@ class LinkerService {
       if (sourceId == null || !_elementModules.containsKey(sourceId)) continue;
 
       final sourceModule = _elementModules[sourceId]!;
-      final scheme = linkerData['scheme']?.toString() ?? 'current_to_text';
+      final scheme = linkerData['scheme']?.toString();
+      if (scheme == null || scheme.trim().isEmpty || scheme == '未配置') continue;
 
-      if (scheme == 'current_to_text') {
-        final val = sourceModule.properties['current'];
+      if (scheme == 'current_to_text' || scheme == 'to_string') {
+        final val = sourceModule.properties['current'] ?? sourceModule.properties['text'] ?? sourceModule.properties['value'];
         if (val != null) {
           return val is num ? val.toStringAsFixed(0) : val.toString();
         }
@@ -75,6 +79,11 @@ class LinkerService {
         final val = sourceModule.properties['max'];
         if (val != null) {
           return val is num ? val.toStringAsFixed(0) : val.toString();
+        }
+      } else if (scheme == 'text_to_text') {
+        final val = sourceModule.properties['text'] ?? sourceModule.properties['value'];
+        if (val != null) {
+          return val.toString();
         }
       }
     }
