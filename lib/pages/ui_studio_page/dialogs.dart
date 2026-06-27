@@ -718,32 +718,45 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     final validSourceValue =
     sourceModules.any((m) => m['id'] == currentSourceId) ? currentSourceId : null;
 
-    return DropdownButtonFormField<String>(
-      initialValue: validSourceValue,
-      decoration: _softInputDecoration(),
-      items: sourceModules.map((moduleInfo) {
-        return DropdownMenuItem<String>(
+    final items = <DropdownMenuItem<String?>>[
+      const DropdownMenuItem<String?>(
+        value: null,
+        child: Text('无 (断开连接)', style: TextStyle(fontSize: 12, color: Color(0xFF888896))),
+      ),
+      ...sourceModules.map((moduleInfo) {
+        return DropdownMenuItem<String?>(
           value: moduleInfo['id'],
           child: Text(
             '${moduleInfo['name']} (${moduleInfo['type']})',
             style: const TextStyle(fontSize: 12),
           ),
         );
-      }).toList(),
+      }),
+    ];
+
+    return DropdownButtonFormField<String?>(
+      initialValue: validSourceValue,
+      decoration: _softInputDecoration(),
+      items: items,
       onChanged: (value) {
-        if (value == null) return;
         setDialogState(() {
           final linkerData = Map<String, dynamic>.from(
             el.module!.properties['linker'] ?? {},
           );
-          linkerData['sourceModuleId'] = value;
-          final sourceType = sourceModules.firstWhere((m) => m['id'] == value)['type'];
-          if (sourceType == 'progress' || sourceType == 'slider') {
-            linkerData['sourcePort'] = 'current';
-            linkerData['sourceType'] = 'number';
-          }
-          if (linkerData['targetModuleId'] != null) {
-            linkerData['scheme'] = 'current_to_text';
+          if (value == null) {
+            linkerData.remove('sourceModuleId');
+            linkerData.remove('sourcePort');
+            linkerData.remove('sourceType');
+          } else {
+            linkerData['sourceModuleId'] = value;
+            final sourceType = sourceModules.firstWhere((m) => m['id'] == value)['type'];
+            if (sourceType == 'progress' || sourceType == 'slider') {
+              linkerData['sourcePort'] = 'current';
+              linkerData['sourceType'] = 'number';
+            }
+            if (linkerData['targetModuleId'] != null) {
+              linkerData['scheme'] = 'current_to_text';
+            }
           }
           props['linker'] = linkerData;
         });
@@ -761,32 +774,45 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     final validTargetValue =
     targetModules.any((m) => m['id'] == currentTargetId) ? currentTargetId : null;
 
-    return DropdownButtonFormField<String>(
-      initialValue: validTargetValue,
-      decoration: _softInputDecoration(),
-      items: targetModules.map((moduleInfo) {
-        return DropdownMenuItem<String>(
+    final items = <DropdownMenuItem<String?>>[
+      const DropdownMenuItem<String?>(
+        value: null,
+        child: Text('无 (断开连接)', style: TextStyle(fontSize: 12, color: Color(0xFF888896))),
+      ),
+      ...targetModules.map((moduleInfo) {
+        return DropdownMenuItem<String?>(
           value: moduleInfo['id'],
           child: Text(
             '${moduleInfo['name']} (${moduleInfo['type']})',
             style: const TextStyle(fontSize: 12),
           ),
         );
-      }).toList(),
+      }),
+    ];
+
+    return DropdownButtonFormField<String?>(
+      initialValue: validTargetValue,
+      decoration: _softInputDecoration(),
+      items: items,
       onChanged: (value) {
-        if (value == null) return;
         setDialogState(() {
           final linkerData = Map<String, dynamic>.from(
             el.module!.properties['linker'] ?? {},
           );
-          linkerData['targetModuleId'] = value;
-          final targetType = targetModules.firstWhere((m) => m['id'] == value)['type'];
-          if (targetType == 'text') {
-            linkerData['targetPort'] = 'text';
-            linkerData['targetType'] = 'string';
-          }
-          if (linkerData['sourceModuleId'] != null) {
-            linkerData['scheme'] = 'current_to_text';
+          if (value == null) {
+            linkerData.remove('targetModuleId');
+            linkerData.remove('targetPort');
+            linkerData.remove('targetType');
+          } else {
+            linkerData['targetModuleId'] = value;
+            final targetType = targetModules.firstWhere((m) => m['id'] == value)['type'];
+            if (targetType == 'text') {
+              linkerData['targetPort'] = 'text';
+              linkerData['targetType'] = 'string';
+            }
+            if (linkerData['sourceModuleId'] != null) {
+              linkerData['scheme'] = 'current_to_text';
+            }
           }
           props['linker'] = linkerData;
         });

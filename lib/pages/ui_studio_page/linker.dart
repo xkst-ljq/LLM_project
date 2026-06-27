@@ -104,7 +104,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final sourcePort = linkerData['sourcePort']?.toString() ?? 'current';
       final targetPort = linkerData['targetPort']?.toString() ?? 'text';
 
-      if (sourceId != null && targetId != null) {
+      if (sourceId != null) {
         connections.add({
           'from': sourceId,
           'fromPort': sourcePort,
@@ -113,6 +113,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
           'linkerId': el.id,
           'type': 'input',
         });
+      }
+      if (targetId != null) {
         connections.add({
           'from': el.id,
           'fromPort': 'output',
@@ -326,5 +328,34 @@ mixin _UIStudioLinker on _UIStudioLogic {
       linkerElement.module!.copyWith(properties: updatedProps);
       _currentElements[index] = linkerElement.copyWith(module: updatedModule);
     });
+  }
+
+  void _disconnectLinkerPort(UIElement el, String portDirection) {
+    if (el.module?.type != 'linker') return;
+    setState(() {
+      final idx = _currentElements.indexWhere((e) => e.id == el.id);
+      if (idx == -1) return;
+
+      final currentEl = _currentElements[idx];
+      final props = Map<String, dynamic>.from(currentEl.module!.properties);
+      final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
+
+      if (portDirection == 'input') {
+        linkerData.remove('sourceModuleId');
+        linkerData.remove('sourcePort');
+        linkerData.remove('sourceType');
+      } else {
+        linkerData.remove('targetModuleId');
+        linkerData.remove('targetPort');
+        linkerData.remove('targetType');
+      }
+
+      props['linker'] = linkerData;
+      _currentElements[idx] = currentEl.copyWith(
+        module: currentEl.module!.copyWith(properties: props),
+      );
+    });
+    _cancelConnection();
+    _autoSave();
   }
 }

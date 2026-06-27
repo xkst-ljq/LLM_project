@@ -449,10 +449,14 @@ class _UIStudioPageState extends State<UIStudioPage>
                         _dragConnectionEnd = event.position;
                       });
                     },
-                    child: Container(
-                      width: 32,
-                      height: double.infinity,
-                      color: Colors.transparent,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onDoubleTap: () => _disconnectLinkerPort(el, 'input'),
+                      child: Container(
+                        width: 32,
+                        height: double.infinity,
+                        color: Colors.transparent,
+                      ),
                     ),
                   ),
                   Expanded(
@@ -507,10 +511,14 @@ class _UIStudioPageState extends State<UIStudioPage>
                         _dragConnectionEnd = event.position;
                       });
                     },
-                    child: Container(
-                      width: 32,
-                      height: double.infinity,
-                      color: Colors.transparent,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onDoubleTap: () => _disconnectLinkerPort(el, 'output'),
+                      child: Container(
+                        width: 32,
+                        height: double.infinity,
+                        color: Colors.transparent,
+                      ),
                     ),
                   ),
                 ],
