@@ -381,6 +381,30 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                       const SizedBox(height: 16),
                     ],
 
+                    // --- 容器边界框标识配置 ---
+                    if (!isComp && ['surface', 'surface_art', 'primitive_art'].contains(el.module?.type)) ...[
+                      SwitchListTile(
+                        title: const Text('设为复合组件边框底面', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                        subtitle: const Text('开启后，该面元素的外框将作为复合组件的标准轮廓', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+                        value: props['is_container_boundary'] == true,
+                        activeThumbColor: const Color(0xFFE65100),
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (val) {
+                          setDialogState(() {
+                            if (val) {
+                              for (final elem in _currentElements) {
+                                elem.module?.properties.remove('is_container_boundary');
+                              }
+                              props['is_container_boundary'] = true;
+                            } else {
+                              props.remove('is_container_boundary');
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
                     // --- 外观 ---
                     const Text('外观调色板',
                         style: TextStyle(fontSize: 12, color: Color(0xFF555562))),

@@ -214,36 +214,6 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   children: [
-                    const Text('容器边界框',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'box',
-                        name: '容器边界框',
-                        type: 'base_box',
-                        properties: {},
-                        color: Colors.cyan,
-                      ),
-                      Container(
-                        height: 50,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          color: const Color(0xFF00ACC1).withValues(alpha: 0.08),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            '📦 拖出边界框',
-                            style: TextStyle(
-                              color: Color(0xFF00ACC1),
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Divider(color: Colors.black12),
                     const Text('数据条原子预览',
                         style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
                     const SizedBox(height: 4),

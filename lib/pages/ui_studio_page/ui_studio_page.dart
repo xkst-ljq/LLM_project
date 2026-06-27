@@ -398,6 +398,7 @@ class _UIStudioPageState extends State<UIStudioPage>
       ),
     );
 
+    final bool isContainerBoundary = el.module?.properties['is_container_boundary'] == true;
     Widget layerBadge = Positioned(
       left: p + 4,
       top: p - 14,
@@ -405,7 +406,7 @@ class _UIStudioPageState extends State<UIStudioPage>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.72),
+            color: isContainerBoundary ? const Color(0xFFE65100) : Colors.black.withValues(alpha: 0.72),
             borderRadius: BorderRadius.circular(5),
             border: Border.all(
               color: Colors.white.withValues(alpha: 0.88),
@@ -413,7 +414,7 @@ class _UIStudioPageState extends State<UIStudioPage>
             ),
           ),
           child: Text(
-            'L${el.layerIndex}',
+            isContainerBoundary ? '📦 容器面 (L${el.layerIndex})' : 'L${el.layerIndex}',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 9,
