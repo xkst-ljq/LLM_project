@@ -562,13 +562,6 @@ class _UIStudioPageState extends State<UIStudioPage>
       );
     }
 
-    if (el.rotation != 0.0) {
-      touchableContent = Transform.rotate(
-        angle: el.rotation * math.pi / 180.0,
-        child: touchableContent,
-      );
-    }
-
     final stackChildren = <Widget>[
       Positioned(left: p, top: p, child: touchableContent),
       layerBadge,
@@ -663,7 +656,7 @@ class _UIStudioPageState extends State<UIStudioPage>
       );
     }
 
-    return SizedBox(
+    Widget rootTree = SizedBox(
       width: el.size.width + p * 2,
       height: el.size.height + p * 2,
       child: Stack(
@@ -671,6 +664,16 @@ class _UIStudioPageState extends State<UIStudioPage>
         children: stackChildren,
       ),
     );
+
+    if (el.rotation != 0.0) {
+      rootTree = Transform.rotate(
+        angle: el.rotation * math.pi / 180.0,
+        alignment: Alignment.center,
+        child: rootTree,
+      );
+    }
+
+    return rootTree;
   }
 
   // ============================================================

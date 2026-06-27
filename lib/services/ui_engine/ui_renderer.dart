@@ -200,11 +200,11 @@ class UIRenderer {
           child: content,
         );
       case UIModuleShape.heart:
-        return ClipPath(clipper: _PathClipper(_getHeartPath), child: content);
+        return ClipPath(clipper: _PathClipper(getHeartPath), child: content);
       case UIModuleShape.star5:
-        return ClipPath(clipper: _PathClipper((r) => _getStarPath(r, 5, 0.45)), child: content);
+        return ClipPath(clipper: _PathClipper((r) => getStarPath(r, 5, 0.45)), child: content);
       case UIModuleShape.star4:
-        return ClipPath(clipper: _PathClipper((r) => _getStarPath(r, 4, 0.4)), child: content);
+        return ClipPath(clipper: _PathClipper((r) => getStarPath(r, 4, 0.4)), child: content);
       case UIModuleShape.rectangle:
         return content;
     }
@@ -528,7 +528,7 @@ class UIRenderer {
 }
 
 
-Path _getHeartPath(Rect rect) {
+Path getHeartPath(Rect rect) {
   final w = rect.width;
   final h = rect.height;
   final l = rect.left;
@@ -541,7 +541,7 @@ Path _getHeartPath(Rect rect) {
   return path;
 }
 
-Path _getStarPath(Rect rect, int points, double innerRatio) {
+Path getStarPath(Rect rect, int points, double innerRatio) {
   final cx = rect.center.dx;
   final cy = rect.center.dy;
   final rx = rect.width / 2;
@@ -629,13 +629,13 @@ class UIPrimitiveArtPainter extends CustomPainter {
         canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(r)), paint);
         break;
       case UIModuleShape.heart:
-        canvas.drawPath(_getHeartPath(rect), paint);
+        canvas.drawPath(getHeartPath(rect), paint);
         break;
       case UIModuleShape.star5:
-        canvas.drawPath(_getStarPath(rect, 5, 0.45), paint);
+        canvas.drawPath(getStarPath(rect, 5, 0.45), paint);
         break;
       case UIModuleShape.star4:
-        canvas.drawPath(_getStarPath(rect, 4, 0.4), paint);
+        canvas.drawPath(getStarPath(rect, 4, 0.4), paint);
         break;
       case UIModuleShape.rectangle:
         canvas.drawRect(rect, paint);
@@ -665,13 +665,13 @@ class UIPrimitiveArtPainter extends CustomPainter {
           canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(r)), strokePaint);
           break;
         case UIModuleShape.heart:
-          canvas.drawPath(_getHeartPath(rect), strokePaint);
+          canvas.drawPath(getHeartPath(rect), strokePaint);
           break;
         case UIModuleShape.star5:
-          canvas.drawPath(_getStarPath(rect, 5, 0.45), strokePaint);
+          canvas.drawPath(getStarPath(rect, 5, 0.45), strokePaint);
           break;
         case UIModuleShape.star4:
-          canvas.drawPath(_getStarPath(rect, 4, 0.4), strokePaint);
+          canvas.drawPath(getStarPath(rect, 4, 0.4), strokePaint);
           break;
         case UIModuleShape.rectangle:
           canvas.drawRect(rect, strokePaint);

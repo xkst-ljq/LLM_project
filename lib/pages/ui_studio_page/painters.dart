@@ -62,12 +62,18 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
         );
         break;
       case UIModuleShape.rounded:
-      case UIModuleShape.heart:
-      case UIModuleShape.star5:
-      case UIModuleShape.star4:
         path.addRRect(
           RRect.fromRectAndRadius(rect, Radius.circular(borderRadius)),
         );
+        break;
+      case UIModuleShape.heart:
+        path.addPath(getHeartPath(rect), Offset.zero);
+        break;
+      case UIModuleShape.star5:
+        path.addPath(getStarPath(rect, 5, 0.45), Offset.zero);
+        break;
+      case UIModuleShape.star4:
+        path.addPath(getStarPath(rect, 4, 0.4), Offset.zero);
         break;
     }
 
