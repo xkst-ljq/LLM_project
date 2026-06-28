@@ -808,10 +808,6 @@ mixin _UIStudioDialogs on _UIStudioLogic {
             if (sourceType == 'progress' || sourceType == 'slider') {
               linkerData['sourcePort'] = 'current';
               linkerData['sourceType'] = 'number';
-            } else if (sourceType == 'text') {
-              linkerData['sourcePort'] = 'text';
-              linkerData['sourceType'] = 'string';
-              linkerData['scheme'] = 'text_to_text';
             }
           }
           props['linker'] = linkerData;
@@ -865,12 +861,6 @@ mixin _UIStudioDialogs on _UIStudioLogic {
             if (targetType == 'text') {
               linkerData['targetPort'] = 'text';
               linkerData['targetType'] = 'string';
-            } else if (targetType == 'input') {
-              linkerData['targetPort'] = 'variable';
-              linkerData['targetType'] = 'string';
-              if (linkerData['sourceType'] == 'string') {
-                linkerData['scheme'] = 'text_to_text';
-              }
             }
           }
           props['linker'] = linkerData;
@@ -1033,10 +1023,8 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     } else if (['progress', 'slider'].contains(sType) && tType == 'text') {
       options.add({'id': 'current_to_text', 'label': 'current → text (当前进度/数值转文本)'});
       options.add({'id': 'max_to_text', 'label': 'max → text (最大值转文本)'});
-    } else if (sType == 'text' && ['input', 'button'].contains(tType)) {
-      options.add({'id': 'text_to_text', 'label': '提示词动态变量传导 (text → text)'});
-    } else if (['input', 'button'].contains(sType) && tType == 'text') {
-      options.add({'id': 'to_string', 'label': '标准字面量实时回写 (to_string)'});
+    } else if (sType == 'input' && tType == 'text') {
+      options.add({'id': 'text_to_text', 'label': 'text → text (输入框内容直接转文本)'});
     } else {
       options.add({'id': 'to_string', 'label': '通用标准字面量流转 (to_string)'});
     }
@@ -1520,21 +1508,6 @@ mixin _UIStudioDialogs on _UIStudioLogic {
 
     final props = Map<String, dynamic>.from(mod.properties);
     String varName = props['variable']?.toString() ?? props['label']?.toString() ?? '';
-    String placeholder = props['placeholder']?.toString() ?? '请输入...';
-
-    String? linkedSourceText;
-    for (final elem in _currentElements) {
-      if (elem.module?.type == 'linker') {
-        final lk = (elem.module?.properties['linker'] as Map?)?.cast<String, dynamic>();
-        if (lk?['targetModuleId'] == el.id) {
-          final srcId = lk?['sourceModuleId']?.toString();
-          final srcElem = _currentElements.any((e) => e.id == srcId) ? _currentElements.firstWhere((e) => e.id == srcId) : null;
-          if (srcElem != null) {
-            linkedSourceText = srcElem.module?.properties['text']?.toString() ?? srcElem.module?.name;
-          }
-        }
-      }
-    }
 
     Color color = mod.color;
     double opacity = mod.opacity.clamp(0.0, 1.0).toDouble();
@@ -1565,7 +1538,6 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
     final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
     final varCtrl = TextEditingController(text: varName)..selection = TextSelection.collapsed(offset: varName.length);
-    final phCtrl = TextEditingController(text: placeholder)..selection = TextSelection.collapsed(offset: placeholder.length);
 
     showDialog<void>(
       context: context,
@@ -1619,62 +1591,20 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                     ),
                     const SizedBox(height: 12),
 
-                    if (mod.type == 'input') ...[
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: linkedSourceText != null ? const Color(0xFFE8F5E9) : const Color(0xFFE0F7FA),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: linkedSourceText != null ? const Color(0xFFA5D6A7) : const Color(0xFF80DEEA)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              linkedSourceText != null ? '当前拓扑：连线语义驱动' : '当前性质：直接发言主对话框',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: linkedSourceText != null ? const Color(0xFF2E7D32) : const Color(0xFF006064)),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              linkedSourceText != null ? '连线来源文本："$linkedSourceText"\n实际聊天时，输入的文字将存入 SessionState.vars["$linkedSourceText"] 词典。' : '当前未连接任何连线。输入的文字将直接向 AI 角色发送对话指令。',
-                              style: TextStyle(fontSize: 11, color: linkedSourceText != null ? const Color(0xFF388E3C) : const Color(0xFF00838F), height: 1.3),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      const Text('空提示语占位符 (Placeholder)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: phCtrl,
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
-                        decoration: _softInputDecoration(),
-                        onChanged: (v) {
-                          placeholder = v;
-                          props['placeholder'] = v;
-                          setState(() => syncLivePreview());
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    if (mod.type == 'button' || (mod.type == 'input' && linkedSourceText == null)) ...[
-                      const Text('绑定逻辑变量名 (连通 SessionState 词典)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: varCtrl,
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
-                        decoration: _softInputDecoration(helperText: '提示：实际聊天时存入词典，在提示词编写 {{var.xxx}} 即可动态解包。'),
-                        onChanged: (v) {
-                          varName = v;
-                          props['variable'] = v;
-                          props.remove('label');
-                          setState(() => syncLivePreview());
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                    ],
+                    const Text('绑定逻辑变量名 (连通 SessionState 词典)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: varCtrl,
+                      style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                      decoration: _softInputDecoration(helperText: '例如 "主角姓名" 或 "user_hp"'),
+                      onChanged: (v) {
+                        varName = v;
+                        props['variable'] = v;
+                        props['label'] = v;
+                        setState(() => syncLivePreview());
+                      },
+                    ),
+                    const SizedBox(height: 12),
 
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1746,7 +1676,6 @@ mixin _UIStudioDialogs on _UIStudioLogic {
         offsetXCtrl.dispose();
         offsetYCtrl.dispose();
         varCtrl.dispose();
-        phCtrl.dispose();
       });
     });
   }
@@ -1844,57 +1773,26 @@ mixin _UIStudioDialogs on _UIStudioLogic {
 
                     const Text('传输方案规则 (Scheme)', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
                     const SizedBox(height: 4),
-                    Builder(builder: (bCtx) {
-                      final lkMap = (props['linker'] as Map?)?.cast<String, dynamic>();
-                      final srcId = lkMap?['sourceModuleId']?.toString();
-                      final tgtId = lkMap?['targetModuleId']?.toString();
-                      final srcElem = _currentElements.any((e) => e.id == srcId) ? _currentElements.firstWhere((e) => e.id == srcId) : null;
-                      final tgtElem = _currentElements.any((e) => e.id == tgtId) ? _currentElements.firstWhere((e) => e.id == tgtId) : null;
-                      final sType = srcElem?.module?.type;
-                      final tType = tgtElem?.module?.type;
-
-                      List<DropdownMenuItem<String>> allowedItems = [];
-                      if (['progress', 'slider'].contains(sType) && ['progress', 'slider'].contains(tType)) {
-                        allowedItems = [const DropdownMenuItem(value: 'num_to_current', child: Text('num → current (数值同步)'))];
-                      } else if (['progress', 'slider'].contains(sType) && tType == 'text') {
-                        allowedItems = [
-                          const DropdownMenuItem(value: 'current_to_text', child: Text('current → text (数值驱动)')),
-                          const DropdownMenuItem(value: 'max_to_text', child: Text('max → text (上限驱动)')),
-                        ];
-                      } else if (sType == 'text' && ['input', 'button'].contains(tType)) {
-                        allowedItems = [const DropdownMenuItem(value: 'text_to_text', child: Text('text → text (提示词语义赋权)'))];
-                      } else if (['input', 'button'].contains(sType) && tType == 'text') {
-                        allowedItems = [const DropdownMenuItem(value: 'to_string', child: Text('to_string (实时回写展示)'))];
-                      } else {
-                        allowedItems = const [
-                          DropdownMenuItem(value: 'current_to_text', child: Text('current → text (数值驱动)')),
-                          DropdownMenuItem(value: 'max_to_text', child: Text('max → text (上限驱动)')),
-                          DropdownMenuItem(value: 'num_to_current', child: Text('num → current (数值同步)')),
-                          DropdownMenuItem(value: 'to_string', child: Text('to_string (强转字符串)')),
-                          DropdownMenuItem(value: 'text_to_text', child: Text('text → text (提示词语义赋权)')),
-                        ];
-                      }
-
-                      final curScheme = lkMap?['scheme']?.toString() ?? allowedItems.first.value!;
-                      final validInitialScheme = allowedItems.any((it) => it.value == curScheme) ? curScheme : allowedItems.first.value!;
-
-                      return DropdownButtonFormField<String>(
-                        key: ValueKey('${srcId}_$tgtId'),
-                        initialValue: validInitialScheme,
-                        decoration: _softInputDecoration(),
-                        dropdownColor: Colors.white,
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
-                        items: allowedItems,
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() {
-                            final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
-                            linkerData['scheme'] = value;
-                            props['linker'] = linkerData;
-                          });
-                        },
-                      );
-                    }),
+                    DropdownButtonFormField<String>(
+                      initialValue: el.module!.properties['linker']?['scheme']?.toString() ?? 'current_to_text',
+                      decoration: _softInputDecoration(),
+                      dropdownColor: Colors.white,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                      items: const [
+                        DropdownMenuItem(value: 'current_to_text', child: Text('current → text (数值驱动)')),
+                        DropdownMenuItem(value: 'max_to_text', child: Text('max → text (上限驱动)')),
+                        DropdownMenuItem(value: 'num_to_current', child: Text('num → current (数值同步)')),
+                        DropdownMenuItem(value: 'to_string', child: Text('to_string (强转字符串)')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() {
+                          final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
+                          linkerData['scheme'] = value;
+                          props['linker'] = linkerData;
+                        });
+                      },
+                    ),
                     const SizedBox(height: 12),
 
                     Row(

@@ -92,10 +92,9 @@ class LinkerService {
       if (['current_to_text', 'to_string', 'num_to_current'].contains(scheme)) {
         final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
             _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
-            sourceModule.properties['text'] ??
-            sourceModule.name;
+            sourceModule.properties['text'];
         if (val != null) {
-          if (targetModule.type == 'text' || targetModule.type == 'input') {
+          if (targetModule.type == 'text') {
             return val is num ? val.toStringAsFixed(0) : val.toString();
           }
           return val is num ? val.toDouble() : double.tryParse(val.toString());
@@ -103,13 +102,13 @@ class LinkerService {
       } else if (scheme == 'max_to_text') {
         final val = sourceModule.properties['max'];
         if (val != null) {
-          if (targetModule.type == 'text' || targetModule.type == 'input') {
+          if (targetModule.type == 'text') {
             return val is num ? val.toStringAsFixed(0) : val.toString();
           }
           return val is num ? val.toDouble() : double.tryParse(val.toString());
         }
       } else if (scheme == 'text_to_text') {
-        final val = sourceModule.properties['text'] ?? sourceModule.properties['value'] ?? sourceModule.name;
+        final val = sourceModule.properties['text'] ?? sourceModule.properties['value'];
         if (val != null) {
           return val.toString();
         }
@@ -135,48 +134,5 @@ class LinkerService {
       }
     }
     return false;
-  }
-
-  /// 将所有带有 boundVariable 或连线语义驱动设定的控件传导值写入 SessionState.vars
-  static void syncToSessionState(Map<String, String> sessionVars) {
-    for (final module in _elementModules.values) {
-      String? varKey;
-      final explicitVar = module.boundVariable ?? module.properties['variable']?.toString() ?? module.properties['label']?.toString();
-      if (explicitVar != null && explicitVar.trim().isNotEmpty) {
-        final rawKey = explicitVar.trim();
-        varKey = rawKey.startsWith('var.') ? rawKey.substring(4) : rawKey;
-      } else if (module.type == 'input') {
-        for (final lkMod in _elementModules.values) {
-          if (lkMod.type != 'linker') continue;
-          final lk = (lkMod.properties['linker'] as Map?)?.cast<String, dynamic>();
-          if (lk?['targetModuleId'] == module.id) {
-            final srcId = lk?['sourceModuleId']?.toString();
-            if (srcId != null && _elementModules.containsKey(srcId)) {
-              final srcMod = _elementModules[srcId]!;
-              if (srcMod.type == 'text') {
-                varKey = srcMod.properties['text']?.toString() ?? srcMod.name;
-              }
-            }
-          }
-        }
-      }
-
-      if (varKey == null || varKey.trim().isEmpty) continue;
-      final key = varKey.trim();
-
-      dynamic val;
-      if (module.type == 'text') {
-        val = resolveLinkedTextValue(module) ?? module.properties['text'];
-      } else if (module.type == 'progress' || module.type == 'slider') {
-        val = resolveTargetValue(module) ?? module.properties['current'];
-      } else if (module.type == 'input') {
-        val = resolveTargetValue(module) ?? module.properties['text'] ?? module.properties['value'] ?? '';
-      }
-
-      if (val != null) {
-        final strVal = val is num ? val.toStringAsFixed(0) : val.toString();
-        sessionVars[key] = strVal;
-      }
-    }
   }
 }

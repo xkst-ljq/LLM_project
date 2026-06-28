@@ -357,20 +357,9 @@ class UIRenderer {
   }
 
   static Widget _buildButton(UIModule module) {
-    final btnText = module.properties['text']?.toString() ?? module.name;
-    return Container(
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: module.color.withValues(alpha: module.opacity * 0.15),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: module.color.withValues(alpha: 0.45), width: 1),
-      ),
-      child: Text(
-        btnText,
-        style: TextStyle(color: module.color, fontSize: 12, fontWeight: FontWeight.bold),
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
+    // 原子按钮只提供透明点击逻辑热区，不自带视觉外观。
+    // 视觉按钮 = surface + text/icon + button 逻辑区的复合块。
+    return const SizedBox.expand();
   }
 
   /// 显示表达式求值（{{key}} 模板替换）
@@ -465,27 +454,9 @@ class UIRenderer {
   }
 
   static Widget _buildInputBlock(UIModule module) {
-    String placeholder = module.properties['placeholder']?.toString() ?? '请输入...';
-    if (placeholder == '请输入...' || placeholder.trim().isEmpty) {
-      final linkedVal = LinkerService.resolveTargetValue(module);
-      if (linkedVal != null && linkedVal.toString().trim().isNotEmpty) {
-        placeholder = '请输入${linkedVal.toString().trim()}...';
-      }
-    }
-    return Container(
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: module.color.withValues(alpha: module.opacity * 0.12),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: module.color.withValues(alpha: 0.38), width: 1),
-      ),
-      child: Text(
-        placeholder,
-        style: TextStyle(color: module.color.withValues(alpha: 0.75), fontSize: 13),
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
+    // 原子输入框只提供透明输入逻辑热区，不自带边框、底色或 placeholder。
+    // 视觉输入框 = surface + placeholder text + input 逻辑区的复合块。
+    return const SizedBox.expand();
   }
 
   /// 联动器节点渲染（MVP）

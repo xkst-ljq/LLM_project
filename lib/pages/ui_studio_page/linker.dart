@@ -173,7 +173,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final elType = el.module?.type;
       final bool hitCard = _isPointInsideRotatedRect(globalPosition, el);
 
-      if (hitCard && ['linker', 'text', 'progress', 'slider', 'input'].contains(elType)) {
+      if (hitCard && ['linker', 'text', 'progress', 'slider'].contains(elType)) {
         if (_canConnect(el, 'input')) {
           newHoverTargetId = el.id;
           newHoverTargetPort = 'input';
@@ -181,7 +181,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
         }
       }
 
-      if (hitCard && ['linker', 'text', 'progress', 'slider', 'input', 'button'].contains(elType)) {
+      if (hitCard && ['linker', 'progress', 'slider', 'input', 'button'].contains(elType)) {
         if (_canConnect(el, 'output')) {
           newHoverTargetId = el.id;
           newHoverTargetPort = 'output';
@@ -212,18 +212,18 @@ mixin _UIStudioLinker on _UIStudioLogic {
     if (sourceType == null || targetType == null) return false;
 
     if (sourceType == 'linker' && dragType == 'input') {
-      return ['text', 'progress', 'slider', 'input', 'button'].contains(targetType) &&
+      return ['progress', 'slider', 'input', 'button'].contains(targetType) &&
           portDirection == 'output';
     }
     if (sourceType == 'linker' && dragType == 'output') {
-      return ['text', 'progress', 'slider', 'input'].contains(targetType) &&
+      return ['text', 'progress', 'slider'].contains(targetType) &&
           portDirection == 'input';
     }
-    if (['text', 'progress', 'slider', 'input', 'button'].contains(sourceType) &&
+    if (['progress', 'slider', 'input', 'button'].contains(sourceType) &&
         dragType == 'output') {
       return targetType == 'linker' && portDirection == 'input';
     }
-    if (['text', 'progress', 'slider', 'input'].contains(sourceType) &&
+    if (['text', 'progress', 'slider'].contains(sourceType) &&
         dragType == 'input') {
       return targetType == 'linker' && portDirection == 'output';
     }
@@ -249,46 +249,46 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     if (sourceType == 'linker' &&
         _draggingSourceType == 'output' &&
-        ['text', 'progress', 'slider', 'input'].contains(targetType) &&
+        ['text', 'progress', 'slider'].contains(targetType) &&
         _hoveringTargetPort == 'input') {
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         targetModuleId: targetElement.id,
-        targetPort: targetType == 'text' ? 'text' : (targetType == 'input' ? 'variable' : 'current'),
-        targetType: (targetType == 'text' || targetType == 'input') ? 'string' : 'number',
+        targetPort: targetType == 'text' ? 'text' : 'current',
+        targetType: targetType == 'text' ? 'string' : 'number',
         connectionType: 'output',
       );
     } else if (sourceType == 'linker' &&
         _draggingSourceType == 'input' &&
-        ['text', 'progress', 'slider', 'input', 'button'].contains(targetType) &&
+        ['progress', 'slider', 'input', 'button'].contains(targetType) &&
         _hoveringTargetPort == 'output') {
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         sourceModuleId: targetElement.id,
-        sourcePort: ['text', 'input', 'button'].contains(targetType) ? 'text' : 'current',
-        sourceType: ['text', 'input', 'button'].contains(targetType) ? 'string' : 'number',
+        sourcePort: ['input', 'button'].contains(targetType) ? 'text' : 'current',
+        sourceType: ['input', 'button'].contains(targetType) ? 'string' : 'number',
         connectionType: 'input',
       );
-    } else if (['text', 'progress', 'slider', 'input', 'button'].contains(sourceType) &&
+    } else if (['progress', 'slider', 'input', 'button'].contains(sourceType) &&
         _draggingSourceType == 'output' &&
         targetType == 'linker' &&
         _hoveringTargetPort == 'input') {
       _updateLinkerConnection(
         linkerId: targetElement.id,
         sourceModuleId: sourceElement.id,
-        sourcePort: ['text', 'input', 'button'].contains(sourceType) ? 'text' : 'current',
-        sourceType: ['text', 'input', 'button'].contains(sourceType) ? 'string' : 'number',
+        sourcePort: ['input', 'button'].contains(sourceType) ? 'text' : 'current',
+        sourceType: ['input', 'button'].contains(sourceType) ? 'string' : 'number',
         connectionType: 'input',
       );
-    } else if (['text', 'progress', 'slider', 'input'].contains(sourceType) &&
+    } else if (['text', 'progress', 'slider'].contains(sourceType) &&
         _draggingSourceType == 'input' &&
         targetType == 'linker' &&
         _hoveringTargetPort == 'output') {
       _updateLinkerConnection(
         linkerId: targetElement.id,
         targetModuleId: sourceElement.id,
-        targetPort: sourceType == 'text' ? 'text' : (sourceType == 'input' ? 'variable' : 'current'),
-        targetType: (sourceType == 'text' || sourceType == 'input') ? 'string' : 'number',
+        targetPort: sourceType == 'text' ? 'text' : 'current',
+        targetType: sourceType == 'text' ? 'string' : 'number',
         connectionType: 'output',
       );
     }
@@ -342,9 +342,6 @@ mixin _UIStudioLinker on _UIStudioLogic {
       if (linkerData['sourceModuleId'] != null &&
           linkerData['targetModuleId'] != null) {
         linkerData['enabled'] = true;
-        if (linkerData['sourceType'] == 'string') {
-          linkerData['scheme'] = 'text_to_text';
-        }
       }
 
       final updatedProps =
