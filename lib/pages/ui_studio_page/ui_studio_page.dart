@@ -390,6 +390,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                     strokeWidth: 1.2,
                     shape: _outlineShapeOf(el),
                     borderRadius: _outlineBorderRadiusOf(el),
+                    isPerfectCircle: _isPerfectCircleOutlineOf(el),
                   ),
                 ),
               ),

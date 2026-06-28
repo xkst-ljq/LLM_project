@@ -230,12 +230,44 @@ mixin _UIStudioLogic on State<UIStudioPage> {
 
   UIModuleShape _outlineShapeOf(UIElement el) {
     if (el.isComposite) return UIModuleShape.rounded;
-    return el.module?.shape ?? UIModuleShape.rounded;
+    final mod = el.module;
+    if (mod == null) return UIModuleShape.rounded;
+    if (mod.type == 'progress') {
+      final progShape = mod.properties['progressShape']?.toString();
+      if (progShape == 'rectangle') return UIModuleShape.rectangle;
+      if (progShape == 'heart') return UIModuleShape.heart;
+      if (progShape == 'ring') return UIModuleShape.circle;
+      return UIModuleShape.capsule;
+    }
+    if (mod.type == 'text' || mod.type == 'input' || mod.type == 'button') {
+      return UIModuleShape.rectangle;
+    }
+    return mod.shape;
   }
 
   double _outlineBorderRadiusOf(UIElement el) {
     if (el.isComposite) return 12;
-    return el.module?.borderRadius ?? 12;
+    final mod = el.module;
+    if (mod == null) return 12;
+    if (mod.type == 'progress') {
+      final progShape = mod.properties['progressShape']?.toString();
+      if (progShape == 'rectangle') return 0;
+      return 999;
+    }
+    if (mod.type == 'text' || mod.type == 'input' || mod.type == 'button') {
+      return 4;
+    }
+    return mod.borderRadius;
+  }
+
+  bool _isPerfectCircleOutlineOf(UIElement el) {
+    if (el.isComposite) return false;
+    final mod = el.module;
+    if (mod == null) return false;
+    if (mod.type == 'progress' && mod.properties['progressShape'] == 'ring') {
+      return true;
+    }
+    return false;
   }
 
   // ============================================================

@@ -215,32 +215,65 @@ class UIRenderer {
   }
 
   static Widget _buildProgressBar(UIModule module, Size size) {
-    final min = (module.properties['min'] ?? 0).toDouble();
-    final max = (module.properties['max'] ?? 100).toDouble();
+    final double min = (module.properties['min'] ?? 0).toDouble();
+    final double max = (module.properties['max'] ?? 100).toDouble();
     double current = (module.properties['current'] ?? min).toDouble();
 
     final linkedVal = LinkerService.resolveTargetValue(module);
     if (linkedVal != null && linkedVal is num) {
       current = linkedVal.toDouble();
     }
-    current = current.clamp(min, max).toDouble();
+    final double actualMin = min <= max ? min : max;
+    final double actualMax = min <= max ? max : min;
+    current = current.clamp(actualMin, actualMax).toDouble();
 
-    final progress = max > min ? (current - min) / (max - min) : 0.0;
+    final double progress = actualMax > actualMin ? (current - actualMin) / (actualMax - actualMin) : 0.0;
 
     final fillColor = module.color;
+    final int? trackColorVal = module.properties['trackColor'] as int?;
+    final Color trackColor = trackColorVal != null ? Color(trackColorVal) : Colors.grey.shade200;
+    final String shapeStr = module.properties['progressShape']?.toString() ?? 'rounded';
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: FractionallySizedBox(
-        alignment: Alignment.centerLeft,
-        widthFactor: progress.clamp(0.0, 1.0),
+    if (shapeStr == 'ring') {
+      final double shortestSide = math.min(size.width, size.height);
+      final double defaultSw = shortestSide * 0.12;
+      final dynamic customSwProp = module.properties['strokeWidth'];
+      double sw = (customSwProp != null && customSwProp is num) ? customSwProp.toDouble() : defaultSw;
+      sw = sw.clamp(2.0, shortestSide * 0.42).toDouble();
+      return CustomPaint(
+        painter: _RingProgressBarPainter(progress: progress, fillColor: fillColor, trackColor: trackColor, strokeWidth: sw),
+        size: size,
+      );
+    }
+
+    if (shapeStr == 'heart') {
+      return ClipPath(
+        clipper: _PathClipper(getHeartPath),
         child: Container(
-          decoration: BoxDecoration(
-            color: fillColor,
-            borderRadius: BorderRadius.circular(999),
+          color: trackColor,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: FractionallySizedBox(
+              heightFactor: progress.clamp(0.0, 1.0),
+              widthFactor: 1.0,
+              child: Container(color: fillColor),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final radius = shapeStr == 'rectangle' ? BorderRadius.zero : BorderRadius.circular(999);
+    return Container(
+      decoration: BoxDecoration(color: trackColor, borderRadius: radius),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: progress.clamp(0.0, 1.0),
+            heightFactor: 1.0,
+            child: Container(color: fillColor),
           ),
         ),
       ),
@@ -700,4 +733,42 @@ class UIPrimitiveArtPainter extends CustomPainter {
   bool shouldRepaint(covariant UIPrimitiveArtPainter oldDelegate) {
     return oldDelegate.properties != properties;
   }
+}
+
+class _RingProgressBarPainter extends CustomPainter {
+  final double progress;
+  final Color fillColor;
+  final Color trackColor;
+  final double strokeWidth;
+
+  _RingProgressBarPainter({required this.progress, required this.fillColor, required this.trackColor, required this.strokeWidth});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (math.min(size.width, size.height) - strokeWidth) / 2;
+    if (radius <= 0) return;
+
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    final fillPaint = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawArc(rect, 0, 2 * math.pi, false, trackPaint);
+    if (progress > 0) {
+      canvas.drawArc(rect, -math.pi / 2, 2 * math.pi * progress.clamp(0.0, 1.0), false, fillPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RingProgressBarPainter old) =>
+      old.progress != progress || old.fillColor != fillColor || old.trackColor != trackColor || old.strokeWidth != strokeWidth;
 }

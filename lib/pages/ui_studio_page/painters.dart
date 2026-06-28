@@ -36,11 +36,13 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
   final double strokeWidth;
   final UIModuleShape shape;
   final double borderRadius;
+  final bool isPerfectCircle;
 
   StudioAlternatingDashedBorderPainter({
     this.strokeWidth = 1.2,
     this.shape = UIModuleShape.rounded,
     this.borderRadius = 12,
+    this.isPerfectCircle = false,
   });
 
   @override
@@ -54,7 +56,12 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
         path.addRect(rect);
         break;
       case UIModuleShape.circle:
-        path.addOval(rect);
+        if (isPerfectCircle) {
+          final side = math.min(rect.width, rect.height);
+          path.addOval(Rect.fromCenter(center: rect.center, width: side, height: side));
+        } else {
+          path.addOval(rect);
+        }
         break;
       case UIModuleShape.capsule:
         path.addRRect(
@@ -110,7 +117,8 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
   bool shouldRepaint(covariant StudioAlternatingDashedBorderPainter oldDelegate) {
     return oldDelegate.strokeWidth != strokeWidth ||
         oldDelegate.shape != shape ||
-        oldDelegate.borderRadius != borderRadius;
+        oldDelegate.borderRadius != borderRadius ||
+        oldDelegate.isPerfectCircle != isPerfectCircle;
   }
 }
 

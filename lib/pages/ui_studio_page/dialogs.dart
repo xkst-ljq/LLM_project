@@ -1123,6 +1123,12 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     double maxVal = (props['max'] ?? 100.0).toDouble();
     double curVal = (props['current'] ?? 75.0).toDouble().clamp(minVal <= maxVal ? minVal : maxVal, minVal <= maxVal ? maxVal : minVal).toDouble();
 
+    final int? trackColorVal = props['trackColor'] as int?;
+    Color trackColor = trackColorVal != null ? Color(trackColorVal) : Colors.grey.shade200;
+    String shapeStr = props['progressShape']?.toString() ?? 'rounded';
+    final double shortestSide = math.min(el.size.width, el.size.height);
+    double strokeWidth = (props['strokeWidth'] ?? (shortestSide * 0.12)).toDouble().clamp(2.0, shortestSide * 0.42).toDouble();
+
     Color color = mod.color;
     double opacity = mod.opacity.clamp(0.0, 1.0).toDouble();
     double rotation = ((el.rotation + 180) % 360 + 360) % 360 - 180;
@@ -1244,6 +1250,98 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                       },
                     ),
                     const SizedBox(height: 12),
+
+                    if (mod.type == 'progress') ...[
+                      const Text('进度条轮廓形状选择', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          {'id': 'rounded', 'label': '圆角'},
+                          {'id': 'rectangle', 'label': '直角'},
+                          {'id': 'heart', 'label': '心形'},
+                          {'id': 'ring', 'label': '圆环'},
+                        ].map((item) {
+                          final sel = shapeStr == item['id'];
+                          return Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setDialogState(() {
+                                  shapeStr = item['id']!;
+                                  props['progressShape'] = shapeStr;
+                                });
+                                setState(() => syncLivePreview());
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: sel ? const Color(0xFF00ACC1) : const Color(0xFFF5F5F7),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(item['label']!, style: TextStyle(fontSize: 12, color: sel ? Colors.white : const Color(0xFF111116), fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (shapeStr == 'ring') ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('圆环笔触宽度 (${strokeWidth.round()}px)', style: const TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                            InkWell(
+                              onTap: () {
+                                setDialogState(() {
+                                  strokeWidth = shortestSide * 0.12;
+                                  props.remove('strokeWidth');
+                                });
+                                setState(() => syncLivePreview());
+                              },
+                              child: const Text('自适应比例(12%)', style: TextStyle(fontSize: 11, color: Color(0xFF00ACC1), fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                        Slider(
+                          value: strokeWidth.clamp(2.0, math.max(48.0, shortestSide * 0.42)).toDouble(),
+                          min: 2.0,
+                          max: math.max(48.0, shortestSide * 0.42).toDouble(),
+                          activeColor: const Color(0xFF00ACC1),
+                          onChanged: (v) {
+                            setDialogState(() {
+                              strokeWidth = v;
+                              props['strokeWidth'] = v;
+                            });
+                            setState(() => syncLivePreview());
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      const Text('底槽背景色调色板', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8, runSpacing: 8,
+                        children: [
+                          Colors.grey.shade200, Colors.white, const Color(0xFF37474F), const Color(0xFF263238), Colors.black, const Color(0xFFFF80AB), const Color(0xFFFFCC80), const Color(0xFF80D8FF), const Color(0xFFB9F6CA)
+                        ].map((c) {
+                          final sel = trackColor.toARGB32() == c.toARGB32();
+                          return GestureDetector(
+                            onTap: () {
+                              setDialogState(() {
+                                trackColor = c;
+                                props['trackColor'] = c.toARGB32();
+                              });
+                              setState(() => syncLivePreview());
+                            },
+                            child: Container(width: 28, height: 28, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: sel ? const Color(0xFF00ACC1) : Colors.black12, width: sel ? 2.5 : 1))),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
 
                     const Text('颜色调色板', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 8),
