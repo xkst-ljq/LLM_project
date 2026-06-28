@@ -5,18 +5,6 @@ import 'package:flutter/material.dart';
 import 'linker_service.dart';
 import 'ui_models.dart';
 
-class UISceneModeScope extends InheritedWidget {
-  final bool isStudioCreationMode;
-  const UISceneModeScope({super.key, required this.isStudioCreationMode, required super.child});
-
-  static bool of(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<UISceneModeScope>()?.isStudioCreationMode ?? false;
-  }
-
-  @override
-  bool updateShouldNotify(UISceneModeScope old) => old.isStudioCreationMode != isStudioCreationMode;
-}
-
 class UIRenderer {
   /// 将 UIElement 渲染为 Flutter Widget
   static Widget render(BuildContext context, UIElement element) {
@@ -60,7 +48,7 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildInputBlock(context, module),
+          child: _buildInputBlock(module),
         );
       case 'slider':
         return SizedBox(
@@ -82,7 +70,7 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildButton(context, module),
+          child: _buildButton(module),
         );
       case 'surface':
       case 'base_box':
@@ -368,12 +356,7 @@ class UIRenderer {
     );
   }
 
-  static Widget _buildButton(BuildContext context, UIModule module) {
-    final bool isStudio = UISceneModeScope.of(context);
-    final bool showOnRuntime = module.properties['showTextOnRuntime'] == true;
-    if (!isStudio && !showOnRuntime) {
-      return const SizedBox.expand();
-    }
+  static Widget _buildButton(UIModule module) {
     final btnText = module.properties['text']?.toString() ?? module.name;
     return Container(
       alignment: Alignment.center,
@@ -481,11 +464,7 @@ class UIRenderer {
     return LinkerService.resolveLinkedTextValue(textModule);
   }
 
-  static Widget _buildInputBlock(BuildContext context, UIModule module) {
-    final bool isStudio = UISceneModeScope.of(context);
-    if (!isStudio) {
-      return const SizedBox.expand();
-    }
+  static Widget _buildInputBlock(UIModule module) {
     String placeholder = module.properties['placeholder']?.toString() ?? '请输入...';
     if (placeholder == '请输入...' || placeholder.trim().isEmpty) {
       final linkedVal = LinkerService.resolveTargetValue(module);
