@@ -371,14 +371,19 @@ class UIRenderer {
       displayText = linkedValue;
     }
 
+    final double fs = (module.properties['fontSize'] ?? 14.0).toDouble().clamp(10.0, 72.0).toDouble();
+    final String overflowMode = module.properties['overflow']?.toString() ?? 'ellipsis';
+
+    final textWidget = Text(
+      displayText,
+      style: TextStyle(color: module.color, fontSize: fs, fontWeight: FontWeight.w600),
+      textAlign: TextAlign.center,
+      overflow: overflowMode == 'ellipsis' ? TextOverflow.ellipsis : null,
+    );
+
     return Container(
       alignment: Alignment.center,
-      child: Text(
-        displayText,
-        style: TextStyle(color: module.color, fontSize: 14, fontWeight: FontWeight.w600),
-        textAlign: TextAlign.center,
-        overflow: TextOverflow.ellipsis,
-      ),
+      child: overflowMode == 'scroll' ? SingleChildScrollView(child: textWidget) : textWidget,
     );
   }
 
