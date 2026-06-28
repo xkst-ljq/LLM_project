@@ -619,6 +619,10 @@ class _UIStudioPageState extends State<UIStudioPage>
                 setState(() {
                   final idx = _currentElements.indexWhere((e) => e.id == el.id);
                   if (idx != -1) {
+                    final curEl = _currentElements[idx];
+                    if (curEl.module != null && curEl.module!.properties['autoFit'] == true) {
+                      curEl.module!.properties['autoFit'] = false;
+                    }
                     _currentElements[idx] = el.copyWith(
                       size: Size(newWidth, newHeight),
                     );

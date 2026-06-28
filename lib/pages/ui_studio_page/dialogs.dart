@@ -1745,6 +1745,8 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     String textProp = props['text']?.toString() ?? '';
     double fontSize = (props['fontSize'] ?? 14.0).toDouble().clamp(10.0, 72.0).toDouble();
     String overflowMode = props['overflow']?.toString() ?? 'ellipsis';
+    String textAlignStr = props['textAlign']?.toString() ?? 'center';
+    bool autoFit = props['autoFit'] == true;
 
     Color color = mod.color;
     double opacity = mod.opacity.clamp(0.0, 1.0).toDouble();
@@ -1752,14 +1754,26 @@ mixin _UIStudioDialogs on _UIStudioLogic {
 
     final initialMod = mod.copyWith();
     final initialRot = el.rotation;
+    final initialSize = el.size;
     bool isApplied = false;
+
+    double calcAutoWidth(String txt, double fs) {
+      final actualTxt = txt.isEmpty ? name : txt;
+      final tp = TextPainter(
+        text: TextSpan(text: actualTxt, style: TextStyle(fontSize: fs, fontWeight: FontWeight.w600)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      return (tp.width + 32.0).clamp(40.0, 800.0).toDouble();
+    }
 
     void syncLivePreview() {
       final idx = _currentElements.indexWhere((e) => e.id == el.id);
       if (idx != -1) {
         final curEl = _currentElements[idx];
         if (curEl.module != null) {
+          final newSize = autoFit ? Size(calcAutoWidth(textProp, fontSize), curEl.size.height) : curEl.size;
           _currentElements[idx] = curEl.copyWith(
+            size: newSize,
             rotation: rotation,
             module: curEl.module!.copyWith(
               color: color,
@@ -1837,6 +1851,56 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                       onChanged: (v) {
                         textProp = v;
                         props['text'] = v;
+                        setState(() => syncLivePreview());
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    const Text('文字水平排版对齐', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        {'id': 'left', 'label': '靠左'},
+                        {'id': 'center', 'label': '居中'},
+                        {'id': 'right', 'label': '靠右'},
+                      ].map((item) {
+                        final sel = textAlignStr == item['id'];
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setDialogState(() {
+                                textAlignStr = item['id']!;
+                                props['textAlign'] = textAlignStr;
+                              });
+                              setState(() => syncLivePreview());
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              decoration: BoxDecoration(
+                                color: sel ? const Color(0xFF00ACC1) : const Color(0xFFF5F5F7),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(item['label']!, style: TextStyle(fontSize: 12, color: sel ? Colors.white : const Color(0xFF111116), fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+
+                    SwitchListTile(
+                      title: const Text('边界宽度自适应文字数', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                      subtitle: const Text('动态测量单行长度与字号，预留16px留白间距', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+                      value: autoFit,
+                      activeThumbColor: const Color(0xFF00ACC1),
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (val) {
+                        setDialogState(() {
+                          autoFit = val;
+                          props['autoFit'] = val;
+                        });
                         setState(() => syncLivePreview());
                       },
                     ),
@@ -1969,7 +2033,8 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                         final idx = _currentElements.indexWhere((e) => e.id == el.id);
                         if (idx != -1) {
                           final updatedMod = mod.copyWith(name: name, color: color, opacity: opacity, properties: props);
-                          _currentElements[idx] = el.copyWith(offset: Offset(offsetX, offsetY), layerIndex: selectedLayer, rotation: rotation, module: updatedMod);
+                          final newSize = autoFit ? Size(calcAutoWidth(textProp, fontSize), el.size.height) : el.size;
+                          _currentElements[idx] = el.copyWith(size: newSize, offset: Offset(offsetX, offsetY), layerIndex: selectedLayer, rotation: rotation, module: updatedMod);
                         }
                       });
                       _autoSave();
@@ -1987,7 +2052,7 @@ mixin _UIStudioDialogs on _UIStudioLogic {
         setState(() {
           final idx = _currentElements.indexWhere((e) => e.id == el.id);
           if (idx != -1) {
-            _currentElements[idx] = el.copyWith(rotation: initialRot, module: initialMod);
+            _currentElements[idx] = el.copyWith(size: initialSize, rotation: initialRot, module: initialMod);
           }
         });
       }

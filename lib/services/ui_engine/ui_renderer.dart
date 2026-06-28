@@ -373,16 +373,27 @@ class UIRenderer {
 
     final double fs = (module.properties['fontSize'] ?? 14.0).toDouble().clamp(10.0, 72.0).toDouble();
     final String overflowMode = module.properties['overflow']?.toString() ?? 'ellipsis';
+    final String alignStr = module.properties['textAlign']?.toString() ?? 'center';
+
+    TextAlign ta = TextAlign.center;
+    Alignment boxAlign = Alignment.center;
+    if (alignStr == 'left') {
+      ta = TextAlign.left;
+      boxAlign = Alignment.centerLeft;
+    } else if (alignStr == 'right') {
+      ta = TextAlign.right;
+      boxAlign = Alignment.centerRight;
+    }
 
     final textWidget = Text(
       displayText,
       style: TextStyle(color: module.color, fontSize: fs, fontWeight: FontWeight.w600),
-      textAlign: TextAlign.center,
+      textAlign: ta,
       overflow: overflowMode == 'ellipsis' ? TextOverflow.ellipsis : null,
     );
 
     return Container(
-      alignment: Alignment.center,
+      alignment: boxAlign,
       child: overflowMode == 'scroll' ? SingleChildScrollView(child: textWidget) : textWidget,
     );
   }
