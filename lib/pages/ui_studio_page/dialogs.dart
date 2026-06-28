@@ -122,8 +122,12 @@ mixin _UIStudioDialogs on _UIStudioLogic {
       _showCompactNumericEditorDialog(el);
       return;
     }
-    if (!el.isComposite && ['input', 'button'].contains(el.module?.type)) {
-      _showCompactLogicEditorDialog(el);
+    if (!el.isComposite && el.module?.type == 'input') {
+      _showCompactInputEditorDialog(el);
+      return;
+    }
+    if (!el.isComposite && el.module?.type == 'button') {
+      _showCompactButtonEditorDialog(el);
       return;
     }
     if (!el.isComposite && el.module?.type == 'linker') {
@@ -1503,8 +1507,8 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     });
   }
 
-  // ===== 紧凑型逻辑输入控件专属规格编辑器 (Input & Button) =====
-  void _showCompactLogicEditorDialog(UIElement el) {
+  // ===== 紧凑型输入热区控件专属规格编辑器 (Input) =====
+  void _showCompactInputEditorDialog(UIElement el) {
     if (el.module == null) return;
     if (_sceneLayers.isEmpty) {
       _sceneLayers = [LayerScene(id: 0, name: '默认图层 Level 0')];
@@ -1747,6 +1751,258 @@ mixin _UIStudioDialogs on _UIStudioLogic {
         offsetYCtrl.dispose();
         varCtrl.dispose();
         phCtrl.dispose();
+      });
+    });
+  }
+
+  // ===== 紧凑型点击按钮控件专属规格编辑器 (Button) =====
+  void _showCompactButtonEditorDialog(UIElement el) {
+    if (el.module == null) return;
+    if (_sceneLayers.isEmpty) {
+      _sceneLayers = [LayerScene(id: 0, name: '默认图层 Level 0')];
+    }
+    final mod = el.module!;
+    String name = mod.name;
+    int selectedLayer = el.layerIndex;
+    if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
+      selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex) ? _activeLayerIndex : _sceneLayers.first.id;
+    }
+    double offsetX = el.offset.dx;
+    double offsetY = el.offset.dy;
+
+    final props = Map<String, dynamic>.from(mod.properties);
+    String btnText = props['text']?.toString() ?? '点击热区';
+    final allowedActions = ['submit_chat', 'sync_vars', 'none'];
+    final rawAct = props['action']?.toString();
+    String action = (rawAct != null && allowedActions.contains(rawAct)) ? rawAct : 'submit_chat';
+    bool showOnRuntime = props['showTextOnRuntime'] == true;
+
+    Color color = mod.color;
+    double opacity = mod.opacity.clamp(0.0, 1.0).toDouble();
+    double rotation = ((el.rotation + 180) % 360 + 360) % 360 - 180;
+
+    final initialMod = mod.copyWith();
+    final initialRot = el.rotation;
+    bool isApplied = false;
+
+    void syncLivePreview() {
+      final idx = _currentElements.indexWhere((e) => e.id == el.id);
+      if (idx != -1) {
+        final curEl = _currentElements[idx];
+        if (curEl.module != null) {
+          _currentElements[idx] = curEl.copyWith(
+            rotation: rotation,
+            module: curEl.module!.copyWith(
+              color: color,
+              opacity: opacity,
+              properties: props,
+            ),
+          );
+        }
+      }
+    }
+
+    final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
+    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
+    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
+    final txtCtrl = TextEditingController(text: btnText)..selection = TextSelection.collapsed(offset: btnText.length);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('点击按钮规格编辑器', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                          IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            icon: const Icon(Icons.close, size: 20, color: Color(0xFF888896)),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                              const SizedBox(height: 4),
+                              TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
+                              const SizedBox(height: 12),
+
+                              const Text('归属独立图层', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                              const SizedBox(height: 4),
+                              DropdownButtonFormField<int>(
+                                initialValue: selectedLayer,
+                                decoration: _softInputDecoration(),
+                                dropdownColor: Colors.white,
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                                items: _sceneLayers.map((ly) => DropdownMenuItem<int>(value: ly.id, child: Text(ly.name))).toList(),
+                                onChanged: (v) => setDialogState(() => selectedLayer = v ?? _activeLayerIndex),
+                              ),
+                              const SizedBox(height: 12),
+
+                              const Text('绝对物理坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Expanded(child: TextField(controller: offsetXCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX)),
+                                  const SizedBox(width: 10),
+                                  Expanded(child: TextField(controller: offsetYCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY)),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              const Text('按钮展示文案 (创作排版期可见)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                              const SizedBox(height: 4),
+                              TextField(
+                                controller: txtCtrl,
+                                style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                                decoration: _softInputDecoration(),
+                                onChanged: (v) {
+                                  btnText = v;
+                                  props['text'] = v;
+                                  setState(() => syncLivePreview());
+                                },
+                              ),
+                              const SizedBox(height: 12),
+
+                              const Text('点击触发生效规则', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                              const SizedBox(height: 4),
+                              DropdownButtonFormField<String>(
+                                initialValue: action,
+                                decoration: _softInputDecoration(),
+                                dropdownColor: Colors.white,
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                                items: const [
+                                  DropdownMenuItem(value: 'submit_chat', child: Text('发送对话指令 (submit_chat)')),
+                                  DropdownMenuItem(value: 'sync_vars', child: Text('同步词典属性 (sync_vars)')),
+                                  DropdownMenuItem(value: 'none', child: Text('触控判定热区 (none)')),
+                                ],
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  setDialogState(() {
+                                    action = v;
+                                    props['action'] = v;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 12),
+
+                              SwitchListTile(
+                                title: const Text('运行对话期依然显现纯字', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                                subtitle: const Text('默认仅排版创作对齐显现，聊天中消隐为热区', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+                                value: showOnRuntime,
+                                activeThumbColor: const Color(0xFF00ACC1),
+                                contentPadding: EdgeInsets.zero,
+                                onChanged: (val) {
+                                  setDialogState(() {
+                                    showOnRuntime = val;
+                                    props['showTextOnRuntime'] = val;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 12),
+
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('旋转角度 (${rotation.round()}°)', style: const TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                                  InkWell(
+                                    onTap: () {
+                                      setDialogState(() => rotation = 0.0);
+                                      setState(() {
+                                        final idx = _currentElements.indexWhere((e) => e.id == el.id);
+                                        if (idx != -1) _currentElements[idx] = _currentElements[idx].copyWith(rotation: 0.0);
+                                      });
+                                    },
+                                    child: const Text('复位', style: TextStyle(fontSize: 11, color: Color(0xFFFF4081), fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: rotation.clamp(-180.0, 180.0).toDouble(), min: -180, max: 180, activeColor: const Color(0xFFFF4081),
+                                onChanged: (v) { setDialogState(() => rotation = v); setState(() => syncLivePreview()); },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                final idx = _currentElements.indexWhere((e) => e.id == el.id);
+                                if (idx != -1) _currentElements[idx] = el;
+                              });
+                              Navigator.pop(ctx);
+                            },
+                            child: const Text('取消', style: TextStyle(color: Color(0xFF888896))),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+                            onPressed: () {
+                              isApplied = true;
+                              Navigator.pop(ctx);
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
+                                setState(() {
+                                  final idx = _currentElements.indexWhere((e) => e.id == el.id);
+                                  if (idx != -1) {
+                                    final updatedMod = mod.copyWith(name: name, color: color, opacity: opacity, properties: props);
+                                    _currentElements[idx] = el.copyWith(offset: Offset(offsetX, offsetY), layerIndex: selectedLayer, rotation: rotation, module: updatedMod);
+                                  }
+                                });
+                                _autoSave();
+                              });
+                            },
+                            child: const Text('应用配置'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      if (!isApplied) {
+        setState(() {
+          final idx = _currentElements.indexWhere((e) => e.id == el.id);
+          if (idx != -1) _currentElements[idx] = el.copyWith(rotation: initialRot, module: initialMod);
+        });
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameCtrl.dispose();
+        offsetXCtrl.dispose();
+        offsetYCtrl.dispose();
+        txtCtrl.dispose();
       });
     });
   }
