@@ -54,7 +54,7 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildSlider(module),
+          child: _buildSlider(module, size),
         );
       case 'primitive_art':
       case 'surface_art':
@@ -280,21 +280,33 @@ class UIRenderer {
     );
   }
 
-  static Widget _buildSlider(UIModule module) {
-    final min = (module.properties['min'] ?? 0).toDouble();
-    final max = (module.properties['max'] ?? 100).toDouble();
+  static Widget _buildSlider(UIModule module, Size size) {
+    final double min = (module.properties['min'] ?? 0).toDouble();
+    final double max = (module.properties['max'] ?? 100).toDouble();
     double current = (module.properties['current'] ?? min).toDouble();
 
     final linkedVal = LinkerService.resolveTargetValue(module);
     if (linkedVal != null && linkedVal is num) {
       current = linkedVal.toDouble();
     }
-    current = current.clamp(min, max).toDouble();
+    final double actualMin = min <= max ? min : max;
+    final double actualMax = min <= max ? max : min;
+    current = current.clamp(actualMin, actualMax).toDouble();
+
+    final double ratio = actualMax > actualMin ? (current - actualMin) / (actualMax - actualMin) : 0.0;
 
     final fillColor = module.color;
-    final h = 32.0;
-    final knobSize = 18.0;
-    final knobLeft = ((current - min) / (max - min)).clamp(0.0, 1.0) * (100.0 - knobSize) + 5;
+    final int? trackColorVal = module.properties['trackColor'] as int?;
+    final Color trackColor = trackColorVal != null ? Color(trackColorVal) : Colors.grey.shade300;
+    final double knobSize = (module.properties['knobSize'] ?? 18.0).toDouble().clamp(12.0, 36.0).toDouble();
+    final String knobShape = module.properties['knobShape']?.toString() ?? 'circle';
+
+    final double h = size.height > 0 ? size.height : 32.0;
+    final double trackWidth = math.max(10.0, size.width - 20.0);
+    final double maxKnobLeft = math.max(0.0, trackWidth - knobSize);
+    final double knobLeft = 10.0 + ratio.clamp(0.0, 1.0) * maxKnobLeft;
+
+    final double activeTrackWidth = math.max(0.0, knobLeft - 10.0 + knobSize / 2);
 
     return SizedBox(
       height: h,
@@ -303,16 +315,20 @@ class UIRenderer {
           Positioned(
             left: 10,
             right: 10,
-            top: (h - 5) / 2,
-            height: 5,
-            child: Container(color: Colors.grey.shade300),
+            top: (h - 6) / 2,
+            height: 6,
+            child: Container(
+              decoration: BoxDecoration(color: trackColor, borderRadius: BorderRadius.circular(3)),
+            ),
           ),
           Positioned(
             left: 10,
-            top: (h - 5) / 2,
-            width: knobLeft - 5 + knobSize / 2,
-            height: 5,
-            child: Container(color: fillColor.withValues(alpha: 0.72)),
+            top: (h - 6) / 2,
+            width: activeTrackWidth,
+            height: 6,
+            child: Container(
+              decoration: BoxDecoration(color: fillColor.withValues(alpha: 0.72), borderRadius: BorderRadius.circular(3)),
+            ),
           ),
           Positioned(
             left: knobLeft,
@@ -322,7 +338,8 @@ class UIRenderer {
             child: Container(
               decoration: BoxDecoration(
                 color: fillColor,
-                shape: BoxShape.circle,
+                shape: knobShape == 'rectangle' ? BoxShape.rectangle : BoxShape.circle,
+                borderRadius: knobShape == 'rectangle' ? BorderRadius.circular(4) : null,
                 border: Border.all(color: Colors.white, width: 2),
                 boxShadow: [
                   BoxShadow(

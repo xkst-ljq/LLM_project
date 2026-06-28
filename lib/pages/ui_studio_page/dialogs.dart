@@ -1128,6 +1128,8 @@ mixin _UIStudioDialogs on _UIStudioLogic {
     String shapeStr = props['progressShape']?.toString() ?? 'rounded';
     final double shortestSide = math.min(el.size.width, el.size.height);
     double strokeWidth = (props['strokeWidth'] ?? (shortestSide * 0.12)).toDouble().clamp(2.0, shortestSide * 0.42).toDouble();
+    double knobSize = (props['knobSize'] ?? 18.0).toDouble().clamp(12.0, 36.0).toDouble();
+    String knobShape = props['knobShape']?.toString() ?? 'circle';
 
     Color color = mod.color;
     double opacity = mod.opacity.clamp(0.0, 1.0).toDouble();
@@ -1319,26 +1321,74 @@ mixin _UIStudioDialogs on _UIStudioLogic {
                         ),
                         const SizedBox(height: 12),
                       ],
+                    ],
 
-                      const Text('底槽背景色调色板', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8, runSpacing: 8,
+                    const Text('底槽与背景调色板', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8, runSpacing: 8,
+                      children: [
+                        Colors.grey.shade200, Colors.white, const Color(0xFF37474F), const Color(0xFF263238), Colors.black, const Color(0xFFFF80AB), const Color(0xFFFFCC80), const Color(0xFF80D8FF), const Color(0xFFB9F6CA)
+                      ].map((c) {
+                        final sel = trackColor.toARGB32() == c.toARGB32();
+                        return GestureDetector(
+                          onTap: () {
+                            setDialogState(() {
+                              trackColor = c;
+                              props['trackColor'] = c.toARGB32();
+                            });
+                            setState(() => syncLivePreview());
+                          },
+                          child: Container(width: 28, height: 28, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: sel ? const Color(0xFF00ACC1) : Colors.black12, width: sel ? 2.5 : 1))),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (mod.type == 'slider') ...[
+                      const Text('滑块把手轮廓外形', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const SizedBox(height: 6),
+                      Row(
                         children: [
-                          Colors.grey.shade200, Colors.white, const Color(0xFF37474F), const Color(0xFF263238), Colors.black, const Color(0xFFFF80AB), const Color(0xFFFFCC80), const Color(0xFF80D8FF), const Color(0xFFB9F6CA)
-                        ].map((c) {
-                          final sel = trackColor.toARGB32() == c.toARGB32();
-                          return GestureDetector(
-                            onTap: () {
-                              setDialogState(() {
-                                trackColor = c;
-                                props['trackColor'] = c.toARGB32();
-                              });
-                              setState(() => syncLivePreview());
-                            },
-                            child: Container(width: 28, height: 28, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: sel ? const Color(0xFF00ACC1) : Colors.black12, width: sel ? 2.5 : 1))),
+                          {'id': 'circle', 'label': '圆形把手'},
+                          {'id': 'rectangle', 'label': '方形把手'},
+                        ].map((item) {
+                          final sel = knobShape == item['id'];
+                          return Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setDialogState(() {
+                                  knobShape = item['id']!;
+                                  props['knobShape'] = knobShape;
+                                });
+                                setState(() => syncLivePreview());
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: sel ? const Color(0xFF00ACC1) : const Color(0xFFF5F5F7),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(item['label']!, style: TextStyle(fontSize: 12, color: sel ? Colors.white : const Color(0xFF111116), fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
+                              ),
+                            ),
                           );
                         }).toList(),
+                      ),
+                      const SizedBox(height: 12),
+
+                      Text('把手像素大小 (${knobSize.round()}px)', style: const TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      Slider(
+                        value: knobSize, min: 12.0, max: 36.0, activeColor: const Color(0xFF00ACC1),
+                        onChanged: (v) {
+                          setDialogState(() {
+                            knobSize = v;
+                            props['knobSize'] = v;
+                          });
+                          setState(() => syncLivePreview());
+                        },
                       ),
                       const SizedBox(height: 12),
                     ],
