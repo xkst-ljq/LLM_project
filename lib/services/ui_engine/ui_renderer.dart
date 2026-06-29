@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -8,6 +10,10 @@ import 'ui_models.dart';
 class UIRenderer {
   /// 将 UIElement 渲染为 Flutter Widget
   static Widget render(BuildContext context, UIElement element) {
+    final bool isStudio = UISceneModeScope.of(context);
+    if (!isStudio && LinkerService.isTargetHiddenBySwitch(element.id)) {
+      return const SizedBox.shrink();
+    }
     Widget widget;
     if (element.isComposite && element.composite != null) {
       widget = _renderComposite(context, element.composite!, element.size);
@@ -48,7 +54,25 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildInputBlock(module),
+          child: _buildInputBlock(context, module),
+        );
+      case 'switch':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildSwitchBlock(context, module),
+        );
+      case 'line':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildLineBlock(module, size),
+        );
+      case 'image':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildImageBlock(context, module),
         );
       case 'slider':
         return SizedBox(
@@ -70,7 +94,7 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildButton(module),
+          child: _buildButton(context, module),
         );
       case 'surface':
       case 'base_box':
@@ -356,10 +380,26 @@ class UIRenderer {
     );
   }
 
-  static Widget _buildButton(UIModule module) {
-    // 原子按钮只提供透明点击逻辑热区，不自带视觉外观。
-    // 视觉按钮 = surface + text/icon + button 逻辑区的复合块。
-    return const SizedBox.expand();
+  static Widget _buildButton(BuildContext context, UIModule module) {
+    final bool isStudio = UISceneModeScope.of(context);
+    final bool showOnRuntime = module.properties['showTextOnRuntime'] == true;
+    if (!isStudio && !showOnRuntime) {
+      return const SizedBox.expand();
+    }
+    final btnText = module.properties['text']?.toString() ?? module.name;
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: module.color.withValues(alpha: module.opacity * 0.15),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: module.color.withValues(alpha: 0.45), width: 1),
+      ),
+      child: Text(
+        btnText,
+        style: TextStyle(color: module.color, fontSize: 12, fontWeight: FontWeight.bold),
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
   }
 
   /// 显示表达式求值（{{key}} 模板替换）
@@ -453,10 +493,166 @@ class UIRenderer {
     return LinkerService.resolveLinkedTextValue(textModule);
   }
 
-  static Widget _buildInputBlock(UIModule module) {
-    // 原子输入框只提供透明输入逻辑热区，不自带边框、底色或 placeholder。
-    // 视觉输入框 = surface + placeholder text + input 逻辑区的复合块。
-    return const SizedBox.expand();
+  static Widget _buildInputBlock(BuildContext context, UIModule module) {
+    final bool isStudio = UISceneModeScope.of(context);
+    if (!isStudio) {
+      return const SizedBox.expand();
+    }
+    String placeholder = module.properties['placeholder']?.toString() ?? '请输入...';
+    if (placeholder == '请输入...' || placeholder.trim().isEmpty) {
+      final linkedVal = LinkerService.resolveTargetValue(module);
+      if (linkedVal != null && linkedVal.toString().trim().isNotEmpty) {
+        placeholder = '请输入${linkedVal.toString().trim()}...';
+      }
+    }
+    return Container(
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: module.color.withValues(alpha: module.opacity * 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: module.color.withValues(alpha: 0.38), width: 1),
+      ),
+      child: Text(
+        placeholder,
+        style: TextStyle(color: module.color.withValues(alpha: 0.75), fontSize: 13),
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  static Widget _buildImageBlock(BuildContext context, UIModule module) {
+    final props = module.properties;
+    String url = props['url']?.toString() ?? '';
+    String assetPath = props['assetPath']?.toString() ?? '';
+    final String fitStr = props['fit']?.toString() ?? 'cover';
+    final String shapeStr = props['shape']?.toString() ?? 'rectangle';
+    final double radiusVal = (props['borderRadius'] ?? 8.0).toDouble();
+
+    final linkedVal = LinkerService.resolveTargetValue(module);
+    if (linkedVal != null && linkedVal.toString().trim().isNotEmpty) {
+      final str = linkedVal.toString().trim();
+      if (str.startsWith('http') || str.startsWith('data:image')) {
+        url = str;
+      } else {
+        assetPath = str;
+      }
+    }
+
+    BoxFit fit = BoxFit.cover;
+    if (fitStr == 'contain') { fit = BoxFit.contain; }
+    else if (fitStr == 'fill') { fit = BoxFit.fill; }
+
+    Widget imgContent;
+    if (url.isNotEmpty) {
+      imgContent = Image.network(
+        url,
+        fit: fit,
+        errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '加载网络图片失败'),
+      );
+    } else if (assetPath.isNotEmpty) {
+      if (assetPath.startsWith('/') || assetPath.contains('\\')) {
+        imgContent = Image.file(
+          File(assetPath),
+          fit: fit,
+          errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '读取本地文件失败'),
+        );
+      } else {
+        imgContent = Image.asset(
+          assetPath,
+          fit: fit,
+          errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '未找到内部资产图片'),
+        );
+      }
+    } else {
+      imgContent = _buildImagePlaceholder(module, '静态位图占位热区\n(请在编辑器设定图片)');
+    }
+
+    if (shapeStr == 'none') {
+      return imgContent;
+    } else if (shapeStr == 'circle') {
+      return ClipOval(child: imgContent);
+    } else if (shapeStr == 'capsule') {
+      return ClipRRect(borderRadius: BorderRadius.circular(999), child: imgContent);
+    } else if (shapeStr == 'heart') {
+      return ClipPath(clipper: _PathClipper(getHeartPath), child: imgContent);
+    } else if (shapeStr == 'star5') {
+      return ClipPath(clipper: _PathClipper((r) => getStarPath(r, 5, 0.45)), child: imgContent);
+    } else if (radiusVal > 0) {
+      return ClipRRect(borderRadius: BorderRadius.circular(radiusVal), child: imgContent);
+    }
+    return imgContent;
+  }
+
+  static Widget _buildImagePlaceholder(UIModule module, String tip) {
+    return Container(
+      color: module.color.withValues(alpha: module.opacity * 0.15),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(4),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.image_outlined, color: module.color, size: 22),
+          const SizedBox(height: 2),
+          Text(
+            tip,
+            style: TextStyle(color: module.color, fontSize: 9, height: 1.2),
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _buildLineBlock(UIModule module, Size size) {
+    final props = module.properties;
+    final double th = (props['thickness'] ?? 2.0).toDouble().clamp(1.0, 32.0).toDouble();
+    final String ls = props['lineStyle']?.toString() ?? 'solid';
+    final String ax = props['axis']?.toString() ?? 'horizontal';
+    final double dl = (props['dashLength'] ?? 6.0).toDouble();
+    final double gl = (props['gapLength'] ?? 3.0).toDouble();
+
+    return CustomPaint(
+      painter: _MultiLinePainter(color: module.color, thickness: th, lineStyle: ls, axis: ax, dashLength: dl, gapLength: gl),
+      size: size,
+    );
+  }
+
+  static Widget _buildSwitchBlock(BuildContext context, UIModule module) {
+    final int? inactiveColorVal = module.properties['inactiveTrackColor'] as int?;
+    final Color inactiveColor = inactiveColorVal != null ? Color(inactiveColorVal) : Colors.grey.shade300;
+    final int? thumbColorVal = module.properties['thumbColor'] as int?;
+    final Color thumbColor = thumbColorVal != null ? Color(thumbColorVal) : Colors.white;
+
+    return StatefulBuilder(
+      builder: (ctx, setState) {
+        final bool currentVal = module.properties['value'] != false;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            module.properties['value'] = !currentVal;
+            setState(() {});
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: currentVal ? module.color : inactiveColor,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: currentVal ? module.color : Colors.grey.shade400, width: 1),
+            ),
+            alignment: currentVal ? Alignment.centerRight : Alignment.centerLeft,
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(color: thumbColor, shape: BoxShape.circle, boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 1))]),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// 联动器节点渲染（MVP）
@@ -750,6 +946,88 @@ class UIPrimitiveArtPainter extends CustomPainter {
   bool shouldRepaint(covariant UIPrimitiveArtPainter oldDelegate) {
     return oldDelegate.properties != properties;
   }
+}
+
+class _MultiLinePainter extends CustomPainter {
+  final Color color;
+  final double thickness;
+  final String lineStyle;
+  final String axis;
+  final double dashLength;
+  final double gapLength;
+
+  _MultiLinePainter({required this.color, required this.thickness, required this.lineStyle, required this.axis, required this.dashLength, required this.gapLength});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = thickness
+      ..strokeCap = lineStyle == 'dotted' ? StrokeCap.round : StrokeCap.butt;
+
+    final bool isHoriz = axis != 'vertical';
+    final double cx = size.width / 2;
+    final double cy = size.height / 2;
+
+    void drawLineSegment(Offset p1, Offset p2) {
+      if (lineStyle == 'solid') {
+        canvas.drawLine(p1, p2, paint);
+      } else if (lineStyle == 'dotted') {
+        final double step = thickness * 2.5;
+        final double totalLen = (p2 - p1).distance;
+        final Offset dir = (p2 - p1) / (totalLen > 0 ? totalLen : 1.0);
+        var dist = 0.0;
+        while (dist <= totalLen) {
+          canvas.drawPoints(ui.PointMode.points, [p1 + dir * dist], paint);
+          dist += step;
+        }
+      } else {
+        final double dl = math.max(1.0, dashLength);
+        final double gl = math.max(1.0, gapLength);
+        final double totalLen = (p2 - p1).distance;
+        final Offset dir = (p2 - p1) / (totalLen > 0 ? totalLen : 1.0);
+        var dist = 0.0;
+        while (dist < totalLen) {
+          final double next = math.min(totalLen, dist + dl);
+          canvas.drawLine(p1 + dir * dist, p1 + dir * next, paint);
+          dist = next + gl;
+        }
+      }
+    }
+
+    if (lineStyle == 'curve') {
+      final curvePath = Path();
+      if (isHoriz) {
+        curvePath.moveTo(0, cy);
+        curvePath.quadraticBezierTo(size.width / 2, size.height * 0.88, size.width, cy);
+      } else {
+        curvePath.moveTo(cx, 0);
+        curvePath.quadraticBezierTo(size.width * 0.88, size.height / 2, cx, size.height);
+      }
+      canvas.drawPath(curvePath, paint);
+    } else if (lineStyle == 'double') {
+      final double offset = thickness * 1.5;
+      if (isHoriz) {
+        drawLineSegment(Offset(0, cy - offset), Offset(size.width, cy - offset));
+        drawLineSegment(Offset(0, cy + offset), Offset(size.width, cy + offset));
+      } else {
+        drawLineSegment(Offset(cx - offset, 0), Offset(cx - offset, size.height));
+        drawLineSegment(Offset(cx + offset, 0), Offset(cx + offset, size.height));
+      }
+    } else {
+      if (isHoriz) {
+        drawLineSegment(Offset(0, cy), Offset(size.width, cy));
+      } else {
+        drawLineSegment(Offset(cx, 0), Offset(cx, size.height));
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MultiLinePainter old) =>
+      old.color != color || old.thickness != thickness || old.lineStyle != lineStyle || old.axis != axis || old.dashLength != dashLength || old.gapLength != gapLength;
 }
 
 class _RingProgressBarPainter extends CustomPainter {

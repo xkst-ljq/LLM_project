@@ -205,6 +205,12 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         return const Size(100, 34);
       case 'input':
         return const Size(140, 34);
+      case 'switch':
+        return const Size(100, 36);
+      case 'line':
+        return const Size(120, 20);
+      case 'image':
+        return const Size(80, 80);
       case 'linker':
         return const Size(120, 42);
       case 'surface':
@@ -239,8 +245,17 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       if (progShape == 'ring') return UIModuleShape.circle;
       return UIModuleShape.capsule;
     }
-    if (mod.type == 'text' || mod.type == 'input' || mod.type == 'button') {
+    if (mod.type == 'text' || mod.type == 'input' || mod.type == 'button' || mod.type == 'line') {
       return UIModuleShape.rectangle;
+    }
+    if (mod.type == 'switch') {
+      return UIModuleShape.capsule;
+    }
+    if (mod.type == 'image') {
+      final shapeStr = mod.properties['shape']?.toString();
+      if (shapeStr == 'circle') return UIModuleShape.circle;
+      if (shapeStr == 'capsule') return UIModuleShape.capsule;
+      return UIModuleShape.rounded;
     }
     return mod.shape;
   }
@@ -256,6 +271,15 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     }
     if (mod.type == 'text' || mod.type == 'input' || mod.type == 'button') {
       return 4;
+    }
+    if (mod.type == 'line') {
+      return 0;
+    }
+    if (mod.type == 'switch') {
+      return 999;
+    }
+    if (mod.type == 'image') {
+      return (mod.properties['borderRadius'] ?? 8.0).toDouble();
     }
     return mod.borderRadius;
   }
@@ -443,7 +467,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     for (final el in _currentElements) {
       if (el.isComposite) continue;
       final type = el.module?.type;
-      if (type == 'progress' || type == 'slider' || type == 'input' || type == 'button') {
+      if (type == 'progress' || type == 'slider' || type == 'input' || type == 'button' || type == 'text' || type == 'switch') {
         sources.add({
           'id': el.id,
           'name': el.module?.name ?? '未命名',
@@ -459,7 +483,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     for (final el in _currentElements) {
       if (el.isComposite) continue;
       final type = el.module?.type;
-      if (type == 'text' || type == 'progress' || type == 'slider') {
+      if (type != null && type != 'linker') {
         targets.add({
           'id': el.id,
           'name': el.module?.name ?? '未命名',

@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../services/image_pick_service.dart';
 import '../../services/ui_engine/linker_service.dart';
 import '../../services/ui_engine/ui_asset_service.dart';
 import '../../services/ui_engine/ui_models.dart';
@@ -16,6 +17,9 @@ part 'dialogs.dart';
 part 'dialogs/compact_editors_dialogs.dart';
 part 'dialogs/studio_menu_dialogs.dart';
 part 'drawers.dart';
+part 'editors/image_editor.dart';
+part 'editors/line_editor.dart';
+part 'editors/switch_editor.dart';
 part 'linker.dart';
 part 'logic.dart';
 part 'painters.dart';
@@ -34,7 +38,7 @@ class UIStudioPage extends StatefulWidget {
 }
 
 class _UIStudioPageState extends State<UIStudioPage>
-    with _UIStudioLogic, _UIStudioLinker, _StudioMenuDialogs, _CompactEditorsDialogs, _UIStudioDialogs, _UIStudioDrawers {
+    with _UIStudioLogic, _UIStudioLinker, _StudioMenuDialogs, _CompactEditorsDialogs, _SwitchEditorDialog, _LineEditorDialog, _ImageEditorDialog, _UIStudioDialogs, _UIStudioDrawers {
   // ============================================================
   //  手势临时锚定状态（仅与手势交互相关，保留在主文件）
   // ============================================================

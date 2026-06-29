@@ -1,7 +1,7 @@
 part of 'ui_studio_page.dart';
 
 /// 所有对话框与底部弹窗
-mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDialogs {
+mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDialogs, _SwitchEditorDialog, _LineEditorDialog, _ImageEditorDialog {
   // ===== 元素编辑器主调度分流入口 =====
   void _showTailoredPrecisionEditorDialog(UIElement el) {
     if (el.isComposite) {
@@ -20,6 +20,12 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
       _showCompactInputEditorDialog(el);
     } else if (type == 'button') {
       _showCompactButtonEditorDialog(el);
+    } else if (type == 'switch') {
+      _showCompactSwitchEditorDialog(el);
+    } else if (type == 'line') {
+      _showCompactLineEditorDialog(el);
+    } else if (type == 'image') {
+      _showCompactImageEditorDialog(el);
     } else if (type == 'linker') {
       _showCompactLinkerEditorDialog(el);
     }

@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:llm_project/services/ui_engine/ui_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'ui_models.dart';
 
 class UIAssetService {
   static const String _storageKey = 'global_ui_assets_flat_foundation_v2';
@@ -92,6 +92,14 @@ class UIAssetService {
       properties: {'variable': 'var.input'},
     );
 
+    final switchLogic = UIModule(
+      id: 'atom_logic_switch_bool',
+      name: '逻辑原子 / 布尔开关',
+      type: 'switch',
+      color: const Color(0xFF00E676),
+      properties: {'value': true, 'variable': 'switch_var'},
+    );
+
     final slider = UIModule(
       id: 'atom_slider_basic',
       name: '滑块原子',
@@ -101,22 +109,19 @@ class UIAssetService {
     );
 
     final line = UIModule(
-      id: 'atom_line_divider',
-      name: '分隔线原子',
-      type: 'primitive_art',
+      id: 'atom_line_multi',
+      name: '多功能线段原子',
+      type: 'line',
       color: const Color(0xFFB0BEC5),
-      properties: {
-        'layers': [
-          UIPrimitiveLayer(
-            id: 'line_0',
-            kind: 'line',
-            offset: const Offset(0, 0.5),
-            size: const Size(1, 0),
-            color: const Color(0xFFB0BEC5),
-            properties: {'width': 1.2},
-          ).toJson(),
-        ],
-      },
+      properties: {'thickness': 2.0, 'lineStyle': 'solid', 'axis': 'horizontal', 'dashLength': 6.0, 'gapLength': 3.0},
+    );
+
+    final imageSlot = UIModule(
+      id: 'atom_image_holder',
+      name: '静态位图插槽原子',
+      type: 'image',
+      color: const Color(0xFF2979FF),
+      properties: {'url': '', 'fit': 'cover', 'shape': 'rectangle', 'borderRadius': 8.0, 'assetPath': ''},
     );
 
     _modules = {
@@ -128,8 +133,10 @@ class UIAssetService {
       text.id: text,
       buttonLogic.id: buttonLogic,
       inputLogic.id: inputLogic,
+      switchLogic.id: switchLogic,
       slider.id: slider,
       line.id: line,
+      imageSlot.id: imageSlot,
     };
 
     // 默认复合资产清空：复合组件由工作台按需构建。
