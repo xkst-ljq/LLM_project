@@ -13,6 +13,8 @@ import '../../services/ui_engine/ui_models.dart';
 import '../../services/ui_engine/ui_renderer.dart';
 
 part 'dialogs.dart';
+part 'dialogs/compact_editors_dialogs.dart';
+part 'dialogs/studio_menu_dialogs.dart';
 part 'drawers.dart';
 part 'linker.dart';
 part 'logic.dart';
@@ -32,7 +34,7 @@ class UIStudioPage extends StatefulWidget {
 }
 
 class _UIStudioPageState extends State<UIStudioPage>
-    with _UIStudioLogic, _UIStudioLinker, _UIStudioDialogs, _UIStudioDrawers {
+    with _UIStudioLogic, _UIStudioLinker, _StudioMenuDialogs, _CompactEditorsDialogs, _UIStudioDialogs, _UIStudioDrawers {
   // ============================================================
   //  手势临时锚定状态（仅与手势交互相关，保留在主文件）
   // ============================================================
@@ -141,15 +143,17 @@ class _UIStudioPageState extends State<UIStudioPage>
                         }
                       },
                       child: ClipRect(
-                        child: CustomPaint(
-                          painter: StudioWarmGridPainter(_workspaceOffset),
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              ..._buildLinkerConnectionsLayer(),
-                              if (_isDraggingConnection &&
-                                  _dragConnectionEnd != null)
-                                _buildTemporaryConnectionLine(),
+                        child: UISceneModeScope(
+                          isStudioCreationMode: true,
+                          child: CustomPaint(
+                            painter: StudioWarmGridPainter(_workspaceOffset),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                ..._buildLinkerConnectionsLayer(),
+                                if (_isDraggingConnection &&
+                                    _dragConnectionEnd != null)
+                                  _buildTemporaryConnectionLine(),
                               ...() {
                                 LinkerService.updateElementSnapshot(sortedElements);
                                 return sortedElements.map((el) {
@@ -163,12 +167,13 @@ class _UIStudioPageState extends State<UIStudioPage>
                                     top: _workspaceOffset.dy + el.offset.dy - p,
                                     width: el.size.width + p * 2,
                                     height: el.size.height + p * 2,
-                                    child: _buildTrueSingleHandleNode(el, p),
+                                    child: Builder(builder: (nCtx) => _buildTrueSingleHandleNode(nCtx, el, p)),
                                   );
                                 });
                               }(),
                             ],
                           ),
+                        ),
                         ),
                       ),
                     ),
@@ -355,7 +360,7 @@ class _UIStudioPageState extends State<UIStudioPage>
   // ============================================================
   //  节点构建（与手势、Linker、旋转把手高度耦合，保留在主文件）
   // ============================================================
-  Widget _buildTrueSingleHandleNode(UIElement el, double p) {
+  Widget _buildTrueSingleHandleNode(BuildContext nodeCtx, UIElement el, double p) {
     final bool isTransformationActive = _selectedTransformationId == el.id;
     final bool isCurrentLayerActive = el.layerIndex == _activeLayerIndex;
 
@@ -366,7 +371,7 @@ class _UIStudioPageState extends State<UIStudioPage>
           child: SizedBox(
             width: el.size.width,
             height: el.size.height,
-            child: UIRenderer.render(context, el),
+            child: UIRenderer.render(nodeCtx, el),
           ),
         ),
       );
@@ -381,7 +386,7 @@ class _UIStudioPageState extends State<UIStudioPage>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          UIRenderer.render(context, elNoRot),
+          UIRenderer.render(nodeCtx, elNoRot),
           if (isTransformationActive && !isLinker)
             Positioned.fill(
               child: IgnorePointer(

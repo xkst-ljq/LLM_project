@@ -469,19 +469,4 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     }
     return targets;
   }
-
-  // ============================================================
-  //  属性同步
-  // ============================================================
-  Map<String, dynamic> _syncArtModuleProperties({
-    required UIModule module,
-    required Map<String, dynamic> props,
-    required Color color,
-    required double opacity,
-    required UIModuleShape shape,
-    required UIModuleMaterial material,
-    required double borderRadius,
-  }) {
-    return props;
-  }
 }

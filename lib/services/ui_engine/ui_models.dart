@@ -1,5 +1,17 @@
 import 'package:flutter/material.dart';
 
+class UISceneModeScope extends InheritedWidget {
+  final bool isStudioCreationMode;
+  const UISceneModeScope({super.key, required this.isStudioCreationMode, required super.child});
+
+  static bool of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<UISceneModeScope>()?.isStudioCreationMode ?? false;
+  }
+
+  @override
+  bool updateShouldNotify(UISceneModeScope old) => old.isStudioCreationMode != isStudioCreationMode;
+}
+
 /// UI 模块的材质类型
 enum UIModuleMaterial {
   glass,      // 毛玻璃
