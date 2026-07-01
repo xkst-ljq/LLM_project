@@ -104,9 +104,16 @@ class _SelectEditorState extends State<SelectEditor> {
   // ==================== 保存与删除 ====================
 
   void _save() {
+    final prevCurrent = widget.initialProperties['current']?.toString();
+    final validCurrent = (prevCurrent != null && _options.contains(prevCurrent))
+        ? prevCurrent
+        : _defaultValue;
+
     final newProps = {
       'options': _options,
       'defaultValue': _defaultValue,
+      'current': validCurrent,
+      'name': _nameController.text.trim(),
       'sessionVar': _varController.text.trim(),
       'accentColor': _accentColor.toARGB32(),
       'type': 'select',
@@ -164,21 +171,23 @@ class _SelectEditorState extends State<SelectEditor> {
             ),
 
             // 内容区
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHostSection(),
-                  const SizedBox(height: 20),
-                  _buildOptionsSection(),
-                  const SizedBox(height: 20),
-                  _buildDefaultSection(),
-                  const SizedBox(height: 20),
-                  _buildVarSection(),
-                  const SizedBox(height: 20),
-                  _buildAccentColorSection(),
-                ],
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHostSection(),
+                    const SizedBox(height: 20),
+                    _buildOptionsSection(),
+                    const SizedBox(height: 20),
+                    _buildDefaultSection(),
+                    const SizedBox(height: 20),
+                    _buildVarSection(),
+                    const SizedBox(height: 20),
+                    _buildAccentColorSection(),
+                  ],
+                ),
               ),
             ),
 

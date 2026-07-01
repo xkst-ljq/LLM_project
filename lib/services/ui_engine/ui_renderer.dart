@@ -893,7 +893,7 @@ class UIRenderer {
   /// 白底微圆角矩形，左侧主区域选中，右侧箭头热区点选悬浮展开选项列表，无接线孔
   static Widget _buildSelectBlock(BuildContext context, UIElement element, UIModule module, Size size) {
     final props = module.properties;
-    final String currentText = props['current']?.toString() ?? '选项 1';
+    final String currentText = props['current']?.toString() ?? props['defaultValue']?.toString() ?? '选项 1';
     final List<String> options = (props['options'] as List?)?.map((e) => e.toString()).toList() ?? ['选项 1'];
     final bool isStudio = UISceneModeScope.of(context);
 

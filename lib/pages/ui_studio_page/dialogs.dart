@@ -31,9 +31,7 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
     } else if (type == 'math_node') {
       _showCompactMathNodeEditorDialog(el);
     } else if (type == 'select') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('下拉单选控件专属编辑设置面板将在第二步中装载'), duration: Duration(seconds: 1)),
-      );
+      _showCompactSelectEditorDialog(el);
     }
   }
 
@@ -194,6 +192,39 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ===== 紧凑型下拉单选框控件专属规格编辑器 (Select) =====
+  void _showCompactSelectEditorDialog(UIElement el) {
+    if (el.module == null) return;
+    final mod = el.module!;
+    showDialog(
+      context: context,
+      builder: (ctx) => SelectEditor(
+        initialProperties: Map<String, dynamic>.from(mod.properties),
+        moduleName: mod.name,
+        layerId: el.layerIndex,
+        initialPosition: el.offset,
+        onDelete: () {
+          _deleteElement(el.id);
+        },
+        onSave: (newProps) {
+          setState(() {
+            final idx = _currentElements.indexWhere((e) => e.id == el.id);
+            if (idx != -1) {
+              final newName = newProps['name']?.toString() ?? mod.name;
+              final updatedMod = mod.copyWith(
+                name: newName,
+                properties: newProps,
+                color: Color((newProps['accentColor'] as int?) ?? mod.color.toARGB32()),
+              );
+              _currentElements[idx] = el.copyWith(module: updatedMod);
+            }
+          });
+          _autoSave();
+        },
       ),
     );
   }

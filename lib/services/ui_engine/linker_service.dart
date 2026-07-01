@@ -89,13 +89,14 @@ class LinkerService {
       final scheme = linkerData['scheme']?.toString();
       if (scheme == null || scheme.trim().isEmpty || scheme == '未配置') continue;
 
-      if (['current_to_text', 'to_string', 'num_to_current'].contains(scheme)) {
+      if (['current_to_text', 'to_string', 'num_to_current', 'select_to_text', 'str_to_select'].contains(scheme)) {
         final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
             _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'defaultValue', visitedSet) ??
             sourceModule.properties['text'] ??
             sourceModule.name;
         if (val != null) {
-          if (targetModule.type == 'text' || targetModule.type == 'input') {
+          if (targetModule.type == 'text' || targetModule.type == 'input' || targetModule.type == 'select') {
             return val is num ? val.toStringAsFixed(0) : val.toString();
           }
           return val is num ? val.toDouble() : double.tryParse(val.toString());
@@ -173,6 +174,8 @@ class LinkerService {
         val = resolveTargetValue(module) ?? module.properties['text'] ?? module.properties['value'] ?? '';
       } else if (module.type == 'switch') {
         val = resolveTargetValue(module) ?? module.properties['value'] ?? true;
+      } else if (module.type == 'select') {
+        val = resolveTargetValue(module) ?? module.properties['current'] ?? module.properties['defaultValue'] ?? '';
       }
 
       if (val != null) {

@@ -12,6 +12,7 @@ import '../../services/ui_engine/linker_service.dart';
 import '../../services/ui_engine/ui_asset_service.dart';
 import '../../services/ui_engine/ui_models.dart';
 import '../../services/ui_engine/ui_renderer.dart';
+import 'editors/select_editor.dart';
 
 part 'dialogs.dart';
 part 'dialogs/compact_editors_dialogs.dart';
