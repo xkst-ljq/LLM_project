@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 
 class UISceneModeScope extends InheritedWidget {
   final bool isStudioCreationMode;
-  const UISceneModeScope({super.key, required this.isStudioCreationMode, required super.child});
+  final String? selectedElementId;
+  const UISceneModeScope({super.key, required this.isStudioCreationMode, this.selectedElementId, required super.child});
 
   static bool of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<UISceneModeScope>()?.isStudioCreationMode ?? false;
   }
 
+  static String? selectedIdOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<UISceneModeScope>()?.selectedElementId;
+  }
+
   @override
-  bool updateShouldNotify(UISceneModeScope old) => old.isStudioCreationMode != isStudioCreationMode;
+  bool updateShouldNotify(UISceneModeScope old) => old.isStudioCreationMode != isStudioCreationMode || old.selectedElementId != selectedElementId;
 }
 
 /// UI 模块的材质类型

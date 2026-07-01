@@ -124,6 +124,29 @@ class UIAssetService {
       properties: {'url': '', 'fit': 'cover', 'shape': 'rectangle', 'borderRadius': 8.0, 'assetPath': ''},
     );
 
+    final mathNodeLogic = UIModule(
+      id: 'atom_logic_math_node',
+      name: '逻辑原子 / 算术计算节点',
+      type: 'math_node',
+      color: const Color(0xFFD1C4E9),
+      properties: {
+        'operation': '+',
+        'value': 1.0,
+        'extractMethod': 'first',
+        'extractKey': '',
+        'extractIndex': 0,
+        'delimiter': '/',
+      },
+    );
+
+    final selectBasic = UIModule(
+      id: 'atom_select_basic',
+      name: '交互原子 / 下拉单选框',
+      type: 'select',
+      color: const Color(0xFF7E57C2),
+      properties: {'options': ['选项 1'], 'current': '选项 1', 'variable': 'var.select'},
+    );
+
     _modules = {
       dataBar.id: dataBar,
       surfaceBase.id: surfaceBase,
@@ -137,6 +160,8 @@ class UIAssetService {
       slider.id: slider,
       line.id: line,
       imageSlot.id: imageSlot,
+      mathNodeLogic.id: mathNodeLogic,
+      selectBasic.id: selectBasic,
     };
 
     // 默认复合资产清空：复合组件由工作台按需构建。

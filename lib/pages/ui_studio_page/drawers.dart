@@ -590,6 +590,74 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    const Text('算术计算节点',
+                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(
+                        id: 'math_node_mvp',
+                        name: '算术节点',
+                        type: 'math_node',
+                        properties: {
+                          'operation': '+',
+                          'value': 1.0,
+                          'extractMethod': 'first',
+                          'delimiter': '/',
+                        },
+                        color: const Color(0xFFD1C4E9),
+                      ),
+                      Container(
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEDE7F6),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFF9575CD), width: 1.2),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          '算术 : +1',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF512DA8),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('下拉单选节点',
+                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(
+                        id: 'select_mvp',
+                        name: '下拉单选框',
+                        type: 'select',
+                        properties: {
+                          'options': ['选项 1'],
+                          'current': '选项 1',
+                          'variable': 'var.select',
+                        },
+                        color: const Color(0xFF7E57C2),
+                      ),
+                      Container(
+                        height: 34,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFD0D0D8)),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('选项 1', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                            Text('▼', style: TextStyle(fontSize: 8, color: Color(0xFF888896))),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),

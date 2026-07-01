@@ -18,7 +18,7 @@ class UIRenderer {
     if (element.isComposite && element.composite != null) {
       widget = _renderComposite(context, element.composite!, element.size);
     } else if (!element.isComposite && element.module != null) {
-      widget = _renderModule(context, element.module!, element.size);
+      widget = _renderModule(context, element, element.module!, element.size);
     } else {
       widget = const SizedBox();
     }
@@ -33,7 +33,7 @@ class UIRenderer {
     return widget;
   }
 
-  static Widget _renderModule(BuildContext context, UIModule module, Size size) {
+  static Widget _renderModule(BuildContext context, UIElement element, UIModule module, Size size) {
     // 原子部件只渲染自己的单一职责：
     // progress = 一根条；text = 一段文字；surface/base_box = 一个视觉表面；
     // button/input = 透明逻辑热区，不自带任何边框或底色。
@@ -112,6 +112,18 @@ class UIRenderer {
           width: size.width,
           height: size.height,
           child: _buildLinkerNode(module, size),
+        );
+      case 'math_node':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildMathNodeBlock(module, size),
+        );
+      case 'select':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildSelectBlock(context, element, module, size),
         );
       default:
         return SizedBox(
@@ -784,6 +796,233 @@ class UIRenderer {
           ),
         ],
       ),
+    );
+  }
+
+  /// 算术算账节点渲染（第一步 MVP）
+  /// 浅紫色逻辑背景框，中间粗体运算字符，左端点青色 Data IN，右端点绿色 Data OUT，顶部中心金色 Gate IN
+  static Widget _buildMathNodeBlock(UIModule module, Size size) {
+    final props = module.properties;
+    final String op = props['operation']?.toString() ?? '+';
+    final double val = (props['value'] as num?)?.toDouble() ?? 1.0;
+    final String valStr = val == val.toInt() ? val.toInt().toString() : val.toString();
+    final String opText = op == 'set' ? '= $valStr' : '$op $valStr';
+
+    const double portSize = 9.0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFEDE7F6),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFF9575CD), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // 中点文字算式
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 1.0),
+              child: Text(
+                '算术计算 : $opText',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF512DA8),
+                  letterSpacing: 0.2,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          // 左侧端口 Data IN (青色)
+          Positioned(
+            left: 4,
+            top: (size.height - portSize) / 2,
+            child: Container(
+              width: portSize,
+              height: portSize,
+              decoration: BoxDecoration(
+                color: const Color(0xFF00ACC1),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+            ),
+          ),
+          // 右侧端口 Data OUT (绿色)
+          Positioned(
+            right: 4,
+            top: (size.height - portSize) / 2,
+            child: Container(
+              width: portSize,
+              height: portSize,
+              decoration: BoxDecoration(
+                color: const Color(0xFF66BB6A),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+            ),
+          ),
+          // 顶部使能控制孔 Gate IN (金色)
+          Positioned(
+            top: 2.5,
+            left: (size.width - portSize) / 2,
+            child: Container(
+              width: portSize,
+              height: portSize,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFB300),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 下拉选择框渲染（第一步 MVP 进阶版）
+  /// 白底微圆角矩形，左侧主区域选中，右侧箭头热区点选悬浮展开选项列表，无接线孔
+  static Widget _buildSelectBlock(BuildContext context, UIElement element, UIModule module, Size size) {
+    final props = module.properties;
+    final String currentText = props['current']?.toString() ?? '选项 1';
+    final List<String> options = (props['options'] as List?)?.map((e) => e.toString()).toList() ?? ['选项 1'];
+    final bool isStudio = UISceneModeScope.of(context);
+
+    return StatefulBuilder(
+      builder: (ctx, setState) {
+        final bool isSelected = UISceneModeScope.selectedIdOf(context) == element.id;
+        bool isExpanded = props['is_expanded_preview'] == true;
+        if (!isSelected && isExpanded) {
+          isExpanded = false;
+          props['is_expanded_preview'] = false;
+        }
+
+        final Widget content = Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isExpanded ? const Color(0xFF7E57C2) : const Color(0xFFD0D0D8),
+              width: isExpanded ? 1.5 : 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isExpanded ? 0.12 : 0.06),
+                blurRadius: isExpanded ? 6 : 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 14),
+                  child: Text(
+                    currentText,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111116),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              if (isStudio)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    props['is_expanded_preview'] = !isExpanded;
+                    setState(() {});
+                  },
+                  child: Container(
+                    width: 36,
+                    height: double.infinity,
+                    alignment: Alignment.center,
+                    child: Text(
+                      isExpanded ? '▲' : '▼',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: isExpanded ? const Color(0xFF7E57C2) : const Color(0xFF888896),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.only(right: 14),
+                  child: Text('▼', style: TextStyle(fontSize: 9, color: Color(0xFF888896))),
+                ),
+            ],
+          ),
+        );
+
+        if (!isExpanded || !isStudio) return content;
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            content,
+            Positioned(
+              top: size.height + 4,
+              left: 0,
+              right: 0,
+              child: Material(
+                elevation: 6,
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.white,
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF7E57C2).withValues(alpha: 0.3)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: options.map((opt) {
+                        final bool active = opt == currentText;
+                        return InkWell(
+                          onTap: () {
+                            props['current'] = opt;
+                            props['is_expanded_preview'] = false;
+                            setState(() {});
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                            color: active ? const Color(0xFFEDE7F6) : Colors.transparent,
+                            child: Text(
+                              opt,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: active ? const Color(0xFF512DA8) : const Color(0xFF111116),
+                                fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

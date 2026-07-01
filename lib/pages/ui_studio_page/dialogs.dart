@@ -1,7 +1,7 @@
 part of 'ui_studio_page.dart';
 
 /// 所有对话框与底部弹窗
-mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDialogs, _SwitchEditorDialog, _LineEditorDialog, _ImageEditorDialog {
+mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDialogs, _SwitchEditorDialog, _LineEditorDialog, _ImageEditorDialog, _MathNodeEditorDialog {
   // ===== 元素编辑器主调度分流入口 =====
   void _showTailoredPrecisionEditorDialog(UIElement el) {
     if (el.isComposite) {
@@ -28,6 +28,12 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
       _showCompactImageEditorDialog(el);
     } else if (type == 'linker') {
       _showCompactLinkerEditorDialog(el);
+    } else if (type == 'math_node') {
+      _showCompactMathNodeEditorDialog(el);
+    } else if (type == 'select') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('下拉单选控件专属编辑设置面板将在第二步中装载'), duration: Duration(seconds: 1)),
+      );
     }
   }
 
@@ -104,6 +110,16 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
       options.add({'id': 'text_to_text', 'label': '提示词动态变量传导 (text → text)'});
     } else if (['input', 'button'].contains(sType) && tType == 'text') {
       options.add({'id': 'to_string', 'label': '标准字面量实时回写 (to_string)'});
+    } else if (tType == 'math_node') {
+      options.add({'id': 'num_to_math', 'label': '数值流导算术节点 (num → math)'});
+    } else if (sType == 'math_node' && ['progress', 'slider'].contains(tType)) {
+      options.add({'id': 'math_to_current', 'label': '算术实时驱动进度 (math → current)'});
+    } else if (sType == 'math_node' && tType == 'text') {
+      options.add({'id': 'math_to_text', 'label': '算术结果回写文本 (math → text)'});
+    } else if (sType == 'select' && tType == 'text') {
+      options.add({'id': 'select_to_text', 'label': '单选选定项实时回写文本 (select → text)'});
+    } else if (tType == 'select') {
+      options.add({'id': 'str_to_select', 'label': '字面量流导驱动指针 (str → select)'});
     } else {
       options.add({'id': 'to_string', 'label': '通用标准字面量流转 (to_string)'});
     }

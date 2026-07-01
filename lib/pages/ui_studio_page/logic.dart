@@ -211,6 +211,10 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         return const Size(120, 20);
       case 'image':
         return const Size(80, 80);
+      case 'math_node':
+        return const Size(110, 36);
+      case 'select':
+        return const Size(140, 34);
       case 'linker':
         return const Size(120, 42);
       case 'surface':
@@ -251,6 +255,9 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     if (mod.type == 'switch') {
       return UIModuleShape.capsule;
     }
+    if (mod.type == 'math_node' || mod.type == 'select') {
+      return UIModuleShape.rectangle;
+    }
     if (mod.type == 'image') {
       final shapeStr = mod.properties['shape']?.toString();
       if (shapeStr == 'circle') return UIModuleShape.circle;
@@ -277,6 +284,9 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     }
     if (mod.type == 'switch') {
       return 999;
+    }
+    if (mod.type == 'math_node' || mod.type == 'select') {
+      return 6.0;
     }
     if (mod.type == 'image') {
       return (mod.properties['borderRadius'] ?? 8.0).toDouble();
@@ -312,6 +322,10 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         return '输入热区';
       case 'linker':
         return '联动器';
+      case 'math_node':
+        return '算术计算';
+      case 'select':
+        return '下拉单选';
       case 'surface':
       case 'surface_art':
         return '面原子';
@@ -467,7 +481,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     for (final el in _currentElements) {
       if (el.isComposite) continue;
       final type = el.module?.type;
-      if (type == 'progress' || type == 'slider' || type == 'input' || type == 'button' || type == 'text' || type == 'switch') {
+      if (type == 'progress' || type == 'slider' || type == 'input' || type == 'button' || type == 'text' || type == 'switch' || type == 'math_node' || type == 'select') {
         sources.add({
           'id': el.id,
           'name': el.module?.name ?? '未命名',

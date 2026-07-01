@@ -30,8 +30,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
       }
       if (fromEl == null || toEl == null) continue;
 
-      final startOffset = _resolvePortGlobalOffset(fromEl, false);
-      final endOffset = _resolvePortGlobalOffset(toEl, true);
+      final startOffset = _resolvePortGlobalOffset(fromEl, false, conn['fromPort'] as String?);
+      final endOffset = _resolvePortGlobalOffset(toEl, true, conn['toPort'] as String?);
 
       final lineColor = lineType == 'input'
           ? const Color(0xFF00ACC1)
@@ -50,11 +50,23 @@ mixin _UIStudioLinker on _UIStudioLogic {
     return widgets;
   }
 
-  Offset _resolvePortGlobalOffset(UIElement el, bool isInput) {
+  Offset _resolvePortGlobalOffset(UIElement el, bool isInput, [String? portName]) {
     final elLeft = _workspaceOffset.dx + el.offset.dx;
     final elTop = _workspaceOffset.dy + el.offset.dy;
     final cx = elLeft + el.size.width / 2;
     final cy = elTop + el.size.height / 2;
+
+    if (portName == 'gate_in') {
+      if (el.rotation == 0.0) {
+        return Offset(cx, elTop + 2.5);
+      }
+      final rad = el.rotation * math.pi / 180.0;
+      final halfHeight = el.size.height / 2;
+      return Offset(
+        cx + halfHeight * math.sin(rad),
+        cy - halfHeight * math.cos(rad),
+      );
+    }
 
     if (el.rotation == 0.0) {
       return Offset(isInput ? elLeft : elLeft + el.size.width, cy);
@@ -113,10 +125,21 @@ mixin _UIStudioLinker on _UIStudioLogic {
         ? const Color(0xFF00E676)
         : dragColor;
 
+    Offset endOffset = _dragConnectionEnd!;
+    if (_hoveringTargetId != null) {
+      final targetEl = _currentElements.firstWhere(
+        (e) => e.id == _hoveringTargetId,
+        orElse: () => UIElement(id: '', isComposite: false),
+      );
+      if (targetEl.id.isNotEmpty) {
+        endOffset = _resolvePortGlobalOffset(targetEl, true, _hoveringTargetPort);
+      }
+    }
+
     return CustomPaint(
       painter: LinkerConnectionPainter(
         start: startOffset,
-        end: _dragConnectionEnd!,
+        end: endOffset,
         color: lineColor,
       ),
     );
@@ -173,15 +196,25 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final elType = el.module?.type;
       final bool hitCard = _isPointInsideRotatedRect(globalPosition, el);
 
-      if (hitCard && ['linker', 'text', 'progress', 'slider'].contains(elType)) {
+      if (hitCard && ['linker', 'text', 'progress', 'slider', 'input', 'math_node', 'select'].contains(elType)) {
         if (_canConnect(el, 'input')) {
+          String assignedPort = 'input';
+          if (elType == 'math_node' && _draggingSourceType == 'output') {
+            final elLeft = _workspaceOffset.dx + el.offset.dx;
+            final elTop = _workspaceOffset.dy + el.offset.dy;
+            final double distLeft = (globalPosition - Offset(elLeft, elTop + el.size.height / 2)).distanceSquared;
+            final double distTop = (globalPosition - Offset(elLeft + el.size.width / 2, elTop)).distanceSquared;
+            if (distTop < distLeft) {
+              assignedPort = 'gate_in';
+            }
+          }
           newHoverTargetId = el.id;
-          newHoverTargetPort = 'input';
+          newHoverTargetPort = assignedPort;
           break;
         }
       }
 
-      if (hitCard && ['linker', 'progress', 'slider', 'input', 'button'].contains(elType)) {
+      if (hitCard && ['linker', 'text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select'].contains(elType)) {
         if (_canConnect(el, 'output')) {
           newHoverTargetId = el.id;
           newHoverTargetPort = 'output';
@@ -212,18 +245,18 @@ mixin _UIStudioLinker on _UIStudioLogic {
     if (sourceType == null || targetType == null) return false;
 
     if (sourceType == 'linker' && dragType == 'input') {
-      return ['progress', 'slider', 'input', 'button'].contains(targetType) &&
+      return ['text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select'].contains(targetType) &&
           portDirection == 'output';
     }
     if (sourceType == 'linker' && dragType == 'output') {
-      return ['text', 'progress', 'slider'].contains(targetType) &&
+      return ['text', 'progress', 'slider', 'input', 'math_node', 'select'].contains(targetType) &&
           portDirection == 'input';
     }
-    if (['progress', 'slider', 'input', 'button'].contains(sourceType) &&
+    if (['text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select'].contains(sourceType) &&
         dragType == 'output') {
       return targetType == 'linker' && portDirection == 'input';
     }
-    if (['text', 'progress', 'slider'].contains(sourceType) &&
+    if (['text', 'progress', 'slider', 'input', 'math_node', 'select'].contains(sourceType) &&
         dragType == 'input') {
       return targetType == 'linker' && portDirection == 'output';
     }
@@ -249,46 +282,48 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     if (sourceType == 'linker' &&
         _draggingSourceType == 'output' &&
-        ['text', 'progress', 'slider'].contains(targetType) &&
-        _hoveringTargetPort == 'input') {
+        ['text', 'progress', 'slider', 'input', 'math_node', 'select'].contains(targetType) &&
+        (_hoveringTargetPort == 'input' || _hoveringTargetPort == 'gate_in')) {
+      final bool isGate = _hoveringTargetPort == 'gate_in';
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         targetModuleId: targetElement.id,
-        targetPort: targetType == 'text' ? 'text' : 'current',
-        targetType: targetType == 'text' ? 'string' : 'number',
+        targetPort: targetType == 'text' ? 'text' : (targetType == 'input' || targetType == 'select' ? 'variable' : (targetType == 'math_node' ? (isGate ? 'gate_in' : 'data_in') : 'current')),
+        targetType: (targetType == 'text' || targetType == 'input' || targetType == 'select') ? 'string' : (isGate ? 'boolean' : 'number'),
         connectionType: 'output',
       );
     } else if (sourceType == 'linker' &&
         _draggingSourceType == 'input' &&
-        ['progress', 'slider', 'input', 'button'].contains(targetType) &&
+        ['text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select'].contains(targetType) &&
         _hoveringTargetPort == 'output') {
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         sourceModuleId: targetElement.id,
-        sourcePort: ['input', 'button'].contains(targetType) ? 'text' : 'current',
-        sourceType: ['input', 'button'].contains(targetType) ? 'string' : 'number',
+        sourcePort: ['text', 'input', 'button', 'select'].contains(targetType) ? 'text' : (targetType == 'math_node' ? 'data_out' : 'current'),
+        sourceType: ['text', 'input', 'button', 'select'].contains(targetType) ? 'string' : 'number',
         connectionType: 'input',
       );
-    } else if (['progress', 'slider', 'input', 'button'].contains(sourceType) &&
+    } else if (['text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select'].contains(sourceType) &&
         _draggingSourceType == 'output' &&
         targetType == 'linker' &&
         _hoveringTargetPort == 'input') {
       _updateLinkerConnection(
         linkerId: targetElement.id,
         sourceModuleId: sourceElement.id,
-        sourcePort: ['input', 'button'].contains(sourceType) ? 'text' : 'current',
-        sourceType: ['input', 'button'].contains(sourceType) ? 'string' : 'number',
+        sourcePort: ['text', 'input', 'button', 'select'].contains(sourceType) ? 'text' : (sourceType == 'math_node' ? 'data_out' : 'current'),
+        sourceType: ['text', 'input', 'button', 'select'].contains(sourceType) ? 'string' : 'number',
         connectionType: 'input',
       );
-    } else if (['text', 'progress', 'slider'].contains(sourceType) &&
+    } else if (['text', 'progress', 'slider', 'input', 'math_node', 'select'].contains(sourceType) &&
         _draggingSourceType == 'input' &&
         targetType == 'linker' &&
-        _hoveringTargetPort == 'output') {
+        (_hoveringTargetPort == 'output' || _hoveringTargetPort == 'gate_in')) {
+      final bool isGate = _hoveringTargetPort == 'gate_in';
       _updateLinkerConnection(
         linkerId: targetElement.id,
         targetModuleId: sourceElement.id,
-        targetPort: sourceType == 'text' ? 'text' : 'current',
-        targetType: sourceType == 'text' ? 'string' : 'number',
+        targetPort: sourceType == 'text' ? 'text' : (sourceType == 'input' || sourceType == 'select' ? 'variable' : (sourceType == 'math_node' ? (isGate ? 'gate_in' : 'data_in') : 'current')),
+        targetType: (sourceType == 'text' || sourceType == 'input' || sourceType == 'select') ? 'string' : (isGate ? 'boolean' : 'number'),
         connectionType: 'output',
       );
     }
@@ -342,6 +377,9 @@ mixin _UIStudioLinker on _UIStudioLogic {
       if (linkerData['sourceModuleId'] != null &&
           linkerData['targetModuleId'] != null) {
         linkerData['enabled'] = true;
+        if (linkerData['sourceType'] == 'string') {
+          linkerData['scheme'] = 'text_to_text';
+        }
       }
 
       final updatedProps =

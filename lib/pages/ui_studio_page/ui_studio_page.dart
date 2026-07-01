@@ -19,6 +19,7 @@ part 'dialogs/studio_menu_dialogs.dart';
 part 'drawers.dart';
 part 'editors/image_editor.dart';
 part 'editors/line_editor.dart';
+part 'editors/math_node_editor.dart';
 part 'editors/switch_editor.dart';
 part 'linker.dart';
 part 'logic.dart';
@@ -38,7 +39,7 @@ class UIStudioPage extends StatefulWidget {
 }
 
 class _UIStudioPageState extends State<UIStudioPage>
-    with _UIStudioLogic, _UIStudioLinker, _StudioMenuDialogs, _CompactEditorsDialogs, _SwitchEditorDialog, _LineEditorDialog, _ImageEditorDialog, _UIStudioDialogs, _UIStudioDrawers {
+    with _UIStudioLogic, _UIStudioLinker, _StudioMenuDialogs, _CompactEditorsDialogs, _SwitchEditorDialog, _LineEditorDialog, _ImageEditorDialog, _MathNodeEditorDialog, _UIStudioDialogs, _UIStudioDrawers {
   // ============================================================
   //  手势临时锚定状态（仅与手势交互相关，保留在主文件）
   // ============================================================
@@ -149,6 +150,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                       child: ClipRect(
                         child: UISceneModeScope(
                           isStudioCreationMode: true,
+                          selectedElementId: _selectedTransformationId,
                           child: CustomPaint(
                             painter: StudioWarmGridPainter(_workspaceOffset),
                             child: Stack(
@@ -577,7 +579,8 @@ class _UIStudioPageState extends State<UIStudioPage>
       layerBadge,
     ];
 
-    if (isTransformationActive && !isLinker) {
+    final bool isMathNode = el.module?.type == 'math_node';
+    if (isTransformationActive && !isLinker && !isMathNode) {
       stackChildren.add(
         Positioned(
           right: 0,
