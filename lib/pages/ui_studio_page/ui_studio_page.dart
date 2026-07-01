@@ -12,6 +12,7 @@ import '../../services/ui_engine/linker_service.dart';
 import '../../services/ui_engine/ui_asset_service.dart';
 import '../../services/ui_engine/ui_models.dart';
 import '../../services/ui_engine/ui_renderer.dart';
+import 'editors/indicator_editor.dart';
 import 'editors/select_editor.dart';
 
 part 'dialogs.dart';
@@ -581,7 +582,8 @@ class _UIStudioPageState extends State<UIStudioPage>
     ];
 
     final bool isMathNode = el.module?.type == 'math_node';
-    if (isTransformationActive && !isLinker && !isMathNode) {
+    final bool isIndicator = el.module?.type == 'indicator';
+    if (isTransformationActive && !isLinker && !isMathNode && !isIndicator) {
       stackChildren.add(
         Positioned(
           right: 0,

@@ -658,6 +658,64 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    const Text('多态状态指示点',
+                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(
+                        id: 'indicator_mvp',
+                        name: '状态指示点',
+                        type: 'indicator',
+                        properties: {
+                          'currentValue': '',
+                          'defaultColor': 0xFF9E9E9E,
+                          'defaultGlow': false,
+                          'dotSize': 14.0,
+                          'statusRules': [
+                            {
+                              'matchType': 'exact',
+                              'matchValue': '正常',
+                              'color': 0xFF4CAF50,
+                              'isGlow': true,
+                              'glowRadius': 12.0,
+                            },
+                            {
+                              'matchType': 'exact',
+                              'matchValue': '警报',
+                              'color': 0xFFEF5350,
+                              'isGlow': true,
+                              'glowRadius': 14.0,
+                            },
+                          ],
+                        },
+                        color: const Color(0xFF4CAF50),
+                      ),
+                      Container(
+                        height: 34,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFD0D0D8)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF4CAF50),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('正常 / 警报', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),

@@ -32,6 +32,8 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
       _showCompactMathNodeEditorDialog(el);
     } else if (type == 'select') {
       _showCompactSelectEditorDialog(el);
+    } else if (type == 'indicator') {
+      _showCompactIndicatorEditorDialog(el);
     }
   }
 
@@ -118,6 +120,10 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
       options.add({'id': 'select_to_text', 'label': '单选选定项实时回写文本 (select → text)'});
     } else if (tType == 'select') {
       options.add({'id': 'str_to_select', 'label': '字面量流导驱动指针 (str → select)'});
+    } else if (tType == 'indicator') {
+      options.add({'id': 'str_to_indicator', 'label': '字面量匹配驱动状态灯 (str → indicator)'});
+      options.add({'id': 'num_to_indicator', 'label': '数值区间驱动状态灯 (num → indicator)'});
+      options.add({'id': 'bool_to_indicator', 'label': '开关状态驱动状态灯 (bool → indicator)'});
     } else {
       options.add({'id': 'to_string', 'label': '通用标准字面量流转 (to_string)'});
     }
@@ -219,6 +225,39 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
                 name: newName,
                 properties: newProps,
                 color: Color((newProps['accentColor'] as int?) ?? mod.color.toARGB32()),
+              );
+              _currentElements[idx] = el.copyWith(module: updatedMod);
+            }
+          });
+          _autoSave();
+        },
+      ),
+    );
+  }
+
+  // ===== 紧凑型多态状态指示点控件专属规格编辑器 (Indicator) =====
+  void _showCompactIndicatorEditorDialog(UIElement el) {
+    if (el.module == null) return;
+    final mod = el.module!;
+    showDialog(
+      context: context,
+      builder: (ctx) => IndicatorEditor(
+        initialProperties: Map<String, dynamic>.from(mod.properties),
+        moduleName: mod.name,
+        layerId: el.layerIndex,
+        initialPosition: el.offset,
+        onDelete: () {
+          _deleteElement(el.id);
+        },
+        onSave: (newProps) {
+          setState(() {
+            final idx = _currentElements.indexWhere((e) => e.id == el.id);
+            if (idx != -1) {
+              final newName = newProps['name']?.toString() ?? mod.name;
+              final updatedMod = mod.copyWith(
+                name: newName,
+                properties: newProps,
+                color: Color((newProps['defaultColor'] as int?) ?? mod.color.toARGB32()),
               );
               _currentElements[idx] = el.copyWith(module: updatedMod);
             }

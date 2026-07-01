@@ -125,6 +125,12 @@ class UIRenderer {
           height: size.height,
           child: _buildSelectBlock(context, element, module, size),
         );
+      case 'indicator':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildIndicatorBlock(context, element, module, size),
+        );
       default:
         return SizedBox(
           width: size.width,
@@ -1024,6 +1030,94 @@ class UIRenderer {
         );
       },
     );
+  }
+
+  /// 多态状态指示点渲染：工作室中 36x36 磁吸感应框，中心呈现 14x14 霓虹 LED 灯
+  static Widget _buildIndicatorBlock(BuildContext context, UIElement element, UIModule module, Size size) {
+    final props = module.properties;
+    final bool isStudio = UISceneModeScope.of(context);
+    final String currentVal = (LinkerService.resolveTargetValue(module) ?? props['currentValue'] ?? '').toString().trim();
+    final List rules = (props['statusRules'] as List?) ?? [];
+
+    int activeColorInt = (props['defaultColor'] as int?) ?? 0xFF9E9E9E;
+    bool activeGlow = props['defaultGlow'] == true;
+    double glowRadius = 12.0;
+
+    for (final raw in rules) {
+      if (raw is! Map) continue;
+      final rule = Map<String, dynamic>.from(raw);
+      final matchType = rule['matchType']?.toString() ?? 'exact';
+      bool matched = false;
+
+      if (matchType == 'exact') {
+        final targetVal = rule['matchValue']?.toString().trim() ?? '';
+        if (currentVal == targetVal && targetVal.isNotEmpty) {
+          matched = true;
+        }
+      } else if (matchType == 'bool') {
+        final targetBool = rule['matchValue']?.toString().toLowerCase() == 'true';
+        final curBool = currentVal.toLowerCase() == 'true' || currentVal == '1' || currentVal == '开启';
+        if (curBool == targetBool && currentVal.isNotEmpty) {
+          matched = true;
+        }
+      } else if (matchType == 'range') {
+        final double? curNum = double.tryParse(currentVal);
+        final double? targetNum = double.tryParse(rule['matchValNum']?.toString() ?? '');
+        final op = rule['matchOp']?.toString() ?? '>';
+        if (curNum != null && targetNum != null) {
+          if (op == '>' && curNum > targetNum) matched = true;
+          if (op == '<' && curNum < targetNum) matched = true;
+          if (op == '>=' && curNum >= targetNum) matched = true;
+          if (op == '<=' && curNum <= targetNum) matched = true;
+          if (op == '==' && curNum == targetNum) matched = true;
+        }
+      }
+
+      if (matched) {
+        activeColorInt = (rule['color'] as int?) ?? activeColorInt;
+        activeGlow = rule['isGlow'] == true;
+        glowRadius = (rule['glowRadius'] as num?)?.toDouble() ?? 12.0;
+        break;
+      }
+    }
+
+    final Color activeColor = Color(activeColorInt);
+    final double dotSize = (props['dotSize'] as num?)?.toDouble().clamp(8.0, 28.0) ?? 14.0;
+
+    Widget dot = AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      width: dotSize,
+      height: dotSize,
+      decoration: BoxDecoration(
+        color: activeColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+        boxShadow: activeGlow
+            ? [
+                BoxShadow(color: activeColor.withValues(alpha: 0.65), blurRadius: glowRadius, spreadRadius: 1.5),
+                BoxShadow(color: activeColor.withValues(alpha: 0.35), blurRadius: glowRadius * 1.6, spreadRadius: 3.0),
+              ]
+            : [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 2, offset: const Offset(0, 1)),
+              ],
+      ),
+    );
+
+    if (isStudio) {
+      return Container(
+        width: size.width,
+        height: size.height,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: activeColor.withValues(alpha: 0.06),
+          shape: BoxShape.circle,
+          border: Border.all(color: activeColor.withValues(alpha: 0.25), width: 1, style: BorderStyle.solid),
+        ),
+        child: dot,
+      );
+    }
+
+    return Center(child: dot);
   }
 
 }
