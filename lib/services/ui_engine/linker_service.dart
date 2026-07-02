@@ -92,6 +92,7 @@ class LinkerService {
       if (['current_to_text', 'to_string', 'num_to_current', 'select_to_text', 'str_to_select', 'str_to_indicator', 'num_to_indicator', 'bool_to_indicator'].contains(scheme)) {
         final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
             _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'currentVal', visitedSet) ??
             _getEffectivePropertyValue(sourceModule, 'defaultValue', visitedSet) ??
             sourceModule.properties['text'] ??
             sourceModule.name;
@@ -178,6 +179,8 @@ class LinkerService {
         val = resolveTargetValue(module) ?? module.properties['current'] ?? module.properties['defaultValue'] ?? '';
       } else if (module.type == 'indicator') {
         val = resolveTargetValue(module) ?? module.properties['currentValue'] ?? '';
+      } else if (module.type == 'timer') {
+        val = resolveTargetValue(module) ?? module.properties['currentVal'] ?? 0;
       }
 
       if (val != null) {

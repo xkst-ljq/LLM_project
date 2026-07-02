@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -130,6 +131,18 @@ class UIRenderer {
           width: size.width,
           height: size.height,
           child: _buildIndicatorBlock(context, element, module, size),
+        );
+      case 'scroll_frame':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildScrollFrameBlock(context, element, module, size),
+        );
+      case 'timer':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildTimerBlock(context, element, module, size),
         );
       default:
         return SizedBox(
@@ -1094,12 +1107,12 @@ class UIRenderer {
         border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
         boxShadow: activeGlow
             ? [
-                BoxShadow(color: activeColor.withValues(alpha: 0.65), blurRadius: glowRadius, spreadRadius: 1.5),
-                BoxShadow(color: activeColor.withValues(alpha: 0.35), blurRadius: glowRadius * 1.6, spreadRadius: 3.0),
-              ]
+          BoxShadow(color: activeColor.withValues(alpha: 0.65), blurRadius: glowRadius, spreadRadius: 1.5),
+          BoxShadow(color: activeColor.withValues(alpha: 0.35), blurRadius: glowRadius * 1.6, spreadRadius: 3.0),
+        ]
             : [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 2, offset: const Offset(0, 1)),
-              ],
+          BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 2, offset: const Offset(0, 1)),
+        ],
       ),
     );
 
@@ -1120,6 +1133,385 @@ class UIRenderer {
     return Center(child: dot);
   }
 
+  /// 局部滚动视窗渲染 (第二步全盘完备)：支持双层纯色封底、阻尼切换与收容子元素渲染
+  static Widget _buildScrollFrameBlock(BuildContext context, UIElement element, UIModule module, Size size) {
+    final props = module.properties;
+    final bool isStudio = UISceneModeScope.of(context);
+    final String scrollMode = props['scrollMode']?.toString() ?? 'vertical';
+    final bool clipToBounds = props['clipToBounds'] != false;
+    final double contentWidth = (props['contentWidth'] as num?)?.toDouble() ?? 300.0;
+    final double contentHeight = (props['contentHeight'] as num?)?.toDouble() ?? 500.0;
+    final int bgColorVal = (props['backgroundColor'] as int?) ?? 0xFFF0F0F5;
+    final Color bgColor = Color(bgColorVal);
+    final String physicsMode = props['physics']?.toString() ?? 'bouncing';
+    final ScrollPhysics scrollPhysics = physicsMode == 'clamping' ? const ClampingScrollPhysics() : const BouncingScrollPhysics();
+
+    final List<UIElement> adoptedChildren = (props['adoptedChildElements'] as List?)
+        ?.map((e) => UIElement.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList() ??
+        [];
+
+    Widget innerContent;
+    if (adoptedChildren.isNotEmpty) {
+      final childWidgets = <Widget>[];
+      for (final child in adoptedChildren) {
+        childWidgets.add(
+          Positioned(
+            left: child.offset.dx,
+            top: child.offset.dy,
+            width: child.size.width,
+            height: child.size.height,
+            child: render(context, child),
+          ),
+        );
+      }
+      innerContent = Container(
+        width: contentWidth,
+        height: contentHeight,
+        decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
+        child: Stack(clipBehavior: Clip.none, children: childWidgets),
+      );
+    } else {
+      innerContent = Container(
+        width: scrollMode == 'horizontal' ? contentWidth : (scrollMode == 'omni' ? contentWidth : size.width),
+        height: scrollMode == 'vertical' ? contentHeight : (scrollMode == 'omni' ? contentHeight : size.height),
+        decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
+        alignment: Alignment.center,
+        child: isStudio
+            ? Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              scrollMode == 'omni' ? Icons.pan_tool_alt_outlined : (scrollMode == 'horizontal' ? Icons.swap_horiz : Icons.swap_vert),
+              size: 28,
+              color: const Color(0xFF3F51B5).withValues(alpha: 0.6),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              scrollMode == 'omni'
+                  ? '🗺️ 2D 无极探索沙盘\n[虚拟底板: ${contentWidth.toInt()}x${contentHeight.toInt()}px]'
+                  : '📜 局部滚动视窗 (${scrollMode == 'horizontal' ? '横向' : '竖向'}滑动)\n[虚拟高宽: ${contentWidth.toInt()}x${contentHeight.toInt()}px]',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF3F51B5), fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            const Text('请在属性配置页或点击“进入内部空间”对收容子元素排版', style: TextStyle(fontSize: 10, color: Colors.grey)),
+          ],
+        )
+            : const SizedBox.shrink(),
+      );
+    }
+
+    Widget viewport;
+    if (scrollMode == 'omni') {
+      viewport = InteractiveViewer(
+        constrained: false,
+        panEnabled: true,
+        scaleEnabled: false,
+        child: innerContent,
+      );
+    } else {
+      viewport = SingleChildScrollView(
+        scrollDirection: scrollMode == 'horizontal' ? Axis.horizontal : Axis.vertical,
+        physics: scrollPhysics,
+        child: innerContent,
+      );
+    }
+
+    // 保险一：外层同色封底（在 viewport 外部在套上一层自备颜色的 Container，回弹时露出同色底板）
+    final Widget sealedViewport = Container(
+      width: size.width,
+      height: size.height,
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
+      child: clipToBounds ? ClipRRect(borderRadius: BorderRadius.circular(12), child: viewport) : viewport,
+    );
+
+    final Widget protectedViewport = NotificationListener<ScrollNotification>(
+      onNotification: (_) => true, // 吞没滚动事件，手势防穿透隔离
+      child: sealedViewport,
+    );
+
+    if (isStudio) {
+      return Container(
+        width: size.width,
+        height: size.height,
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFF3F51B5), width: 1.5, style: BorderStyle.solid),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Stack(
+          children: [
+            protectedViewport,
+            Positioned(
+              top: 6,
+              right: 8,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3F51B5).withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    scrollMode == 'omni' ? '🗺️ 无极沙盘' : '📜 视窗容器',
+                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return protectedViewport;
+  }
+
+  /// 定时脉冲发生器渲染：工作室显形为带自测热区的逻辑卡片，运行时彻底隐形 SizedBox.shrink()
+  static Widget _buildTimerBlock(BuildContext context, UIElement element, UIModule module, Size size) {
+    final bool isStudio = UISceneModeScope.of(context);
+    return _TimerBlockWidget(element: element, module: module, size: size, isStudio: isStudio);
+  }
+
+}
+
+class _TimerBlockWidget extends StatefulWidget {
+  final UIElement element;
+  final UIModule module;
+  final Size size;
+  final bool isStudio;
+
+  const _TimerBlockWidget({required this.element, required this.module, required this.size, required this.isStudio});
+
+  @override
+  State<_TimerBlockWidget> createState() => _TimerBlockWidgetState();
+}
+
+class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkTimerState();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TimerBlockWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _checkTimerState();
+  }
+
+  void _checkTimerState() {
+    final props = widget.module.properties;
+    final bool isStudio = widget.isStudio;
+    final bool isRunningPreview = props['isRunning_preview'] == true;
+    final bool autoStart = props['autoStart'] == true;
+    final bool isRunning = isRunningPreview || (!isStudio && autoStart);
+    final double interval = (props['interval'] as num?)?.toDouble() ?? 1.0;
+    final int intervalMs = (interval * 1000).clamp(100, 60000).toInt();
+    final String pulseType = props['pulseType']?.toString() ?? 'increment';
+    final double stepVal = (props['stepValue'] as num?)?.toDouble() ?? 1.0;
+    final bool loop = props['loop'] != false;
+
+    if (isRunning && _timer == null) {
+      _timer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        setState(() {
+          final double cur = (props['currentVal'] as num?)?.toDouble() ?? 0.0;
+          if (pulseType == 'toggle') {
+            props['currentVal'] = (cur == 1.0) ? 0.0 : 1.0;
+          } else if (pulseType == 'timestamp') {
+            props['currentVal'] = cur + interval;
+          } else if (pulseType == 'countdown') {
+            final double nextVal = cur - stepVal;
+            if (nextVal <= 0.0) {
+              props['currentVal'] = 0.0;
+              if (!loop) {
+                props['isRunning_preview'] = false;
+                timer.cancel();
+                _timer = null;
+              }
+            } else {
+              props['currentVal'] = nextVal;
+            }
+          } else {
+            props['currentVal'] = cur + stepVal;
+          }
+        });
+      });
+    } else if (!isRunning && _timer != null) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isStudio) {
+      return const SizedBox.shrink(); // 运行时对读者界面彻底隐形，但后台 initState 时钟依然能狂奔发线！
+    }
+    final props = widget.module.properties;
+    final double interval = (props['interval'] as num?)?.toDouble() ?? 1.0;
+    final double currentVal = (props['currentVal'] as num?)?.toDouble() ?? 0.0;
+    final bool isRunning = props['isRunning_preview'] == true;
+    final String pulseType = props['pulseType']?.toString() ?? 'increment';
+
+    String schemeLabel = '⚡ 递增脉冲';
+    if (pulseType == 'toggle') schemeLabel = '⚡ 0/1翻转';
+    if (pulseType == 'timestamp') schemeLabel = '⚡ 运行秒戳';
+
+    final double stepVal = (props['stepValue'] as num?)?.toDouble() ?? 1.0;
+
+    final Widget playButton = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        setState(() {
+          props['isRunning_preview'] = !isRunning;
+          if (!isRunning) {
+            if (pulseType == 'toggle') {
+              props['currentVal'] = (currentVal == 1.0) ? 0.0 : 1.0;
+            } else if (pulseType == 'timestamp') {
+              props['currentVal'] = currentVal + interval;
+            } else if (pulseType == 'countdown') {
+              props['currentVal'] = (currentVal - stepVal).clamp(0.0, double.infinity);
+            } else {
+              props['currentVal'] = currentVal + stepVal;
+            }
+          }
+        });
+        _checkTimerState();
+      },
+      child: Container(
+        width: 20,
+        height: 20,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFFF9100).withValues(alpha: 0.15),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          isRunning ? Icons.pause : Icons.play_arrow,
+          size: 12,
+          color: isRunning ? Colors.white : const Color(0xFFF57C00),
+        ),
+      ),
+    );
+
+    Widget content;
+    if (widget.size.height < 44) {
+      // 高度自适应降级防溢出：当高度小于44px（如遗留旧卡或微缩视图）时，单行横向排布
+      content = Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  isRunning ? Icons.timer : Icons.timer_outlined,
+                  size: 13,
+                  color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFF57C00),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '${interval.toStringAsFixed(1)}s | #${currentVal.toInt()}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isRunning ? FontWeight.w900 : FontWeight.bold,
+                      color: isRunning ? const Color(0xFFE65100) : const Color(0xFFF57C00),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          playButton,
+        ],
+      );
+    } else {
+      // 标准双行仪表盘：上行时间与次数，下行脉冲方案与操作热区
+      content = Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isRunning ? Icons.timer : Icons.timer_outlined,
+                size: 14,
+                color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFF57C00),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  '${interval.toStringAsFixed(1)}s | #${currentVal.toInt()}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isRunning ? FontWeight.w900 : FontWeight.bold,
+                    color: isRunning ? const Color(0xFFE65100) : const Color(0xFFF57C00),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  schemeLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isRunning ? const Color(0xFFE65100) : const Color(0xFFF57C00),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              playButton,
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      width: widget.size.width,
+      height: widget.size.height,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isRunning ? const Color(0xFFFFF3E0) : const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFFF9100),
+          width: isRunning ? 1.6 : 1.2,
+        ),
+        boxShadow: isRunning
+            ? [
+          BoxShadow(color: const Color(0xFFFF9100).withValues(alpha: 0.35), blurRadius: 6, spreadRadius: 1),
+        ]
+            : [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1)),
+        ],
+      ),
+      child: content,
+    );
+  }
 }
 
 

@@ -716,6 +716,91 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    const Text('局部滚动视窗',
+                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(
+                        id: 'scroll_frame_mvp',
+                        name: '局部滚动视窗',
+                        type: 'scroll_frame',
+                        properties: {
+                          'scrollMode': 'vertical',
+                          'clipToBounds': true,
+                          'showScrollbar': true,
+                          'contentWidth': 300.0,
+                          'contentHeight': 500.0,
+                          'backgroundColor': 0xFFF0F0F5,
+                        },
+                        color: const Color(0xFF5C6BC0),
+                      ),
+                      Container(
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8EAF6),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFF5C6BC0), width: 1.2),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.view_day_outlined, size: 14, color: Color(0xFF3F51B5)),
+                            SizedBox(width: 6),
+                            Text('📜 视窗 : 竖直滚动', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF3F51B5))),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('定时脉冲发生器',
+                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
+                    const SizedBox(height: 4),
+                    _buildPreviewDraggableCard(
+                      UIModule(
+                        id: 'timer_mvp',
+                        name: '定时脉冲发生器',
+                        type: 'timer',
+                        properties: {
+                          'interval': 1.0,
+                          'autoStart': false,
+                          'loop': true,
+                          'pulseType': 'increment',
+                          'currentVal': 0.0,
+                          'isRunning_preview': false,
+                        },
+                        color: const Color(0xFFFF9100),
+                      ),
+                      Container(
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF8E1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFF9100), width: 1.2),
+                        ),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.timer_outlined, size: 13, color: Color(0xFFF57C00)),
+                                SizedBox(width: 4),
+                                Text('1.0s', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFF57C00))),
+                              ],
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('#0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFFE65100))),
+                                Icon(Icons.play_arrow, size: 14, color: Color(0xFFF57C00)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),

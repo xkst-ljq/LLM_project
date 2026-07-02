@@ -34,6 +34,10 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
       _showCompactSelectEditorDialog(el);
     } else if (type == 'indicator') {
       _showCompactIndicatorEditorDialog(el);
+    } else if (type == 'scroll_frame') {
+      _showCompactScrollFrameEditorDialog(el);
+    } else if (type == 'timer') {
+      _showCompactTimerEditorDialog(el);
     }
   }
 
@@ -124,6 +128,14 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
       options.add({'id': 'str_to_indicator', 'label': '字面量匹配驱动状态灯 (str → indicator)'});
       options.add({'id': 'num_to_indicator', 'label': '数值区间驱动状态灯 (num → indicator)'});
       options.add({'id': 'bool_to_indicator', 'label': '开关状态驱动状态灯 (bool → indicator)'});
+    } else if (tType == 'scroll_frame') {
+      options.add({'id': 'adopt_into_frame', 'label': '📦 移交收容至局部滚动视窗 (Adopt into Scroll Frame)'});
+    } else if (sType == 'timer' && ['progress', 'slider'].contains(tType)) {
+      options.add({'id': 'num_to_current', 'label': '脉冲实时驱动进度条 (timer → current)'});
+    } else if (sType == 'timer' && tType == 'indicator') {
+      options.add({'id': 'num_to_indicator', 'label': '脉冲计数驱动状态指示灯 (timer → indicator)'});
+    } else if (sType == 'timer' && tType == 'text') {
+      options.add({'id': 'current_to_text', 'label': '脉冲计数值转为文本 (timer → text)'});
     } else {
       options.add({'id': 'to_string', 'label': '通用标准字面量流转 (to_string)'});
     }
@@ -162,6 +174,32 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
               _currentElements[idx] = targetEl.copyWith(
                 module: targetEl.module!.copyWith(properties: newProps),
               );
+
+              if (schemeValue == 'adopt_into_frame') {
+                final targetFrameId = newLinker['targetModuleId']?.toString();
+                final sourceChildId = newLinker['sourceModuleId']?.toString();
+                if (targetFrameId != null && sourceChildId != null) {
+                  final frameIdx = _currentElements.indexWhere((e) => e.id == targetFrameId);
+                  final childIdx = _currentElements.indexWhere((e) => e.id == sourceChildId);
+                  if (frameIdx != -1 && childIdx != -1) {
+                    final frameEl = _currentElements[frameIdx];
+                    final childEl = _currentElements[childIdx];
+                    final frameProps = Map<String, dynamic>.from(frameEl.module!.properties);
+                    final adoptedList = (frameProps['adoptedChildElements'] as List?)
+                            ?.map((e) => Map<String, dynamic>.from(e as Map))
+                            .toList() ??
+                        [];
+                    if (!adoptedList.any((e) => e['id'] == childEl.id)) {
+                      adoptedList.add(childEl.toJson());
+                    }
+                    frameProps['adoptedChildElements'] = adoptedList;
+                    _currentElements[frameIdx] = frameEl.copyWith(
+                      module: frameEl.module!.copyWith(properties: frameProps),
+                    );
+                    _currentElements.removeAt(childIdx);
+                  }
+                }
+              }
             }
           }
         });
@@ -258,6 +296,80 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
                 name: newName,
                 properties: newProps,
                 color: Color((newProps['defaultColor'] as int?) ?? mod.color.toARGB32()),
+              );
+              _currentElements[idx] = el.copyWith(module: updatedMod);
+            }
+          });
+          _autoSave();
+        },
+      ),
+    );
+  }
+
+  // ===== 紧凑型局部滚动视窗控件专属规格编辑器 (Scroll Frame) =====
+  void _showCompactScrollFrameEditorDialog(UIElement el) {
+    if (el.module == null) return;
+    final mod = el.module!;
+    showDialog(
+      context: context,
+      builder: (ctx) => ScrollFrameEditor(
+        initialProperties: Map<String, dynamic>.from(mod.properties),
+        moduleName: mod.name,
+        layerId: el.layerIndex,
+        initialPosition: el.offset,
+        onDelete: () {
+          _deleteElement(el.id);
+        },
+        onSave: (newProps) {
+          setState(() {
+            final oldAdopted = (mod.properties['adoptedChildElements'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
+            final newAdopted = (newProps['adoptedChildElements'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
+            final newIds = newAdopted.map((e) => e['id']?.toString()).toSet();
+            for (final oldChild in oldAdopted) {
+              if (!newIds.contains(oldChild['id']?.toString())) {
+                _currentElements.add(UIElement.fromJson(oldChild));
+              }
+            }
+
+            final idx = _currentElements.indexWhere((e) => e.id == el.id);
+            if (idx != -1) {
+              final newName = newProps['name']?.toString() ?? mod.name;
+              final updatedMod = mod.copyWith(
+                name: newName,
+                properties: newProps,
+                color: Color((newProps['backgroundColor'] as int?) ?? mod.color.toARGB32()),
+              );
+              _currentElements[idx] = el.copyWith(module: updatedMod);
+            }
+          });
+          _autoSave();
+        },
+      ),
+    );
+  }
+
+  // ===== 紧凑型定时脉冲发生器专属规格编辑器 (Timer) =====
+  void _showCompactTimerEditorDialog(UIElement el) {
+    if (el.module == null) return;
+    final mod = el.module!;
+    showDialog(
+      context: context,
+      builder: (ctx) => TimerEditor(
+        initialProperties: Map<String, dynamic>.from(mod.properties),
+        moduleName: mod.name,
+        layerId: el.layerIndex,
+        initialPosition: el.offset,
+        onDelete: () {
+          _deleteElement(el.id);
+        },
+        onSave: (newProps) {
+          setState(() {
+            final idx = _currentElements.indexWhere((e) => e.id == el.id);
+            if (idx != -1) {
+              final newName = newProps['name']?.toString() ?? mod.name;
+              final updatedMod = mod.copyWith(
+                name: newName,
+                properties: newProps,
               );
               _currentElements[idx] = el.copyWith(module: updatedMod);
             }

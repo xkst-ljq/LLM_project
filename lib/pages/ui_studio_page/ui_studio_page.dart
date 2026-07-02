@@ -13,7 +13,9 @@ import '../../services/ui_engine/ui_asset_service.dart';
 import '../../services/ui_engine/ui_models.dart';
 import '../../services/ui_engine/ui_renderer.dart';
 import 'editors/indicator_editor.dart';
+import 'editors/scroll_frame_editor.dart';
 import 'editors/select_editor.dart';
+import 'editors/timer_editor.dart';
 
 part 'dialogs.dart';
 part 'dialogs/compact_editors_dialogs.dart';
@@ -583,7 +585,8 @@ class _UIStudioPageState extends State<UIStudioPage>
 
     final bool isMathNode = el.module?.type == 'math_node';
     final bool isIndicator = el.module?.type == 'indicator';
-    if (isTransformationActive && !isLinker && !isMathNode && !isIndicator) {
+    final bool isTimer = el.module?.type == 'timer';
+    if (isTransformationActive && !isLinker && !isMathNode && !isIndicator && !isTimer) {
       stackChildren.add(
         Positioned(
           right: 0,
