@@ -12,7 +12,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
 
   Offset _workspaceOffset = Offset.zero;
   String? _selectedTransformationId;
-  bool _transformHandleRotateMode = false;
+  final Set<String> _elementRotateModes = <String>{};
   bool _isLinkingMode = false;
 
   bool _showLayerManager = false;
@@ -137,6 +137,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   void _deleteElement(String id) {
     setState(() {
       _currentElements.removeWhere((e) => e.id == id);
+      _elementRotateModes.remove(id);
       if (_selectedTransformationId == id) {
         _selectedTransformationId = null;
       }
@@ -502,7 +503,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     for (final el in _currentElements) {
       if (el.isComposite) continue;
       final type = el.module?.type;
-      if (type == 'progress' || type == 'slider' || type == 'input' || type == 'button' || type == 'text' || type == 'switch' || type == 'math_node' || type == 'select' || type == 'indicator' || type == 'timer') {
+      if (type == 'progress' || type == 'slider' || type == 'input' || type == 'button' || type == 'text' || type == 'switch' || type == 'math_node' || type == 'select' || type == 'indicator' || type == 'timer' || type == 'surface' || type == 'surface_art' || type == 'primitive_art') {
         sources.add({
           'id': el.id,
           'name': el.module?.name ?? '未命名',

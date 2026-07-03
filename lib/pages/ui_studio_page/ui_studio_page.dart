@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/image_pick_service.dart';
@@ -587,22 +588,30 @@ class _UIStudioPageState extends State<UIStudioPage>
     final bool isIndicator = el.module?.type == 'indicator';
     final bool isTimer = el.module?.type == 'timer';
     if (isTransformationActive && !isLinker && !isMathNode && !isIndicator && !isTimer) {
+      final bool isRotateMode = _elementRotateModes.contains(el.id);
       stackChildren.add(
         Positioned(
           right: 0,
           bottom: 0,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _transformHandleRotateMode =
-            !_transformHandleRotateMode),
+            onTap: () {
+              setState(() {
+                if (_elementRotateModes.contains(el.id)) {
+                  _elementRotateModes.remove(el.id);
+                } else {
+                  _elementRotateModes.add(el.id);
+                }
+              });
+            },
             onPanStart: (details) {
               _startTouchWidth = el.size.width;
               _startTouchHeight = el.size.height;
               _startTouchGlobalPos = details.globalPosition;
               if (el.module?.type == 'linker') {
-                _transformHandleRotateMode = false;
+                _elementRotateModes.remove(el.id);
               }
-              if (_transformHandleRotateMode) {
+              if (_elementRotateModes.contains(el.id)) {
                 _rotationCenter = Offset(
                   _workspaceOffset.dx + el.offset.dx + el.size.width / 2,
                   _workspaceOffset.dy + el.offset.dy + el.size.height / 2,
@@ -615,15 +624,23 @@ class _UIStudioPageState extends State<UIStudioPage>
             onPanUpdate: (details) {
               if (_isDraggingConnection) return;
               if (el.module?.type == 'linker') {
-                _transformHandleRotateMode = false;
+                _elementRotateModes.remove(el.id);
               }
-              if (_transformHandleRotateMode) {
+              if (_elementRotateModes.contains(el.id)) {
                 final currentAngle =
                     (details.globalPosition - _rotationCenter).direction;
                 var delta = currentAngle - _startHandleAngle;
                 while (delta > math.pi) { delta -= 2 * math.pi; }
                 while (delta < -math.pi) { delta += 2 * math.pi; }
-                final newRotation = _startRotation + delta * 180 / math.pi;
+                double newRotation = _startRotation + delta * 180 / math.pi;
+                final double remainder = (newRotation % 90.0).abs();
+                if (remainder <= 4.0 || remainder >= 86.0) {
+                  final double snappedRotation = (newRotation / 90.0).round() * 90.0;
+                  if (el.rotation != snappedRotation) {
+                    HapticFeedback.lightImpact();
+                  }
+                  newRotation = snappedRotation;
+                }
                 setState(() {
                   final idx = _currentElements.indexWhere((e) => e.id == el.id);
                   if (idx != -1) {
@@ -654,7 +671,7 @@ class _UIStudioPageState extends State<UIStudioPage>
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: _transformHandleRotateMode
+                color: isRotateMode
                     ? const Color(0xFF651FFF)
                     : const Color(0xFFFF4081),
                 shape: BoxShape.circle,
@@ -667,7 +684,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                 ],
               ),
               child: Icon(
-                _transformHandleRotateMode
+                isRotateMode
                     ? Icons.rotate_right_rounded
                     : Icons.open_in_full_rounded,
                 size: 14,
@@ -688,15 +705,11 @@ class _UIStudioPageState extends State<UIStudioPage>
       ),
     );
 
-    if (el.rotation != 0.0) {
-      rootTree = Transform.rotate(
-        angle: el.rotation * math.pi / 180.0,
-        alignment: Alignment.center,
-        child: rootTree,
-      );
-    }
-
-    return rootTree;
+    return Transform.rotate(
+      angle: el.rotation * math.pi / 180.0,
+      alignment: Alignment.center,
+      child: rootTree,
+    );
   }
 
   // ============================================================

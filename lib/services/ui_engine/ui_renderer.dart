@@ -23,15 +23,12 @@ class UIRenderer {
     } else {
       widget = const SizedBox();
     }
-    // 围绕元素自身中心旋转。工作室拖拽与运行时聊天渲染共用此入口，
-    // 因此两处表现一致；rotation == 0 时不套 Transform，零开销。
-    if (element.rotation != 0.0) {
-      return Transform.rotate(
-        angle: element.rotation * math.pi / 180.0,
-        child: widget,
-      );
-    }
-    return widget;
+    // 围绕元素自身中心旋转。工作室拖拽与运行时聊天渲染共用此入口。
+    // 为防止从 0° 拖动发生树结构突变导致手势中断断触，此处自出生起无条件包裹 Transform.rotate。
+    return Transform.rotate(
+      angle: element.rotation * math.pi / 180.0,
+      child: widget,
+    );
   }
 
   static Widget _renderModule(BuildContext context, UIElement element, UIModule module, Size size) {
@@ -652,6 +649,7 @@ class UIRenderer {
   }
 
   static Widget _buildSwitchBlock(BuildContext context, UIModule module) {
+    final bool isStudio = UISceneModeScope.of(context);
     final int? inactiveColorVal = module.properties['inactiveTrackColor'] as int?;
     final Color inactiveColor = inactiveColorVal != null ? Color(inactiveColorVal) : Colors.grey.shade300;
     final int? thumbColorVal = module.properties['thumbColor'] as int?;
@@ -662,10 +660,12 @@ class UIRenderer {
         final bool currentVal = module.properties['value'] != false;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () {
-            module.properties['value'] = !currentVal;
-            setState(() {});
-          },
+          onTap: isStudio
+              ? null
+              : () {
+                  module.properties['value'] = !currentVal;
+                  setState(() {});
+                },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -692,9 +692,14 @@ class UIRenderer {
   static Widget _buildLinkerNode(UIModule module, Size size) {
     final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>() ?? {};
 
-    final sourcePort = linkerData['sourcePort']?.toString() ?? '—';
-    final targetPort = linkerData['targetPort']?.toString() ?? '—';
-    final scheme = linkerData['scheme']?.toString() ?? '未配置';
+    final String sourceId = linkerData['sourceModuleId']?.toString() ?? '';
+    final String targetId = linkerData['targetModuleId']?.toString() ?? '';
+    final bool hasSource = sourceId.trim().isNotEmpty && sourceId != 'null' && sourceId != '—';
+    final bool hasTarget = targetId.trim().isNotEmpty && targetId != 'null' && targetId != '—';
+
+    final sourcePort = hasSource ? (linkerData['sourcePort']?.toString() ?? '—') : '';
+    final targetPort = hasTarget ? (linkerData['targetPort']?.toString() ?? '—') : '';
+    final scheme = (hasSource && hasTarget) ? (linkerData['scheme']?.toString() ?? '未配置') : '未连接';
 
     final portColor = module.color.withValues(alpha: 0.95);
     final borderColor = module.color.withValues(alpha: 0.35);
@@ -716,14 +721,15 @@ class UIRenderer {
       child: Stack(
         children: [
           // 左上角端口标签
-          Positioned(
-            left: 8,
-            top: 6,
-            child: Text(
-              sourcePort,
-              style: const TextStyle(fontSize: 9, color: Color(0xFF444455), fontWeight: FontWeight.w700),
+          if (sourcePort.isNotEmpty && sourcePort != '—')
+            Positioned(
+              left: 8,
+              top: 6,
+              child: Text(
+                sourcePort,
+                style: const TextStyle(fontSize: 9, color: Color(0xFF444455), fontWeight: FontWeight.w700),
+              ),
             ),
-          ),
 
           // 左侧端口（垂直居中）
           Positioned(
@@ -748,14 +754,15 @@ class UIRenderer {
           ),
 
           // 右上角端口标签
-          Positioned(
-            right: 8,
-            top: 6,
-            child: Text(
-              targetPort,
-              style: const TextStyle(fontSize: 9, color: Color(0xFF444455), fontWeight: FontWeight.w700),
+          if (targetPort.isNotEmpty && targetPort != '—')
+            Positioned(
+              right: 8,
+              top: 6,
+              child: Text(
+                targetPort,
+                style: const TextStyle(fontSize: 9, color: Color(0xFF444455), fontWeight: FontWeight.w700),
+              ),
             ),
-          ),
 
           // 右侧端口（垂直居中）
           Positioned(
@@ -1107,12 +1114,12 @@ class UIRenderer {
         border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
         boxShadow: activeGlow
             ? [
-          BoxShadow(color: activeColor.withValues(alpha: 0.65), blurRadius: glowRadius, spreadRadius: 1.5),
-          BoxShadow(color: activeColor.withValues(alpha: 0.35), blurRadius: glowRadius * 1.6, spreadRadius: 3.0),
-        ]
+                BoxShadow(color: activeColor.withValues(alpha: 0.65), blurRadius: glowRadius, spreadRadius: 1.5),
+                BoxShadow(color: activeColor.withValues(alpha: 0.35), blurRadius: glowRadius * 1.6, spreadRadius: 3.0),
+              ]
             : [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 2, offset: const Offset(0, 1)),
-        ],
+                BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 2, offset: const Offset(0, 1)),
+              ],
       ),
     );
 
@@ -1142,13 +1149,13 @@ class UIRenderer {
     final double contentWidth = (props['contentWidth'] as num?)?.toDouble() ?? 300.0;
     final double contentHeight = (props['contentHeight'] as num?)?.toDouble() ?? 500.0;
     final int bgColorVal = (props['backgroundColor'] as int?) ?? 0xFFF0F0F5;
-    final Color bgColor = Color(bgColorVal);
+    final Color bgColor = LinkerService.resolveTargetColor(module) ?? Color(bgColorVal);
     final String physicsMode = props['physics']?.toString() ?? 'bouncing';
     final ScrollPhysics scrollPhysics = physicsMode == 'clamping' ? const ClampingScrollPhysics() : const BouncingScrollPhysics();
 
     final List<UIElement> adoptedChildren = (props['adoptedChildElements'] as List?)
-        ?.map((e) => UIElement.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList() ??
+            ?.map((e) => UIElement.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList() ??
         [];
 
     Widget innerContent;
@@ -1179,25 +1186,25 @@ class UIRenderer {
         alignment: Alignment.center,
         child: isStudio
             ? Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              scrollMode == 'omni' ? Icons.pan_tool_alt_outlined : (scrollMode == 'horizontal' ? Icons.swap_horiz : Icons.swap_vert),
-              size: 28,
-              color: const Color(0xFF3F51B5).withValues(alpha: 0.6),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              scrollMode == 'omni'
-                  ? '🗺️ 2D 无极探索沙盘\n[虚拟底板: ${contentWidth.toInt()}x${contentHeight.toInt()}px]'
-                  : '📜 局部滚动视窗 (${scrollMode == 'horizontal' ? '横向' : '竖向'}滑动)\n[虚拟高宽: ${contentWidth.toInt()}x${contentHeight.toInt()}px]',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF3F51B5), fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            const Text('请在属性配置页或点击“进入内部空间”对收容子元素排版', style: TextStyle(fontSize: 10, color: Colors.grey)),
-          ],
-        )
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    scrollMode == 'omni' ? Icons.pan_tool_alt_outlined : (scrollMode == 'horizontal' ? Icons.swap_horiz : Icons.swap_vert),
+                    size: 28,
+                    color: const Color(0xFF3F51B5).withValues(alpha: 0.6),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    scrollMode == 'omni'
+                        ? '🗺️ 2D 无极探索沙盘\n[虚拟底板: ${contentWidth.toInt()}x${contentHeight.toInt()}px]'
+                        : '📜 局部滚动视窗 (${scrollMode == 'horizontal' ? '横向' : '竖向'}滑动)\n[虚拟高宽: ${contentWidth.toInt()}x${contentHeight.toInt()}px]',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF3F51B5), fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('请在属性配置页或点击“进入内部空间”对收容子元素排版', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                ],
+              )
             : const SizedBox.shrink(),
       );
     }
@@ -1228,7 +1235,7 @@ class UIRenderer {
 
     final Widget protectedViewport = NotificationListener<ScrollNotification>(
       onNotification: (_) => true, // 吞没滚动事件，手势防穿透隔离
-      child: sealedViewport,
+      child: isStudio ? IgnorePointer(child: sealedViewport) : sealedViewport,
     );
 
     if (isStudio) {
@@ -1503,11 +1510,11 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
         ),
         boxShadow: isRunning
             ? [
-          BoxShadow(color: const Color(0xFFFF9100).withValues(alpha: 0.35), blurRadius: 6, spreadRadius: 1),
-        ]
+                BoxShadow(color: const Color(0xFFFF9100).withValues(alpha: 0.35), blurRadius: 6, spreadRadius: 1),
+              ]
             : [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1)),
-        ],
+                BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1)),
+              ],
       ),
       child: content,
     );

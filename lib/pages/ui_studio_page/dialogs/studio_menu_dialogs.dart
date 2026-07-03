@@ -162,6 +162,7 @@ mixin _StudioMenuDialogs on _UIStudioLogic {
             linkerData.remove('sourceModuleId');
             linkerData.remove('sourcePort');
             linkerData.remove('sourceType');
+            linkerData['scheme'] = '未配置';
           } else {
             linkerData['sourceModuleId'] = value;
             final sourceType = sourceModules.firstWhere((m) => m['id'] == value)['type'];
@@ -171,7 +172,6 @@ mixin _StudioMenuDialogs on _UIStudioLogic {
             } else if (sourceType == 'text') {
               linkerData['sourcePort'] = 'text';
               linkerData['sourceType'] = 'string';
-              linkerData['scheme'] = 'text_to_text';
             }
           }
           props['linker'] = linkerData;
@@ -218,6 +218,7 @@ mixin _StudioMenuDialogs on _UIStudioLogic {
             linkerData.remove('targetModuleId');
             linkerData.remove('targetPort');
             linkerData.remove('targetType');
+            linkerData['scheme'] = '未配置';
           } else {
             linkerData['targetModuleId'] = value;
             final targetType = targetModules.firstWhere((m) => m['id'] == value)['type'];
@@ -227,9 +228,6 @@ mixin _StudioMenuDialogs on _UIStudioLogic {
             } else if (targetType == 'input') {
               linkerData['targetPort'] = 'variable';
               linkerData['targetType'] = 'string';
-              if (linkerData['sourceType'] == 'string') {
-                linkerData['scheme'] = 'text_to_text';
-              }
             }
           }
           props['linker'] = linkerData;

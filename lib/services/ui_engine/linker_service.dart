@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'ui_models.dart';
 
 /// LinkerService（联动器服务）
@@ -115,9 +117,50 @@ class LinkerService {
         if (val != null) {
           return val.toString();
         }
+      } else if (['name_to_text', 'name_to_select', 'name_to_label', 'name_to_button_text'].contains(scheme)) {
+        return sourceModule.name;
+      } else if (scheme == 'bounds_to_text') {
+        final w = sourceModule.properties['width'] ?? 200;
+        final h = sourceModule.properties['height'] ?? 100;
+        return "$w x $h px";
+      } else if (['size_to_max', 'width_to_max', 'width_to_line_length', 'size_to_viewport_content'].contains(scheme)) {
+        final w = sourceModule.properties['width'] ?? 300.0;
+        return (w as num).toDouble();
+      } else if (['surface_to_button_enable', 'surface_to_input_enable', 'surface_to_progress_enable', 'surface_to_switch_enable', 'surface_to_select_enable', 'surface_to_indicator_state'].contains(scheme)) {
+        return sourceModule.properties['isActive'] != false;
+      } else if (['math_to_current', 'num_to_math'].contains(scheme)) {
+        final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            0.0;
+        return (val as num).toDouble();
+      } else if (scheme == 'math_to_text') {
+        final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            '0';
+        return val.toString();
       }
     }
 
+    return null;
+  }
+
+  /// 解析组件被上游底面联动绑定的主题颜色
+  static Color? resolveTargetColor(UIModule targetModule) {
+    final targetElId = _findElementIdForModule(targetModule);
+    if (targetElId == null) return null;
+
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (linkerData == null) continue;
+      if (linkerData['targetModuleId']?.toString() != targetElId) continue;
+      final scheme = linkerData['scheme']?.toString();
+      if (scheme == null || !scheme.startsWith('color_to_')) continue;
+      final sourceId = linkerData['sourceModuleId']?.toString();
+      if (sourceId != null && _elementModules.containsKey(sourceId)) {
+        return _elementModules[sourceId]!.color;
+      }
+    }
     return null;
   }
 

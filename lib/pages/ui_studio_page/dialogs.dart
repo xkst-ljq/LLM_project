@@ -105,7 +105,34 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
 
     final options = <Map<String, String>>[];
 
-    if (['progress', 'slider'].contains(sType) && ['progress', 'slider'].contains(tType)) {
+    if (['surface', 'surface_art', 'primitive_art'].contains(sType)) {
+      if (tType == 'text') {
+        options.add({'id': 'name_to_text', 'label': '表头回写 (name → text)'});
+        options.add({'id': 'bounds_to_text', 'label': '规格自测打印 (bounds → text)'});
+        options.add({'id': 'color_to_text', 'label': '文字/底色着色 (color → text)'});
+      } else if (['progress', 'slider'].contains(tType)) {
+        options.add({'id': 'color_to_track', 'label': '同步轨道填充色 (color → track)'});
+        options.add({'id': 'size_to_max', 'label': '宽度折算上限 (size → max)'});
+        options.add({'id': 'surface_to_progress_enable', 'label': '区域激活使能/冻结'});
+      } else if (tType == 'switch') {
+        options.add({'id': 'color_to_switch', 'label': '同步开关高亮色 (color → switch)'});
+        options.add({'id': 'surface_to_switch_enable', 'label': '开关触控使能锁定'});
+      } else if (tType == 'select') {
+        options.add({'id': 'color_to_select', 'label': '同步选框主题色 (color → select)'});
+        options.add({'id': 'surface_to_select_enable', 'label': '选框触控使能锁定'});
+      } else if (tType == 'indicator') {
+        options.add({'id': 'color_to_indicator', 'label': '同步指示灯发光主题色'});
+        options.add({'id': 'surface_to_indicator_state', 'label': '区域选中驱动点亮/熄灭'});
+      } else if (tType == 'scroll_frame') {
+        options.add({'id': 'adopt_into_frame', 'label': '📦 移交收容至视窗沙盘'});
+        options.add({'id': 'color_to_viewport', 'label': '同步视窗底板背景色'});
+        options.add({'id': 'size_to_viewport_content', 'label': '映射为视窗虚拟长画布尺寸'});
+      } else if (['button', 'input'].contains(tType)) {
+        options.add({'id': 'surface_to_button_enable', 'label': '隐形触控热区解锁/屏蔽'});
+      } else if (['surface', 'surface_art', 'primitive_art'].contains(tType)) {
+        options.add({'id': 'surface_to_surface_expansion', 'label': '🔗 面的扩充与全样式共生'});
+      }
+    } else if (['progress', 'slider'].contains(sType) && ['progress', 'slider'].contains(tType)) {
       options.add({'id': 'num_to_current', 'label': '数值驱动实时进度 (num → current)'});
     } else if (['progress', 'slider'].contains(sType) && tType == 'text') {
       options.add({'id': 'current_to_text', 'label': 'current → text (当前进度/数值转文本)'});

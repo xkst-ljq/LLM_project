@@ -491,11 +491,12 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                         properties: {
                           'linker': {
                             'sourceModuleId': '',
-                            'sourcePort': 'current',
-                            'sourceType': 'number',
+                            'sourcePort': '',
+                            'sourceType': '',
                             'targetModuleId': '',
-                            'targetPort': 'text',
-                            'targetType': 'string',
+                            'targetPort': '',
+                            'targetType': '',
+                            'scheme': '未配置',
                             'enabled': true,
                           },
                         },
