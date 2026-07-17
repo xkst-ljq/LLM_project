@@ -14,6 +14,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
   // ===== 连线渲染 =====
   List<Widget> _buildLinkerConnectionsLayer() {
+    if (_isPreviewMode) return const [];
     final connections = _getAllLinkerConnections();
     if (connections.isEmpty) return const [];
 

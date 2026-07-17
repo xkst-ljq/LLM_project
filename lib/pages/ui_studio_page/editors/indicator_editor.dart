@@ -365,7 +365,7 @@ class _IndicatorEditorState extends State<IndicatorEditor> {
         ),
         const SizedBox(height: 6),
         Text(
-          'L${widget.layerId} 图层 · 坐标(${widget.initialPosition.dx.toInt()}, ${widget.initialPosition.dy.toInt()}) · 36x36 磁吸框',
+          '坐标(${widget.initialPosition.dx.toInt()}, ${widget.initialPosition.dy.toInt()}) · 36x36 磁吸框',
           style: TextStyle(color: Colors.grey[600], fontSize: 11),
         ),
       ],

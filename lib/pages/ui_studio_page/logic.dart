@@ -14,8 +14,8 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   String? _selectedTransformationId;
   final Set<String> _elementRotateModes = <String>{};
   bool _isLinkingMode = false;
+  bool _isPreviewMode = false;
 
-  bool _showLayerManager = false;
   bool _showConstructionManager = false;
   bool _showLeftDrawer = false;
   bool _showRightDrawer = false;
@@ -63,9 +63,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   void _setupEventBusListener() {
     LinkerService.initEventBusListener(_currentElements, () {
       if (mounted) {
-        setState(() {
-          _autoSave();
-        });
+        setState(() {});
       }
     });
   }
@@ -180,27 +178,6 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       _currentElements.insert(newIdx, el);
     });
     _autoSave();
-  }
-
-  // ============================================================
-  //  图层管理
-  // ============================================================
-  void _createNewSceneLayer() {
-    setState(() {
-      final newId = _sceneLayers.isEmpty
-          ? 0
-          : _sceneLayers.map((l) => l.id).reduce((a, b) => a > b ? a : b) + 1;
-      _sceneLayers.add(LayerScene(id: newId, name: '图层 $newId'));
-      _activeLayerIndex = newId;
-    });
-    _autoSave();
-  }
-
-  void _switchActiveSceneLayer(int layerId) {
-    setState(() {
-      _activeLayerIndex = layerId;
-      _selectedTransformationId = null;
-    });
   }
 
   // ============================================================
@@ -505,5 +482,51 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       );
     }
     _autoSave();
+  }
+
+  /// 容器面碰撞检测判决：判断操作原子中心坐标是否落入某一个容器面内
+  bool _isInsideContainerSurface(UIElement el) {
+    if (el.isComposite) return false;
+    final type = el.module?.type;
+    if (type == 'surface' ||
+        type == 'surface_art' ||
+        type == 'primitive_art' ||
+        type == 'base_box' ||
+        type == 'scroll_frame' ||
+        type == 'linker' ||
+        type == 'math_node' ||
+        type == 'timer' ||
+        el.module?.properties['is_container_boundary'] == true) {
+      return true;
+    }
+
+    final elCenter = Offset(
+      el.offset.dx + el.size.width / 2,
+      el.offset.dy + el.size.height / 2,
+    );
+
+    for (final other in _currentElements) {
+      if (identical(other, el) || other.id == el.id) continue;
+      final otherType = other.module?.type;
+      final bool isContainer = otherType == 'surface' ||
+          otherType == 'surface_art' ||
+          otherType == 'primitive_art' ||
+          otherType == 'base_box' ||
+          otherType == 'scroll_frame' ||
+          other.module?.properties['is_container_boundary'] == true;
+
+      if (isContainer) {
+        final containerRect = Rect.fromLTWH(
+          other.offset.dx,
+          other.offset.dy,
+          other.size.width,
+          other.size.height,
+        );
+        if (containerRect.contains(elCenter)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 }

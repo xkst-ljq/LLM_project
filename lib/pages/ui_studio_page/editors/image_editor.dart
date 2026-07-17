@@ -96,18 +96,6 @@ mixin _ImageEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
                               TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
                               const SizedBox(height: 12),
 
-                              const Text('归属独立图层', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                              const SizedBox(height: 4),
-                              DropdownButtonFormField<int>(
-                                initialValue: selectedLayer,
-                                decoration: _softInputDecoration(),
-                                dropdownColor: Colors.white,
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
-                                items: _sceneLayers.map((ly) => DropdownMenuItem<int>(value: ly.id, child: Text(ly.name))).toList(),
-                                onChanged: (v) => setDialogState(() => selectedLayer = v ?? _activeLayerIndex),
-                              ),
-                              const SizedBox(height: 12),
-
                               const Text('绝对物理坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                               const SizedBox(height: 4),
                               Row(

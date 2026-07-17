@@ -59,6 +59,16 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
 
     final bool isFullyConnected = sourceEl != null && targetEl != null;
 
+    if (!isFullyConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已连通单侧端口，请继续拉线连接另一端'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
     showDialog<void>(
       context: context,
       builder: (ctx) {
@@ -69,19 +79,7 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
             '选择联动器传输类型',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116)),
           ),
-          content: !isFullyConnected
-              ? Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF9C4),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              '⚠️ 请先连接【数据来源】与【目标端点】，系统将根据双方组件规格自动推导可用的方案。',
-              style: TextStyle(fontSize: 13, color: Color(0xFFF57F17), height: 1.4),
-            ),
-          )
-              : _buildAvailableSchemesList(ctx, el, sourceEl!, targetEl!, currentScheme),
+          content: _buildAvailableSchemesList(ctx, el, sourceEl!, targetEl!, currentScheme),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),

@@ -143,7 +143,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onPanUpdate: (details) {
-                        if (_isDraggingConnection) return;
+                        if (_isDraggingConnection || _isPreviewMode) return;
                         setState(() => _workspaceOffset += details.delta);
                       },
                       onTap: () {
@@ -155,22 +155,24 @@ class _UIStudioPageState extends State<UIStudioPage>
                       },
                       child: ClipRect(
                         child: UISceneModeScope(
-                          isStudioCreationMode: true,
-                          selectedElementId: _selectedTransformationId,
+                          isStudioCreationMode: !_isPreviewMode,
+                          selectedElementId: _isPreviewMode ? null : _selectedTransformationId,
                           child: CustomPaint(
                             painter: StudioWarmGridPainter(_workspaceOffset),
                             child: Stack(
                               clipBehavior: Clip.none,
                               children: [
                                 ..._buildLinkerConnectionsLayer(),
-                                if (_isDraggingConnection &&
+                                if (!_isPreviewMode &&
+                                    _isDraggingConnection &&
                                     _dragConnectionEnd != null)
                                   _buildTemporaryConnectionLine(),
                               ...() {
                                 LinkerService.updateElementSnapshot(sortedElements);
                                 return sortedElements.map((el) {
                                   final double p =
-                                  (el.id == _selectedTransformationId &&
+                                  (!_isPreviewMode &&
+                                      el.id == _selectedTransformationId &&
                                       el.module?.type != 'linker')
                                       ? 20.0
                                       : 0.0;
@@ -194,40 +196,72 @@ class _UIStudioPageState extends State<UIStudioPage>
               ),
             ),
 
-            // ===== 2. 左上角返回 =====
+            // ===== 2. 左上角返回 & 模式切换 =====
             Positioned(
               top: MediaQuery.of(context).padding.top + 16,
               left: 16,
-              child: _buildGlassIconButton(
-                icon: Icons.reply_rounded,
-                onTap: () => Navigator.pop(context),
+              child: Row(
+                children: [
+                  _buildGlassIconButton(
+                    icon: Icons.reply_rounded,
+                    onTap: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    style: _glassButtonStyle,
+                    icon: Icon(_isPreviewMode ? Icons.edit_rounded : Icons.remove_red_eye_rounded, size: 18),
+                    label: Text(
+                      _isPreviewMode ? '退出预览' : '模拟预览',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    onPressed: () => setState(() {
+                      _isPreviewMode = !_isPreviewMode;
+                      _selectedTransformationId = null;
+                      _showConstructionManager = false;
+                      _showLeftDrawer = false;
+                      _showRightDrawer = false;
+                    }),
+                  ),
+                ],
               ),
             ),
+
+            if (_isPreviewMode)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 16,
+                left: 210,
+                right: 90,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00ACC1),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 3)),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.visibility, size: 14, color: Colors.white),
+                      const SizedBox(width: 6),
+                      const Expanded(
+                        child: Text(
+                          '👁 模拟预览中 · 位置已锁定 · 仅容器面内操作原子有效',
+                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             // ===== 3. 右上角控制 =====
             Positioned(
               top: MediaQuery.of(context).padding.top + 16,
-              right: 16,
-              child: FilledButton.icon(
-                style: _glassButtonStyle,
-                icon: const Icon(Icons.layers_rounded, size: 18),
-                label: Text(
-                  '图层 (Level $_activeLayerIndex)',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-                onPressed: () => setState(() {
-                  _showLayerManager = true;
-                  _showConstructionManager = false;
-                  _showRightDrawer = false;
-                }),
-              ),
-            ),
-
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 68,
               right: 16,
               child: FilledButton.icon(
                 style: _glassButtonStyle,
@@ -238,7 +272,6 @@ class _UIStudioPageState extends State<UIStudioPage>
                 ),
                 onPressed: () => setState(() {
                   _showConstructionManager = true;
-                  _showLayerManager = false;
                   _showRightDrawer = false;
                 }),
               ),
@@ -247,7 +280,7 @@ class _UIStudioPageState extends State<UIStudioPage>
             // ===== 4. 选中元素操作按钮 =====
             if (_selectedTransformationId != null)
               Positioned(
-                top: MediaQuery.of(context).padding.top + 120,
+                top: MediaQuery.of(context).padding.top + 68,
                 right: 16,
                 child: Column(
                   children: [
@@ -276,15 +309,6 @@ class _UIStudioPageState extends State<UIStudioPage>
               ),
 
             // ===== 5. 抽屉 =====
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-              right: _showLayerManager ? 0 : -260,
-              top: 100,
-              bottom: 100,
-              width: 240,
-              child: _buildDedicatedLayerManagerDrawer(),
-            ),
             AnimatedPositioned(
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOut,
@@ -325,7 +349,6 @@ class _UIStudioPageState extends State<UIStudioPage>
                 ),
               ),
             if (!_showRightDrawer &&
-                !_showLayerManager &&
                 !_showConstructionManager)
               Positioned(
                 right: 0,
@@ -373,6 +396,31 @@ class _UIStudioPageState extends State<UIStudioPage>
   //  节点构建（与手势、Linker、旋转把手高度耦合，保留在主文件）
   // ============================================================
   Widget _buildTrueSingleHandleNode(BuildContext nodeCtx, UIElement el, double p) {
+    if (_isPreviewMode) {
+      final bool isInside = _isInsideContainerSurface(el);
+      final Widget rendered = UIRenderer.render(nodeCtx, el);
+      final bool isInteractiveControl = ['slider', 'input', 'button', 'switch', 'select'].contains(el.module?.type);
+
+      if (isInteractiveControl && !isInside) {
+        return IgnorePointer(
+          child: Opacity(
+            opacity: 0.45,
+            child: SizedBox(
+              width: el.size.width,
+              height: el.size.height,
+              child: rendered,
+            ),
+          ),
+        );
+      }
+
+      return SizedBox(
+        width: el.size.width,
+        height: el.size.height,
+        child: rendered,
+      );
+    }
+
     final bool isTransformationActive = _selectedTransformationId == el.id;
     final bool isCurrentLayerActive = el.layerIndex == _activeLayerIndex;
 
@@ -417,33 +465,35 @@ class _UIStudioPageState extends State<UIStudioPage>
     );
 
     final bool isContainerBoundary = el.module?.properties['is_container_boundary'] == true;
-    Widget layerBadge = Positioned(
-      left: p + 4,
-      top: p - 14,
-      child: IgnorePointer(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-          decoration: BoxDecoration(
-            color: isContainerBoundary ? const Color(0xFFE65100) : Colors.black.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.88),
-              width: 0.7,
+    Widget layerBadge = isContainerBoundary
+        ? Positioned(
+            left: p + 4,
+            top: p - 14,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE65100),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.88),
+                    width: 0.7,
+                  ),
+                ),
+                child: const Text(
+                  '容器面',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    height: 1.0,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
             ),
-          ),
-          child: Text(
-            isContainerBoundary ? '容器面 (L${el.layerIndex})' : 'L${el.layerIndex}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 9,
-              height: 1.0,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-      ),
-    );
+          )
+        : const SizedBox.shrink();
 
     Widget touchableContent;
     if (isLinker) {

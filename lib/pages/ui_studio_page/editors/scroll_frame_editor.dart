@@ -403,7 +403,7 @@ class _ScrollFrameEditorState extends State<ScrollFrameEditor> {
         ),
         const SizedBox(height: 6),
         Text(
-          'L${widget.layerId} 图层 · 物理坐标(${widget.initialPosition.dx.toInt()}, ${widget.initialPosition.dy.toInt()}) · 物理尺寸由工作台八角拉伸柄调整',
+          '物理坐标(${widget.initialPosition.dx.toInt()}, ${widget.initialPosition.dy.toInt()}) · 物理尺寸由工作台八角拉伸柄调整',
           style: TextStyle(color: Colors.grey[600], fontSize: 11),
         ),
       ],

@@ -368,7 +368,7 @@ class _TimerEditorState extends State<TimerEditor> {
         ),
         const SizedBox(height: 6),
         Text(
-          'L${widget.layerId} 图层 · 物理坐标(${widget.initialPosition.dx.toInt()}, ${widget.initialPosition.dy.toInt()}) · 运行时对读者隐形，纯后台发送信号',
+          '物理坐标(${widget.initialPosition.dx.toInt()}, ${widget.initialPosition.dy.toInt()}) · 运行时对读者隐形，纯后台发送信号',
           style: TextStyle(color: Colors.grey[600], fontSize: 11),
         ),
       ],

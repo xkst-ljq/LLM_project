@@ -248,9 +248,6 @@ class _SelectEditorState extends State<SelectEditor> {
         Row(
           children: [
             Expanded(
-              child: Text('图层：${widget.layerId}', style: TextStyle(color: Colors.grey[700])),
-            ),
-            Expanded(
               child: Text(
                 '坐标：(${widget.initialPosition.dx.toInt()}, ${widget.initialPosition.dy.toInt()})',
                 style: TextStyle(color: Colors.grey[700]),

@@ -13,6 +13,13 @@ class UIRenderer {
   /// 将 UIElement 渲染为 Flutter Widget
   static Widget render(BuildContext context, UIElement element) {
     final bool isStudio = UISceneModeScope.of(context);
+
+    // 非工作室（预览模式与运行时）：隐形后台纯逻辑节点
+    if (!isStudio &&
+        ['linker', 'math_node', 'timer'].contains(element.module?.type)) {
+      return const SizedBox.shrink();
+    }
+
     if (!isStudio && LinkerService.isTargetHiddenBySwitch(element.id)) {
       return const SizedBox.shrink();
     }
@@ -77,7 +84,7 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildSlider(module, size),
+          child: _buildSlider(context, element, module, size),
         );
       case 'primitive_art':
       case 'surface_art':
@@ -97,14 +104,19 @@ class UIRenderer {
         );
       case 'surface':
       case 'base_box':
-        return _applyMaterialAndShape(
-          module.material,
-          module.shape,
-          module.color,
-          module.opacity,
-          module.borderRadius,
-          _buildBaseBox(),
+        return _buildAnimatedSurface(
+          context,
+          module,
           size,
+          _applyMaterialAndShape(
+            module.material,
+            module.shape,
+            module.color,
+            module.opacity,
+            module.borderRadius,
+            _buildBaseBox(),
+            size,
+          ),
         );
       case 'linker':
         return SizedBox(
@@ -267,6 +279,70 @@ class UIRenderer {
     return Container(); // 纯视觉表面，内容由外部决定
   }
 
+  static Widget _buildAnimatedSurface(
+    BuildContext context,
+    UIModule module,
+    Size size,
+    Widget baseSurface,
+  ) {
+    final trigger = module.properties['anim_trigger']?.toString();
+    final timestamp = (module.properties['anim_timestamp'] as num?)?.toInt() ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final bool isRecent = (now - timestamp) < 600;
+
+    if (!isRecent || trigger == null) {
+      return baseSurface;
+    }
+
+    if (trigger == 'click_to_surface_press') {
+      return TweenAnimationBuilder<double>(
+        key: ValueKey('press_$timestamp'),
+        tween: Tween<double>(begin: 0.92, end: 1.0),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.elasticOut,
+        builder: (ctx, scale, child) {
+          return Transform.scale(
+            scale: scale,
+            child: child,
+          );
+        },
+        child: baseSurface,
+      );
+    } else if (trigger == 'click_to_surface_ripple') {
+      return TweenAnimationBuilder<double>(
+        key: ValueKey('ripple_$timestamp'),
+        tween: Tween<double>(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutQuad,
+        builder: (ctx, progress, child) {
+          return Stack(
+            children: [
+              child!,
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(module.borderRadius),
+                  child: Center(
+                    child: Container(
+                      width: size.width * progress * 1.5,
+                      height: size.height * progress * 1.5,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: (1.0 - progress) * 0.45),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+        child: baseSurface,
+      );
+    }
+
+    return baseSurface;
+  }
+
   static Widget _buildProgressBar(UIModule module, Size size) {
     final double min = (module.properties['min'] ?? 0).toDouble();
     final double max = (module.properties['max'] ?? 100).toDouble();
@@ -333,79 +409,151 @@ class UIRenderer {
     );
   }
 
-  static Widget _buildSlider(UIModule module, Size size) {
-    final double min = (module.properties['min'] ?? 0).toDouble();
-    final double max = (module.properties['max'] ?? 100).toDouble();
-    double current = (module.properties['current'] ?? min).toDouble();
+  static Widget _buildSlider(
+    BuildContext context,
+    UIElement element,
+    UIModule module,
+    Size size,
+  ) {
+    final bool isStudio = UISceneModeScope.of(context);
 
-    final linkedVal = LinkerService.resolveTargetValue(module);
-    if (linkedVal != null && linkedVal is num) {
-      current = linkedVal.toDouble();
-    }
-    final double actualMin = min <= max ? min : max;
-    final double actualMax = min <= max ? max : min;
-    current = current.clamp(actualMin, actualMax).toDouble();
+    Widget buildSliderWidget(double currentVal) {
+      final double min = (module.properties['min'] ?? 0).toDouble();
+      final double max = (module.properties['max'] ?? 100).toDouble();
+      final double actualMin = min <= max ? min : max;
+      final double actualMax = min <= max ? max : min;
+      final double clampedCur = currentVal.clamp(actualMin, actualMax).toDouble();
 
-    final double ratio = actualMax > actualMin ? (current - actualMin) / (actualMax - actualMin) : 0.0;
+      final double ratio = actualMax > actualMin
+          ? (clampedCur - actualMin) / (actualMax - actualMin)
+          : 0.0;
 
-    final fillColor = module.color;
-    final int? trackColorVal = module.properties['trackColor'] as int?;
-    final Color trackColor = trackColorVal != null ? Color(trackColorVal) : Colors.grey.shade300;
-    final double knobSize = (module.properties['knobSize'] ?? 18.0).toDouble().clamp(12.0, 36.0).toDouble();
-    final String knobShape = module.properties['knobShape']?.toString() ?? 'circle';
+      final fillColor = module.color;
+      final int? trackColorVal = module.properties['trackColor'] as int?;
+      final Color trackColor =
+          trackColorVal != null ? Color(trackColorVal) : Colors.grey.shade300;
+      final double knobSize = (module.properties['knobSize'] ?? 18.0)
+          .toDouble()
+          .clamp(12.0, 36.0)
+          .toDouble();
+      final String knobShape =
+          module.properties['knobShape']?.toString() ?? 'circle';
 
-    final double h = size.height > 0 ? size.height : 32.0;
-    final double trackWidth = math.max(10.0, size.width - 20.0);
-    final double maxKnobLeft = math.max(0.0, trackWidth - knobSize);
-    final double knobLeft = 10.0 + ratio.clamp(0.0, 1.0) * maxKnobLeft;
+      final double h = size.height > 0 ? size.height : 32.0;
+      final double trackWidth = math.max(10.0, size.width - 20.0);
+      final double maxKnobLeft = math.max(0.0, trackWidth - knobSize);
+      final double knobLeft = 10.0 + ratio.clamp(0.0, 1.0) * maxKnobLeft;
 
-    final double activeTrackWidth = math.max(0.0, knobLeft - 10.0 + knobSize / 2);
+      final double activeTrackWidth =
+          math.max(0.0, knobLeft - 10.0 + knobSize / 2);
 
-    return SizedBox(
-      height: h,
-      child: Stack(
-        children: [
-          Positioned(
-            left: 10,
-            right: 10,
-            top: (h - 6) / 2,
-            height: 6,
-            child: Container(
-              decoration: BoxDecoration(color: trackColor, borderRadius: BorderRadius.circular(3)),
-            ),
-          ),
-          Positioned(
-            left: 10,
-            top: (h - 6) / 2,
-            width: activeTrackWidth,
-            height: 6,
-            child: Container(
-              decoration: BoxDecoration(color: fillColor.withValues(alpha: 0.72), borderRadius: BorderRadius.circular(3)),
-            ),
-          ),
-          Positioned(
-            left: knobLeft,
-            top: (h - knobSize) / 2,
-            width: knobSize,
-            height: knobSize,
-            child: Container(
-              decoration: BoxDecoration(
-                color: fillColor,
-                shape: knobShape == 'rectangle' ? BoxShape.rectangle : BoxShape.circle,
-                borderRadius: knobShape == 'rectangle' ? BorderRadius.circular(4) : null,
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+      return SizedBox(
+        height: h,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 10,
+              right: 10,
+              top: (h - 6) / 2,
+              height: 6,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: trackColor,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+            Positioned(
+              left: 10,
+              top: (h - 6) / 2,
+              width: activeTrackWidth,
+              height: 6,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: fillColor.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            Positioned(
+              left: knobLeft,
+              top: (h - knobSize) / 2,
+              width: knobSize,
+              height: knobSize,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: fillColor,
+                  shape: knobShape == 'rectangle'
+                      ? BoxShape.rectangle
+                      : BoxShape.circle,
+                  borderRadius: knobShape == 'rectangle'
+                      ? BorderRadius.circular(4)
+                      : null,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (isStudio) {
+      final double min = (module.properties['min'] ?? 0).toDouble();
+      double current = (module.properties['current'] ?? min).toDouble();
+      final linkedVal = LinkerService.resolveTargetValue(module);
+      if (linkedVal != null && linkedVal is num) {
+        current = linkedVal.toDouble();
+      }
+      return buildSliderWidget(current);
+    }
+
+    return StatefulBuilder(
+      builder: (ctx, setSliderState) {
+        final double min = (module.properties['min'] ?? 0).toDouble();
+        final double max = (module.properties['max'] ?? 100).toDouble();
+        double current = (module.properties['current'] ?? min).toDouble();
+
+        final linkedVal = LinkerService.resolveTargetValue(module);
+        if (linkedVal != null && linkedVal is num) {
+          current = linkedVal.toDouble();
+        }
+
+        void updatePosition(Offset localPos) {
+          final double actualMin = min <= max ? min : max;
+          final double actualMax = min <= max ? max : min;
+          final double knobSize = (module.properties['knobSize'] ?? 18.0)
+              .toDouble()
+              .clamp(12.0, 36.0)
+              .toDouble();
+          final double trackWidth = math.max(10.0, size.width - 20.0);
+          final double maxKnobLeft = math.max(0.0, trackWidth - knobSize);
+
+          if (maxKnobLeft <= 0) return;
+          final dx = localPos.dx - 10.0;
+          final newRatio = (dx / maxKnobLeft).clamp(0.0, 1.0);
+          final newCurrent = actualMin + newRatio * (actualMax - actualMin);
+
+          module.properties['current'] = newCurrent;
+          LinkerEventBus().emit(element.id, 'slider_change', newCurrent);
+          setSliderState(() {});
+        }
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (details) => updatePosition(details.localPosition),
+          onPanStart: (details) => updatePosition(details.localPosition),
+          onPanUpdate: (details) => updatePosition(details.localPosition),
+          child: buildSliderWidget(current),
+        );
+      },
     );
   }
 
@@ -540,7 +688,7 @@ class UIRenderer {
         placeholder = '请输入${linkedVal.toString().trim()}...';
       }
     }
-    return Container(
+    final displayBox = Container(
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
@@ -552,6 +700,35 @@ class UIRenderer {
         placeholder,
         style: TextStyle(color: module.color.withValues(alpha: 0.75), fontSize: 13),
         overflow: TextOverflow.ellipsis,
+      ),
+    );
+
+    if (isStudio) {
+      return displayBox;
+    }
+
+    return Container(
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: module.color.withValues(alpha: 0.5), width: 1),
+      ),
+      child: TextField(
+        controller: TextEditingController(text: module.properties['text']?.toString() ?? ''),
+        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          hintText: placeholder,
+          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF888896)),
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
+        ),
+        onChanged: (val) {
+          module.properties['text'] = val;
+          module.properties['value'] = val;
+        },
       ),
     );
   }

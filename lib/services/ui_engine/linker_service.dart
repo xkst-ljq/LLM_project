@@ -68,6 +68,13 @@ class LinkerService {
                   module: targetEl.module!.copyWith(properties: props),
                 );
                 needRefresh = true;
+              } else if (scheme == 'click_to_surface_press' || scheme == 'click_to_surface_ripple') {
+                props['anim_trigger'] = scheme;
+                props['anim_timestamp'] = DateTime.now().millisecondsSinceEpoch;
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+                needRefresh = true;
               } else if (scheme == 'timer_tick_to_progress_increment') {
                 final step = (schemeParams['step'] as num?)?.toDouble() ?? 5.0;
                 final cur = (props['current'] as num?)?.toDouble() ?? 0.0;
