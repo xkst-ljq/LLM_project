@@ -1,11 +1,94 @@
+import 'dart:async';
 import 'dart:ui';
 
+import 'linker_event_bus.dart';
 import 'ui_models.dart';
 
 /// LinkerService（联动器服务）
 class LinkerService {
   /// 全局元素快照：elementId → UIModule
   static final Map<String, UIModule> _elementModules = {};
+
+  static StreamSubscription<LinkerPulseEvent>? _pulseSubscription;
+
+  /// 初始化脉冲事件总线监听器（连接按钮点击/定时器脉冲触发真实状态改写）
+  static void initEventBusListener(List<UIElement> elements, void Function() onStateChanged) {
+    _pulseSubscription?.cancel();
+    _pulseSubscription = LinkerEventBus().onPulse.listen((event) {
+      bool needRefresh = false;
+
+      for (final el in elements) {
+        if (el.isComposite || el.module?.type != 'linker') continue;
+        final lk = (el.module?.properties['linker'] as Map?)?.cast<String, dynamic>();
+        if (lk == null || lk['enabled'] == false) continue;
+
+        final srcId = lk['sourceModuleId']?.toString();
+        final tgtId = lk['targetModuleId']?.toString();
+        final scheme = lk['scheme']?.toString();
+
+        if (srcId == event.sourceModuleId && tgtId != null && scheme != null) {
+          final tgtIdx = elements.indexWhere((e) => e.id == tgtId);
+          if (tgtIdx != -1) {
+            final targetEl = elements[tgtIdx];
+            if (!targetEl.isComposite && targetEl.module != null) {
+              final props = Map<String, dynamic>.from(targetEl.module!.properties);
+              final schemeParams = (lk['schemeParams'] as Map?)?.cast<String, dynamic>() ?? {};
+
+              if (scheme == 'click_to_switch_toggle' || scheme == 'timer_tick_to_switch_toggle') {
+                final cur = props['value'] == true;
+                props['value'] = !cur;
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+                needRefresh = true;
+              } else if (scheme == 'click_to_switch_set_true') {
+                props['value'] = true;
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+                needRefresh = true;
+              } else if (scheme == 'click_to_switch_set_false') {
+                props['value'] = false;
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+                needRefresh = true;
+              } else if (scheme == 'click_to_input_clear') {
+                props['text'] = '';
+                props['value'] = '';
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+                needRefresh = true;
+              } else if (scheme == 'click_to_slider_reset') {
+                final defVal = (props['defaultValue'] as num?)?.toDouble() ??
+                    ((props['min'] as num?)?.toDouble() ?? 0.0);
+                props['current'] = defVal;
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+                needRefresh = true;
+              } else if (scheme == 'timer_tick_to_progress_increment') {
+                final step = (schemeParams['step'] as num?)?.toDouble() ?? 5.0;
+                final cur = (props['current'] as num?)?.toDouble() ?? 0.0;
+                final max = (props['max'] as num?)?.toDouble() ?? 100.0;
+                final min = (props['min'] as num?)?.toDouble() ?? 0.0;
+                props['current'] = (cur + step).clamp(min, max);
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+                needRefresh = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (needRefresh) {
+        onStateChanged();
+      }
+    });
+  }
 
   /// 更新元素快照（每次渲染前调用）
   static void updateElementSnapshot(List<UIElement> elements) {
@@ -28,7 +111,8 @@ class LinkerService {
   }
 
   /// 解析源模块的动态生效属性（支持递归溯源与环路检测）
-  static dynamic _getEffectivePropertyValue(UIModule sourceModule, String propKey, Set<String> visitedSet) {
+  static dynamic _getEffectivePropertyValue(
+      UIModule sourceModule, String propKey, Set<String> visitedSet) {
     if (propKey == 'current' || propKey == 'value') {
       final incoming = resolveTargetValue(sourceModule, visitedSet);
       if (incoming != null) return incoming;
@@ -91,7 +175,134 @@ class LinkerService {
       final scheme = linkerData['scheme']?.toString();
       if (scheme == null || scheme.trim().isEmpty || scheme == '未配置') continue;
 
-      if (['current_to_text', 'to_string', 'num_to_current', 'select_to_text', 'str_to_select', 'str_to_indicator', 'num_to_indicator', 'bool_to_indicator'].contains(scheme)) {
+      final schemeParams = (linkerData['schemeParams'] as Map?)?.cast<String, dynamic>() ?? {};
+
+      // === 动态解析全量 Scheme 方案 ===
+
+      if (scheme == 'result_to_text' ||
+          scheme == 'text_to_text' ||
+          scheme == 'slider_to_text' ||
+          scheme == 'progress_to_text' ||
+          scheme == 'select_to_text') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            sourceModule.properties['text'] ??
+            sourceModule.properties['defaultValue'] ??
+            sourceModule.name;
+
+        if (rawVal != null) {
+          final template = schemeParams['template']?.toString() ?? '{{value}}';
+          final precision = (schemeParams['precision'] as num?)?.toInt() ?? 0;
+
+          final strVal = (rawVal is num)
+              ? rawVal.toStringAsFixed(precision)
+              : rawVal.toString();
+
+          return template.replaceAll('{{value}}', strVal);
+        }
+      } else if (scheme == 'bool_result_to_text' || scheme == 'bool_to_text') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            true;
+
+        final bool boolVal = (rawVal is bool) ? rawVal : (rawVal.toString().toLowerCase() == 'true');
+        final trueText = schemeParams['trueText']?.toString() ?? '开启/通过';
+        final falseText = schemeParams['falseText']?.toString() ?? '关闭/未通过';
+        return boolVal ? trueText : falseText;
+      } else if (scheme == 'result_to_progress' ||
+          scheme == 'slider_to_progress' ||
+          scheme == 'num_to_current' ||
+          scheme == 'math_to_current' ||
+          scheme == 'input_to_progress' ||
+          scheme == 'input_to_slider') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'text', visitedSet) ??
+            0.0;
+
+        double doubleVal = (rawVal is num) ? rawVal.toDouble() : (double.tryParse(rawVal.toString()) ?? 0.0);
+
+        if (targetModule.type == 'progress' || targetModule.type == 'slider') {
+          final min = (targetModule.properties['min'] as num?)?.toDouble() ?? 0.0;
+          final max = (targetModule.properties['max'] as num?)?.toDouble() ?? 100.0;
+          doubleVal = doubleVal.clamp(min, max);
+        }
+        return doubleVal;
+      } else if (scheme == 'bool_result_to_progress') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ?? true;
+        final bool boolVal = (rawVal is bool) ? rawVal : (rawVal.toString().toLowerCase() == 'true');
+        final max = (targetModule.properties['max'] as num?)?.toDouble() ?? 100.0;
+        final min = (targetModule.properties['min'] as num?)?.toDouble() ?? 0.0;
+        return boolVal ? max : min;
+      } else if (scheme == 'threshold_to_switch') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            0.0;
+        final double numVal = (rawVal is num) ? rawVal.toDouble() : (double.tryParse(rawVal.toString()) ?? 0.0);
+
+        final op = schemeParams['operator']?.toString() ?? '>';
+        final threshold = (schemeParams['threshold'] as num?)?.toDouble() ?? 0.0;
+
+        const double epsilon = 1e-9;
+        switch (op) {
+          case '>':
+            return numVal > threshold;
+          case '<':
+            return numVal < threshold;
+          case '>=':
+            return numVal >= threshold - epsilon;
+          case '<=':
+            return numVal <= threshold + epsilon;
+          case '==':
+            return (numVal - threshold).abs() < epsilon;
+          default:
+            return numVal > threshold;
+        }
+      } else if (scheme == 'select_to_switch') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'defaultValue', visitedSet) ??
+            '';
+        final matchValue = schemeParams['matchValue']?.toString() ?? '';
+        return rawVal.toString() == matchValue;
+      } else if (scheme == 'bool_result_to_switch' || scheme == 'indicator_state_to_switch') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ?? true;
+        return (rawVal is bool) ? rawVal : (rawVal.toString().toLowerCase() == 'true');
+      } else if (scheme == 'threshold_to_indicator' || scheme == 'slider_to_indicator') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            50.0;
+        final double numVal = (rawVal is num) ? rawVal.toDouble() : (double.tryParse(rawVal.toString()) ?? 0.0);
+
+        final minThresh = (schemeParams['thresholdLower'] as num?)?.toDouble() ?? 30.0;
+        final maxThresh = (schemeParams['thresholdUpper'] as num?)?.toDouble() ?? 80.0;
+
+        final colorLower = (schemeParams['colorLower'] as num?)?.toInt() ?? 0xFFFF5252;
+        final colorMid = (schemeParams['colorMid'] as num?)?.toInt() ?? 0xFF69F0AE;
+        final colorUpper = (schemeParams['colorUpper'] as num?)?.toInt() ?? 0xFFFFD740;
+
+        if (numVal < minThresh) {
+          return Color(colorLower);
+        } else if (numVal <= maxThresh) {
+          return Color(colorMid);
+        } else {
+          return Color(colorUpper);
+        }
+      } else if (scheme == 'str_to_indicator') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'text', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            '';
+        final matchStr = schemeParams['matchString']?.toString() ?? '正常';
+        return (rawVal.toString() == matchStr) ? const Color(0xFF69F0AE) : const Color(0xFFFF5252);
+      } else if (scheme == 'bool_result_to_indicator' || scheme == 'bool_to_indicator') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ?? true;
+        final bool boolVal = (rawVal is bool) ? rawVal : (rawVal.toString().toLowerCase() == 'true');
+        return boolVal ? const Color(0xFF69F0AE) : const Color(0xFFFF5252);
+      } else if (scheme == 'threshold_to_button_enable') {
+        final rawVal = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ?? 0.0;
+        final double numVal = (rawVal is num) ? rawVal.toDouble() : (double.tryParse(rawVal.toString()) ?? 0.0);
+        final thresh = (schemeParams['threshold'] as num?)?.toDouble() ?? 100.0;
+        return numVal >= thresh;
+      } else if (['current_to_text', 'to_string', 'str_to_select', 'num_to_indicator'].contains(scheme)) {
         final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
             _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
             _getEffectivePropertyValue(sourceModule, 'currentVal', visitedSet) ??
@@ -112,11 +323,6 @@ class LinkerService {
           }
           return val is num ? val.toDouble() : double.tryParse(val.toString());
         }
-      } else if (scheme == 'text_to_text') {
-        final val = sourceModule.properties['text'] ?? sourceModule.properties['value'] ?? sourceModule.name;
-        if (val != null) {
-          return val.toString();
-        }
       } else if (['name_to_text', 'name_to_select', 'name_to_label', 'name_to_button_text'].contains(scheme)) {
         return sourceModule.name;
       } else if (scheme == 'bounds_to_text') {
@@ -126,13 +332,8 @@ class LinkerService {
       } else if (['size_to_max', 'width_to_max', 'width_to_line_length', 'size_to_viewport_content'].contains(scheme)) {
         final w = sourceModule.properties['width'] ?? 300.0;
         return (w as num).toDouble();
-      } else if (['surface_to_button_enable', 'surface_to_input_enable', 'surface_to_progress_enable', 'surface_to_switch_enable', 'surface_to_select_enable', 'surface_to_indicator_state'].contains(scheme)) {
-        return sourceModule.properties['isActive'] != false;
-      } else if (['math_to_current', 'num_to_math'].contains(scheme)) {
-        final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
-            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
-            0.0;
-        return (val as num).toDouble();
+      } else if (['surface_to_button_enable', 'surface_to_input_enable', 'surface_to_progress_enable', 'surface_to_switch_enable', 'surface_to_select_enable', 'surface_to_indicator_state', 'bool_to_button_enable', 'bool_to_input_enable', 'input_to_button_enable', 'math_to_button_enable', 'indicator_state_to_button_enable'].contains(scheme)) {
+        return sourceModule.properties['isActive'] != false && sourceModule.properties['value'] != false;
       } else if (scheme == 'math_to_text') {
         final val = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
             _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??

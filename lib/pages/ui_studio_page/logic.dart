@@ -51,12 +51,23 @@ mixin _UIStudioLogic on State<UIStudioPage> {
           _workspaceOffset = Offset(offsetX, offsetY);
           _activeLayerIndex = activeLayer;
         });
+        _setupEventBusListener();
       } catch (_) {
         _initDefaultState();
       }
     } else {
       _initDefaultState();
     }
+  }
+
+  void _setupEventBusListener() {
+    LinkerService.initEventBusListener(_currentElements, () {
+      if (mounted) {
+        setState(() {
+          _autoSave();
+        });
+      }
+    });
   }
 
   void _initDefaultState() {
@@ -68,6 +79,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       _currentElements = [];
       _workspaceOffset = Offset.zero;
     });
+    _setupEventBusListener();
   }
 
   Future<void> _saveWorkspaceDraft({bool showMessage = true}) async {
@@ -493,40 +505,5 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       );
     }
     _autoSave();
-  }
-
-  // ============================================================
-  //  联动器数据查询
-  // ============================================================
-  List<Map<String, dynamic>> _getLinkableSourceModules() {
-    final sources = <Map<String, dynamic>>[];
-    for (final el in _currentElements) {
-      if (el.isComposite) continue;
-      final type = el.module?.type;
-      if (type == 'progress' || type == 'slider' || type == 'input' || type == 'button' || type == 'text' || type == 'switch' || type == 'math_node' || type == 'select' || type == 'indicator' || type == 'timer' || type == 'surface' || type == 'surface_art' || type == 'primitive_art') {
-        sources.add({
-          'id': el.id,
-          'name': el.module?.name ?? '未命名',
-          'type': type,
-        });
-      }
-    }
-    return sources;
-  }
-
-  List<Map<String, dynamic>> _getLinkableTargetModules() {
-    final targets = <Map<String, dynamic>>[];
-    for (final el in _currentElements) {
-      if (el.isComposite) continue;
-      final type = el.module?.type;
-      if (type != null && type != 'linker') {
-        targets.add({
-          'id': el.id,
-          'name': el.module?.name ?? '未命名',
-          'type': type,
-        });
-      }
-    }
-    return targets;
   }
 }

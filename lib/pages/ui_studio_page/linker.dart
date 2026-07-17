@@ -199,7 +199,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final elType = el.module?.type;
       final bool hitCard = _isPointInsideRotatedRect(globalPosition, el);
 
-      if (hitCard && ['linker', 'text', 'progress', 'slider', 'input', 'math_node', 'select', 'indicator', 'scroll_frame', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(elType)) {
+      if (hitCard && ['linker', 'text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'scroll_frame', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(elType)) {
         if (_canConnect(el, 'input')) {
           String assignedPort = 'input';
           if (elType == 'math_node' && _draggingSourceType == 'output') {
@@ -252,17 +252,17 @@ mixin _UIStudioLinker on _UIStudioLogic {
           portDirection == 'output';
     }
     if (sourceType == 'linker' && dragType == 'output') {
-      return ['text', 'progress', 'slider', 'input', 'math_node', 'select', 'indicator', 'scroll_frame', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
+      return ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'scroll_frame', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
           portDirection == 'input';
     }
-    if (['text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
+    if (['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
         dragType == 'output') {
       if (['surface', 'surface_art', 'primitive_art'].contains(sourceType) && ['math_node', 'timer', 'line', 'image'].contains(targetType)) {
         return false;
       }
       return targetType == 'linker' && portDirection == 'input';
     }
-    if (['text', 'progress', 'slider', 'input', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
+    if (['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
         dragType == 'input') {
       if (['surface', 'surface_art', 'primitive_art'].contains(sourceType) && ['math_node', 'timer', 'line', 'image'].contains(targetType)) {
         return false;
@@ -291,14 +291,14 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     if (sourceType == 'linker' &&
         _draggingSourceType == 'output' &&
-        ['text', 'progress', 'slider', 'input', 'math_node', 'select', 'indicator', 'scroll_frame', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
+        ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'scroll_frame', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
         (_hoveringTargetPort == 'input' || _hoveringTargetPort == 'gate_in')) {
       final bool isGate = _hoveringTargetPort == 'gate_in';
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         targetModuleId: targetElement.id,
-        targetPort: targetType == 'scroll_frame' ? 'adoptedChildren' : (['text', 'surface', 'surface_art', 'primitive_art'].contains(targetType) ? 'text' : (targetType == 'input' || targetType == 'select' || targetType == 'indicator' ? 'currentValue' : (targetType == 'math_node' ? (isGate ? 'gate_in' : 'data_in') : 'current'))),
-        targetType: (targetType == 'scroll_frame' || targetType == 'text' || targetType == 'input' || targetType == 'select' || targetType == 'indicator' || ['surface', 'surface_art', 'primitive_art'].contains(targetType)) ? 'string' : (isGate ? 'boolean' : 'number'),
+        targetPort: targetType == 'scroll_frame' ? 'adoptedChildren' : (['text', 'surface', 'surface_art', 'primitive_art'].contains(targetType) ? 'text' : (targetType == 'input' || targetType == 'select' || targetType == 'indicator' ? 'currentValue' : (targetType == 'switch' ? 'value' : (targetType == 'math_node' ? (isGate ? 'gate_in' : 'data_in') : 'current')))),
+        targetType: (targetType == 'scroll_frame' || targetType == 'text' || targetType == 'input' || targetType == 'select' || targetType == 'indicator' || ['surface', 'surface_art', 'primitive_art'].contains(targetType)) ? 'string' : (targetType == 'switch' || isGate ? 'boolean' : 'number'),
         connectionType: 'output',
       );
     } else if (sourceType == 'linker' &&
@@ -308,8 +308,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         sourceModuleId: targetElement.id,
-        sourcePort: ['text', 'input', 'button', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(targetType) ? 'output' : (targetType == 'math_node' ? 'data_out' : (targetType == 'timer' ? 'currentVal' : 'current')),
-        sourceType: ['text', 'input', 'button', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(targetType) ? 'string' : 'number',
+        sourcePort: ['text', 'input', 'button', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(targetType) ? 'output' : (targetType == 'switch' ? 'value' : (targetType == 'math_node' ? 'data_out' : (targetType == 'timer' ? 'currentVal' : 'current'))),
+        sourceType: targetType == 'switch' ? 'boolean' : (['text', 'input', 'button', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(targetType) ? 'string' : 'number'),
         connectionType: 'input',
       );
     } else if (['text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
@@ -319,11 +319,11 @@ mixin _UIStudioLinker on _UIStudioLogic {
       _updateLinkerConnection(
         linkerId: targetElement.id,
         sourceModuleId: sourceElement.id,
-        sourcePort: ['text', 'input', 'button', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) ? 'output' : (sourceType == 'math_node' ? 'data_out' : (sourceType == 'timer' ? 'currentVal' : 'current')),
-        sourceType: ['text', 'input', 'button', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) ? 'string' : 'number',
+        sourcePort: ['text', 'input', 'button', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) ? 'output' : (sourceType == 'switch' ? 'value' : (sourceType == 'math_node' ? 'data_out' : (sourceType == 'timer' ? 'currentVal' : 'current'))),
+        sourceType: sourceType == 'switch' ? 'boolean' : (['text', 'input', 'button', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) ? 'string' : 'number'),
         connectionType: 'input',
       );
-    } else if (['text', 'progress', 'slider', 'input', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
+    } else if (['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
         _draggingSourceType == 'input' &&
         targetType == 'linker' &&
         (_hoveringTargetPort == 'output' || _hoveringTargetPort == 'gate_in')) {
@@ -331,8 +331,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
       _updateLinkerConnection(
         linkerId: targetElement.id,
         targetModuleId: sourceElement.id,
-        targetPort: ['text', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) ? 'text' : (sourceType == 'input' || sourceType == 'select' || sourceType == 'indicator' ? 'currentValue' : (sourceType == 'math_node' ? (isGate ? 'gate_in' : 'data_in') : (sourceType == 'timer' ? 'input' : 'current'))),
-        targetType: (sourceType == 'text' || sourceType == 'input' || sourceType == 'select' || sourceType == 'indicator' || ['surface', 'surface_art', 'primitive_art'].contains(sourceType)) ? 'string' : (isGate ? 'boolean' : 'number'),
+        targetPort: ['text', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) ? 'text' : (sourceType == 'input' || sourceType == 'select' || sourceType == 'indicator' ? 'currentValue' : (sourceType == 'switch' ? 'value' : (sourceType == 'math_node' ? (isGate ? 'gate_in' : 'data_in') : (sourceType == 'timer' ? 'input' : 'current')))),
+        targetType: (sourceType == 'text' || sourceType == 'input' || sourceType == 'select' || sourceType == 'indicator' || ['surface', 'surface_art', 'primitive_art'].contains(sourceType)) ? 'string' : (sourceType == 'switch' || isGate ? 'boolean' : 'number'),
         connectionType: 'output',
       );
     }

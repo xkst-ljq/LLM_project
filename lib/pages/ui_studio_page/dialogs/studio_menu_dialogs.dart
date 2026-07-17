@@ -2,7 +2,7 @@ part of '../ui_studio_page.dart';
 
 /// 工作台顶部/底部菜单与基础列表选单弹窗构建子卷
 mixin _StudioMenuDialogs on _UIStudioLogic {
-  InputDecoration _softInputDecoration({String? label, String? helperText}) {
+  InputDecoration _softInputDecoration({String? label, String? helperText, String? hintText}) {
     return InputDecoration(
       filled: true,
       fillColor: const Color(0xFFF2F2F6),
@@ -10,6 +10,8 @@ mixin _StudioMenuDialogs on _UIStudioLogic {
       labelStyle: const TextStyle(color: Color(0xFF888896)),
       helperText: helperText,
       helperStyle: const TextStyle(fontSize: 10, color: Color(0xFF888896)),
+      hintText: hintText,
+      hintStyle: const TextStyle(fontSize: 11, color: Color(0xFFA0A0B0)),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide.none,
@@ -124,117 +126,6 @@ mixin _StudioMenuDialogs on _UIStudioLogic {
     );
   }
 
-  Widget _buildSourceModuleDropdown(
-    UIElement el,
-    void Function(void Function()) setDialogState,
-    Map<String, dynamic> props,
-  ) {
-    final sourceModules = _getLinkableSourceModules();
-    final currentSourceId = el.module!.properties['linker']?['sourceModuleId']?.toString();
-    final validSourceValue = sourceModules.any((m) => m['id'] == currentSourceId) ? currentSourceId : null;
-
-    final items = <DropdownMenuItem<String?>>[
-      const DropdownMenuItem<String?>(
-        value: null,
-        child: Text('无 (断开连接)', style: TextStyle(fontSize: 12, color: Color(0xFF888896))),
-      ),
-      ...sourceModules.map((moduleInfo) {
-        return DropdownMenuItem<String?>(
-          value: moduleInfo['id'],
-          child: Text(
-            '${moduleInfo['name']} (${moduleInfo['type']})',
-            style: const TextStyle(fontSize: 12),
-          ),
-        );
-      }),
-    ];
-
-    return DropdownButtonFormField<String?>(
-      initialValue: validSourceValue,
-      decoration: _softInputDecoration(),
-      items: items,
-      onChanged: (value) {
-        setDialogState(() {
-          final linkerData = Map<String, dynamic>.from(
-            el.module!.properties['linker'] ?? {},
-          );
-          if (value == null) {
-            linkerData.remove('sourceModuleId');
-            linkerData.remove('sourcePort');
-            linkerData.remove('sourceType');
-            linkerData['scheme'] = '未配置';
-          } else {
-            linkerData['sourceModuleId'] = value;
-            final sourceType = sourceModules.firstWhere((m) => m['id'] == value)['type'];
-            if (sourceType == 'progress' || sourceType == 'slider') {
-              linkerData['sourcePort'] = 'current';
-              linkerData['sourceType'] = 'number';
-            } else if (sourceType == 'text') {
-              linkerData['sourcePort'] = 'text';
-              linkerData['sourceType'] = 'string';
-            }
-          }
-          props['linker'] = linkerData;
-        });
-      },
-    );
-  }
-
-  Widget _buildTargetModuleDropdown(
-    UIElement el,
-    void Function(void Function()) setDialogState,
-    Map<String, dynamic> props,
-  ) {
-    final targetModules = _getLinkableTargetModules();
-    final currentTargetId = el.module!.properties['linker']?['targetModuleId']?.toString();
-    final validTargetValue = targetModules.any((m) => m['id'] == currentTargetId) ? currentTargetId : null;
-
-    final items = <DropdownMenuItem<String?>>[
-      const DropdownMenuItem<String?>(
-        value: null,
-        child: Text('无 (断开连接)', style: TextStyle(fontSize: 12, color: Color(0xFF888896))),
-      ),
-      ...targetModules.map((moduleInfo) {
-        return DropdownMenuItem<String?>(
-          value: moduleInfo['id'],
-          child: Text(
-            '${moduleInfo['name']} (${moduleInfo['type']})',
-            style: const TextStyle(fontSize: 12),
-          ),
-        );
-      }),
-    ];
-
-    return DropdownButtonFormField<String?>(
-      initialValue: validTargetValue,
-      decoration: _softInputDecoration(),
-      items: items,
-      onChanged: (value) {
-        setDialogState(() {
-          final linkerData = Map<String, dynamic>.from(
-            el.module!.properties['linker'] ?? {},
-          );
-          if (value == null) {
-            linkerData.remove('targetModuleId');
-            linkerData.remove('targetPort');
-            linkerData.remove('targetType');
-            linkerData['scheme'] = '未配置';
-          } else {
-            linkerData['targetModuleId'] = value;
-            final targetType = targetModules.firstWhere((m) => m['id'] == value)['type'];
-            if (targetType == 'text') {
-              linkerData['targetPort'] = 'text';
-              linkerData['targetType'] = 'string';
-            } else if (targetType == 'input') {
-              linkerData['targetPort'] = 'variable';
-              linkerData['targetType'] = 'string';
-            }
-          }
-          props['linker'] = linkerData;
-        });
-      },
-    );
-  }
 
   // ===== 删除确认 =====
   void _confirmDeleteModule(UIModule module) {

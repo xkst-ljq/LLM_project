@@ -94,89 +94,40 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
   }
 
   Widget _buildAvailableSchemesList(
-      BuildContext ctx,
-      UIElement linkerEl,
-      UIElement sourceEl,
-      UIElement targetEl,
-      String? currentScheme,
-      ) {
+    BuildContext ctx,
+    UIElement linkerEl,
+    UIElement sourceEl,
+    UIElement targetEl,
+    String? currentScheme,
+  ) {
     final sType = sourceEl.module?.type;
     final tType = targetEl.module?.type;
 
-    final options = <Map<String, String>>[];
+    final schemes = LinkerMatrixEngine.getAvailableSchemes(sType, tType);
 
-    if (['surface', 'surface_art', 'primitive_art'].contains(sType)) {
-      if (tType == 'text') {
-        options.add({'id': 'name_to_text', 'label': '表头回写 (name → text)'});
-        options.add({'id': 'bounds_to_text', 'label': '规格自测打印 (bounds → text)'});
-        options.add({'id': 'color_to_text', 'label': '文字/底色着色 (color → text)'});
-      } else if (['progress', 'slider'].contains(tType)) {
-        options.add({'id': 'color_to_track', 'label': '同步轨道填充色 (color → track)'});
-        options.add({'id': 'size_to_max', 'label': '宽度折算上限 (size → max)'});
-        options.add({'id': 'surface_to_progress_enable', 'label': '区域激活使能/冻结'});
-      } else if (tType == 'switch') {
-        options.add({'id': 'color_to_switch', 'label': '同步开关高亮色 (color → switch)'});
-        options.add({'id': 'surface_to_switch_enable', 'label': '开关触控使能锁定'});
-      } else if (tType == 'select') {
-        options.add({'id': 'color_to_select', 'label': '同步选框主题色 (color → select)'});
-        options.add({'id': 'surface_to_select_enable', 'label': '选框触控使能锁定'});
-      } else if (tType == 'indicator') {
-        options.add({'id': 'color_to_indicator', 'label': '同步指示灯发光主题色'});
-        options.add({'id': 'surface_to_indicator_state', 'label': '区域选中驱动点亮/熄灭'});
-      } else if (tType == 'scroll_frame') {
-        options.add({'id': 'adopt_into_frame', 'label': '📦 移交收容至视窗沙盘'});
-        options.add({'id': 'color_to_viewport', 'label': '同步视窗底板背景色'});
-        options.add({'id': 'size_to_viewport_content', 'label': '映射为视窗虚拟长画布尺寸'});
-      } else if (['button', 'input'].contains(tType)) {
-        options.add({'id': 'surface_to_button_enable', 'label': '隐形触控热区解锁/屏蔽'});
-      } else if (['surface', 'surface_art', 'primitive_art'].contains(tType)) {
-        options.add({'id': 'surface_to_surface_expansion', 'label': '🔗 面的扩充与全样式共生'});
-      }
-    } else if (['progress', 'slider'].contains(sType) && ['progress', 'slider'].contains(tType)) {
-      options.add({'id': 'num_to_current', 'label': '数值驱动实时进度 (num → current)'});
-    } else if (['progress', 'slider'].contains(sType) && tType == 'text') {
-      options.add({'id': 'current_to_text', 'label': 'current → text (当前进度/数值转文本)'});
-      options.add({'id': 'max_to_text', 'label': 'max → text (最大值转文本)'});
-    } else if (sType == 'text' && ['input', 'button'].contains(tType)) {
-      options.add({'id': 'text_to_text', 'label': '提示词动态变量传导 (text → text)'});
-    } else if (['input', 'button'].contains(sType) && tType == 'text') {
-      options.add({'id': 'to_string', 'label': '标准字面量实时回写 (to_string)'});
-    } else if (tType == 'math_node') {
-      options.add({'id': 'num_to_math', 'label': '数值流导算术节点 (num → math)'});
-    } else if (sType == 'math_node' && ['progress', 'slider'].contains(tType)) {
-      options.add({'id': 'math_to_current', 'label': '算术实时驱动进度 (math → current)'});
-    } else if (sType == 'math_node' && tType == 'text') {
-      options.add({'id': 'math_to_text', 'label': '算术结果回写文本 (math → text)'});
-    } else if (sType == 'select' && tType == 'text') {
-      options.add({'id': 'select_to_text', 'label': '单选选定项实时回写文本 (select → text)'});
-    } else if (tType == 'select') {
-      options.add({'id': 'str_to_select', 'label': '字面量流导驱动指针 (str → select)'});
-    } else if (tType == 'indicator') {
-      options.add({'id': 'str_to_indicator', 'label': '字面量匹配驱动状态灯 (str → indicator)'});
-      options.add({'id': 'num_to_indicator', 'label': '数值区间驱动状态灯 (num → indicator)'});
-      options.add({'id': 'bool_to_indicator', 'label': '开关状态驱动状态灯 (bool → indicator)'});
-    } else if (tType == 'scroll_frame') {
-      options.add({'id': 'adopt_into_frame', 'label': '📦 移交收容至局部滚动视窗 (Adopt into Scroll Frame)'});
-    } else if (sType == 'timer' && ['progress', 'slider'].contains(tType)) {
-      options.add({'id': 'num_to_current', 'label': '脉冲实时驱动进度条 (timer → current)'});
-    } else if (sType == 'timer' && tType == 'indicator') {
-      options.add({'id': 'num_to_indicator', 'label': '脉冲计数驱动状态指示灯 (timer → indicator)'});
-    } else if (sType == 'timer' && tType == 'text') {
-      options.add({'id': 'current_to_text', 'label': '脉冲计数值转为文本 (timer → text)'});
-    } else {
-      options.add({'id': 'to_string', 'label': '通用标准字面量流转 (to_string)'});
+    if (schemes.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEBEE),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          '🚫 [${sourceEl.module?.name ?? sType}] 与 [${targetEl.module?.name ?? tType}] 属于屏蔽互斥范畴，不支持建立传输协议。',
+          style: const TextStyle(fontSize: 13, color: Color(0xFFC62828), height: 1.4),
+        ),
+      );
     }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
-      children: options.map((opt) {
+      children: schemes.map((def) {
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: _buildSchemeOptionTile(
             ctx,
             linkerEl,
-            opt['id']!,
-            opt['label']!,
+            def,
             currentScheme ?? '',
           ),
         );
@@ -184,8 +135,9 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
     );
   }
 
-  Widget _buildSchemeOptionTile(BuildContext ctx, UIElement el, String schemeValue, String label, String currentScheme) {
-    final isSelected = schemeValue == currentScheme;
+  Widget _buildSchemeOptionTile(
+      BuildContext ctx, UIElement el, SchemeDefinition schemeDef, String currentScheme) {
+    final isSelected = schemeDef.id == currentScheme;
     return InkWell(
       onTap: () {
         Navigator.pop(ctx);
@@ -196,41 +148,33 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
             if (targetEl.module != null) {
               final newProps = Map<String, dynamic>.from(targetEl.module!.properties);
               final newLinker = Map<String, dynamic>.from(newProps['linker'] ?? {});
-              newLinker['scheme'] = schemeValue;
+              newLinker['scheme'] = schemeDef.id;
               newProps['linker'] = newLinker;
               _currentElements[idx] = targetEl.copyWith(
                 module: targetEl.module!.copyWith(properties: newProps),
               );
-
-              if (schemeValue == 'adopt_into_frame') {
-                final targetFrameId = newLinker['targetModuleId']?.toString();
-                final sourceChildId = newLinker['sourceModuleId']?.toString();
-                if (targetFrameId != null && sourceChildId != null) {
-                  final frameIdx = _currentElements.indexWhere((e) => e.id == targetFrameId);
-                  final childIdx = _currentElements.indexWhere((e) => e.id == sourceChildId);
-                  if (frameIdx != -1 && childIdx != -1) {
-                    final frameEl = _currentElements[frameIdx];
-                    final childEl = _currentElements[childIdx];
-                    final frameProps = Map<String, dynamic>.from(frameEl.module!.properties);
-                    final adoptedList = (frameProps['adoptedChildElements'] as List?)
-                            ?.map((e) => Map<String, dynamic>.from(e as Map))
-                            .toList() ??
-                        [];
-                    if (!adoptedList.any((e) => e['id'] == childEl.id)) {
-                      adoptedList.add(childEl.toJson());
-                    }
-                    frameProps['adoptedChildElements'] = adoptedList;
-                    _currentElements[frameIdx] = frameEl.copyWith(
-                      module: frameEl.module!.copyWith(properties: frameProps),
-                    );
-                    _currentElements.removeAt(childIdx);
-                  }
-                }
-              }
             }
           }
         });
         _autoSave();
+
+        if (schemeDef.params.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              final updatedIdx = _currentElements.indexWhere((e) => e.id == el.id);
+              if (updatedIdx != -1) {
+                _showCompactLinkerEditorDialog(_currentElements[updatedIdx]);
+              }
+            }
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('已关联协议: ${schemeDef.label}（连通即生效）'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       },
       borderRadius: BorderRadius.circular(10),
       child: Container(
@@ -252,15 +196,38 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: const Color(0xFF111116),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    schemeDef.label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: const Color(0xFF111116),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    schemeDef.description,
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF888896)),
+                  ),
+                ],
               ),
             ),
+            if (schemeDef.params.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(left: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF4081).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  '含配置项',
+                  style: TextStyle(fontSize: 10, color: Color(0xFFFF4081), fontWeight: FontWeight.bold),
+                ),
+              ),
           ],
         ),
       ),

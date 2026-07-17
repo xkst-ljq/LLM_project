@@ -939,11 +939,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('节点标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
-                    const SizedBox(height: 12),
-
                     const Text('所属独立图层', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<int>(
@@ -967,100 +962,10 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                     ),
                     const SizedBox(height: 16),
 
-                    const Text('传导关系与清洗方案', style: TextStyle(fontSize: 13, color: Color(0xFF111116), fontWeight: FontWeight.bold)),
+                    const Text('传输协议与方案详细配置', style: TextStyle(fontSize: 13, color: Color(0xFF111116), fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
 
-                    const Text('数据输出源模组 (Out)', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    _buildSourceModuleDropdown(el, setDialogState, props),
-                    const SizedBox(height: 12),
-
-                    const Text('接收数据目标模组 (In)', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    _buildTargetModuleDropdown(el, setDialogState, props),
-                    const SizedBox(height: 12),
-
-                    const Text('传输方案规则 (Scheme)', style: TextStyle(fontSize: 11, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    Builder(builder: (bCtx) {
-                      final lkMap = (props['linker'] as Map?)?.cast<String, dynamic>();
-                      final srcId = lkMap?['sourceModuleId']?.toString();
-                      final tgtId = lkMap?['targetModuleId']?.toString();
-                      final srcElem = _currentElements.any((e) => e.id == srcId) ? _currentElements.firstWhere((e) => e.id == srcId) : null;
-                      final tgtElem = _currentElements.any((e) => e.id == tgtId) ? _currentElements.firstWhere((e) => e.id == tgtId) : null;
-                      final sType = srcElem?.module?.type;
-                      final tType = tgtElem?.module?.type;
-
-                      List<DropdownMenuItem<String>> allowedItems = [];
-                      if (['progress', 'slider'].contains(sType) && ['progress', 'slider'].contains(tType)) {
-                        allowedItems = [const DropdownMenuItem(value: 'num_to_current', child: Text('num → current (数值同步)'))];
-                      } else if (['progress', 'slider'].contains(sType) && tType == 'text') {
-                        allowedItems = [
-                          const DropdownMenuItem(value: 'current_to_text', child: Text('current → text (数值驱动)')),
-                          const DropdownMenuItem(value: 'max_to_text', child: Text('max → text (上限驱动)')),
-                        ];
-                      } else if (sType == 'text' && ['input', 'button'].contains(tType)) {
-                        allowedItems = [const DropdownMenuItem(value: 'text_to_text', child: Text('text → text (提示词语义赋权)'))];
-                      } else if (['input', 'button'].contains(sType) && tType == 'text') {
-                        allowedItems = [const DropdownMenuItem(value: 'to_string', child: Text('to_string (实时回写展示)'))];
-                      } else {
-                        allowedItems = const [
-                          DropdownMenuItem(value: 'current_to_text', child: Text('current → text (数值驱动)')),
-                          DropdownMenuItem(value: 'max_to_text', child: Text('max → text (上限驱动)')),
-                          DropdownMenuItem(value: 'num_to_current', child: Text('num → current (数值同步)')),
-                          DropdownMenuItem(value: 'to_string', child: Text('to_string (强转字符串)')),
-                          DropdownMenuItem(value: 'text_to_text', child: Text('text → text (提示词语义赋权)')),
-                        ];
-                      }
-
-                      final curScheme = lkMap?['scheme']?.toString() ?? allowedItems.first.value!;
-                      final validInitialScheme = allowedItems.any((it) => it.value == curScheme) ? curScheme : allowedItems.first.value!;
-
-                      return DropdownButtonFormField<String>(
-                        key: ValueKey('${srcId}_$tgtId'),
-                        initialValue: validInitialScheme,
-                        decoration: _softInputDecoration(),
-                        dropdownColor: Colors.white,
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
-                        items: allowedItems,
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() {
-                            final linkerData = Map<String, dynamic>.from(el.module!.properties['linker'] ?? {});
-                            linkerData['scheme'] = value;
-                            props['linker'] = linkerData;
-                          });
-                        },
-                      );
-                    }),
-                    const SizedBox(height: 12),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('旋转角度 (${rotation.round()}°)', style: const TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                        InkWell(
-                          onTap: () {
-                            setDialogState(() => rotation = 0.0);
-                            setState(() {
-                              final idx = _currentElements.indexWhere((e) => e.id == el.id);
-                              if (idx != -1) _currentElements[idx] = _currentElements[idx].copyWith(rotation: 0.0);
-                            });
-                          },
-                          child: const Text('复位', style: TextStyle(fontSize: 11, color: Color(0xFFFF4081), fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                    Slider(
-                      value: rotation.clamp(-180.0, 180.0).toDouble(), min: -180, max: 180, activeColor: const Color(0xFFFF4081),
-                      onChanged: (v) {
-                        setDialogState(() => rotation = v);
-                        setState(() {
-                          final idx = _currentElements.indexWhere((e) => e.id == el.id);
-                          if (idx != -1) _currentElements[idx] = _currentElements[idx].copyWith(rotation: v);
-                        });
-                      },
-                    ),
+                    _buildSchemeDetailedConfigSection(el, setDialogState, props),
                   ],
                 ),
               ),
@@ -1951,5 +1856,270 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         offsetYCtrl.dispose();
       });
     });
+  }
+
+  Widget _buildSchemeDetailedConfigSection(
+    UIElement el,
+    StateSetter setDialogState,
+    Map<String, dynamic> props,
+  ) {
+    final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
+    final srcId = linkerData['sourceModuleId']?.toString();
+    final tgtId = linkerData['targetModuleId']?.toString();
+    final schemeId = linkerData['scheme']?.toString();
+
+    UIElement? srcElem = _currentElements.any((e) => e.id == srcId)
+        ? _currentElements.firstWhere((e) => e.id == srcId)
+        : null;
+    UIElement? tgtElem = _currentElements.any((e) => e.id == tgtId)
+        ? _currentElements.firstWhere((e) => e.id == tgtId)
+        : null;
+
+    final schemeDef = (schemeId != null && schemeId.isNotEmpty && schemeId != '未配置')
+        ? LinkerMatrixEngine.getSchemeDefinition(schemeId)
+        : null;
+
+    final bool isFullyConnected = srcElem != null && tgtElem != null;
+
+    final Map<String, dynamic> schemeParams =
+        Map<String, dynamic>.from(linkerData['schemeParams'] ?? {});
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. 通路拓扑快照
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF6F6F9),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.hub, size: 16, color: Color(0xFF00ACC1)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isFullyConnected
+                      ? '${srcElem.module?.name ?? srcElem.id} ➔ ${tgtElem.module?.name ?? tgtElem.id}'
+                      : '⚠️ 处于未完全连通状态',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: isFullyConnected
+                        ? const Color(0xFF111116)
+                        : const Color(0xFFF57F17),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // 2. 当前关联的 Scheme Label & 描述
+        if (schemeDef != null) ...[
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00ACC1).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF00ACC1).withValues(alpha: 0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.alt_route, size: 14, color: Color(0xFF00ACC1)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        schemeDef.label,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF00ACC1),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  schemeDef.description,
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF555562)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        // 3. 详细参数表单区域
+        if (!isFullyConnected || schemeDef == null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF9C4),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              '⚠️ 无通路或未选择传输方案。请在画布上连接端口或点击联动节点选择方案。',
+              style: TextStyle(fontSize: 12, color: Color(0xFFF57F17), height: 1.4),
+            ),
+          )
+        else if (schemeDef.params.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F5E9),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.bolt, size: 16, color: Color(0xFF2E7D32)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '⚡ 纯脉冲/动作触发协议，连通即生效，无需额外配置参数。',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF2E7D32), fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          ...schemeDef.params.map((field) {
+            return _buildDynamicParamControl(
+              field: field,
+              currentParams: schemeParams,
+              onParamChanged: (newVal) {
+                setDialogState(() {
+                  schemeParams[field.key] = newVal;
+                  linkerData['schemeParams'] = schemeParams;
+                  props['linker'] = linkerData;
+                });
+              },
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildDynamicParamControl({
+    required SchemeParamField field,
+    required Map<String, dynamic> currentParams,
+    required ValueChanged<dynamic> onParamChanged,
+  }) {
+    final curVal = currentParams[field.key] ?? field.defaultValue;
+
+    Widget controlWidget;
+
+    switch (field.type) {
+      case SchemeParamType.text:
+        controlWidget = TextField(
+          controller: TextEditingController(text: curVal?.toString() ?? '')
+            ..selection = TextSelection.collapsed(offset: (curVal?.toString() ?? '').length),
+          style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+          decoration: _softInputDecoration(hintText: field.description),
+          onChanged: (v) => onParamChanged(v),
+        );
+        break;
+      case SchemeParamType.number:
+      case SchemeParamType.doubleVal:
+        controlWidget = TextField(
+          controller: TextEditingController(text: curVal?.toString() ?? '')
+            ..selection = TextSelection.collapsed(offset: (curVal?.toString() ?? '').length),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+          decoration: _softInputDecoration(hintText: field.description),
+          onChanged: (v) {
+            final numVal = (field.type == SchemeParamType.number)
+                ? int.tryParse(v)
+                : double.tryParse(v);
+            if (numVal != null) onParamChanged(numVal);
+          },
+        );
+        break;
+      case SchemeParamType.boolean:
+        final bool boolVal = (curVal is bool) ? curVal : (curVal.toString().toLowerCase() == 'true');
+        controlWidget = Row(
+          children: [
+            Switch(
+              value: boolVal,
+              activeTrackColor: const Color(0xFF00ACC1),
+              onChanged: (val) => onParamChanged(val),
+            ),
+            const SizedBox(width: 8),
+            Text(boolVal ? '已开启' : '已关闭', style: const TextStyle(fontSize: 12, color: Color(0xFF555562))),
+          ],
+        );
+        break;
+      case SchemeParamType.choice:
+        final options = field.options ?? [];
+        final String selectedChoice = options.contains(curVal?.toString())
+            ? curVal!.toString()
+            : (options.isNotEmpty ? options.first : '');
+        controlWidget = DropdownButtonFormField<String>(
+          initialValue: selectedChoice,
+          decoration: _softInputDecoration(),
+          dropdownColor: Colors.white,
+          style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+          items: options
+              .map((opt) => DropdownMenuItem<String>(value: opt, child: Text(opt)))
+              .toList(),
+          onChanged: (v) {
+            if (v != null) onParamChanged(v);
+          },
+        );
+        break;
+      case SchemeParamType.color:
+        final int argb = (curVal is num) ? curVal.toInt() : 0xFF00ACC1;
+        controlWidget = Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: Color(argb),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black26),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: TextEditingController(text: '#${argb.toRadixString(16).padLeft(8, '0').toUpperCase()}')
+                  ..selection = TextSelection.collapsed(offset: 9),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                decoration: _softInputDecoration(label: 'HEX ARGB'),
+                onChanged: (v) {
+                  final clean = v.replaceAll('#', '');
+                  final parsed = int.tryParse(clean, radix: 16);
+                  if (parsed != null) onParamChanged(parsed);
+                },
+              ),
+            ),
+          ],
+        );
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(field.label, style: const TextStyle(fontSize: 12, color: Color(0xFF555562), fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          controlWidget,
+        ],
+      ),
+    );
   }
 }

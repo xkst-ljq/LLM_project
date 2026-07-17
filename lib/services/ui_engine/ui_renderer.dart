@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'linker_event_bus.dart';
 import 'linker_service.dart';
 import 'ui_models.dart';
 
@@ -92,7 +93,7 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildButton(context, module),
+          child: _buildButton(context, element, module),
         );
       case 'surface':
       case 'base_box':
@@ -408,14 +409,12 @@ class UIRenderer {
     );
   }
 
-  static Widget _buildButton(BuildContext context, UIModule module) {
+  static Widget _buildButton(BuildContext context, UIElement element, UIModule module) {
     final bool isStudio = UISceneModeScope.of(context);
     final bool showOnRuntime = module.properties['showTextOnRuntime'] == true;
-    if (!isStudio && !showOnRuntime) {
-      return const SizedBox.expand();
-    }
     final btnText = module.properties['text']?.toString() ?? module.name;
-    return Container(
+
+    final childWidget = Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: module.color.withValues(alpha: module.opacity * 0.15),
@@ -427,6 +426,14 @@ class UIRenderer {
         style: TextStyle(color: module.color, fontSize: 12, fontWeight: FontWeight.bold),
         overflow: TextOverflow.ellipsis,
       ),
+    );
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        LinkerEventBus().emit(element.id, 'tap');
+      },
+      child: (!isStudio && !showOnRuntime) ? const SizedBox.expand() : childWidget,
     );
   }
 
