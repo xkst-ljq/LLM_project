@@ -600,6 +600,10 @@ class _UIStudioPageState extends State<UIStudioPage>
       touchableContent = GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() => _selectedTransformationId = el.id),
+        onDoubleTap: () {
+          setState(() => _selectedTransformationId = el.id);
+          _showTailoredPrecisionEditorDialog(el);
+        },
         onLongPress: () {
           setState(() => _selectedTransformationId = el.id);
           _showTailoredPrecisionEditorDialog(el);

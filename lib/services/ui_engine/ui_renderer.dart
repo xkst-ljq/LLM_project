@@ -60,13 +60,13 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildInputBlock(context, module),
+          child: _buildInputBlock(context, element, module),
         );
       case 'switch':
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildSwitchBlock(context, module),
+          child: _buildSwitchBlock(context, element, module),
         );
       case 'line':
         return SizedBox(
@@ -287,8 +287,9 @@ class UIRenderer {
   ) {
     final trigger = module.properties['anim_trigger']?.toString();
     final timestamp = (module.properties['anim_timestamp'] as num?)?.toInt() ?? 0;
+    final durationMs = (module.properties['anim_duration'] as num?)?.toInt() ?? 300;
     final now = DateTime.now().millisecondsSinceEpoch;
-    final bool isRecent = (now - timestamp) < 600;
+    final bool isRecent = (now - timestamp) < (durationMs + 200);
 
     if (!isRecent || trigger == null) {
       return baseSurface;
@@ -296,38 +297,80 @@ class UIRenderer {
 
     if (trigger == 'click_to_surface_press') {
       return TweenAnimationBuilder<double>(
-        key: ValueKey('press_$timestamp'),
-        tween: Tween<double>(begin: 0.92, end: 1.0),
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.elasticOut,
-        builder: (ctx, scale, child) {
+        key: ValueKey('press_${timestamp}_$durationMs'),
+        tween: Tween<double>(begin: 0.0, end: 1.0),
+        duration: Duration(milliseconds: durationMs),
+        curve: Curves.easeInOut,
+        builder: (ctx, t, child) {
+          double scale;
+          double dimAlpha;
+          if (t < 0.35) {
+            final p = t / 0.35;
+            scale = 1.0 - 0.16 * p;
+            dimAlpha = 0.3 * p;
+          } else {
+            final p = (t - 0.35) / 0.65;
+            scale = 0.84 + 0.16 * p;
+            dimAlpha = 0.3 * (1.0 - p);
+          }
+
           return Transform.scale(
             scale: scale,
-            child: child,
+            child: Stack(
+              children: [
+                child!,
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(module.borderRadius),
+                      child: Container(
+                        color: Colors.black.withValues(alpha: dimAlpha),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           );
         },
         child: baseSurface,
       );
     } else if (trigger == 'click_to_surface_ripple') {
+      final double customRadius = (module.properties['anim_radius'] as num?)?.toDouble() ?? 150.0;
       return TweenAnimationBuilder<double>(
-        key: ValueKey('ripple_$timestamp'),
+        key: ValueKey('ripple_${timestamp}_$durationMs'),
         tween: Tween<double>(begin: 0.0, end: 1.0),
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutQuad,
+        duration: Duration(milliseconds: durationMs),
+        curve: Curves.easeOutCubic,
         builder: (ctx, progress, child) {
+          final double currentRadius = customRadius * progress;
+          final double opacity = (1.0 - progress).clamp(0.0, 1.0);
           return Stack(
             children: [
               child!,
               Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(module.borderRadius),
-                  child: Center(
-                    child: Container(
-                      width: size.width * progress * 1.5,
-                      height: size.height * progress * 1.5,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: (1.0 - progress) * 0.45),
+                child: IgnorePointer(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(module.borderRadius),
+                    child: Center(
+                      child: Container(
+                        width: currentRadius * 2,
+                        height: currentRadius * 2,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withValues(alpha: opacity * 0.55),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: opacity * 0.85),
+                            width: 2.0,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: module.color.withValues(alpha: opacity * 0.4),
+                              blurRadius: 12,
+                              spreadRadius: 3,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -562,6 +605,16 @@ class UIRenderer {
     final bool showOnRuntime = module.properties['showTextOnRuntime'] == true;
     final btnText = module.properties['text']?.toString() ?? module.name;
 
+    bool hasTap = false;
+    bool hasDoubleTap = false;
+    bool hasLongPress = false;
+
+    if (isStudio) {
+      hasTap = LinkerService.hasConnectedPort(element.id, 'tap');
+      hasDoubleTap = LinkerService.hasConnectedPort(element.id, 'double_tap');
+      hasLongPress = LinkerService.hasConnectedPort(element.id, 'long_press');
+    }
+
     final childWidget = Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
@@ -569,19 +622,74 @@ class UIRenderer {
         borderRadius: BorderRadius.circular(4),
         border: Border.all(color: module.color.withValues(alpha: 0.45), width: 1),
       ),
-      child: Text(
-        btnText,
-        style: TextStyle(color: module.color, fontSize: 12, fontWeight: FontWeight.bold),
-        overflow: TextOverflow.ellipsis,
+      child: Stack(
+        children: [
+          Center(
+            child: Text(
+              btnText,
+              style: TextStyle(color: module.color, fontSize: 12, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (isStudio && (hasTap || hasDoubleTap || hasLongPress))
+            Positioned(
+              left: 4,
+              bottom: 4,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasTap)
+                    Container(
+                      width: 4,
+                      height: 4,
+                      margin: const EdgeInsets.only(right: 2),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00E676),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  if (hasDoubleTap)
+                    Container(
+                      width: 4,
+                      height: 4,
+                      margin: const EdgeInsets.only(right: 2),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF29B6F6),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  if (hasLongPress)
+                    Container(
+                      width: 4,
+                      height: 4,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFF5252),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
+
+    if (isStudio) {
+      return childWidget;
+    }
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
         LinkerEventBus().emit(element.id, 'tap');
       },
-      child: (!isStudio && !showOnRuntime) ? const SizedBox.expand() : childWidget,
+      onDoubleTap: () {
+        LinkerEventBus().emit(element.id, 'double_tap');
+      },
+      onLongPress: () {
+        LinkerEventBus().emit(element.id, 'long_press');
+      },
+      child: !showOnRuntime ? const SizedBox.expand() : childWidget,
     );
   }
 
@@ -676,11 +784,8 @@ class UIRenderer {
     return LinkerService.resolveLinkedTextValue(textModule);
   }
 
-  static Widget _buildInputBlock(BuildContext context, UIModule module) {
+  static Widget _buildInputBlock(BuildContext context, UIElement element, UIModule module) {
     final bool isStudio = UISceneModeScope.of(context);
-    if (!isStudio) {
-      return const SizedBox.expand();
-    }
     String placeholder = module.properties['placeholder']?.toString() ?? '请输入...';
     if (placeholder == '请输入...' || placeholder.trim().isEmpty) {
       final linkedVal = LinkerService.resolveTargetValue(module);
@@ -728,6 +833,7 @@ class UIRenderer {
         onChanged: (val) {
           module.properties['text'] = val;
           module.properties['value'] = val;
+          LinkerEventBus().emit(element.id, 'input_change', val);
         },
       ),
     );
@@ -832,7 +938,7 @@ class UIRenderer {
     );
   }
 
-  static Widget _buildSwitchBlock(BuildContext context, UIModule module) {
+  static Widget _buildSwitchBlock(BuildContext context, UIElement element, UIModule module) {
     final bool isStudio = UISceneModeScope.of(context);
     final int? inactiveColorVal = module.properties['inactiveTrackColor'] as int?;
     final Color inactiveColor = inactiveColorVal != null ? Color(inactiveColorVal) : Colors.grey.shade300;
@@ -847,7 +953,9 @@ class UIRenderer {
           onTap: isStudio
               ? null
               : () {
-                  module.properties['value'] = !currentVal;
+                  final bool nextVal = !currentVal;
+                  module.properties['value'] = nextVal;
+                  LinkerEventBus().emit(element.id, 'switch_change', nextVal);
                   setState(() {});
                 },
           child: AnimatedContainer(
@@ -1105,7 +1213,6 @@ class UIRenderer {
     final props = module.properties;
     final String currentText = props['current']?.toString() ?? props['defaultValue']?.toString() ?? '选项 1';
     final List<String> options = (props['options'] as List?)?.map((e) => e.toString()).toList() ?? ['选项 1'];
-    final bool isStudio = UISceneModeScope.of(context);
 
     return StatefulBuilder(
       builder: (ctx, setState) {
@@ -1149,37 +1256,31 @@ class UIRenderer {
                   ),
                 ),
               ),
-              if (isStudio)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    props['is_expanded_preview'] = !isExpanded;
-                    setState(() {});
-                  },
-                  child: Container(
-                    width: 36,
-                    height: double.infinity,
-                    alignment: Alignment.center,
-                    child: Text(
-                      isExpanded ? '▲' : '▼',
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: isExpanded ? const Color(0xFF7E57C2) : const Color(0xFF888896),
-                        fontWeight: FontWeight.bold,
-                      ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  props['is_expanded_preview'] = !isExpanded;
+                  setState(() {});
+                },
+                child: Container(
+                  width: 36,
+                  height: double.infinity,
+                  alignment: Alignment.center,
+                  child: Text(
+                    isExpanded ? '▲' : '▼',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: isExpanded ? const Color(0xFF7E57C2) : const Color(0xFF888896),
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                )
-              else
-                const Padding(
-                  padding: EdgeInsets.only(right: 14),
-                  child: Text('▼', style: TextStyle(fontSize: 9, color: Color(0xFF888896))),
                 ),
+              ),
             ],
           ),
         );
 
-        if (!isExpanded || !isStudio) return content;
+        if (!isExpanded) return content;
 
         return Stack(
           clipBehavior: Clip.none,
@@ -1209,6 +1310,7 @@ class UIRenderer {
                           onTap: () {
                             props['current'] = opt;
                             props['is_expanded_preview'] = false;
+                            LinkerEventBus().emit(element.id, 'select_change', opt);
                             setState(() {});
                           },
                           child: Container(

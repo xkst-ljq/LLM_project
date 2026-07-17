@@ -12,6 +12,28 @@ class LinkerService {
   static StreamSubscription<LinkerPulseEvent>? _pulseSubscription;
 
   /// 初始化脉冲事件总线监听器（连接按钮点击/定时器脉冲触发真实状态改写）
+  /// 判断某组件指定手势端口（tap / double_tap / long_press）是否已有生效连线
+  static bool hasConnectedPort(String elementId, String portName) {
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final lkData = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (lkData == null || lkData['enabled'] == false) continue;
+
+      final srcId = lkData['sourceModuleId']?.toString();
+      final srcPort = lkData['sourcePort']?.toString() ?? 'output';
+
+      if (srcId == elementId) {
+        if (portName == 'tap' && (srcPort == 'tap' || srcPort == 'output' || srcPort == 'current')) {
+          return true;
+        }
+        if (srcPort == portName) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   static void initEventBusListener(List<UIElement> elements, void Function() onStateChanged) {
     _pulseSubscription?.cancel();
     _pulseSubscription = LinkerEventBus().onPulse.listen((event) {
@@ -23,10 +45,26 @@ class LinkerService {
         if (lk == null || lk['enabled'] == false) continue;
 
         final srcId = lk['sourceModuleId']?.toString();
+        final srcPort = lk['sourcePort']?.toString() ?? 'output';
         final tgtId = lk['targetModuleId']?.toString();
         final scheme = lk['scheme']?.toString();
 
-        if (srcId == event.sourceModuleId && tgtId != null && scheme != null) {
+        final bool isGestureEvent = event.eventType == 'tap' ||
+            event.eventType == 'double_tap' ||
+            event.eventType == 'long_press';
+
+        bool isMatch = false;
+        if (srcId == event.sourceModuleId) {
+          if (isGestureEvent) {
+            isMatch = (srcPort == event.eventType ||
+                (event.eventType == 'tap' && (srcPort == 'output' || srcPort == 'current' || srcPort == 'tap')));
+          } else {
+            isMatch = true;
+          }
+        }
+
+        if (isMatch && tgtId != null && scheme != null) {
+          needRefresh = true;
           final tgtIdx = elements.indexWhere((e) => e.id == tgtId);
           if (tgtIdx != -1) {
             final targetEl = elements[tgtIdx];
@@ -40,26 +78,22 @@ class LinkerService {
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-                needRefresh = true;
               } else if (scheme == 'click_to_switch_set_true') {
                 props['value'] = true;
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-                needRefresh = true;
               } else if (scheme == 'click_to_switch_set_false') {
                 props['value'] = false;
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-                needRefresh = true;
               } else if (scheme == 'click_to_input_clear') {
                 props['text'] = '';
                 props['value'] = '';
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-                needRefresh = true;
               } else if (scheme == 'click_to_slider_reset') {
                 final defVal = (props['defaultValue'] as num?)?.toDouble() ??
                     ((props['min'] as num?)?.toDouble() ?? 0.0);
@@ -67,14 +101,14 @@ class LinkerService {
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-                needRefresh = true;
               } else if (scheme == 'click_to_surface_press' || scheme == 'click_to_surface_ripple') {
                 props['anim_trigger'] = scheme;
+                props['anim_duration'] = (schemeParams['durationMs'] as num?)?.toInt() ?? 300;
+                props['anim_radius'] = (schemeParams['rippleRadius'] as num?)?.toDouble() ?? 150.0;
                 props['anim_timestamp'] = DateTime.now().millisecondsSinceEpoch;
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-                needRefresh = true;
               } else if (scheme == 'timer_tick_to_progress_increment') {
                 final step = (schemeParams['step'] as num?)?.toDouble() ?? 5.0;
                 final cur = (props['current'] as num?)?.toDouble() ?? 0.0;
@@ -84,7 +118,6 @@ class LinkerService {
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-                needRefresh = true;
               }
             }
           }
@@ -109,8 +142,11 @@ class LinkerService {
 
   /// 查找目标模块对应的元素 ID
   static String? _findElementIdForModule(UIModule targetModule) {
+    if (_elementModules.containsKey(targetModule.id)) {
+      return targetModule.id;
+    }
     for (final entry in _elementModules.entries) {
-      if (identical(entry.value, targetModule) || entry.value.id == targetModule.id) {
+      if (identical(entry.value, targetModule)) {
         return entry.key;
       }
     }
@@ -230,9 +266,22 @@ class LinkerService {
         double doubleVal = (rawVal is num) ? rawVal.toDouble() : (double.tryParse(rawVal.toString()) ?? 0.0);
 
         if (targetModule.type == 'progress' || targetModule.type == 'slider') {
-          final min = (targetModule.properties['min'] as num?)?.toDouble() ?? 0.0;
-          final max = (targetModule.properties['max'] as num?)?.toDouble() ?? 100.0;
-          doubleVal = doubleVal.clamp(min, max);
+          final mode = schemeParams['mappingMode']?.toString() ?? 'ratio';
+
+          final double srcMin = (sourceModule.properties['min'] as num?)?.toDouble() ?? 0.0;
+          final double srcMax = (sourceModule.properties['max'] as num?)?.toDouble() ?? 100.0;
+
+          final double tgtMin = (targetModule.properties['min'] as num?)?.toDouble() ?? 0.0;
+          final double tgtMax = (targetModule.properties['max'] as num?)?.toDouble() ?? 100.0;
+
+          if (mode == 'ratio') {
+            final double ratio = (srcMax > srcMin)
+                ? ((doubleVal - srcMin) / (srcMax - srcMin)).clamp(0.0, 1.0)
+                : 0.0;
+            return tgtMin + ratio * (tgtMax - tgtMin);
+          } else {
+            return doubleVal.clamp(tgtMin, tgtMax);
+          }
         }
         return doubleVal;
       } else if (scheme == 'bool_result_to_progress') {

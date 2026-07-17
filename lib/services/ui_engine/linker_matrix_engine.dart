@@ -230,9 +230,19 @@ class LinkerMatrixEngine {
     SchemeDefinition(
       id: 'result_to_progress',
       label: '计算结果驱动进度条 (result → progress)',
-      description: '计算结果直接覆盖进度条数值，超出边界自动截断',
+      description: '计算结果驱动进度条数值，支持比例归一化与绝对值截断',
       sourceType: 'math_node',
       targetType: 'progress',
+      params: [
+        SchemeParamField(
+          key: 'mappingMode',
+          label: '区间映射模式',
+          type: SchemeParamType.choice,
+          defaultValue: 'ratio',
+          options: ['ratio', 'absolute'],
+          description: 'ratio: 相对 0~100% 比例归一化折算；absolute: 绝对物理数值透传截断',
+        ),
+      ],
     ),
     SchemeDefinition(
       id: 'bool_result_to_progress',
@@ -457,9 +467,19 @@ class LinkerMatrixEngine {
     SchemeDefinition(
       id: 'slider_to_progress',
       label: '滑块驱动进度条 (slider → progress)',
-      description: '滑块当前数值实时同步到进度条',
+      description: '滑块当前数值实时同步到进度条，支持比例折算与绝对值截断',
       sourceType: 'slider',
       targetType: 'progress',
+      params: [
+        SchemeParamField(
+          key: 'mappingMode',
+          label: '区间映射模式',
+          type: SchemeParamType.choice,
+          defaultValue: 'ratio',
+          options: ['ratio', 'absolute'],
+          description: 'ratio: 相对 0~100% 比例归一化折算；absolute: 绝对物理数值透传截断',
+        ),
+      ],
     ),
     SchemeDefinition(
       id: 'slider_to_indicator',
@@ -800,9 +820,9 @@ class LinkerMatrixEngine {
 
   /// 根据源端与目标端原语类型，返回合法的 Scheme 方案列表 (已自动过滤黑名单)
   static List<SchemeDefinition> getAvailableSchemes(
-    String? sourceType,
-    String? targetType,
-  ) {
+      String? sourceType,
+      String? targetType,
+      ) {
     if (sourceType == null || targetType == null) return const [];
 
     final normalizedSrc = _normalizeType(sourceType);

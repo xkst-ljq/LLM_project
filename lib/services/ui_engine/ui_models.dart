@@ -367,9 +367,20 @@ class UIElement {
     final isComposite = json['isComposite'] ?? false;
     final offsetData = json['offset'] as Map<String, dynamic>? ?? {};
     final sizeData = json['size'] as Map<String, dynamic>? ?? {};
+    final String elemId = json['id'] ?? 'el_${DateTime.now().millisecondsSinceEpoch}';
+
+    UIModule? parsedModule;
+    if (!isComposite && json['module'] != null) {
+      final m = UIModule.fromJson(json['module']);
+      if (m.id.startsWith('atom_') || m.id != elemId) {
+        parsedModule = m.copyWith(id: elemId);
+      } else {
+        parsedModule = m;
+      }
+    }
 
     return UIElement(
-      id: json['id'] ?? 'el_${DateTime.now().millisecondsSinceEpoch}',
+      id: elemId,
       isComposite: isComposite,
       offset: Offset(
         (offsetData['x'] ?? 0).toDouble(),
@@ -380,7 +391,7 @@ class UIElement {
         (sizeData['height'] ?? 100.0).toDouble(),
       ),
       composite: (isComposite && json['composite'] != null) ? UIComposite.fromJson(json['composite']) : null,
-      module: (!isComposite && json['module'] != null) ? UIModule.fromJson(json['module']) : null,
+      module: parsedModule,
       layerIndex: json['layerIndex'] ?? 0,
       rotation: (json['rotation'] ?? 0.0).toDouble(),
     );

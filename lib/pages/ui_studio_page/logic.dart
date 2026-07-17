@@ -111,12 +111,14 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   //  元素增删改
   // ============================================================
   void _addElementAt(UIModule module, Offset canvasOffset) {
+    final String uniqueId = 'elem_${DateTime.now().millisecondsSinceEpoch}_${_currentElements.length}';
+    final uniqueModule = module.copyWith(id: uniqueId);
     setState(() {
       _currentElements.add(UIElement(
-        id: 'elem_${DateTime.now().millisecondsSinceEpoch}_${_currentElements.length}',
-        module: module,
+        id: uniqueId,
+        module: uniqueModule,
         offset: canvasOffset,
-        size: _initialSizeForModule(module),
+        size: _initialSizeForModule(uniqueModule),
         layerIndex: _activeLayerIndex,
         isComposite: false,
       ));

@@ -630,9 +630,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
 
     final props = Map<String, dynamic>.from(mod.properties);
     String btnText = props['text']?.toString() ?? '点击热区';
-    final allowedActions = ['submit_chat', 'sync_vars', 'none'];
-    final rawAct = props['action']?.toString();
-    String action = (rawAct != null && allowedActions.contains(rawAct)) ? rawAct : 'submit_chat';
     bool showOnRuntime = props['showTextOnRuntime'] == true;
 
     Color color = mod.color;
@@ -732,25 +729,91 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                               ),
                               const SizedBox(height: 12),
 
-                              const Text('点击触发生效规则', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                              const Text('手势触发模式', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                               const SizedBox(height: 4),
                               DropdownButtonFormField<String>(
-                                initialValue: action,
+                                initialValue: props['active_gesture']?.toString() ?? 'tap',
                                 decoration: _softInputDecoration(),
                                 dropdownColor: Colors.white,
                                 style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
                                 items: const [
-                                  DropdownMenuItem(value: 'submit_chat', child: Text('发送对话指令 (submit_chat)')),
-                                  DropdownMenuItem(value: 'sync_vars', child: Text('同步词典属性 (sync_vars)')),
-                                  DropdownMenuItem(value: 'none', child: Text('触控判定热区 (none)')),
+                                  DropdownMenuItem(value: 'tap', child: Text('🟢 单击触发 (Tap)')),
+                                  DropdownMenuItem(value: 'double_tap', child: Text('🔵 双击触发 (Double Tap)')),
+                                  DropdownMenuItem(value: 'long_press', child: Text('🔴 长按触发 (Long Press)')),
                                 ],
                                 onChanged: (v) {
                                   if (v == null) return;
                                   setDialogState(() {
-                                    action = v;
-                                    props['action'] = v;
+                                    props['active_gesture'] = v;
                                   });
+                                  setState(() => syncLivePreview());
                                 },
+                              ),
+                              const SizedBox(height: 12),
+
+                              const Text('手势通道连接状态', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF6F6F9),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: const BoxDecoration(color: Color(0xFF00E676), shape: BoxShape.circle),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          LinkerService.hasConnectedPort(el.id, 'tap')
+                                              ? '🟢 单击通道 (Tap)：已建立连线'
+                                              : '⚪ 单击通道 (Tap)：未连线',
+                                          style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: const BoxDecoration(color: Color(0xFF29B6F6), shape: BoxShape.circle),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          LinkerService.hasConnectedPort(el.id, 'double_tap')
+                                              ? '🔵 双击通道 (Double Tap)：已建立连线'
+                                              : '⚪ 双击通道 (Double Tap)：未连线',
+                                          style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: const BoxDecoration(color: Color(0xFFFF5252), shape: BoxShape.circle),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          LinkerService.hasConnectedPort(el.id, 'long_press')
+                                              ? '🔴 长按通道 (Long Press)：已建立连线'
+                                              : '⚪ 长按通道 (Long Press)：未连线',
+                                          style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                               const SizedBox(height: 12),
 
@@ -1791,10 +1854,10 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
   }
 
   Widget _buildSchemeDetailedConfigSection(
-    UIElement el,
-    StateSetter setDialogState,
-    Map<String, dynamic> props,
-  ) {
+      UIElement el,
+      StateSetter setDialogState,
+      Map<String, dynamic> props,
+      ) {
     final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
     final srcId = linkerData['sourceModuleId']?.toString();
     final tgtId = linkerData['targetModuleId']?.toString();
@@ -1814,7 +1877,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     final bool isFullyConnected = srcElem != null && tgtElem != null;
 
     final Map<String, dynamic> schemeParams =
-        Map<String, dynamic>.from(linkerData['schemeParams'] ?? {});
+    Map<String, dynamic>.from(linkerData['schemeParams'] ?? {});
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1904,41 +1967,68 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
               style: TextStyle(fontSize: 12, color: Color(0xFFF57F17), height: 1.4),
             ),
           )
-        else if (schemeDef.params.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.bolt, size: 16, color: Color(0xFF2E7D32)),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '⚡ 纯脉冲/动作触发协议，连通即生效，无需额外配置参数。',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF2E7D32), fontWeight: FontWeight.w500),
-                  ),
-                ),
+        else ...[
+          if (srcElem.module?.type == 'button') ...[
+            const Text('触发手势端口 (Gesture Port)', style: TextStyle(fontSize: 12, color: Color(0xFF555562), fontWeight: FontWeight.w500)),
+            const SizedBox(height: 4),
+            DropdownButtonFormField<String>(
+              initialValue: linkerData['sourcePort']?.toString() == 'double_tap'
+                  ? 'double_tap'
+                  : (linkerData['sourcePort']?.toString() == 'long_press' ? 'long_press' : 'tap'),
+              decoration: _softInputDecoration(),
+              dropdownColor: Colors.white,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
+              items: const [
+                DropdownMenuItem(value: 'tap', child: Text('🟢 单击端口 (Tap)')),
+                DropdownMenuItem(value: 'double_tap', child: Text('🔵 双击端口 (Double Tap)')),
+                DropdownMenuItem(value: 'long_press', child: Text('🔴 长按端口 (Long Press)')),
               ],
-            ),
-          )
-        else
-          ...schemeDef.params.map((field) {
-            return _buildDynamicParamControl(
-              field: field,
-              currentParams: schemeParams,
-              onParamChanged: (newVal) {
+              onChanged: (v) {
+                if (v == null) return;
                 setDialogState(() {
-                  schemeParams[field.key] = newVal;
-                  linkerData['schemeParams'] = schemeParams;
+                  linkerData['sourcePort'] = v;
                   props['linker'] = linkerData;
                 });
               },
-            );
-          }),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (schemeDef.params.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.bolt, size: 16, color: Color(0xFF2E7D32)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '⚡ 纯脉冲/动作触发协议，连通即生效，无需额外配置参数。',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF2E7D32), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...schemeDef.params.map((field) {
+              return _buildDynamicParamControl(
+                field: field,
+                currentParams: schemeParams,
+                onParamChanged: (newVal) {
+                  setDialogState(() {
+                    schemeParams[field.key] = newVal;
+                    linkerData['schemeParams'] = schemeParams;
+                    props['linker'] = linkerData;
+                  });
+                },
+              );
+            }),
+        ],
       ],
     );
   }
@@ -1997,13 +2087,20 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         final String selectedChoice = options.contains(curVal?.toString())
             ? curVal!.toString()
             : (options.isNotEmpty ? options.first : '');
+
+        String choiceLabel(String opt) {
+          if (opt == 'ratio') return '📐 比例归一化 (0~100% 相对比例折算)';
+          if (opt == 'absolute') return '📏 绝对物理数值透传 (超出自动截断)';
+          return opt;
+        }
+
         controlWidget = DropdownButtonFormField<String>(
           initialValue: selectedChoice,
           decoration: _softInputDecoration(),
           dropdownColor: Colors.white,
           style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
           items: options
-              .map((opt) => DropdownMenuItem<String>(value: opt, child: Text(opt)))
+              .map((opt) => DropdownMenuItem<String>(value: opt, child: Text(choiceLabel(opt))))
               .toList(),
           onChanged: (v) {
             if (v != null) onParamChanged(v);
