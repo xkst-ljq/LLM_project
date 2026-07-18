@@ -1877,7 +1877,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     final bool isFullyConnected = srcElem != null && tgtElem != null;
 
     final Map<String, dynamic> schemeParams =
-    Map<String, dynamic>.from(linkerData['schemeParams'] ?? {});
+        Map<String, dynamic>.from(linkerData['schemeParams'] ?? {});
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

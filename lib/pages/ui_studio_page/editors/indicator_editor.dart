@@ -556,10 +556,15 @@ class _IndicatorEditorState extends State<IndicatorEditor> {
                             ),
                           ] else if (matchType == 'range') ...[
                             SizedBox(
-                              width: 55,
+                              width: 64,
                               child: DropdownButtonFormField<String>(
                                 initialValue: ['>', '<', '>=', '<=', '=='].contains(rule['matchOp']?.toString()) ? rule['matchOp']?.toString() : '>',
-                                decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8)),
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                                ),
                                 items: const [
                                   DropdownMenuItem(value: '>', child: Text('>')),
                                   DropdownMenuItem(value: '<', child: Text('<')),

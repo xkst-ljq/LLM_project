@@ -15,7 +15,6 @@ import '../../services/ui_engine/ui_asset_service.dart';
 import '../../services/ui_engine/ui_models.dart';
 import '../../services/ui_engine/ui_renderer.dart';
 import 'editors/indicator_editor.dart';
-import 'editors/scroll_frame_editor.dart';
 import 'editors/select_editor.dart';
 import 'editors/timer_editor.dart';
 

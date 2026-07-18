@@ -13,16 +13,19 @@ class UIRenderer {
   /// 将 UIElement 渲染为 Flutter Widget
   static Widget render(BuildContext context, UIElement element) {
     final bool isStudio = UISceneModeScope.of(context);
+    final module = element.module;
+    final controls = module == null
+        ? const LinkerTargetControlState()
+        : LinkerService.resolveTargetControlState(module);
 
-    // 非工作室（预览模式与运行时）：隐形后台纯逻辑节点
-    if (!isStudio &&
-        ['linker', 'math_node', 'timer'].contains(element.module?.type)) {
+    // 非工作室（预览模式与运行时）：隐形后台纯逻辑节点。
+    if (!isStudio && ['linker', 'math_node', 'timer'].contains(module?.type)) {
+      return const SizedBox.shrink();
+    }
+    if (!isStudio && !controls.visible) {
       return const SizedBox.shrink();
     }
 
-    if (!isStudio && LinkerService.isTargetHiddenBySwitch(element.id)) {
-      return const SizedBox.shrink();
-    }
     Widget widget;
     if (element.isComposite && element.composite != null) {
       widget = _renderComposite(context, element.composite!, element.size);
@@ -31,6 +34,17 @@ class UIRenderer {
     } else {
       widget = const SizedBox();
     }
+    final bool shouldBlockInteraction =
+        !isStudio &&
+        !controls.isInteractive &&
+        ['button', 'slider', 'select', 'switch'].contains(module?.type);
+    if (shouldBlockInteraction) {
+      widget = Opacity(
+        opacity: 0.45,
+        child: IgnorePointer(child: widget),
+      );
+    }
+
     // 围绕元素自身中心旋转。工作室拖拽与运行时聊天渲染共用此入口。
     // 为防止从 0° 拖动发生树结构突变导致手势中断断触，此处自出生起无条件包裹 Transform.rotate。
     return Transform.rotate(
@@ -141,12 +155,6 @@ class UIRenderer {
           width: size.width,
           height: size.height,
           child: _buildIndicatorBlock(context, element, module, size),
-        );
-      case 'scroll_frame':
-        return SizedBox(
-          width: size.width,
-          height: size.height,
-          child: _buildScrollFrameBlock(context, element, module, size),
         );
       case 'timer':
         return SizedBox(
@@ -391,7 +399,8 @@ class UIRenderer {
     final double max = (module.properties['max'] ?? 100).toDouble();
     double current = (module.properties['current'] ?? min).toDouble();
 
-    final linkedVal = LinkerService.resolveTargetValue(module);
+    final controls = LinkerService.resolveTargetControlState(module);
+    final linkedVal = controls.frozen ? null : LinkerService.resolveTargetValue(module);
     if (linkedVal != null && linkedVal is num) {
       current = linkedVal.toDouble();
     }
@@ -786,6 +795,7 @@ class UIRenderer {
 
   static Widget _buildInputBlock(BuildContext context, UIElement element, UIModule module) {
     final bool isStudio = UISceneModeScope.of(context);
+    final controls = LinkerService.resolveTargetControlState(module);
     String placeholder = module.properties['placeholder']?.toString() ?? '请输入...';
     if (placeholder == '请输入...' || placeholder.trim().isEmpty) {
       final linkedVal = LinkerService.resolveTargetValue(module);
@@ -822,6 +832,8 @@ class UIRenderer {
       ),
       child: TextField(
         controller: TextEditingController(text: module.properties['text']?.toString() ?? ''),
+        enabled: controls.enabled,
+        readOnly: controls.locked,
         style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
         decoration: InputDecoration(
           border: InputBorder.none,
@@ -992,9 +1004,20 @@ class UIRenderer {
     final sourcePort = hasSource ? (linkerData['sourcePort']?.toString() ?? '—') : '';
     final targetPort = hasTarget ? (linkerData['targetPort']?.toString() ?? '—') : '';
     final scheme = (hasSource && hasTarget) ? (linkerData['scheme']?.toString() ?? '未配置') : '未连接';
+    final bool isEnabled = hasSource &&
+        hasTarget &&
+        linkerData['enabled'] == true &&
+        scheme != '未配置';
+    final statusText = !hasSource || !hasTarget
+        ? '未连接'
+        : isEnabled
+            ? '已启用'
+            : '待选方案';
+    const activeColor = Color(0xFF00ACC1);
+    final statusColor = isEnabled ? activeColor : const Color(0xFF757575);
 
-    final portColor = module.color.withValues(alpha: 0.95);
-    final borderColor = module.color.withValues(alpha: 0.35);
+    final portColor = statusColor.withValues(alpha: 0.95);
+    final borderColor = statusColor.withValues(alpha: 0.45);
     const double portSize = 15.0; // 放大端口，方便接线交互
 
     return Container(
@@ -1084,9 +1107,9 @@ class UIRenderer {
               padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 2),
               child: Text(
                 scheme,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Color(0xFF111116),
+                  color: statusColor,
                   fontWeight: FontWeight.w700,
                 ),
                 textAlign: TextAlign.center,
@@ -1103,11 +1126,11 @@ class UIRenderer {
             right: 0,
             child: Center(
               child: Text(
-                '联动器',
+                statusText,
                 style: TextStyle(
                   fontSize: 8,
-                  color: module.color.withValues(alpha: 0.55),
-                  fontWeight: FontWeight.w500,
+                  color: statusColor.withValues(alpha: 0.8),
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -1122,9 +1145,30 @@ class UIRenderer {
   static Widget _buildMathNodeBlock(UIModule module, Size size) {
     final props = module.properties;
     final String op = props['operation']?.toString() ?? '+';
-    final double val = (props['value'] as num?)?.toDouble() ?? 1.0;
-    final String valStr = val == val.toInt() ? val.toInt().toString() : val.toString();
-    final String opText = op == 'set' ? '= $valStr' : '$op $valStr';
+    final params = LinkerService.resolveMathNodeParameters(module);
+    final result = LinkerService.resolveMathNodeResult(module);
+    final controls = LinkerService.resolveTargetControlState(module);
+    final resultText = result is bool
+        ? (result ? 'true' : 'false')
+        : result is num
+            ? (result == result.toInt()
+                ? result.toInt().toString()
+                : result.toStringAsFixed(2))
+            : '—';
+    String formatNumber(num value) => value == value.toInt()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(2);
+
+    final activeParams = LinkerService.resolveMathNodeActiveParams(module);
+    final operands = activeParams
+        .map((param) => formatNumber(params[param] ?? 0))
+        .toList();
+    final formula = op == 'set'
+        ? (operands.isEmpty ? '—' : operands.first)
+        : operands.join(' $op ');
+    final opText = controls.frozen
+        ? '冻结 · $resultText'
+        : '$formula = $resultText';
 
     const double portSize = 9.0;
 
@@ -1143,20 +1187,22 @@ class UIRenderer {
       ),
       child: Stack(
         children: [
-          // 中点文字算式
+          // 中点公式：旧草稿节点较窄时自动缩小，始终完整显示。
           Center(
             child: Padding(
-              padding: const EdgeInsets.only(top: 1.0),
-              child: Text(
-                '算术计算 : $opText',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF512DA8),
-                  letterSpacing: 0.2,
+              padding: const EdgeInsets.fromLTRB(18, 1, 18, 1),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '计算：$opText',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF512DA8),
+                    letterSpacing: 0.2,
+                  ),
+                  maxLines: 1,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
@@ -1387,6 +1433,12 @@ class UIRenderer {
       }
     }
 
+    final controls = LinkerService.resolveTargetControlState(module);
+    if (!controls.enabled) {
+      activeColorInt = 0xFF9E9E9E;
+      activeGlow = false;
+    }
+
     final Color activeColor = Color(activeColorInt);
     final double dotSize = (props['dotSize'] as num?)?.toDouble().clamp(8.0, 28.0) ?? 14.0;
 
@@ -1424,140 +1476,6 @@ class UIRenderer {
     }
 
     return Center(child: dot);
-  }
-
-  /// 局部滚动视窗渲染 (第二步全盘完备)：支持双层纯色封底、阻尼切换与收容子元素渲染
-  static Widget _buildScrollFrameBlock(BuildContext context, UIElement element, UIModule module, Size size) {
-    final props = module.properties;
-    final bool isStudio = UISceneModeScope.of(context);
-    final String scrollMode = props['scrollMode']?.toString() ?? 'vertical';
-    final bool clipToBounds = props['clipToBounds'] != false;
-    final double contentWidth = (props['contentWidth'] as num?)?.toDouble() ?? 300.0;
-    final double contentHeight = (props['contentHeight'] as num?)?.toDouble() ?? 500.0;
-    final int bgColorVal = (props['backgroundColor'] as int?) ?? 0xFFF0F0F5;
-    final Color bgColor = LinkerService.resolveTargetColor(module) ?? Color(bgColorVal);
-    final String physicsMode = props['physics']?.toString() ?? 'bouncing';
-    final ScrollPhysics scrollPhysics = physicsMode == 'clamping' ? const ClampingScrollPhysics() : const BouncingScrollPhysics();
-
-    final List<UIElement> adoptedChildren = (props['adoptedChildElements'] as List?)
-            ?.map((e) => UIElement.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList() ??
-        [];
-
-    Widget innerContent;
-    if (adoptedChildren.isNotEmpty) {
-      final childWidgets = <Widget>[];
-      for (final child in adoptedChildren) {
-        childWidgets.add(
-          Positioned(
-            left: child.offset.dx,
-            top: child.offset.dy,
-            width: child.size.width,
-            height: child.size.height,
-            child: render(context, child),
-          ),
-        );
-      }
-      innerContent = Container(
-        width: contentWidth,
-        height: contentHeight,
-        decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
-        child: Stack(clipBehavior: Clip.none, children: childWidgets),
-      );
-    } else {
-      innerContent = Container(
-        width: scrollMode == 'horizontal' ? contentWidth : (scrollMode == 'omni' ? contentWidth : size.width),
-        height: scrollMode == 'vertical' ? contentHeight : (scrollMode == 'omni' ? contentHeight : size.height),
-        decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
-        alignment: Alignment.center,
-        child: isStudio
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    scrollMode == 'omni' ? Icons.pan_tool_alt_outlined : (scrollMode == 'horizontal' ? Icons.swap_horiz : Icons.swap_vert),
-                    size: 28,
-                    color: const Color(0xFF3F51B5).withValues(alpha: 0.6),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    scrollMode == 'omni'
-                        ? '🗺️ 2D 无极探索沙盘\n[虚拟底板: ${contentWidth.toInt()}x${contentHeight.toInt()}px]'
-                        : '📜 局部滚动视窗 (${scrollMode == 'horizontal' ? '横向' : '竖向'}滑动)\n[虚拟高宽: ${contentWidth.toInt()}x${contentHeight.toInt()}px]',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF3F51B5), fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text('请在属性配置页或点击“进入内部空间”对收容子元素排版', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                ],
-              )
-            : const SizedBox.shrink(),
-      );
-    }
-
-    Widget viewport;
-    if (scrollMode == 'omni') {
-      viewport = InteractiveViewer(
-        constrained: false,
-        panEnabled: true,
-        scaleEnabled: false,
-        child: innerContent,
-      );
-    } else {
-      viewport = SingleChildScrollView(
-        scrollDirection: scrollMode == 'horizontal' ? Axis.horizontal : Axis.vertical,
-        physics: scrollPhysics,
-        child: innerContent,
-      );
-    }
-
-    // 保险一：外层同色封底（在 viewport 外部在套上一层自备颜色的 Container，回弹时露出同色底板）
-    final Widget sealedViewport = Container(
-      width: size.width,
-      height: size.height,
-      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(12)),
-      child: clipToBounds ? ClipRRect(borderRadius: BorderRadius.circular(12), child: viewport) : viewport,
-    );
-
-    final Widget protectedViewport = NotificationListener<ScrollNotification>(
-      onNotification: (_) => true, // 吞没滚动事件，手势防穿透隔离
-      child: isStudio ? IgnorePointer(child: sealedViewport) : sealedViewport,
-    );
-
-    if (isStudio) {
-      return Container(
-        width: size.width,
-        height: size.height,
-        decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFF3F51B5), width: 1.5, style: BorderStyle.solid),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Stack(
-          children: [
-            protectedViewport,
-            Positioned(
-              top: 6,
-              right: 8,
-              child: IgnorePointer(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3F51B5).withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    scrollMode == 'omni' ? '🗺️ 无极沙盘' : '📜 视窗容器',
-                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return protectedViewport;
   }
 
   /// 定时脉冲发生器渲染：工作室显形为带自测热区的逻辑卡片，运行时彻底隐形 SizedBox.shrink()

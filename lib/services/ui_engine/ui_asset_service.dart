@@ -131,11 +131,13 @@ class UIAssetService {
       color: const Color(0xFFD1C4E9),
       properties: {
         'operation': '+',
-        'value': 1.0,
-        'extractMethod': 'first',
-        'extractKey': '',
-        'extractIndex': 0,
-        'delimiter': '/',
+        'paramA': 0.0,
+        'paramB': 1.0,
+        'paramC': 0.0,
+        'activeParams': ['paramA', 'paramB'],
+        'fallbackValue': 0.0,
+        'calculationMode': 'auto',
+        'frozen': false,
       },
     );
 

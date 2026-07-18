@@ -200,7 +200,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final elType = el.module?.type;
       final bool hitCard = _isPointInsideRotatedRect(globalPosition, el);
 
-      if (hitCard && ['linker', 'text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'scroll_frame', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(elType)) {
+      if (hitCard && ['linker', 'text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(elType)) {
         if (_canConnect(el, 'input')) {
           String assignedPort = 'input';
           if (elType == 'math_node' && _draggingSourceType == 'output') {
@@ -253,7 +253,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
           portDirection == 'output';
     }
     if (sourceType == 'linker' && dragType == 'output') {
-      return ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'scroll_frame', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
+      return ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
           portDirection == 'input';
     }
     if (['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
@@ -273,6 +273,35 @@ mixin _UIStudioLinker on _UIStudioLogic {
     return false;
   }
 
+  bool _wouldCreateMathNodeCycle(String sourceId, String targetId) {
+    if (sourceId == targetId) return true;
+    final graph = <String, Set<String>>{};
+    for (final element in _currentElements) {
+      if (element.module?.type != 'linker') continue;
+      final data = (element.module!.properties['linker'] as Map?)
+          ?.cast<String, dynamic>();
+      final from = data?['sourceModuleId']?.toString();
+      final to = data?['targetModuleId']?.toString();
+      if (from == null || to == null) continue;
+      final fromIndex = _currentElements.indexWhere((candidate) => candidate.id == from);
+      final toIndex = _currentElements.indexWhere((candidate) => candidate.id == to);
+      final fromType = fromIndex == -1 ? null : _currentElements[fromIndex].module?.type;
+      final toType = toIndex == -1 ? null : _currentElements[toIndex].module?.type;
+      if (fromType == 'math_node' && toType == 'math_node') {
+        graph.putIfAbsent(from, () => <String>{}).add(to);
+      }
+    }
+
+    final visited = <String>{};
+    bool reachesSource(String nodeId) {
+      if (nodeId == sourceId) return true;
+      if (!visited.add(nodeId)) return false;
+      return graph[nodeId]?.any(reachesSource) ?? false;
+    }
+
+    return reachesSource(targetId);
+  }
+
   // ===== 连接完成 =====
   void _completeConnection() {
     if (_hoveringTargetId == null || _draggingSourceId == null) return;
@@ -289,17 +318,61 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     final sourceType = sourceElement.module?.type;
     final targetType = targetElement.module?.type;
+    final sourceLinkData =
+    sourceElement.module?.properties['linker'] as Map?;
+    final targetLinkData =
+    targetElement.module?.properties['linker'] as Map?;
+    String? prospectiveMathSourceId;
+    String? prospectiveMathTargetId;
+    if (sourceType == 'math_node') {
+      prospectiveMathSourceId = sourceElement.id;
+    } else if (sourceType == 'linker') {
+      prospectiveMathSourceId = sourceLinkData?['sourceModuleId']?.toString();
+    }
+    if (targetType == 'math_node') {
+      prospectiveMathTargetId = targetElement.id;
+    } else if (targetType == 'linker') {
+      prospectiveMathTargetId = targetLinkData?['targetModuleId']?.toString();
+    }
+    if (prospectiveMathSourceId != null &&
+        prospectiveMathTargetId != null &&
+        _wouldCreateMathNodeCycle(
+          prospectiveMathSourceId,
+          prospectiveMathTargetId,
+        )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('不允许创建算术节点环依赖')),
+      );
+      return;
+    }
 
     if (sourceType == 'linker' &&
         _draggingSourceType == 'output' &&
-        ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'scroll_frame', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
+        ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
         (_hoveringTargetPort == 'input' || _hoveringTargetPort == 'gate_in')) {
       final bool isGate = _hoveringTargetPort == 'gate_in';
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         targetModuleId: targetElement.id,
-        targetPort: targetType == 'scroll_frame' ? 'adoptedChildren' : (['text', 'surface', 'surface_art', 'primitive_art'].contains(targetType) ? 'text' : (targetType == 'input' || targetType == 'select' || targetType == 'indicator' ? 'currentValue' : (targetType == 'switch' ? 'value' : (targetType == 'math_node' ? (isGate ? 'gate_in' : 'data_in') : 'current')))),
-        targetType: (targetType == 'scroll_frame' || targetType == 'text' || targetType == 'input' || targetType == 'select' || targetType == 'indicator' || ['surface', 'surface_art', 'primitive_art'].contains(targetType)) ? 'string' : (targetType == 'switch' || isGate ? 'boolean' : 'number'),
+        targetPort: ['text', 'surface', 'surface_art', 'primitive_art']
+            .contains(targetType)
+            ? 'text'
+            : (targetType == 'input' ||
+            targetType == 'select' ||
+            targetType == 'indicator')
+            ? 'currentValue'
+            : targetType == 'switch'
+            ? 'value'
+            : targetType == 'math_node'
+            ? (isGate ? 'gate_in' : 'data_in')
+            : 'current',
+        targetType: (targetType == 'text' ||
+            targetType == 'input' ||
+            targetType == 'select' ||
+            targetType == 'indicator' ||
+            ['surface', 'surface_art', 'primitive_art'].contains(targetType))
+            ? 'string'
+            : (targetType == 'switch' || isGate ? 'boolean' : 'number'),
         connectionType: 'output',
       );
     } else if (sourceType == 'linker' &&
@@ -392,6 +465,9 @@ mixin _UIStudioLinker on _UIStudioLogic {
         linkerElement.module!.properties['linker'] ?? {},
       );
 
+      final previousSourceId = linkerData['sourceModuleId']?.toString();
+      final previousTargetId = linkerData['targetModuleId']?.toString();
+
       if (connectionType == 'input' && sourceModuleId != null) {
         linkerData['sourceModuleId'] = sourceModuleId;
         linkerData['sourcePort'] = sourcePort ?? 'current';
@@ -402,11 +478,22 @@ mixin _UIStudioLinker on _UIStudioLogic {
         linkerData['targetType'] = targetType ?? 'string';
       }
 
-      if (linkerData['sourceModuleId'] != null &&
-          linkerData['targetModuleId'] != null) {
-        linkerData['enabled'] = true;
-        linkerData['scheme'] = linkerData['scheme'] ?? '未配置';
+      final endpointChanged =
+          previousSourceId != linkerData['sourceModuleId']?.toString() ||
+              previousTargetId != linkerData['targetModuleId']?.toString();
+      if (endpointChanged) {
+        linkerData['scheme'] = '未配置';
+        linkerData.remove('schemeParams');
+        linkerData.remove('migrationNotice');
+        linkerData.remove('retiredSchemeId');
       }
+
+      final isFullyConnected =
+          linkerData['sourceModuleId'] != null && linkerData['targetModuleId'] != null;
+      linkerData['enabled'] = isFullyConnected &&
+          LinkerMatrixEngine.isSchemeSelectable(
+            linkerData['scheme']?.toString() ?? '',
+          );
 
       final updatedProps =
       Map<String, dynamic>.from(linkerElement.module!.properties);
@@ -438,6 +525,10 @@ mixin _UIStudioLinker on _UIStudioLogic {
         linkerData.remove('targetType');
       }
       linkerData['scheme'] = '未配置';
+      linkerData.remove('schemeParams');
+      linkerData.remove('migrationNotice');
+      linkerData.remove('retiredSchemeId');
+      linkerData['enabled'] = false;
 
       props['linker'] = linkerData;
       _currentElements[idx] = currentEl.copyWith(

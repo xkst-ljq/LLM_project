@@ -44,10 +44,11 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         final offsetX = (data['offsetX'] as num?)?.toDouble() ?? 0.0;
         final offsetY = (data['offsetY'] as num?)?.toDouble() ?? 0.0;
         final activeLayer = (data['activeLayer'] as num?)?.toInt() ?? 0;
+        final sanitizedElements = _sanitizeLinkerElements(elements);
 
         setState(() {
           _sceneLayers = layers;
-          _currentElements = elements;
+          _currentElements = sanitizedElements;
           _workspaceOffset = Offset(offsetX, offsetY);
           _activeLayerIndex = activeLayer;
         });
@@ -107,6 +108,68 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     _saveWorkspaceDraft(showMessage: false);
   }
 
+  /// 清除断链，并将旧版或不再开放的协议重置为未配置。
+  List<UIElement> _sanitizeLinkerElements(List<UIElement> elements) {
+    final retainedElements = elements
+        .where((element) => element.module?.type != 'scroll_frame')
+        .toList();
+    final elementById = <String, UIElement>{
+      for (final element in retainedElements) element.id: element,
+    };
+    final sanitized = <UIElement>[];
+
+    for (final element in retainedElements) {
+      if (element.isComposite || element.module?.type != 'linker') {
+        sanitized.add(element);
+        continue;
+      }
+
+      final props = Map<String, dynamic>.from(element.module!.properties);
+      final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
+      final sourceId = linkerData['sourceModuleId']?.toString();
+      final targetId = linkerData['targetModuleId']?.toString();
+      final hasSource = sourceId != null && sourceId.isNotEmpty;
+      final hasTarget = targetId != null && targetId.isNotEmpty;
+
+      if ((hasSource && !elementById.containsKey(sourceId)) ||
+          (hasTarget && !elementById.containsKey(targetId))) {
+        continue;
+      }
+
+      if (hasSource && hasTarget) {
+        final sourceType = elementById[sourceId]?.module?.type;
+        final targetType = elementById[targetId]?.module?.type;
+        final scheme = linkerData['scheme']?.toString() ?? '';
+        final isCompatible = LinkerMatrixEngine
+            .getAvailableSchemes(sourceType, targetType)
+            .any((definition) => definition.id == scheme);
+        if (isCompatible) {
+          linkerData.remove('migrationNotice');
+          linkerData.remove('retiredSchemeId');
+          linkerData['enabled'] = true;
+        } else {
+          linkerData.remove('migrationNotice');
+          linkerData.remove('retiredSchemeId');
+          linkerData['scheme'] = '未配置';
+          linkerData.remove('schemeParams');
+          linkerData['enabled'] = false;
+        }
+      } else {
+        linkerData.remove('migrationNotice');
+        linkerData.remove('retiredSchemeId');
+        linkerData['scheme'] = '未配置';
+        linkerData.remove('schemeParams');
+        linkerData['enabled'] = false;
+      }
+
+      props['linker'] = linkerData;
+      sanitized.add(
+        element.copyWith(module: element.module!.copyWith(properties: props)),
+      );
+    }
+    return sanitized;
+  }
+
   // ============================================================
   //  元素增删改
   // ============================================================
@@ -149,6 +212,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   void _deleteElement(String id) {
     setState(() {
       _currentElements.removeWhere((e) => e.id == id);
+      _currentElements = _sanitizeLinkerElements(_currentElements);
       _elementRotateModes.remove(id);
       if (_selectedTransformationId == id) {
         _selectedTransformationId = null;
@@ -204,13 +268,11 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       case 'image':
         return const Size(80, 80);
       case 'math_node':
-        return const Size(110, 36);
+        return const Size(180, 44);
       case 'select':
         return const Size(140, 34);
       case 'indicator':
         return const Size(36, 36);
-      case 'scroll_frame':
-        return const Size(240, 180);
       case 'timer':
         return const Size(140, 54);
       case 'linker':
@@ -335,8 +397,6 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         return '下拉单选';
       case 'indicator':
         return '状态指示点';
-      case 'scroll_frame':
-        return '局部滚动视窗';
       case 'timer':
         return '定时脉冲';
       case 'surface':
@@ -494,7 +554,6 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         type == 'surface_art' ||
         type == 'primitive_art' ||
         type == 'base_box' ||
-        type == 'scroll_frame' ||
         type == 'linker' ||
         type == 'math_node' ||
         type == 'timer' ||
@@ -514,7 +573,6 @@ mixin _UIStudioLogic on State<UIStudioPage> {
           otherType == 'surface_art' ||
           otherType == 'primitive_art' ||
           otherType == 'base_box' ||
-          otherType == 'scroll_frame' ||
           other.module?.properties['is_container_boundary'] == true;
 
       if (isContainer) {

@@ -34,8 +34,6 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
       _showCompactSelectEditorDialog(el);
     } else if (type == 'indicator') {
       _showCompactIndicatorEditorDialog(el);
-    } else if (type == 'scroll_frame') {
-      _showCompactScrollFrameEditorDialog(el);
     } else if (type == 'timer') {
       _showCompactTimerEditorDialog(el);
     }
@@ -147,6 +145,11 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
               final newProps = Map<String, dynamic>.from(targetEl.module!.properties);
               final newLinker = Map<String, dynamic>.from(newProps['linker'] ?? {});
               newLinker['scheme'] = schemeDef.id;
+              newLinker.remove('migrationNotice');
+              newLinker.remove('retiredSchemeId');
+              newLinker['enabled'] = LinkerMatrixEngine.isSchemeSelectable(
+                schemeDef.id,
+              );
               newProps['linker'] = newLinker;
               _currentElements[idx] = targetEl.copyWith(
                 module: targetEl.module!.copyWith(properties: newProps),
@@ -288,48 +291,6 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
                 name: newName,
                 properties: newProps,
                 color: Color((newProps['defaultColor'] as int?) ?? mod.color.toARGB32()),
-              );
-              _currentElements[idx] = el.copyWith(module: updatedMod);
-            }
-          });
-          _autoSave();
-        },
-      ),
-    );
-  }
-
-  // ===== 紧凑型局部滚动视窗控件专属规格编辑器 (Scroll Frame) =====
-  void _showCompactScrollFrameEditorDialog(UIElement el) {
-    if (el.module == null) return;
-    final mod = el.module!;
-    showDialog(
-      context: context,
-      builder: (ctx) => ScrollFrameEditor(
-        initialProperties: Map<String, dynamic>.from(mod.properties),
-        moduleName: mod.name,
-        layerId: el.layerIndex,
-        initialPosition: el.offset,
-        onDelete: () {
-          _deleteElement(el.id);
-        },
-        onSave: (newProps) {
-          setState(() {
-            final oldAdopted = (mod.properties['adoptedChildElements'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
-            final newAdopted = (newProps['adoptedChildElements'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
-            final newIds = newAdopted.map((e) => e['id']?.toString()).toSet();
-            for (final oldChild in oldAdopted) {
-              if (!newIds.contains(oldChild['id']?.toString())) {
-                _currentElements.add(UIElement.fromJson(oldChild));
-              }
-            }
-
-            final idx = _currentElements.indexWhere((e) => e.id == el.id);
-            if (idx != -1) {
-              final newName = newProps['name']?.toString() ?? mod.name;
-              final updatedMod = mod.copyWith(
-                name: newName,
-                properties: newProps,
-                color: Color((newProps['backgroundColor'] as int?) ?? mod.color.toARGB32()),
               );
               _currentElements[idx] = el.copyWith(module: updatedMod);
             }

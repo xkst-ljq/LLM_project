@@ -136,7 +136,7 @@ class UIModule {
 //     "targetModuleId": "el_yyy",      // 目标模块（text）
 //     "targetPort": "text",
 //     "targetType": "string",
-//     "scheme": "current_to_text",
+//     "scheme": "progress_to_text",
 //     "enabled": true,
 //
 //     // === 新增：中转连线结构 ===
