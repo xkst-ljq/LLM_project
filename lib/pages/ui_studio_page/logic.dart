@@ -15,6 +15,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   final Set<String> _elementRotateModes = <String>{};
   bool _isLinkingMode = false;
   bool _isPreviewMode = false;
+  List<UIElement>? _previewElementsSnapshot;
 
   bool _showConstructionManager = false;
   bool _showLeftDrawer = false;
@@ -59,6 +60,26 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     } else {
       _initDefaultState();
     }
+  }
+
+  void _togglePreviewMode() {
+    final enteringPreview = !_isPreviewMode;
+    setState(() {
+      if (enteringPreview) {
+        _previewElementsSnapshot = _currentElements
+            .map((element) => UIElement.fromJson(element.toJson()))
+            .toList();
+      } else if (_previewElementsSnapshot != null) {
+        _currentElements = _previewElementsSnapshot!;
+        _previewElementsSnapshot = null;
+      }
+      _isPreviewMode = enteringPreview;
+      _selectedTransformationId = null;
+      _showConstructionManager = false;
+      _showLeftDrawer = false;
+      _showRightDrawer = false;
+    });
+    if (!enteringPreview) _setupEventBusListener();
   }
 
   void _setupEventBusListener() {
@@ -113,12 +134,36 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     final retainedElements = elements
         .where((element) => element.module?.type != 'scroll_frame')
         .toList();
+    const surfaceTypes = {'surface', 'surface_art', 'primitive_art', 'base_box'};
+    final surfaceIds = retainedElements
+        .where((element) => surfaceTypes.contains(element.module?.type))
+        .map((element) => element.id)
+        .toSet();
+    final normalizedElements = retainedElements.map((element) {
+      final parentId = element.parentSurfaceId;
+      if (parentId != null && !surfaceIds.contains(parentId)) {
+        return element.copyWith(clearParentSurface: true);
+      }
+      return element;
+    }).toList();
     final elementById = <String, UIElement>{
-      for (final element in retainedElements) element.id: element,
+      for (final element in normalizedElements) element.id: element,
     };
     final sanitized = <UIElement>[];
+    final acceptedEdges = <String, Set<String>>{};
 
-    for (final element in retainedElements) {
+    bool wouldCloseCycle(String sourceId, String targetId) {
+      if (sourceId == targetId) return true;
+      final visited = <String>{};
+      bool reachesSource(String nodeId) {
+        if (nodeId == sourceId) return true;
+        if (!visited.add(nodeId)) return false;
+        return acceptedEdges[nodeId]?.any(reachesSource) ?? false;
+      }
+      return reachesSource(targetId);
+    }
+
+    for (final element in normalizedElements) {
       if (element.isComposite || element.module?.type != 'linker') {
         sanitized.add(element);
         continue;
@@ -143,10 +188,11 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         final isCompatible = LinkerMatrixEngine
             .getAvailableSchemes(sourceType, targetType)
             .any((definition) => definition.id == scheme);
-        if (isCompatible) {
+        if (isCompatible && !wouldCloseCycle(sourceId, targetId)) {
           linkerData.remove('migrationNotice');
           linkerData.remove('retiredSchemeId');
           linkerData['enabled'] = true;
+          acceptedEdges.putIfAbsent(sourceId, () => <String>{}).add(targetId);
         } else {
           linkerData.remove('migrationNotice');
           linkerData.remove('retiredSchemeId');
@@ -219,6 +265,112 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       }
     });
     _autoSave();
+  }
+
+  bool _canAssignSurfaceMembership(UIElement element) {
+    final type = element.module?.type;
+    return !element.isComposite &&
+        type != null &&
+        !const {'linker', 'math_node', 'timer'}.contains(type);
+  }
+
+  bool _wouldCreateSurfaceParentCycle(String childId, String parentId) {
+    var currentId = parentId;
+    final visited = <String>{};
+    while (currentId.isNotEmpty && visited.add(currentId)) {
+      if (currentId == childId) return true;
+      final index = _currentElements
+          .indexWhere((element) => element.id == currentId);
+      if (index == -1) return false;
+      currentId = _currentElements[index].parentSurfaceId ?? '';
+    }
+    return false;
+  }
+
+  void _showSurfaceMembershipDialog() {
+    final selectedId = _selectedTransformationId;
+    if (selectedId == null) return;
+    final elementIndex = _currentElements.indexWhere((element) => element.id == selectedId);
+    if (elementIndex == -1) return;
+    final element = _currentElements[elementIndex];
+    if (!_canAssignSurfaceMembership(element)) return;
+
+    final surfaces = _currentElements.where((candidate) {
+      final type = candidate.module?.type;
+      return candidate.layerIndex == element.layerIndex &&
+          candidate.id != element.id &&
+          const {'surface', 'surface_art', 'primitive_art', 'base_box'}
+              .contains(type) &&
+          !_wouldCreateSurfaceParentCycle(element.id, candidate.id);
+    }).toList();
+    String? selectedSurfaceId = element.parentSurfaceId;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('设置所属面'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RadioGroup<String?>(
+                    groupValue: selectedSurfaceId,
+                    onChanged: (value) =>
+                        setDialogState(() => selectedSurfaceId = value),
+                    child: Column(
+                      children: [
+                        const RadioListTile<String?>(
+                          value: null,
+                          title: Text('顶层元素（无所属面）'),
+                        ),
+                        const Divider(height: 1),
+                        if (surfaces.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Text('当前图层没有可用的 Surface。'),
+                          ),
+                        ...surfaces.map(
+                          (surface) => RadioListTile<String?>(
+                            value: surface.id,
+                            title: Text(surface.module?.name ?? surface.id),
+                            subtitle: Text(_elementTypeLabel(surface)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                setState(() {
+                  final index = _currentElements
+                      .indexWhere((candidate) => candidate.id == element.id);
+                  if (index == -1) return;
+                  _currentElements[index] = selectedSurfaceId == null
+                      ? _currentElements[index].copyWith(clearParentSurface: true)
+                      : _currentElements[index]
+                          .copyWith(parentSurfaceId: selectedSurfaceId);
+                });
+                _autoSave();
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('应用'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _moveSelectedElementOrder(int direction) {
@@ -546,47 +698,5 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     _autoSave();
   }
 
-  /// 容器面碰撞检测判决：判断操作原子中心坐标是否落入某一个容器面内
-  bool _isInsideContainerSurface(UIElement el) {
-    if (el.isComposite) return false;
-    final type = el.module?.type;
-    if (type == 'surface' ||
-        type == 'surface_art' ||
-        type == 'primitive_art' ||
-        type == 'base_box' ||
-        type == 'linker' ||
-        type == 'math_node' ||
-        type == 'timer' ||
-        el.module?.properties['is_container_boundary'] == true) {
-      return true;
-    }
 
-    final elCenter = Offset(
-      el.offset.dx + el.size.width / 2,
-      el.offset.dy + el.size.height / 2,
-    );
-
-    for (final other in _currentElements) {
-      if (identical(other, el) || other.id == el.id) continue;
-      final otherType = other.module?.type;
-      final bool isContainer = otherType == 'surface' ||
-          otherType == 'surface_art' ||
-          otherType == 'primitive_art' ||
-          otherType == 'base_box' ||
-          other.module?.properties['is_container_boundary'] == true;
-
-      if (isContainer) {
-        final containerRect = Rect.fromLTWH(
-          other.offset.dx,
-          other.offset.dy,
-          other.size.width,
-          other.size.height,
-        );
-        if (containerRect.contains(elCenter)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'math_node_engine.dart';
+import 'text_value_extractor.dart';
 import 'ui_models.dart';
 
 /// Linker 目标组件的统一运行期控制状态。
@@ -22,10 +23,70 @@ class LinkerTargetControlState {
   bool get isInteractive => enabled && !locked;
 }
 
+/// Input 在运行时的校验快照，供 Button 与 Indicator 通路共用。
+class InputValidationState {
+  final String text;
+  final bool isEmpty;
+  final bool isValid;
+  final int length;
+
+  const InputValidationState({
+    required this.text,
+    required this.isEmpty,
+    required this.isValid,
+    required this.length,
+  });
+
+  String get status => isEmpty ? 'empty' : (isValid ? 'valid' : 'invalid');
+}
+
+/// Indicator 根据本地 statusRules 解析出的当前颜色通道路由状态。
+class IndicatorActiveState {
+  final int colorValue;
+  final bool glow;
+  final double glowRadius;
+
+  const IndicatorActiveState({
+    required this.colorValue,
+    required this.glow,
+    required this.glowRadius,
+  });
+}
+
 /// LinkerService（联动器服务）
 class LinkerService {
   /// 全局元素快照：elementId → UIModule
   static final Map<String, UIModule> _elementModules = {};
+  static final Map<String, String?> _elementSurfaceParents = {};
+
+  static int _linkerPriority(UIModule linkerModule) {
+    final data = (linkerModule.properties['linker'] as Map?)?.cast<String, dynamic>();
+    return ((data?['priority'] as num?)?.toInt() ?? 5).clamp(1, 10);
+  }
+
+  static int _linkerUpdateStamp(UIModule linkerModule) {
+    final data = (linkerModule.properties['linker'] as Map?)?.cast<String, dynamic>();
+    return (data?['runtimeUpdatedAt'] as num?)?.toInt() ?? 0;
+  }
+
+  static List<UIModule> _sortedLinkersForTarget(String targetId) {
+    final entries = _elementModules.entries
+        .where((entry) {
+          if (entry.value.type != 'linker') return false;
+          final data = (entry.value.properties['linker'] as Map?)?.cast<String, dynamic>();
+          return data?['targetModuleId']?.toString() == targetId &&
+              data?['enabled'] == true;
+        })
+        .toList();
+    entries.sort((a, b) {
+      final priority = _linkerPriority(b.value).compareTo(_linkerPriority(a.value));
+      if (priority != 0) return priority;
+      final stamp = _linkerUpdateStamp(b.value).compareTo(_linkerUpdateStamp(a.value));
+      if (stamp != 0) return stamp;
+      return b.key.compareTo(a.key);
+    });
+    return entries.map((entry) => entry.value).toList();
+  }
 
   static StreamSubscription<LinkerPulseEvent>? _pulseSubscription;
 
@@ -50,6 +111,63 @@ class LinkerService {
       }
     }
     return false;
+  }
+
+  /// 是否存在要求该 Input 在提交后清空自身的输出通路。
+  static bool shouldClearInputAfterCommit(String inputElementId) {
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final linkerData =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (linkerData == null || linkerData['enabled'] != true) continue;
+      if (linkerData['sourceModuleId']?.toString() == inputElementId &&
+          linkerData['scheme'] == 'input_submit_to_text_clear') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 是否存在有效的 Input 精确匹配通路控制该 Select 的当前选择。
+  static bool isSelectInputControlled(UIModule selectModule) {
+    final targetId = _findElementIdForModule(selectModule);
+    if (targetId == null) return false;
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final linkerData =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (linkerData == null || linkerData['enabled'] != true) continue;
+      if (linkerData['targetModuleId']?.toString() != targetId ||
+          linkerData['scheme'] != 'input_value_to_select_match') {
+        continue;
+      }
+      final sourceId = linkerData['sourceModuleId']?.toString();
+      if (sourceId != null && _elementModules[sourceId]?.type == 'input') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 若 Timer 被有效的系统布尔通路控制，返回该运行状态；否则返回 null。
+  static bool? resolveTimerSystemRunning(UIModule timerModule) {
+    final timerId = _findElementIdForModule(timerModule);
+    if (timerId == null) return null;
+    bool? running;
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final linkerData =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (linkerData == null || linkerData['enabled'] != true) continue;
+      if (linkerData['targetModuleId']?.toString() != timerId ||
+          linkerData['scheme'] != 'boolean_to_timer_running') {
+        continue;
+      }
+      final sourceId = linkerData['sourceModuleId']?.toString();
+      final source = sourceId == null ? null : _elementModules[sourceId];
+      if (source?.type == 'switch') running = source!.properties['value'] == true;
+    }
+    return running;
   }
 
   static void initEventBusListener(List<UIElement> elements, void Function() onStateChanged) {
@@ -85,6 +203,7 @@ class LinkerService {
         }
 
         if (isMatch && tgtId != null) {
+          lk['runtimeUpdatedAt'] = event.timestamp.microsecondsSinceEpoch;
           needRefresh = true;
           final tgtIdx = elements.indexWhere((e) => e.id == tgtId);
           if (tgtIdx != -1) {
@@ -99,12 +218,14 @@ class LinkerService {
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-              } else if (scheme == 'click_to_switch_set_true') {
+              } else if (scheme == 'click_to_switch_set_true' ||
+                  scheme == 'timer_tick_to_switch_set_true') {
                 props['value'] = true;
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-              } else if (scheme == 'click_to_switch_set_false') {
+              } else if (scheme == 'click_to_switch_set_false' ||
+                  scheme == 'timer_tick_to_switch_set_false') {
                 props['value'] = false;
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
@@ -112,6 +233,18 @@ class LinkerService {
               } else if (scheme == 'click_to_input_clear') {
                 props['text'] = '';
                 props['value'] = '';
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+              } else if (scheme == 'click_to_timer_toggle') {
+                props['isRunning'] = props['isRunning'] != true;
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+              } else if (scheme == 'click_to_timer_reset') {
+                props['isRunning'] = false;
+                props['currentVal'] = 0.0;
+                props['tickCount'] = 0;
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
@@ -130,15 +263,49 @@ class LinkerService {
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-              } else if (scheme == 'timer_tick_to_progress_increment') {
+              } else if (scheme == 'timer_tick_to_progress_increment' ||
+                  scheme == 'timer_tick_to_progress_decrement') {
                 final step = (schemeParams['step'] as num?)?.toDouble() ?? 5.0;
                 final cur = (props['current'] as num?)?.toDouble() ?? 0.0;
                 final max = (props['max'] as num?)?.toDouble() ?? 100.0;
                 final min = (props['min'] as num?)?.toDouble() ?? 0.0;
-                props['current'] = (cur + step).clamp(min, max);
+                final behavior =
+                    schemeParams['boundaryBehavior']?.toString() ?? 'stop';
+                final defaultDirection =
+                    scheme == 'timer_tick_to_progress_increment' ? 1.0 : -1.0;
+                final direction =
+                    (lk['runtimeDirection'] as num?)?.toDouble() ?? defaultDirection;
+                var next = cur + step.abs() * direction;
+                if (next > max || next < min) {
+                  if (behavior == 'loop') {
+                    next = next > max ? min : max;
+                  } else if (behavior == 'pingPong') {
+                    final reversed = -direction;
+                    lk['runtimeDirection'] = reversed;
+                    next = (cur + step.abs() * reversed).clamp(min, max);
+                  } else {
+                    next = next.clamp(min, max);
+                  }
+                }
+                props['current'] = next;
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
+              } else if (scheme == 'input_value_to_select_match' &&
+                  srcId != null &&
+                  _elementModules[srcId]?.type == 'input') {
+                final inputValue =
+                    _elementModules[srcId]!.properties['text']?.toString().trim() ?? '';
+                final options = (props['options'] as List?)
+                        ?.map((option) => option.toString())
+                        .toList() ??
+                    const <String>[];
+                if (inputValue.isNotEmpty && options.contains(inputValue)) {
+                  props['current'] = inputValue;
+                  elements[tgtIdx] = targetEl.copyWith(
+                    module: targetEl.module!.copyWith(properties: props),
+                  );
+                }
               }
             }
           }
@@ -154,11 +321,31 @@ class LinkerService {
   /// 更新元素快照（每次渲染前调用）
   static void updateElementSnapshot(List<UIElement> elements) {
     _elementModules.clear();
+    _elementSurfaceParents.clear();
     for (final el in elements) {
       if (!el.isComposite && el.module != null) {
         _elementModules[el.id] = el.module!;
+        _elementSurfaceParents[el.id] = el.parentSurfaceId;
       }
     }
+  }
+
+  /// 元素的有效可见性：自身可见，且所有所属 Surface 祖先均可见。
+  static bool isElementVisibleInSurfaceHierarchy(UIElement element) {
+    var parentId = element.parentSurfaceId;
+    final visited = <String>{element.id};
+    while (parentId != null && parentId.isNotEmpty) {
+      if (!visited.add(parentId)) return false;
+      final parentModule = _elementModules[parentId];
+      if (parentModule == null ||
+          !['surface', 'surface_art', 'primitive_art', 'base_box']
+              .contains(parentModule.type) ||
+          !resolveTargetControlState(parentModule).visible) {
+        return false;
+      }
+      parentId = _elementSurfaceParents[parentId];
+    }
+    return true;
   }
 
   /// 查找目标模块对应的元素 ID
@@ -172,6 +359,108 @@ class LinkerService {
       }
     }
     return null;
+  }
+
+  static String _textSourceValue(UIModule textModule, [Set<String>? visited]) {
+    return resolveLinkedTextValue(textModule) ??
+        textModule.properties['text']?.toString() ??
+        textModule.name;
+  }
+
+  static double _progressFieldValue(UIModule progressModule, String field) {
+    final current = (progressModule.properties['current'] as num?)?.toDouble() ?? 0.0;
+    final max = (progressModule.properties['max'] as num?)?.toDouble() ?? 100.0;
+    return field == 'max' ? max : current;
+  }
+
+  static bool _matchesThreshold(double value, String operator, double threshold) {
+    switch (operator) {
+      case '>':
+        return value > threshold;
+      case '<':
+        return value < threshold;
+      case '>=':
+        return value >= threshold;
+      case '<=':
+        return value <= threshold;
+      case '==':
+        return (value - threshold).abs() < 1e-9;
+      default:
+        return value >= threshold;
+    }
+  }
+
+  /// 统一解析 Input 的当前文本、必填与长度校验状态。
+  static InputValidationState resolveInputValidationState(UIModule inputModule) {
+    final text = inputModule.properties['text']?.toString() ?? '';
+    final isEmpty = text.trim().isEmpty;
+    final required = inputModule.properties['required'] == true;
+    final maxLength = (inputModule.properties['maxLength'] as num?)?.toInt();
+    final valid = (!required || !isEmpty) &&
+        (maxLength == null || text.length <= maxLength);
+    return InputValidationState(
+      text: text,
+      isEmpty: isEmpty,
+      isValid: valid,
+      length: text.length,
+    );
+  }
+
+  /// 统一解析 Indicator 当前激活的颜色通道，供渲染器与下游 Linker 共用。
+  static IndicatorActiveState resolveIndicatorActiveState(UIModule indicatorModule) {
+    final props = indicatorModule.properties;
+    final currentValue =
+        (resolveTargetValue(indicatorModule) ?? props['currentValue'] ?? '')
+            .toString()
+            .trim();
+    var colorValue = (props['defaultColor'] as int?) ?? 0xFF9E9E9E;
+    var glow = props['defaultGlow'] == true;
+    var glowRadius = 12.0;
+    final rules = (props['statusRules'] as List?) ?? const [];
+
+    for (final raw in rules) {
+      if (raw is! Map) continue;
+      final rule = Map<String, dynamic>.from(raw);
+      final matchType = rule['matchType']?.toString() ?? 'exact';
+      var matched = false;
+      if (matchType == 'exact') {
+        final expected = rule['matchValue']?.toString().trim() ?? '';
+        matched = expected.isNotEmpty && currentValue == expected;
+      } else if (matchType == 'bool') {
+        final expected = rule['matchValue']?.toString().toLowerCase() == 'true';
+        final actual = currentValue.toLowerCase() == 'true' ||
+            currentValue == '1' ||
+            currentValue == '开启';
+        matched = currentValue.isNotEmpty && actual == expected;
+      } else if (matchType == 'range') {
+        final actual = double.tryParse(currentValue);
+        final expected = double.tryParse(rule['matchValNum']?.toString() ?? '');
+        final op = rule['matchOp']?.toString() ?? '>';
+        if (actual != null && expected != null) {
+          matched = switch (op) {
+            '>' => actual > expected,
+            '<' => actual < expected,
+            '>=' => actual >= expected,
+            '<=' => actual <= expected,
+            '==' => actual == expected,
+            _ => false,
+          };
+        }
+      }
+
+      if (matched) {
+        colorValue = (rule['color'] as int?) ?? colorValue;
+        glow = rule['isGlow'] == true;
+        glowRadius = (rule['glowRadius'] as num?)?.toDouble() ?? 12.0;
+        break;
+      }
+    }
+
+    return IndicatorActiveState(
+      colorValue: colorValue,
+      glow: glow,
+      glowRadius: glowRadius,
+    );
   }
 
   /// 解析源模块的动态生效属性（支持递归溯源与环路检测）
@@ -202,26 +491,48 @@ class LinkerService {
     if (targetElId == null) return params;
 
     final visitedSet = visited != null ? Set<String>.from(visited) : <String>{};
-    for (final module in _elementModules.values) {
-      if (module.type != 'linker') continue;
+    for (final module in _sortedLinkersForTarget(targetElId)) {
       final linkerData =
           (module.properties['linker'] as Map?)?.cast<String, dynamic>();
-      if (linkerData == null || linkerData['enabled'] != true) continue;
+      if (linkerData == null) continue;
       if (linkerData['targetModuleId']?.toString() != targetElId ||
-          linkerData['scheme'] != 'value_to_math_param') {
+          !['value_to_math_param', 'progress_to_math_param', 'text_extract_to_math_param']
+              .contains(linkerData['scheme'])) {
         continue;
       }
 
       final sourceId = linkerData['sourceModuleId']?.toString();
       if (sourceId == null || !_elementModules.containsKey(sourceId)) continue;
       final sourceModule = _elementModules[sourceId]!;
-      final rawValue = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
-          _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
-          sourceModule.properties['text'] ??
-          sourceModule.properties['defaultValue'];
-      final targetParam = (linkerData['schemeParams'] as Map?)?['targetParam']
-              ?.toString() ??
-          'paramA';
+      final scheme = linkerData['scheme']?.toString();
+      final paramsData = (linkerData['schemeParams'] as Map?)?.cast<String, dynamic>() ?? {};
+      dynamic rawValue;
+      if (sourceModule.type == 'progress' &&
+          scheme == 'progress_to_math_param') {
+        rawValue = _progressFieldValue(
+          sourceModule,
+          paramsData['sourceField']?.toString() ?? 'current',
+        );
+      } else if (sourceModule.type == 'text' &&
+          scheme == 'text_extract_to_math_param') {
+        final extracted = TextValueExtractor.extract(
+          text: _textSourceValue(sourceModule, visitedSet),
+          mode: paramsData['extractMode']?.toString() ?? 'whole',
+          numberIndex: (paramsData['numberIndex'] as num?)?.toInt() ?? 0,
+          key: paramsData['key']?.toString() ?? '',
+        );
+        if (extracted == null &&
+            paramsData['parseFailBehavior']?.toString() == 'keep') {
+          continue;
+        }
+        rawValue = extracted ?? 0.0;
+      } else {
+        rawValue = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+            _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+            sourceModule.properties['text'] ??
+            sourceModule.properties['defaultValue'];
+      }
+      final targetParam = paramsData['targetParam']?.toString() ?? 'paramA';
       if (params.containsKey(targetParam)) {
         params[targetParam] = MathNodeEngine.toNumber(rawValue);
       }
@@ -306,11 +617,9 @@ class LinkerService {
     if (visitedSet.contains(targetElId)) return null;
     visitedSet.add(targetElId);
 
-    for (final module in _elementModules.values) {
-      if (module.type != 'linker') continue;
-
+    for (final module in _sortedLinkersForTarget(targetElId)) {
       final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
-      if (linkerData == null || linkerData['enabled'] != true) continue;
+      if (linkerData == null) continue;
 
       final targetId = linkerData['targetModuleId']?.toString();
       if (targetId == null || targetId != targetElId) continue;
@@ -324,9 +633,112 @@ class LinkerService {
 
       final schemeParams = (linkerData['schemeParams'] as Map?)?.cast<String, dynamic>() ?? {};
 
+      // Input 协议：实时值、提交值与状态值分别输出。
+      if (sourceModule.type == 'input') {
+        final inputState = resolveInputValidationState(sourceModule);
+        switch (scheme) {
+          case 'input_live_to_text':
+            return inputState.text;
+          case 'input_commit_to_text':
+          case 'input_submit_to_text_clear':
+            return sourceModule.properties['committedValue']?.toString() ?? '';
+          case 'input_validity_to_indicator':
+            return inputState.status;
+          case 'input_length_to_indicator':
+            return inputState.length.toString();
+          case 'input_value_to_select_match':
+            final inputValue = inputState.text.trim();
+            final options = (targetModule.properties['options'] as List?)
+                    ?.map((option) => option.toString())
+                    .toList() ??
+                const <String>[];
+            for (final option in options) {
+              if (option == inputValue && inputValue.isNotEmpty) {
+                return option;
+              }
+            }
+            return null;
+        }
+      }
+
+      if (sourceModule.type == 'text') {
+        final textValue = _textSourceValue(sourceModule, visitedSet);
+        if (scheme == 'text_match_to_switch') {
+          final triggerText = schemeParams['triggerText']?.toString() ?? '';
+          return triggerText.isNotEmpty && textValue == triggerText;
+        }
+        if (scheme == 'text_value_to_select_match') {
+          final options = (targetModule.properties['options'] as List?)
+                  ?.map((option) => option.toString())
+                  .toList() ??
+              const <String>[];
+          return options.contains(textValue) ? textValue : null;
+        }
+      }
+
+      if (sourceModule.type == 'progress') {
+        final current = _progressFieldValue(sourceModule, 'current');
+        final max = _progressFieldValue(sourceModule, 'max');
+        if (scheme == 'progress_to_text') {
+          final field = schemeParams['sourceField']?.toString() ?? 'current';
+          final precision = ((schemeParams['precision'] as num?)?.toInt() ?? 0)
+              .clamp(0, 6)
+              .toInt();
+          final raw = switch (field) {
+            'max' => max.toStringAsFixed(precision),
+            'percentage' => (max == 0 ? 0.0 : current / max * 100)
+                .toStringAsFixed(precision),
+            'range' => '${current.toStringAsFixed(precision)} / ${max.toStringAsFixed(precision)}',
+            _ => current.toStringAsFixed(precision),
+          };
+          final template = schemeParams['template']?.toString() ?? '{{value}}';
+          return template.replaceAll('{{value}}', raw);
+        }
+        if (scheme == 'progress_threshold_to_switch') {
+          final operator = schemeParams['operator']?.toString() ?? '>=';
+          final threshold = (schemeParams['threshold'] as num?)?.toDouble() ?? 100.0;
+          return _matchesThreshold(current, operator, threshold);
+        }
+      }
+
+      if (sourceModule.type == 'timer' && scheme == 'timer_value_to_text') {
+        final field = schemeParams['sourceField']?.toString() ?? 'currentVal';
+        final precision = ((schemeParams['precision'] as num?)?.toInt() ?? 0)
+            .clamp(0, 6)
+            .toInt();
+        if (field == 'tickCount') {
+          return (sourceModule.properties['tickCount'] as num?)?.toInt().toString() ?? '0';
+        }
+        final value = field == 'stepValue'
+            ? (sourceModule.properties['stepValue'] as num?)?.toDouble() ?? 0.0
+            : (sourceModule.properties['currentVal'] as num?)?.toDouble() ?? 0.0;
+        return value.toStringAsFixed(precision);
+      }
+
+      if (sourceModule.type == 'select' && scheme == 'select_value_to_switch') {
+        final triggerValue =
+            schemeParams['triggerValue']?.toString() ?? '';
+        final selectedValue = sourceModule.properties['current']?.toString() ??
+            sourceModule.properties['defaultValue']?.toString() ??
+            '';
+        return triggerValue.isNotEmpty && selectedValue == triggerValue;
+      }
+
+      // Indicator 颜色通道路由：用当前 activeColor 驱动下游。
+      if (sourceModule.type == 'indicator' &&
+          ['indicator_color_to_switch', 'indicator_color_to_text'].contains(scheme)) {
+        final triggerColor = (schemeParams['triggerColor'] as num?)?.toInt() ??
+            0xFF4CAF50;
+        final matches =
+            resolveIndicatorActiveState(sourceModule).colorValue == triggerColor;
+        if (scheme == 'indicator_color_to_switch') return matches;
+        return matches
+            ? schemeParams['matchText']?.toString() ?? '已激活'
+            : schemeParams['mismatchText']?.toString() ?? '';
+      }
+
       // 仅保留当前注册表中有完整运行端支持的方案。
       if (scheme == 'result_to_text' ||
-          scheme == 'text_to_text' ||
           scheme == 'slider_to_text' ||
           scheme == 'progress_to_text' ||
           scheme == 'select_to_text') {
@@ -481,8 +893,8 @@ class LinkerService {
 
   /// 汇总目标组件的运行期控制状态。
   ///
-  /// 现阶段已接入 [bool_to_visibility]；其他布尔控制 scheme 会在其
-  /// 来源协议开放后复用同一解析器，无需再修改各目标组件的渲染逻辑。
+  /// Switch 布尔控制与 Indicator 颜色通道均复用该解析器，
+  /// 后续来源协议无需再修改各目标组件的渲染逻辑。
   static LinkerTargetControlState resolveTargetControlState(
     UIModule targetModule,
   ) {
@@ -516,6 +928,73 @@ class LinkerService {
       }
 
       final sourceModule = _elementModules[sourceId]!;
+      if (sourceModule.type == 'text') {
+        final textValue = _textSourceValue(sourceModule);
+        if (scheme == 'text_nonempty_to_button_enable') {
+          enabled = enabled && textValue.trim().isNotEmpty;
+          continue;
+        }
+        if (scheme == 'text_match_to_button_enable') {
+          final triggerText =
+              (linkerData['schemeParams'] as Map?)?['triggerText']?.toString() ?? '';
+          enabled = enabled &&
+              triggerText.isNotEmpty && textValue == triggerText;
+          continue;
+        }
+      }
+      if (sourceModule.type == 'progress' &&
+          scheme == 'progress_threshold_to_button_enable') {
+        final progressParams =
+            (linkerData['schemeParams'] as Map?)?.cast<String, dynamic>() ?? {};
+        final operator = progressParams['operator']?.toString() ?? '>=';
+        final threshold =
+            (progressParams['threshold'] as num?)?.toDouble() ?? 100.0;
+        enabled = enabled && _matchesThreshold(
+          _progressFieldValue(sourceModule, 'current'),
+          operator,
+          threshold,
+        );
+        continue;
+      }
+      if (sourceModule.type == 'input') {
+        final inputState = resolveInputValidationState(sourceModule);
+        switch (scheme) {
+          case 'input_nonempty_to_button_enable':
+            enabled = enabled && !inputState.isEmpty;
+            continue;
+          case 'input_valid_to_button_enable':
+            enabled = enabled && inputState.isValid;
+            continue;
+        }
+      }
+      if (sourceModule.type == 'select' &&
+          scheme == 'select_value_to_surface_visible') {
+        final triggerValue =
+            (linkerData['schemeParams'] as Map?)?['triggerValue']?.toString() ?? '';
+        final selectedValue = sourceModule.properties['current']?.toString() ??
+            sourceModule.properties['defaultValue']?.toString() ??
+            '';
+        visible = visible &&
+            triggerValue.isNotEmpty && selectedValue == triggerValue;
+        continue;
+      }
+      if (sourceModule.type == 'indicator') {
+        final triggerColorValue =
+            (linkerData['schemeParams'] as Map?)?['triggerColor'];
+        final triggerColor =
+            (triggerColorValue as num?)?.toInt() ?? 0xFF4CAF50;
+        final matches =
+            resolveIndicatorActiveState(sourceModule).colorValue == triggerColor;
+        switch (scheme) {
+          case 'indicator_color_to_button_enable':
+            enabled = enabled && matches;
+            continue;
+          case 'indicator_color_to_visible':
+            visible = visible && matches;
+            continue;
+        }
+      }
+
       final rawValue = sourceModule.properties['value'];
       final bool? sourceValue = rawValue is bool
           ? rawValue

@@ -333,6 +333,7 @@ class UIElement {
   final Offset offset;
   final Size size;
   final int layerIndex; // 动态所属的图层 ID
+  final String? parentSurfaceId; // 显式所属面；为空表示顶层元素
   final double rotation; // 旋转角度（度），围绕元素自身中心
 
   UIElement({
@@ -343,6 +344,7 @@ class UIElement {
     this.offset = Offset.zero,
     this.size = const Size(100, 100),
     this.layerIndex = 0,
+    this.parentSurfaceId,
     this.rotation = 0.0,
   });
 
@@ -353,6 +355,7 @@ class UIElement {
       'offset': {'x': offset.dx, 'y': offset.dy},
       'size': {'width': size.width, 'height': size.height},
       'layerIndex': layerIndex,
+      'parentSurfaceId': parentSurfaceId,
       'rotation': rotation,
     };
     if (isComposite) {
@@ -393,6 +396,7 @@ class UIElement {
       composite: (isComposite && json['composite'] != null) ? UIComposite.fromJson(json['composite']) : null,
       module: parsedModule,
       layerIndex: json['layerIndex'] ?? 0,
+      parentSurfaceId: json['parentSurfaceId']?.toString(),
       rotation: (json['rotation'] ?? 0.0).toDouble(),
     );
   }
@@ -404,6 +408,8 @@ class UIElement {
     Offset? offset,
     Size? size,
     int? layerIndex,
+    String? parentSurfaceId,
+    bool clearParentSurface = false,
     double? rotation,
   }) {
     return UIElement(
@@ -414,6 +420,9 @@ class UIElement {
       offset: offset ?? this.offset,
       size: size ?? this.size,
       layerIndex: layerIndex ?? this.layerIndex,
+      parentSurfaceId: clearParentSurface
+          ? null
+          : parentSurfaceId ?? this.parentSurfaceId,
       rotation: rotation ?? this.rotation,
     );
   }

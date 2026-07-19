@@ -273,7 +273,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
     return false;
   }
 
-  bool _wouldCreateMathNodeCycle(String sourceId, String targetId) {
+  bool _wouldCreateLinkerCycle(String sourceId, String targetId) {
     if (sourceId == targetId) return true;
     final graph = <String, Set<String>>{};
     for (final element in _currentElements) {
@@ -283,13 +283,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final from = data?['sourceModuleId']?.toString();
       final to = data?['targetModuleId']?.toString();
       if (from == null || to == null) continue;
-      final fromIndex = _currentElements.indexWhere((candidate) => candidate.id == from);
-      final toIndex = _currentElements.indexWhere((candidate) => candidate.id == to);
-      final fromType = fromIndex == -1 ? null : _currentElements[fromIndex].module?.type;
-      final toType = toIndex == -1 ? null : _currentElements[toIndex].module?.type;
-      if (fromType == 'math_node' && toType == 'math_node') {
-        graph.putIfAbsent(from, () => <String>{}).add(to);
-      }
+      graph.putIfAbsent(from, () => <String>{}).add(to);
     }
 
     final visited = <String>{};
@@ -318,61 +312,60 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     final sourceType = sourceElement.module?.type;
     final targetType = targetElement.module?.type;
-    final sourceLinkData =
-    sourceElement.module?.properties['linker'] as Map?;
-    final targetLinkData =
-    targetElement.module?.properties['linker'] as Map?;
-    String? prospectiveMathSourceId;
-    String? prospectiveMathTargetId;
-    if (sourceType == 'math_node') {
-      prospectiveMathSourceId = sourceElement.id;
-    } else if (sourceType == 'linker') {
-      prospectiveMathSourceId = sourceLinkData?['sourceModuleId']?.toString();
+    final sourceLinkData = sourceElement.module?.properties['linker'];
+    final targetLinkData = targetElement.module?.properties['linker'];
+    String? prospectiveSourceId;
+    String? prospectiveTargetId;
+    if (sourceType == 'linker' && sourceLinkData is Map) {
+      prospectiveSourceId = sourceLinkData['sourceModuleId']?.toString();
+    } else {
+      prospectiveSourceId = sourceElement.id;
     }
-    if (targetType == 'math_node') {
-      prospectiveMathTargetId = targetElement.id;
-    } else if (targetType == 'linker') {
-      prospectiveMathTargetId = targetLinkData?['targetModuleId']?.toString();
+    if (targetType == 'linker' && targetLinkData is Map) {
+      prospectiveTargetId = targetLinkData['targetModuleId']?.toString();
+    } else {
+      prospectiveTargetId = targetElement.id;
     }
-    if (prospectiveMathSourceId != null &&
-        prospectiveMathTargetId != null &&
-        _wouldCreateMathNodeCycle(
-          prospectiveMathSourceId,
-          prospectiveMathTargetId,
-        )) {
+    if (prospectiveSourceId != null &&
+        prospectiveTargetId != null &&
+        _wouldCreateLinkerCycle(prospectiveSourceId, prospectiveTargetId)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('不允许创建算术节点环依赖')),
+        const SnackBar(content: Text('不允许创建联动器环依赖')),
       );
       return;
     }
 
     if (sourceType == 'linker' &&
         _draggingSourceType == 'output' &&
-        ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
+        ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
         (_hoveringTargetPort == 'input' || _hoveringTargetPort == 'gate_in')) {
       final bool isGate = _hoveringTargetPort == 'gate_in';
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         targetModuleId: targetElement.id,
         targetPort: ['text', 'surface', 'surface_art', 'primitive_art']
-            .contains(targetType)
+                .contains(targetType)
             ? 'text'
             : (targetType == 'input' ||
-            targetType == 'select' ||
-            targetType == 'indicator')
-            ? 'currentValue'
-            : targetType == 'switch'
-            ? 'value'
-            : targetType == 'math_node'
-            ? (isGate ? 'gate_in' : 'data_in')
-            : 'current',
-        targetType: (targetType == 'text' ||
-            targetType == 'input' ||
-            targetType == 'select' ||
-            targetType == 'indicator' ||
-            ['surface', 'surface_art', 'primitive_art'].contains(targetType))
-            ? 'string'
-            : (targetType == 'switch' || isGate ? 'boolean' : 'number'),
+                    targetType == 'select' ||
+                    targetType == 'indicator')
+                ? 'currentValue'
+                : targetType == 'switch'
+                    ? 'value'
+                    : targetType == 'math_node'
+                        ? (isGate ? 'gate_in' : 'data_in')
+                        : targetType == 'timer'
+                            ? 'control'
+                            : 'current',
+        targetType: targetType == 'timer'
+            ? 'event'
+            : (targetType == 'text' ||
+                    targetType == 'input' ||
+                    targetType == 'select' ||
+                    targetType == 'indicator' ||
+                    ['surface', 'surface_art', 'primitive_art'].contains(targetType))
+                ? 'string'
+                : (targetType == 'switch' || isGate ? 'boolean' : 'number'),
         connectionType: 'output',
       );
     } else if (sourceType == 'linker' &&
@@ -464,6 +457,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final linkerData = Map<String, dynamic>.from(
         linkerElement.module!.properties['linker'] ?? {},
       );
+      linkerData['priority'] ??= 5;
 
       final previousSourceId = linkerData['sourceModuleId']?.toString();
       final previousTargetId = linkerData['targetModuleId']?.toString();
@@ -480,7 +474,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
       final endpointChanged =
           previousSourceId != linkerData['sourceModuleId']?.toString() ||
-              previousTargetId != linkerData['targetModuleId']?.toString();
+          previousTargetId != linkerData['targetModuleId']?.toString();
       if (endpointChanged) {
         linkerData['scheme'] = '未配置';
         linkerData.remove('schemeParams');
@@ -496,11 +490,11 @@ mixin _UIStudioLinker on _UIStudioLogic {
           );
 
       final updatedProps =
-      Map<String, dynamic>.from(linkerElement.module!.properties);
+          Map<String, dynamic>.from(linkerElement.module!.properties);
       updatedProps['linker'] = linkerData;
 
       final updatedModule =
-      linkerElement.module!.copyWith(properties: updatedProps);
+          linkerElement.module!.copyWith(properties: updatedProps);
       _currentElements[index] = linkerElement.copyWith(module: updatedModule);
     });
   }

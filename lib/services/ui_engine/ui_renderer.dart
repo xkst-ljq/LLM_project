@@ -19,10 +19,12 @@ class UIRenderer {
         : LinkerService.resolveTargetControlState(module);
 
     // 非工作室（预览模式与运行时）：隐形后台纯逻辑节点。
-    if (!isStudio && ['linker', 'math_node', 'timer'].contains(module?.type)) {
+    if (!isStudio && ['linker', 'math_node'].contains(module?.type)) {
       return const SizedBox.shrink();
     }
-    if (!isStudio && !controls.visible) {
+    if (!isStudio &&
+        (!controls.visible ||
+            !LinkerService.isElementVisibleInSurfaceHierarchy(element))) {
       return const SizedBox.shrink();
     }
 
@@ -461,6 +463,20 @@ class UIRenderer {
     );
   }
 
+  static double _snapSliderValue(
+    double value,
+    double min,
+    double max,
+    double step,
+  ) {
+    final actualMin = min <= max ? min : max;
+    final actualMax = min <= max ? max : min;
+    final safeStep = step > 0 ? step : 1.0;
+    final snapped = actualMin +
+        ((value - actualMin) / safeStep).round() * safeStep;
+    return snapped.clamp(actualMin, actualMax).toDouble();
+  }
+
   static Widget _buildSlider(
     BuildContext context,
     UIElement element,
@@ -474,7 +490,10 @@ class UIRenderer {
       final double max = (module.properties['max'] ?? 100).toDouble();
       final double actualMin = min <= max ? min : max;
       final double actualMax = min <= max ? max : min;
-      final double clampedCur = currentVal.clamp(actualMin, actualMax).toDouble();
+      final double step =
+          ((module.properties['step'] as num?)?.toDouble() ?? 1.0).abs();
+      final double clampedCur =
+          _snapSliderValue(currentVal, actualMin, actualMax, step);
 
       final double ratio = actualMax > actualMin
           ? (clampedCur - actualMin) / (actualMax - actualMin)
@@ -591,7 +610,11 @@ class UIRenderer {
           if (maxKnobLeft <= 0) return;
           final dx = localPos.dx - 10.0;
           final newRatio = (dx / maxKnobLeft).clamp(0.0, 1.0);
-          final newCurrent = actualMin + newRatio * (actualMax - actualMin);
+          final rawCurrent = actualMin + newRatio * (actualMax - actualMin);
+          final step =
+              ((module.properties['step'] as num?)?.toDouble() ?? 1.0).abs();
+          final newCurrent =
+              _snapSliderValue(rawCurrent, actualMin, actualMax, step);
 
           module.properties['current'] = newCurrent;
           LinkerEventBus().emit(element.id, 'slider_change', newCurrent);
@@ -822,32 +845,12 @@ class UIRenderer {
       return displayBox;
     }
 
-    return Container(
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: module.color.withValues(alpha: 0.5), width: 1),
-      ),
-      child: TextField(
-        controller: TextEditingController(text: module.properties['text']?.toString() ?? ''),
-        enabled: controls.enabled,
-        readOnly: controls.locked,
-        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          hintText: placeholder,
-          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF888896)),
-          isDense: true,
-          contentPadding: EdgeInsets.zero,
-        ),
-        onChanged: (val) {
-          module.properties['text'] = val;
-          module.properties['value'] = val;
-          LinkerEventBus().emit(element.id, 'input_change', val);
-        },
-      ),
+    return _InputBlockWidget(
+      key: ValueKey('input_${element.id}'),
+      element: element,
+      module: module,
+      placeholder: placeholder,
+      controls: controls,
     );
   }
 
@@ -959,10 +962,14 @@ class UIRenderer {
 
     return StatefulBuilder(
       builder: (ctx, setState) {
-        final bool currentVal = module.properties['value'] != false;
+        final linkedValue = LinkerService.resolveTargetValue(module);
+        final bool isExternallyControlled = linkedValue is bool;
+        final bool currentVal = isExternallyControlled
+            ? linkedValue
+            : module.properties['value'] != false;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: isStudio
+          onTap: isStudio || isExternallyControlled
               ? null
               : () {
                   final bool nextVal = !currentVal;
@@ -1257,14 +1264,37 @@ class UIRenderer {
   /// 白底微圆角矩形，左侧主区域选中，右侧箭头热区点选悬浮展开选项列表，无接线孔
   static Widget _buildSelectBlock(BuildContext context, UIElement element, UIModule module, Size size) {
     final props = module.properties;
-    final String currentText = props['current']?.toString() ?? props['defaultValue']?.toString() ?? '选项 1';
     final List<String> options = (props['options'] as List?)?.map((e) => e.toString()).toList() ?? ['选项 1'];
 
     return StatefulBuilder(
       builder: (ctx, setState) {
+        // 必须在 StatefulBuilder 内计算，手动选择后才能立即刷新当前文案。
+        final linkedSelection = LinkerService.resolveTargetValue(module);
+        final String currentText = linkedSelection?.toString() ??
+            props['current']?.toString() ??
+            props['defaultValue']?.toString() ??
+            options.first;
+        final bool isStudio = UISceneModeScope.of(context);
+        final previewSelection =
+            options.contains(currentText) ? currentText : options.first;
+
+        // 模拟预览使用原生下拉组件，菜单由 Overlay 管理，可在节点边界外正常点击。
+        if (!isStudio) {
+          return _PreviewSelectWidget(
+            key: ValueKey('preview_select_${element.id}'),
+            element: element,
+            module: module,
+            options: options,
+            currentSelection: previewSelection,
+            expandDirection: props['expandDirection'] == 'up' ? 'up' : 'down',
+            inputControlled: LinkerService.isSelectInputControlled(module),
+          );
+        }
+
         final bool isSelected = UISceneModeScope.selectedIdOf(context) == element.id;
         bool isExpanded = props['is_expanded_preview'] == true;
-        if (!isSelected && isExpanded) {
+        // 创作模式下只允许当前选中节点保持展开；模拟预览允许正常交互。
+        if (isStudio && !isSelected && isExpanded) {
           isExpanded = false;
           props['is_expanded_preview'] = false;
         }
@@ -1388,50 +1418,10 @@ class UIRenderer {
   static Widget _buildIndicatorBlock(BuildContext context, UIElement element, UIModule module, Size size) {
     final props = module.properties;
     final bool isStudio = UISceneModeScope.of(context);
-    final String currentVal = (LinkerService.resolveTargetValue(module) ?? props['currentValue'] ?? '').toString().trim();
-    final List rules = (props['statusRules'] as List?) ?? [];
-
-    int activeColorInt = (props['defaultColor'] as int?) ?? 0xFF9E9E9E;
-    bool activeGlow = props['defaultGlow'] == true;
-    double glowRadius = 12.0;
-
-    for (final raw in rules) {
-      if (raw is! Map) continue;
-      final rule = Map<String, dynamic>.from(raw);
-      final matchType = rule['matchType']?.toString() ?? 'exact';
-      bool matched = false;
-
-      if (matchType == 'exact') {
-        final targetVal = rule['matchValue']?.toString().trim() ?? '';
-        if (currentVal == targetVal && targetVal.isNotEmpty) {
-          matched = true;
-        }
-      } else if (matchType == 'bool') {
-        final targetBool = rule['matchValue']?.toString().toLowerCase() == 'true';
-        final curBool = currentVal.toLowerCase() == 'true' || currentVal == '1' || currentVal == '开启';
-        if (curBool == targetBool && currentVal.isNotEmpty) {
-          matched = true;
-        }
-      } else if (matchType == 'range') {
-        final double? curNum = double.tryParse(currentVal);
-        final double? targetNum = double.tryParse(rule['matchValNum']?.toString() ?? '');
-        final op = rule['matchOp']?.toString() ?? '>';
-        if (curNum != null && targetNum != null) {
-          if (op == '>' && curNum > targetNum) matched = true;
-          if (op == '<' && curNum < targetNum) matched = true;
-          if (op == '>=' && curNum >= targetNum) matched = true;
-          if (op == '<=' && curNum <= targetNum) matched = true;
-          if (op == '==' && curNum == targetNum) matched = true;
-        }
-      }
-
-      if (matched) {
-        activeColorInt = (rule['color'] as int?) ?? activeColorInt;
-        activeGlow = rule['isGlow'] == true;
-        glowRadius = (rule['glowRadius'] as num?)?.toDouble() ?? 12.0;
-        break;
-      }
-    }
+    final indicatorState = LinkerService.resolveIndicatorActiveState(module);
+    int activeColorInt = indicatorState.colorValue;
+    bool activeGlow = indicatorState.glow;
+    double glowRadius = indicatorState.glowRadius;
 
     final controls = LinkerService.resolveTargetControlState(module);
     if (!controls.enabled) {
@@ -1486,6 +1476,332 @@ class UIRenderer {
 
 }
 
+/// 运行时输入框：持久化 controller，避免上游刷新时重置光标和输入法编辑状态。
+class _PreviewSelectWidget extends StatefulWidget {
+  final UIElement element;
+  final UIModule module;
+  final List<String> options;
+  final String currentSelection;
+  final String expandDirection;
+  final bool inputControlled;
+
+  const _PreviewSelectWidget({
+    super.key,
+    required this.element,
+    required this.module,
+    required this.options,
+    required this.currentSelection,
+    required this.expandDirection,
+    required this.inputControlled,
+  });
+
+  @override
+  State<_PreviewSelectWidget> createState() => _PreviewSelectWidgetState();
+}
+
+class _PreviewSelectWidgetState extends State<_PreviewSelectWidget> {
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _menuEntry;
+  late String _selectedValue;
+  double _anchorWidth = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedValue = widget.currentSelection;
+  }
+
+  @override
+  void didUpdateWidget(covariant _PreviewSelectWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.currentSelection != _selectedValue) {
+      _selectedValue = widget.currentSelection;
+    }
+  }
+
+  void _toggleMenu() {
+    if (_menuEntry != null) {
+      _closeMenu();
+      return;
+    }
+    final box = context.findRenderObject() as RenderBox?;
+    _anchorWidth = box?.size.width ?? 160;
+    _menuEntry = OverlayEntry(builder: _buildMenuOverlay);
+    Overlay.of(context, rootOverlay: true).insert(_menuEntry!);
+  }
+
+  Widget _buildMenuOverlay(BuildContext overlayContext) {
+    final opensUp = widget.expandDirection == 'up';
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _closeMenu,
+          ),
+        ),
+        CompositedTransformFollower(
+          link: _layerLink,
+          showWhenUnlinked: false,
+          targetAnchor: opensUp ? Alignment.topLeft : Alignment.bottomLeft,
+          followerAnchor: opensUp ? Alignment.bottomLeft : Alignment.topLeft,
+          offset: Offset(0, opensUp ? -6 : 6),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: _anchorWidth,
+              constraints: const BoxConstraints(maxHeight: 240),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFD0D0D8)),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4)),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.inputControlled)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(12, 8, 12, 4),
+                      child: Row(
+                        children: [
+                          Icon(Icons.keyboard, size: 14, color: Color(0xFF7E57C2)),
+                          SizedBox(width: 6),
+                          Text('由输入控制选择', style: TextStyle(fontSize: 11, color: Color(0xFF7E57C2), fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  Flexible(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      shrinkWrap: true,
+                      itemCount: widget.options.length,
+                      itemBuilder: (context, index) {
+                  final option = widget.options[index];
+                  final selected = option == _selectedValue;
+                  return InkWell(
+                    onTap: widget.inputControlled ? null : () => _selectOption(option),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      color: selected ? const Color(0xFFEDE7F6) : Colors.transparent,
+                      child: Text(
+                        option,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: selected ? const Color(0xFF512DA8) : const Color(0xFF111116),
+                          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _selectOption(String value) {
+    widget.module.properties['current'] = value;
+    widget.module.properties['is_expanded_preview'] = false;
+    LinkerEventBus().emit(widget.element.id, 'select_change', value);
+    setState(() => _selectedValue = value);
+    _closeMenu();
+  }
+
+  void _closeMenu() {
+    _menuEntry?.remove();
+    _menuEntry = null;
+  }
+
+  @override
+  void dispose() {
+    _closeMenu();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: _toggleMenu,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFFD0D0D8)),
+            boxShadow: const [
+              BoxShadow(color: Colors.black12, blurRadius: 3, offset: Offset(0, 1)),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _selectedValue,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111116),
+                  ),
+                ),
+              ),
+              if (widget.inputControlled)
+                const Padding(
+                  padding: EdgeInsets.only(right: 4),
+                  child: Icon(Icons.keyboard, size: 15, color: Color(0xFF7E57C2)),
+                ),
+              Icon(
+                widget.expandDirection == 'up'
+                    ? Icons.arrow_drop_up
+                    : Icons.arrow_drop_down,
+                color: const Color(0xFF666672),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InputBlockWidget extends StatefulWidget {
+  final UIElement element;
+  final UIModule module;
+  final String placeholder;
+  final LinkerTargetControlState controls;
+
+  const _InputBlockWidget({
+    super.key,
+    required this.element,
+    required this.module,
+    required this.placeholder,
+    required this.controls,
+  });
+
+  @override
+  State<_InputBlockWidget> createState() => _InputBlockWidgetState();
+}
+
+class _InputBlockWidgetState extends State<_InputBlockWidget> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.module.properties['text']?.toString() ?? '',
+    );
+    _focusNode = FocusNode()..addListener(_handleFocusChange);
+  }
+
+  void _commitValue() {
+    final value = _controller.text;
+    final shouldClear =
+        LinkerService.shouldClearInputAfterCommit(widget.element.id);
+    // 提交后清空 controller 会触发一次失焦回调；忽略其空值二次提交。
+    // 对“提交并清空”方案，空内容或纯空格均不属于有效提交。
+    if (shouldClear && value.trim().isEmpty) {
+      if (value.isNotEmpty) {
+        widget.module.properties['text'] = '';
+        widget.module.properties['value'] = '';
+        _controller.clear();
+      }
+      return;
+    }
+    final didChange = widget.module.properties['committedValue'] != value;
+    widget.module.properties['committedValue'] = value;
+    if (shouldClear && value.isNotEmpty) {
+      widget.module.properties['text'] = '';
+      widget.module.properties['value'] = '';
+      _controller.clear();
+    }
+    if (didChange || shouldClear) {
+      LinkerEventBus().emit(widget.element.id, 'input_commit', value);
+    }
+  }
+
+  void _handleFocusChange() {
+    if (!_focusNode.hasFocus) _commitValue();
+  }
+
+  @override
+  void didUpdateWidget(covariant _InputBlockWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final externalText = widget.module.properties['text']?.toString() ?? '';
+    if (externalText == _controller.text) return;
+
+    final selectionOffset = _controller.selection.baseOffset.clamp(
+      0,
+      externalText.length,
+    ).toInt();
+    _controller.value = TextEditingValue(
+      text: externalText,
+      selection: TextSelection.collapsed(offset: selectionOffset),
+    );
+  }
+
+  @override
+  void dispose() {
+    _focusNode
+      ..removeListener(_handleFocusChange)
+      ..dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final module = widget.module;
+    return Container(
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: module.color.withValues(alpha: 0.5), width: 1),
+      ),
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        enabled: widget.controls.enabled,
+        readOnly: widget.controls.locked,
+        maxLength: (module.properties['maxLength'] as num?)?.toInt(),
+        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          hintText: widget.placeholder,
+          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF888896)),
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
+          counterText: '',
+        ),
+        onSubmitted: (_) => _commitValue(),
+        onChanged: (value) {
+          module.properties['text'] = value;
+          module.properties['value'] = value;
+          LinkerEventBus().emit(widget.element.id, 'input_change', value);
+        },
+      ),
+    );
+  }
+}
+
 class _TimerBlockWidget extends StatefulWidget {
   final UIElement element;
   final UIModule module;
@@ -1500,6 +1816,8 @@ class _TimerBlockWidget extends StatefulWidget {
 
 class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
   Timer? _timer;
+  Timer? _initialDelayTimer;
+  int _tickCount = 0;
 
   @override
   void initState() {
@@ -1513,55 +1831,102 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
     _checkTimerState();
   }
 
+  void _startPeriodicTimer({
+    required int intervalMs,
+    required int maxTicks,
+    required Map<String, dynamic> props,
+    required String pulseType,
+    required double stepValue,
+    required bool loop,
+  }) {
+    _timer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        final current = (props['currentVal'] as num?)?.toDouble() ?? 0.0;
+        if (pulseType == 'toggle') {
+          props['currentVal'] = current == 1.0 ? 0.0 : 1.0;
+        } else if (pulseType == 'timestamp') {
+          props['currentVal'] = current + intervalMs / 1000.0;
+        } else if (pulseType == 'countdown') {
+          final next = current - stepValue;
+          props['currentVal'] = next <= 0.0 ? 0.0 : next;
+          if (next <= 0.0 && !loop) {
+            props['isRunning'] = false;
+          }
+        } else {
+          props['currentVal'] = current + stepValue;
+        }
+        _tickCount++;
+        props['tickCount'] = _tickCount;
+      });
+
+      LinkerEventBus().emit(
+        widget.element.id,
+        'timer_tick',
+        props['currentVal'],
+      );
+
+      final countdownFinished =
+          pulseType == 'countdown' && props['isRunning'] == false;
+      if (countdownFinished || (maxTicks > 0 && _tickCount >= maxTicks)) {
+        props['isRunning'] = false;
+        timer.cancel();
+        _timer = null;
+      }
+    });
+  }
+
   void _checkTimerState() {
     final props = widget.module.properties;
-    final bool isStudio = widget.isStudio;
-    final bool isRunningPreview = props['isRunning_preview'] == true;
-    final bool autoStart = props['autoStart'] == true;
-    final bool isRunning = isRunningPreview || (!isStudio && autoStart);
-    final double interval = (props['interval'] as num?)?.toDouble() ?? 1.0;
-    final int intervalMs = (interval * 1000).clamp(100, 60000).toInt();
-    final String pulseType = props['pulseType']?.toString() ?? 'increment';
-    final double stepVal = (props['stepValue'] as num?)?.toDouble() ?? 1.0;
-    final bool loop = props['loop'] != false;
+    final systemRunning = LinkerService.resolveTimerSystemRunning(widget.module);
+    final isRunning = widget.isStudio
+        ? false
+        : (systemRunning ?? (props['isRunning'] == true));
+    final intervalMs = ((props['interval'] as num?)?.toDouble() ?? 1.0)
+        .clamp(0.1, 60.0)
+        .toDouble();
+    final initialDelayMs = ((props['initialDelay'] as num?)?.toDouble() ?? 0.0)
+        .clamp(0.0, 3600.0)
+        .toDouble();
+    final maxTicks = (props['maxTicks'] as num?)?.toInt() ?? 0;
+    final pulseType = props['pulseType']?.toString() ?? 'increment';
+    final stepValue = (props['stepValue'] as num?)?.toDouble() ?? 1.0;
+    final loop = props['loop'] != false;
 
-    if (isRunning && _timer == null) {
-      _timer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-        setState(() {
-          final double cur = (props['currentVal'] as num?)?.toDouble() ?? 0.0;
-          if (pulseType == 'toggle') {
-            props['currentVal'] = (cur == 1.0) ? 0.0 : 1.0;
-          } else if (pulseType == 'timestamp') {
-            props['currentVal'] = cur + interval;
-          } else if (pulseType == 'countdown') {
-            final double nextVal = cur - stepVal;
-            if (nextVal <= 0.0) {
-              props['currentVal'] = 0.0;
-              if (!loop) {
-                props['isRunning_preview'] = false;
-                timer.cancel();
-                _timer = null;
-              }
-            } else {
-              props['currentVal'] = nextVal;
-            }
-          } else {
-            props['currentVal'] = cur + stepVal;
-          }
-        });
-      });
-    } else if (!isRunning && _timer != null) {
+    if (isRunning && _timer == null && _initialDelayTimer == null) {
+      _tickCount = (props['tickCount'] as num?)?.toInt() ?? 0;
+      void start() {
+        if (!mounted) return;
+        _initialDelayTimer = null;
+        _startPeriodicTimer(
+          intervalMs: (intervalMs * 1000).toInt(),
+          maxTicks: maxTicks,
+          props: props,
+          pulseType: pulseType,
+          stepValue: stepValue,
+          loop: loop,
+        );
+      }
+      if (initialDelayMs > 0) {
+        _initialDelayTimer = Timer(Duration(milliseconds: (initialDelayMs * 1000).toInt()), start);
+      } else {
+        start();
+      }
+    } else if (!isRunning) {
+      _initialDelayTimer?.cancel();
+      _initialDelayTimer = null;
       _timer?.cancel();
       _timer = null;
+      _tickCount = 0;
     }
   }
 
   @override
   void dispose() {
+    _initialDelayTimer?.cancel();
     _timer?.cancel();
     super.dispose();
   }
@@ -1569,137 +1934,23 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
   @override
   Widget build(BuildContext context) {
     if (!widget.isStudio) {
-      return const SizedBox.shrink(); // 运行时对读者界面彻底隐形，但后台 initState 时钟依然能狂奔发线！
+      return const SizedBox.shrink();
     }
     final props = widget.module.properties;
-    final double interval = (props['interval'] as num?)?.toDouble() ?? 1.0;
-    final double currentVal = (props['currentVal'] as num?)?.toDouble() ?? 0.0;
-    final bool isRunning = props['isRunning_preview'] == true;
-    final String pulseType = props['pulseType']?.toString() ?? 'increment';
-
-    String schemeLabel = '⚡ 递增脉冲';
-    if (pulseType == 'toggle') schemeLabel = '⚡ 0/1翻转';
-    if (pulseType == 'timestamp') schemeLabel = '⚡ 运行秒戳';
-
-    final double stepVal = (props['stepValue'] as num?)?.toDouble() ?? 1.0;
-
-    final Widget playButton = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        setState(() {
-          props['isRunning_preview'] = !isRunning;
-          if (!isRunning) {
-            if (pulseType == 'toggle') {
-              props['currentVal'] = (currentVal == 1.0) ? 0.0 : 1.0;
-            } else if (pulseType == 'timestamp') {
-              props['currentVal'] = currentVal + interval;
-            } else if (pulseType == 'countdown') {
-              props['currentVal'] = (currentVal - stepVal).clamp(0.0, double.infinity);
-            } else {
-              props['currentVal'] = currentVal + stepVal;
-            }
-          }
-        });
-        _checkTimerState();
-      },
-      child: Container(
-        width: 20,
-        height: 20,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFFF9100).withValues(alpha: 0.15),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          isRunning ? Icons.pause : Icons.play_arrow,
-          size: 12,
-          color: isRunning ? Colors.white : const Color(0xFFF57C00),
-        ),
-      ),
-    );
-
-    Widget content;
-    if (widget.size.height < 44) {
-      // 高度自适应降级防溢出：当高度小于44px（如遗留旧卡或微缩视图）时，单行横向排布
-      content = Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                Icon(
-                  isRunning ? Icons.timer : Icons.timer_outlined,
-                  size: 13,
-                  color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFF57C00),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    '${interval.toStringAsFixed(1)}s | #${currentVal.toInt()}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: isRunning ? FontWeight.w900 : FontWeight.bold,
-                      color: isRunning ? const Color(0xFFE65100) : const Color(0xFFF57C00),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 4),
-          playButton,
-        ],
-      );
-    } else {
-      // 标准双行仪表盘：上行时间与次数，下行脉冲方案与操作热区
-      content = Column(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isRunning ? Icons.timer : Icons.timer_outlined,
-                size: 14,
-                color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFF57C00),
-              ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  '${interval.toStringAsFixed(1)}s | #${currentVal.toInt()}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: isRunning ? FontWeight.w900 : FontWeight.bold,
-                    color: isRunning ? const Color(0xFFE65100) : const Color(0xFFF57C00),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  schemeLabel,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: isRunning ? const Color(0xFFE65100) : const Color(0xFFF57C00),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              playButton,
-            ],
-          ),
-        ],
-      );
-    }
+    final systemRunning = LinkerService.resolveTimerSystemRunning(widget.module);
+    final isRunning = widget.isStudio
+        ? false
+        : (systemRunning ?? (props['isRunning'] == true));
+    final interval = (props['interval'] as num?)?.toDouble() ?? 1.0;
+    final currentVal = (props['currentVal'] as num?)?.toDouble() ?? 0.0;
+    final tickCount = (props['tickCount'] as num?)?.toInt() ?? 0;
+    final maxTicks = (props['maxTicks'] as num?)?.toInt() ?? 0;
+    final pulseType = props['pulseType']?.toString() ?? 'increment';
+    final label = pulseType == 'countdown'
+        ? '倒计时脉冲'
+        : pulseType == 'toggle'
+            ? '翻转脉冲'
+            : '定时脉冲';
 
     return Container(
       width: widget.size.width,
@@ -1712,19 +1963,43 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
           color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFFF9100),
           width: isRunning ? 1.6 : 1.2,
         ),
-        boxShadow: isRunning
-            ? [
-                BoxShadow(color: const Color(0xFFFF9100).withValues(alpha: 0.35), blurRadius: 6, spreadRadius: 1),
-              ]
-            : [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1)),
-              ],
       ),
-      child: content,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isRunning ? Icons.timer : Icons.timer_outlined,
+                size: 14,
+                color: isRunning ? const Color(0xFFFF6D00) : const Color(0xFFF57C00),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  isRunning ? '运行中 · $label' : '等待前置触发',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: isRunning ? const Color(0xFFE65100) : const Color(0xFFF57C00),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '${interval.toStringAsFixed(1)}s · 值 ${currentVal.toStringAsFixed(0)} · Tick $tickCount/${maxTicks == 0 ? '∞' : maxTicks}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10, color: Color(0xFF6D4C41)),
+          ),
+        ],
+      ),
     );
   }
 }
-
 
 Path getHeartPath(Rect rect) {
   final w = rect.width;

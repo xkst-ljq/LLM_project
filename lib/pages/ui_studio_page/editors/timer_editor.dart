@@ -27,13 +27,13 @@ class TimerEditor extends StatefulWidget {
 class _TimerEditorState extends State<TimerEditor> {
   late TextEditingController _nameController;
   late TextEditingController _intervalController;
+  late TextEditingController _initialDelayController;
+  late TextEditingController _maxTicksController;
   late TextEditingController _stepController;
   late TextEditingController _varController;
   late String _pulseType;
-  late bool _autoStart;
   late bool _loop;
   late double _currentVal;
-  late bool _isRunningPreview;
 
   @override
   void initState() {
@@ -44,6 +44,12 @@ class _TimerEditorState extends State<TimerEditor> {
     _intervalController = TextEditingController(
       text: ((props['interval'] as num?)?.toDouble() ?? 1.0).toStringAsFixed(1),
     );
+    _initialDelayController = TextEditingController(
+      text: ((props['initialDelay'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(1),
+    );
+    _maxTicksController = TextEditingController(
+      text: ((props['maxTicks'] as num?)?.toInt() ?? 0).toString(),
+    );
     _stepController = TextEditingController(
       text: ((props['stepValue'] as num?)?.toDouble() ?? 1.0).toStringAsFixed(1),
     );
@@ -52,26 +58,21 @@ class _TimerEditorState extends State<TimerEditor> {
     );
 
     _pulseType = props['pulseType']?.toString() ?? 'increment';
-    _autoStart = props['autoStart'] == true;
     _loop = props['loop'] != false;
     _currentVal = (props['currentVal'] as num?)?.toDouble() ?? 0.0;
-    _isRunningPreview = props['isRunning_preview'] == true;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _intervalController.dispose();
+    _initialDelayController.dispose();
+    _maxTicksController.dispose();
     _stepController.dispose();
     _varController.dispose();
     super.dispose();
   }
 
-  void _resetCounter() {
-    setState(() {
-      _currentVal = 0.0;
-    });
-  }
 
   void _save() {
     final double intervalVal = (double.tryParse(_intervalController.text.trim()) ?? 1.0).clamp(0.1, 3600.0);
@@ -81,12 +82,14 @@ class _TimerEditorState extends State<TimerEditor> {
       'type': 'timer',
       'name': _nameController.text.trim(),
       'interval': intervalVal,
+      'initialDelay': (double.tryParse(_initialDelayController.text.trim()) ?? 0.0).clamp(0.0, 3600.0),
+      'maxTicks': (int.tryParse(_maxTicksController.text.trim()) ?? 0).clamp(0, 100000),
       'stepValue': stepVal,
       'pulseType': _pulseType,
-      'autoStart': _autoStart,
       'loop': _loop,
       'currentVal': _currentVal,
-      'isRunning_preview': _isRunningPreview,
+      'tickCount': (widget.initialProperties['tickCount'] as num?)?.toInt() ?? 0,
+      'isRunning': false,
       'sessionVar': _varController.text.trim(),
     };
 
@@ -151,8 +154,6 @@ class _TimerEditorState extends State<TimerEditor> {
               ),
             ),
 
-            // 实时自测工作台
-            _buildLiveTestBench(),
 
             // 弹性内容区（R5防溢出）
             Flexible(
@@ -207,125 +208,6 @@ class _TimerEditorState extends State<TimerEditor> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildLiveTestBench() {
-    final double intervalVal = double.tryParse(_intervalController.text.trim()) ?? 1.0;
-    String schemeLabel = '⚡ 递增脉冲';
-    if (_pulseType == 'toggle') schemeLabel = '⚡ 0/1翻转';
-    if (_pulseType == 'timestamp') schemeLabel = '⚡ 运行秒戳';
-    if (_pulseType == 'countdown') schemeLabel = '⏳ 倒计时';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E24),
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('自测控制台 (保存后在画布生效)：', style: TextStyle(color: Colors.white70, fontSize: 12)),
-              InkWell(
-                onTap: _resetCounter,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text('🔄 重置归零', style: TextStyle(color: Color(0xFFFFB74D), fontSize: 11)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Center(
-            child: Container(
-              width: 156,
-              height: 54,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: _isRunningPreview ? const Color(0xFFFFF3E0) : const Color(0xFFFFF8E1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isRunningPreview ? const Color(0xFFFF6D00) : const Color(0xFFFF9100),
-                  width: _isRunningPreview ? 1.6 : 1.2,
-                ),
-                boxShadow: _isRunningPreview
-                    ? [BoxShadow(color: const Color(0xFFFF9100).withValues(alpha: 0.35), blurRadius: 6, spreadRadius: 1)]
-                    : null,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _isRunningPreview ? Icons.timer : Icons.timer_outlined,
-                        size: 14,
-                        color: _isRunningPreview ? const Color(0xFFFF6D00) : const Color(0xFFF57C00),
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          '${intervalVal.toStringAsFixed(1)}s | #${_currentVal.toInt()}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: _isRunningPreview ? FontWeight.w900 : FontWeight.bold,
-                            color: _isRunningPreview ? const Color(0xFFE65100) : const Color(0xFFF57C00),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          schemeLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: _isRunningPreview ? const Color(0xFFE65100) : const Color(0xFFF57C00),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => setState(() => _isRunningPreview = !_isRunningPreview),
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: _isRunningPreview ? const Color(0xFFFF6D00) : const Color(0xFFFF9100).withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _isRunningPreview ? Icons.pause : Icons.play_arrow,
-                            size: 12,
-                            color: _isRunningPreview ? Colors.white : const Color(0xFFF57C00),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -471,6 +353,34 @@ class _TimerEditorState extends State<TimerEditor> {
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _initialDelayController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '首次延迟（秒）',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _maxTicksController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '最大 Tick 数（0 = 无限）',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 6),
         Wrap(
           spacing: 6,
@@ -493,28 +403,16 @@ class _TimerEditorState extends State<TimerEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('会话运行时控制 (核心自动驱动开关)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        const Text('运行控制', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            const Text('会话加载时后台静默自启动:', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-            const Spacer(),
-            Switch(
-              value: _autoStart,
-              onChanged: (v) => setState(() => _autoStart = v),
-              activeThumbColor: const Color(0xFFFF6D00),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '开启后：当角色卡进入真正聊天会话时，本发生器将自动在后台静默循环发送脉冲，无需手动按键触发！',
-          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+        const Text(
+          'Timer 默认静止。请通过 Button 的切换运行/重置方案，或 Switch 的系统条件控制方案触发运行。',
+          style: TextStyle(fontSize: 11, color: Color(0xFF555562), height: 1.35),
         ),
         const SizedBox(height: 10),
         Row(
           children: [
-            const Text('无限周期循环 (不停脉冲):', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+            const Text('倒计时归零后循环:', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
             const Spacer(),
             Switch(
               value: _loop,

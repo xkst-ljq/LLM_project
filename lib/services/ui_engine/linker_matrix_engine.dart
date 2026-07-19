@@ -34,6 +34,8 @@ class SchemeDefinition {
   final String description;
   final String sourceType; // 源组件类型，'any' 或具体原语名称
   final String targetType; // 目标组件类型，'any' 或具体原语名称
+  final List<String>? allowedTargetTypes; // targetType 为 any 时的精确目标白名单
+  final List<String>? excludedSourceTypes; // sourceType 为 any 时排除的来源类型
   final bool isPulse; // 是否为脉冲事件型（而非状态持续型）
   final List<SchemeParamField> params; // 该 Scheme 专用的配置参数列表
 
@@ -43,6 +45,8 @@ class SchemeDefinition {
     required this.description,
     required this.sourceType,
     required this.targetType,
+    this.allowedTargetTypes,
+    this.excludedSourceTypes,
     this.isPulse = false,
     this.params = const [],
   });
@@ -52,15 +56,15 @@ class SchemeDefinition {
 class LinkerMatrixEngine {
   /// 组件黑名单 (Blacklist Matrix): 数据源 -> 不可连接的接收端组件列表
   static const Map<String, List<String>> _blacklistMap = {
-    'button': ['text', 'progress', 'indicator', 'timer', 'math_node', 'line', 'image', 'button'],
+    'button': ['text', 'progress', 'indicator', 'math_node', 'line', 'image', 'button'],
     'math_node': ['input', 'select', 'timer', 'line', 'image', 'surface'],
-    'switch': ['timer', 'line', 'image', 'surface'],
+    'switch': ['line', 'image'],
     'input': ['line', 'image', 'timer'],
     'slider': ['button', 'input', 'select', 'switch', 'timer', 'line', 'image', 'surface'],
     'select': ['progress', 'slider', 'input', 'timer', 'line', 'image'],
     'progress': ['input', 'select', 'timer', 'line', 'image', 'surface'],
-    'timer': ['text', 'input', 'select', 'slider', 'math_node', 'line', 'image', 'surface'],
-    'indicator': ['progress', 'slider', 'input', 'select', 'timer', 'line', 'image', 'surface'],
+    'timer': ['input', 'select', 'slider', 'math_node', 'line', 'image', 'surface'],
+    'indicator': ['progress', 'slider', 'input', 'select', 'timer', 'line', 'image'],
     'text': ['progress', 'slider', 'input', 'timer', 'line', 'image', 'surface'],
     'surface': ['math_node', 'timer', 'line', 'image'],
   };
@@ -150,6 +154,22 @@ class LinkerMatrixEngine {
       targetType: 'slider',
       isPulse: true,
     ),
+    SchemeDefinition(
+      id: 'click_to_timer_toggle',
+      label: '切换计时器运行状态 (click → timer_toggle)',
+      description: '每次点击在启动与停止 Timer 之间切换',
+      sourceType: 'button',
+      targetType: 'timer',
+      isPulse: true,
+    ),
+    SchemeDefinition(
+      id: 'click_to_timer_reset',
+      label: '重置计时器 (click → timer_reset)',
+      description: '点击脉冲停止 Timer 并清空当前值与 Tick 计数',
+      sourceType: 'button',
+      targetType: 'timer',
+      isPulse: true,
+    ),
 
     // --- math_node (算术计算节点) ---
     SchemeDefinition(
@@ -225,6 +245,7 @@ class LinkerMatrixEngine {
       description: '将来源当前值转换为数值并注入目标计算节点的指定参数口',
       sourceType: 'any',
       targetType: 'math_node',
+      excludedSourceTypes: ['text'],
       params: [
         SchemeParamField(
           key: 'targetParam',
@@ -259,28 +280,106 @@ class LinkerMatrixEngine {
       ],
     ),
     SchemeDefinition(
-      id: 'bool_to_visibility',
-      label: '开关折叠显隐组件 (switch → visibility)',
-      description: '开关开启时显示目标组件，关闭时完全折叠隐藏',
+      id: 'boolean_to_visible',
+      label: '开关控制可见性 (switch → visible)',
+      description: '开关开启时显示目标组件，关闭时在预览和运行时隐藏',
       sourceType: 'switch',
       targetType: 'any',
+      allowedTargetTypes: [
+        'surface', 'surface_art', 'primitive_art', 'text', 'progress',
+        'slider', 'input', 'button', 'switch', 'select', 'indicator',
+      ],
+    ),
+    SchemeDefinition(
+      id: 'boolean_to_enabled',
+      label: '开关控制交互使能 (switch → enabled)',
+      description: '开关开启时允许目标交互，关闭时禁用并淡化',
+      sourceType: 'switch',
+      targetType: 'any',
+      allowedTargetTypes: [
+        'button', 'input', 'slider', 'switch', 'select', 'indicator',
+      ],
+    ),
+    SchemeDefinition(
+      id: 'boolean_to_locked',
+      label: '开关控制编辑锁定 (switch → locked)',
+      description: '开关开启时锁定目标编辑，关闭时解除锁定',
+      sourceType: 'switch',
+      targetType: 'any',
+      allowedTargetTypes: ['button', 'input', 'slider', 'switch', 'select'],
+    ),
+    SchemeDefinition(
+      id: 'boolean_to_frozen',
+      label: '开关控制数值冻结 (switch → frozen)',
+      description: '开关开启时冻结目标的外部数值更新，关闭时恢复更新',
+      sourceType: 'switch',
+      targetType: 'any',
+      allowedTargetTypes: ['progress', 'math_node'],
+    ),
+    SchemeDefinition(
+      id: 'boolean_to_timer_running',
+      label: '系统条件控制计时器 (switch → timer)',
+      description: '开关开启时 Timer 运行，关闭时 Timer 停止',
+      sourceType: 'switch',
+      targetType: 'timer',
     ),
 
     // --- input (输入框) ---
     SchemeDefinition(
-      id: 'text_to_text',
-      label: '输入字面量实时覆盖文本 (input → text)',
-      description: '输入框的内容实时输出并渲染在目标文本框中',
+      id: 'input_live_to_text',
+      label: '输入实时同步文本 (input → text)',
+      description: '每次输入立即更新目标文本',
       sourceType: 'input',
       targetType: 'text',
-      params: [
-        SchemeParamField(
-          key: 'template',
-          label: '展示模板',
-          type: SchemeParamType.text,
-          defaultValue: '{{value}}',
-        ),
-      ],
+    ),
+    SchemeDefinition(
+      id: 'input_commit_to_text',
+      label: '输入提交后同步文本 (input → text)',
+      description: '输入法完成、回车或失焦后更新目标文本，保留输入框内容',
+      sourceType: 'input',
+      targetType: 'text',
+    ),
+    SchemeDefinition(
+      id: 'input_submit_to_text_clear',
+      label: '提交文本并清空输入框 (input → text)',
+      description: '提交值写入目标文本后立即清空输入框，适合快速记录与短指令',
+      sourceType: 'input',
+      targetType: 'text',
+    ),
+    SchemeDefinition(
+      id: 'input_nonempty_to_button_enable',
+      label: '输入非空启用按钮 (input → button)',
+      description: '输入去除空白后有内容时启用按钮，无内容时禁用',
+      sourceType: 'input',
+      targetType: 'button',
+    ),
+    SchemeDefinition(
+      id: 'input_valid_to_button_enable',
+      label: '输入校验启用按钮 (input → button)',
+      description: '输入通过 required 与 maxLength 校验时启用按钮',
+      sourceType: 'input',
+      targetType: 'button',
+    ),
+    SchemeDefinition(
+      id: 'input_validity_to_indicator',
+      label: '输入校验状态驱动指示灯 (input → indicator)',
+      description: '向状态灯传入 empty、valid 或 invalid，由状态规则决定颜色',
+      sourceType: 'input',
+      targetType: 'indicator',
+    ),
+    SchemeDefinition(
+      id: 'input_length_to_indicator',
+      label: '输入长度驱动指示灯 (input → indicator)',
+      description: '向状态灯传入当前字符长度，由范围规则决定颜色',
+      sourceType: 'input',
+      targetType: 'indicator',
+    ),
+    SchemeDefinition(
+      id: 'input_value_to_select_match',
+      label: '输入精确匹配选项 (input → select)',
+      description: '输入内容与选项完全匹配时自动切换 Select；不匹配时保持当前选项',
+      sourceType: 'input',
+      targetType: 'select',
     ),
     SchemeDefinition(
       id: 'input_to_progress',
@@ -351,20 +450,133 @@ class LinkerMatrixEngine {
         ),
       ],
     ),
+    SchemeDefinition(
+      id: 'select_value_to_surface_visible',
+      label: '选项控制面板可见性 (select → surface)',
+      description: '选中值匹配时显示目标 Surface，不匹配时隐藏',
+      sourceType: 'select',
+      targetType: 'any',
+      allowedTargetTypes: ['surface', 'surface_art', 'primitive_art'],
+      params: [
+        SchemeParamField(
+          key: 'triggerValue',
+          label: '匹配选项值',
+          type: SchemeParamType.text,
+          defaultValue: '',
+          description: '填写 Select 选项中的完整文本',
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'select_value_to_switch',
+      label: '选项控制开关状态 (select → switch)',
+      description: '选中值匹配时开启 Switch，不匹配时关闭',
+      sourceType: 'select',
+      targetType: 'switch',
+      params: [
+        SchemeParamField(
+          key: 'triggerValue',
+          label: '匹配选项值',
+          type: SchemeParamType.text,
+          defaultValue: '',
+          description: '填写 Select 选项中的完整文本',
+        ),
+      ],
+    ),
 
     // --- progress (进度条数据源) ---
     SchemeDefinition(
       id: 'progress_to_text',
-      label: '进度条数值转文本 (progress → text)',
-      description: '进度条当前/最大数值格式化渲染为文本',
+      label: '进度数据转文本 (progress → text)',
+      description: '输出当前值、最大值、百分比或范围文本',
       sourceType: 'progress',
       targetType: 'text',
       params: [
         SchemeParamField(
+          key: 'sourceField',
+          label: '输出字段',
+          type: SchemeParamType.choice,
+          defaultValue: 'current',
+          options: ['current', 'max', 'percentage', 'range'],
+        ),
+        SchemeParamField(
+          key: 'precision',
+          label: '保留小数位数',
+          type: SchemeParamType.number,
+          defaultValue: 0,
+        ),
+        SchemeParamField(
           key: 'template',
-          label: '格式模板 (例: {{value}}%)',
+          label: '格式模板（可选 {{value}}）',
           type: SchemeParamType.text,
-          defaultValue: '{{value}}%',
+          defaultValue: '{{value}}',
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'progress_to_math_param',
+      label: '进度数值注入计算参数 (progress → math)',
+      description: '将当前值或最大值注入 Math Node 指定参数口',
+      sourceType: 'progress',
+      targetType: 'math_node',
+      params: [
+        SchemeParamField(
+          key: 'sourceField',
+          label: '输入字段',
+          type: SchemeParamType.choice,
+          defaultValue: 'current',
+          options: ['current', 'max'],
+        ),
+        SchemeParamField(
+          key: 'targetParam',
+          label: '目标参数口',
+          type: SchemeParamType.choice,
+          defaultValue: 'paramA',
+          options: ['paramA', 'paramB', 'paramC'],
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'progress_threshold_to_button_enable',
+      label: '进度阈值启用按钮 (progress → button)',
+      description: '进度满足阈值条件时启用按钮，否则禁用',
+      sourceType: 'progress',
+      targetType: 'button',
+      params: [
+        SchemeParamField(
+          key: 'operator',
+          label: '比较条件',
+          type: SchemeParamType.choice,
+          defaultValue: '>=',
+          options: ['>', '<', '>=', '<=', '=='],
+        ),
+        SchemeParamField(
+          key: 'threshold',
+          label: '阈值',
+          type: SchemeParamType.doubleVal,
+          defaultValue: 100.0,
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'progress_threshold_to_switch',
+      label: '进度阈值控制开关 (progress → switch)',
+      description: '进度满足阈值条件时开启 Switch，否则关闭',
+      sourceType: 'progress',
+      targetType: 'switch',
+      params: [
+        SchemeParamField(
+          key: 'operator',
+          label: '比较条件',
+          type: SchemeParamType.choice,
+          defaultValue: '>=',
+          options: ['>', '<', '>=', '<=', '=='],
+        ),
+        SchemeParamField(
+          key: 'threshold',
+          label: '阈值',
+          type: SchemeParamType.doubleVal,
+          defaultValue: 100.0,
         ),
       ],
     ),
@@ -373,11 +585,116 @@ class LinkerMatrixEngine {
     // Phase 3: 高级功能与自动化 Phase 协议族
     // ==========================================
 
+    // --- text (只读展示数据源) ---
+    SchemeDefinition(
+      id: 'text_extract_to_math_param',
+      label: '文本取数注入计算参数 (text → math)',
+      description: '从纯数值、首个数、第 N 个数或关键字字段中提取数值',
+      sourceType: 'text',
+      targetType: 'math_node',
+      params: [
+        SchemeParamField(
+          key: 'targetParam',
+          label: '目标参数口',
+          type: SchemeParamType.choice,
+          defaultValue: 'paramA',
+          options: ['paramA', 'paramB', 'paramC'],
+        ),
+        SchemeParamField(
+          key: 'extractMode',
+          label: '取数方式',
+          type: SchemeParamType.choice,
+          defaultValue: 'whole',
+          options: ['whole', 'first', 'index', 'key'],
+        ),
+        SchemeParamField(
+          key: 'numberIndex',
+          label: '数值序号（从 0 开始）',
+          type: SchemeParamType.number,
+          defaultValue: 0,
+        ),
+        SchemeParamField(
+          key: 'key',
+          label: '关键字',
+          type: SchemeParamType.text,
+          defaultValue: '',
+          description: '例如 HP，可提取“HP：75”中的 75',
+        ),
+        SchemeParamField(
+          key: 'parseFailBehavior',
+          label: '提取失败时',
+          type: SchemeParamType.choice,
+          defaultValue: 'zero',
+          options: ['zero', 'keep'],
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'text_match_to_switch',
+      label: '文本匹配控制开关 (text → switch)',
+      description: '文本匹配时开启 Switch，不匹配时关闭',
+      sourceType: 'text',
+      targetType: 'switch',
+      params: [
+        SchemeParamField(
+          key: 'triggerText',
+          label: '匹配文本',
+          type: SchemeParamType.text,
+          defaultValue: '',
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'text_nonempty_to_button_enable',
+      label: '文本非空启用按钮 (text → button)',
+      description: '文本去除空白后有内容时启用按钮',
+      sourceType: 'text',
+      targetType: 'button',
+    ),
+    SchemeDefinition(
+      id: 'text_match_to_button_enable',
+      label: '文本匹配启用按钮 (text → button)',
+      description: '文本匹配时启用按钮，不匹配时禁用',
+      sourceType: 'text',
+      targetType: 'button',
+      params: [
+        SchemeParamField(
+          key: 'triggerText',
+          label: '匹配文本',
+          type: SchemeParamType.text,
+          defaultValue: '',
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'text_value_to_select_match',
+      label: '文本精确匹配选项 (text → select)',
+      description: '文本与选项完全匹配时切换 Select，不匹配时保持当前选项',
+      sourceType: 'text',
+      targetType: 'select',
+    ),
+
     // --- timer (定时脉冲发生器数据源) ---
     SchemeDefinition(
       id: 'timer_tick_to_switch_toggle',
       label: '定时脉冲翻转开关 (timer_tick → switch_toggle)',
       description: '每到一次定时 Tick，驱动目标 switch 翻转一次',
+      sourceType: 'timer',
+      targetType: 'switch',
+      isPulse: true,
+    ),
+    SchemeDefinition(
+      id: 'timer_tick_to_switch_set_true',
+      label: '定时脉冲设为开启 (timer_tick → switch_on)',
+      description: '每到一次定时 Tick，强制将目标 switch 设为 true',
+      sourceType: 'timer',
+      targetType: 'switch',
+      isPulse: true,
+    ),
+    SchemeDefinition(
+      id: 'timer_tick_to_switch_set_false',
+      label: '定时脉冲设为关闭 (timer_tick → switch_off)',
+      description: '每到一次定时 Tick，强制将目标 switch 设为 false',
       sourceType: 'timer',
       targetType: 'switch',
       isPulse: true,
@@ -392,14 +709,145 @@ class LinkerMatrixEngine {
       params: [
         SchemeParamField(
           key: 'step',
-          label: '单次步长增量',
+          label: '单次步长',
           type: SchemeParamType.doubleVal,
           defaultValue: 5.0,
+        ),
+        SchemeParamField(
+          key: 'boundaryBehavior',
+          label: '到达边界后',
+          type: SchemeParamType.choice,
+          defaultValue: 'stop',
+          options: ['stop', 'loop', 'pingPong'],
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'timer_tick_to_progress_decrement',
+      label: '定时脉冲递减进度 (timer_tick → progress_dec)',
+      description: '每到一次定时 Tick，驱动进度条减少固定步长',
+      sourceType: 'timer',
+      targetType: 'progress',
+      isPulse: true,
+      params: [
+        SchemeParamField(
+          key: 'step',
+          label: '单次步长',
+          type: SchemeParamType.doubleVal,
+          defaultValue: 5.0,
+        ),
+        SchemeParamField(
+          key: 'boundaryBehavior',
+          label: '到达边界后',
+          type: SchemeParamType.choice,
+          defaultValue: 'stop',
+          options: ['stop', 'loop', 'pingPong'],
+        ),
+      ],
+    ),
+
+    SchemeDefinition(
+      id: 'timer_value_to_text',
+      label: '计时器数值显示文本 (timer → text)',
+      description: '输出当前值、Tick 次数或步长，由 Text 负责格式化展示',
+      sourceType: 'timer',
+      targetType: 'text',
+      params: [
+        SchemeParamField(
+          key: 'sourceField',
+          label: '输出字段',
+          type: SchemeParamType.choice,
+          defaultValue: 'currentVal',
+          options: ['currentVal', 'tickCount', 'stepValue'],
+        ),
+        SchemeParamField(
+          key: 'precision',
+          label: '保留小数位数',
+          type: SchemeParamType.number,
+          defaultValue: 0,
         ),
       ],
     ),
 
     // --- indicator (状态指示点数据源) ---
+
+    // --- indicator (颜色通道路由源) ---
+    SchemeDefinition(
+      id: 'indicator_color_to_switch',
+      label: '颜色通道控制开关 (indicator → switch)',
+      description: '当前激活颜色匹配时开关为 true，不匹配时为 false',
+      sourceType: 'indicator',
+      targetType: 'switch',
+      params: [
+        SchemeParamField(
+          key: 'triggerColor',
+          label: '监听颜色通道',
+          type: SchemeParamType.color,
+          defaultValue: 0xFF4CAF50,
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'indicator_color_to_text',
+      label: '颜色通道显示文案 (indicator → text)',
+      description: '当前激活颜色匹配时显示匹配文案，否则显示未匹配文案',
+      sourceType: 'indicator',
+      targetType: 'text',
+      params: [
+        SchemeParamField(
+          key: 'triggerColor',
+          label: '监听颜色通道',
+          type: SchemeParamType.color,
+          defaultValue: 0xFF4CAF50,
+        ),
+        SchemeParamField(
+          key: 'matchText',
+          label: '匹配时文案',
+          type: SchemeParamType.text,
+          defaultValue: '已激活',
+        ),
+        SchemeParamField(
+          key: 'mismatchText',
+          label: '未匹配时文案',
+          type: SchemeParamType.text,
+          defaultValue: '',
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'indicator_color_to_button_enable',
+      label: '颜色通道控制按钮使能 (indicator → button)',
+      description: '当前激活颜色匹配时按钮可点击，不匹配时禁用',
+      sourceType: 'indicator',
+      targetType: 'button',
+      params: [
+        SchemeParamField(
+          key: 'triggerColor',
+          label: '监听颜色通道',
+          type: SchemeParamType.color,
+          defaultValue: 0xFF4CAF50,
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'indicator_color_to_visible',
+      label: '颜色通道控制可见性 (indicator → visible)',
+      description: '当前激活颜色匹配时显示目标，不匹配时隐藏目标',
+      sourceType: 'indicator',
+      targetType: 'any',
+      allowedTargetTypes: [
+        'surface', 'surface_art', 'primitive_art', 'text', 'progress',
+        'slider', 'input', 'button', 'switch', 'select', 'indicator',
+      ],
+      params: [
+        SchemeParamField(
+          key: 'triggerColor',
+          label: '监听颜色通道',
+          type: SchemeParamType.color,
+          defaultValue: 0xFF4CAF50,
+        ),
+      ],
+    ),
 
     // --- surface (面原子全样式全能数据源) ---
     SchemeDefinition(
@@ -443,10 +891,12 @@ class LinkerMatrixEngine {
 
     final result = <SchemeDefinition>[];
     for (final def in _schemeRegistry) {
-      final matchSrc =
-          def.sourceType == 'any' || def.sourceType == normalizedSrc;
-      final matchTgt =
-          def.targetType == 'any' || def.targetType == normalizedTgt;
+      final matchSrc = (def.sourceType == 'any' ||
+              def.sourceType == normalizedSrc) &&
+          !(def.excludedSourceTypes?.contains(normalizedSrc) ?? false);
+      final matchTgt = def.allowedTargetTypes != null
+          ? def.allowedTargetTypes!.contains(normalizedTgt)
+          : def.targetType == 'any' || def.targetType == normalizedTgt;
 
       if (matchSrc && matchTgt && isSchemeSelectable(def.id)) {
         result.add(def);

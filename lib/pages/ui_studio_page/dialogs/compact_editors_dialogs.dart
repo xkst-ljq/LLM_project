@@ -20,6 +20,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     double minVal = (props['min'] ?? 0.0).toDouble();
     double maxVal = (props['max'] ?? 100.0).toDouble();
     double curVal = (props['current'] ?? 75.0).toDouble().clamp(minVal <= maxVal ? minVal : maxVal, minVal <= maxVal ? maxVal : minVal).toDouble();
+    double stepVal = ((props['step'] as num?)?.toDouble() ?? 1.0).abs();
+    if (stepVal == 0) stepVal = 1.0;
 
     final int? trackColorVal = props['trackColor'] as int?;
     Color trackColor = trackColorVal != null ? Color(trackColorVal) : Colors.grey.shade200;
@@ -59,6 +61,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
     final minCtrl = TextEditingController(text: minVal.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: minVal.toStringAsFixed(0).length);
     final maxCtrl = TextEditingController(text: maxVal.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: maxVal.toStringAsFixed(0).length);
+    final stepCtrl = TextEditingController(text: stepVal.toString());
+    final currentCtrl = TextEditingController(text: curVal.toString());
 
     showDialog<void>(
       context: context,
@@ -123,20 +127,57 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                     ),
                     const SizedBox(height: 12),
 
-                    Text('当前刻度初值 (${curVal.round()})', style: const TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                    Slider(
-                      value: curVal.clamp(actualMin, actualMax).toDouble(),
-                      min: actualMin,
-                      max: actualMax,
-                      activeColor: const Color(0xFF00ACC1),
-                      onChanged: (v) {
-                        setDialogState(() {
-                          curVal = v;
-                          props['current'] = v;
-                        });
-                        setState(() => syncLivePreview());
-                      },
-                    ),
+                    if (mod.type == 'slider') ...[
+                      const Text('滑动步长', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: stepCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: _softInputDecoration(label: '步长，例如 1 / 0.1 / 5'),
+                        onChanged: (value) {
+                          final parsed = double.tryParse(value);
+                          if (parsed == null || parsed <= 0) return;
+                          stepVal = parsed;
+                          props['step'] = stepVal;
+                          setState(() => syncLivePreview());
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (mod.type == 'progress') ...[
+                      const Text('当前数值', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: currentCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                        decoration: _softInputDecoration(label: '输入当前数值'),
+                        onChanged: (value) {
+                          final parsed = double.tryParse(value);
+                          if (parsed == null) return;
+                          setDialogState(() {
+                            curVal = parsed.clamp(actualMin, actualMax).toDouble();
+                            props['current'] = curVal;
+                          });
+                          setState(() => syncLivePreview());
+                        },
+                      ),
+                    ] else ...[
+                      Text('当前刻度初值 (${curVal.round()})', style: const TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      Slider(
+                        value: curVal.clamp(actualMin, actualMax).toDouble(),
+                        min: actualMin,
+                        max: actualMax,
+                        activeColor: const Color(0xFF00ACC1),
+                        onChanged: (v) {
+                          setDialogState(() {
+                            curVal = v;
+                            props['current'] = v;
+                          });
+                          setState(() => syncLivePreview());
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 12),
 
                     if (mod.type == 'progress') ...[
@@ -373,6 +414,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         offsetYCtrl.dispose();
         minCtrl.dispose();
         maxCtrl.dispose();
+        stepCtrl.dispose();
+        currentCtrl.dispose();
       });
     });
   }
@@ -395,6 +438,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     final props = Map<String, dynamic>.from(mod.properties);
     String varName = props['variable']?.toString() ?? props['label']?.toString() ?? '';
     String placeholder = props['placeholder']?.toString() ?? '请输入...';
+    bool required = props['required'] == true;
+    int? maxLength = (props['maxLength'] as num?)?.toInt();
 
     String? linkedSourceText;
     for (final elem in _currentElements) {
@@ -440,6 +485,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
     final varCtrl = TextEditingController(text: varName)..selection = TextSelection.collapsed(offset: varName.length);
     final phCtrl = TextEditingController(text: placeholder)..selection = TextSelection.collapsed(offset: placeholder.length);
+    final maxLengthCtrl = TextEditingController(text: maxLength?.toString() ?? '');
 
     showDialog<void>(
       context: context,
@@ -516,6 +562,33 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                           placeholder = v;
                           props['placeholder'] = v;
                           setState(() => syncLivePreview());
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('必填校验', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                        subtitle: const Text('为空时 Input 校验状态为 invalid', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+                        value: required,
+                        activeThumbColor: const Color(0xFF00ACC1),
+                        onChanged: (value) {
+                          setDialogState(() => required = value);
+                          props['required'] = value;
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: maxLengthCtrl,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                        decoration: _softInputDecoration(label: '最大字符数（留空表示不限）'),
+                        onChanged: (value) {
+                          maxLength = int.tryParse(value);
+                          if (maxLength == null || maxLength! <= 0) {
+                            props.remove('maxLength');
+                          } else {
+                            props['maxLength'] = maxLength;
+                          }
                         },
                       ),
                       const SizedBox(height: 12),
@@ -609,6 +682,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         offsetYCtrl.dispose();
         varCtrl.dispose();
         phCtrl.dispose();
+        maxLengthCtrl.dispose();
       });
     });
   }
@@ -1914,6 +1988,28 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         ),
         const SizedBox(height: 12),
 
+        const Text('通路优先级（数值 / 文本多源时优先级高者先取）', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+        const SizedBox(height: 4),
+        DropdownButtonFormField<int>(
+          initialValue: ((linkerData['priority'] as num?)?.toInt() ?? 5).clamp(1, 10).toInt(),
+          decoration: _softInputDecoration(),
+          items: List.generate(
+            10,
+            (index) => DropdownMenuItem<int>(
+              value: index + 1,
+              child: Text('优先级 ${index + 1}${index == 4 ? '（默认）' : ''}'),
+            ),
+          ),
+          onChanged: (value) {
+            if (value == null) return;
+            setDialogState(() {
+              linkerData['priority'] = value;
+              props['linker'] = linkerData;
+            });
+          },
+        ),
+        const SizedBox(height: 12),
+
         // 2. 当前关联的 Scheme Label & 描述
         if (schemeDef != null) ...[
           Container(
@@ -2026,6 +2122,11 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                     props['linker'] = linkerData;
                   });
                 },
+                onParamChangedSilently: (newVal) {
+                  schemeParams[field.key] = newVal;
+                  linkerData['schemeParams'] = schemeParams;
+                  props['linker'] = linkerData;
+                },
               );
             }),
         ],
@@ -2037,6 +2138,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     required SchemeParamField field,
     required Map<String, dynamic> currentParams,
     required ValueChanged<dynamic> onParamChanged,
+    ValueChanged<dynamic>? onParamChangedSilently,
   }) {
     final curVal = currentParams[field.key] ?? field.defaultValue;
 
@@ -2054,18 +2156,32 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         break;
       case SchemeParamType.number:
       case SchemeParamType.doubleVal:
+        final numericController = TextEditingController(
+          text: curVal?.toString() ?? '',
+        )..selection = TextSelection.collapsed(
+            offset: (curVal?.toString() ?? '').length,
+          );
+        void commitNumericValue(String value) {
+          final numVal = field.type == SchemeParamType.number
+              ? int.tryParse(value)
+              : double.tryParse(value);
+          if (numVal != null) onParamChanged(numVal);
+        }
         controlWidget = TextField(
-          controller: TextEditingController(text: curVal?.toString() ?? '')
-            ..selection = TextSelection.collapsed(offset: (curVal?.toString() ?? '').length),
+          controller: numericController,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
           decoration: _softInputDecoration(hintText: field.description),
-          onChanged: (v) {
-            final numVal = (field.type == SchemeParamType.number)
-                ? int.tryParse(v)
-                : double.tryParse(v);
-            if (numVal != null) onParamChanged(numVal);
+          onChanged: (value) {
+            final numVal = field.type == SchemeParamType.number
+                ? int.tryParse(value)
+                : double.tryParse(value);
+            if (numVal != null) {
+              (onParamChangedSilently ?? onParamChanged)(numVal);
+            }
           },
+          onSubmitted: commitNumericValue,
+          onEditingComplete: () => commitNumericValue(numericController.text),
         );
         break;
       case SchemeParamType.boolean:
@@ -2108,30 +2224,97 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         );
         break;
       case SchemeParamType.color:
-        final int argb = (curVal is num) ? curVal.toInt() : 0xFF00ACC1;
-        controlWidget = Row(
+        final int argb = (curVal is num) ? curVal.toInt() : 0xFF4CAF50;
+        const channelColors = <int>[
+          0xFF4CAF50, // 绿色
+          0xFFEF5350, // 红色
+          0xFFFFA726, // 橙黄
+          0xFF29B6F6, // 蓝色
+          0xFFAB47BC, // 紫色
+          0xFF9E9E9E, // 灰色
+          0xFF26A69A, // 青色
+          0xFFEC407A, // 粉色
+        ];
+        controlWidget = Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: Color(argb),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.black26),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: TextEditingController(text: '#${argb.toRadixString(16).padLeft(8, '0').toUpperCase()}')
-                  ..selection = TextSelection.collapsed(offset: 9),
-                style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
-                decoration: _softInputDecoration(label: 'HEX ARGB'),
-                onChanged: (v) {
-                  final clean = v.replaceAll('#', '');
-                  final parsed = int.tryParse(clean, radix: 16);
-                  if (parsed != null) onParamChanged(parsed);
+            ...channelColors.map((colorValue) {
+              final isSelected = colorValue == argb;
+              return Tooltip(
+                message: '#${colorValue.toRadixString(16).padLeft(8, '0').toUpperCase()}',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => onParamChanged(colorValue),
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: Color(colorValue),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected ? Colors.black : Colors.transparent,
+                        width: isSelected ? 2.5 : 0,
+                      ),
+                      boxShadow: isSelected
+                          ? const [BoxShadow(color: Colors.black26, blurRadius: 3)]
+                          : null,
+                    ),
+                    child: isSelected
+                        ? const Icon(Icons.check, size: 17, color: Colors.white)
+                        : null,
+                  ),
+                ),
+              );
+            }),
+            Tooltip(
+              message: '输入自定义 HEX ARGB',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () {
+                  final hexCtrl = TextEditingController(
+                    text: '#${argb.toRadixString(16).padLeft(8, '0').toUpperCase()}',
+                  );
+                  showDialog<void>(
+                    context: context,
+                    builder: (dialogContext) => AlertDialog(
+                      title: const Text('自定义颜色通道'),
+                      content: TextField(
+                        controller: hexCtrl,
+                        autofocus: true,
+                        decoration: _softInputDecoration(label: 'HEX ARGB，例如 #FF4CAF50'),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            final parsed = int.tryParse(
+                              hexCtrl.text.replaceAll('#', '').trim(),
+                              radix: 16,
+                            );
+                            if (parsed != null) onParamChanged(parsed);
+                            Navigator.pop(dialogContext);
+                          },
+                          child: const Text('确定'),
+                        ),
+                      ],
+                    ),
+                  ).whenComplete(hexCtrl.dispose);
                 },
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: Color(argb),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF555562), width: 1.5),
+                  ),
+                  child: const Icon(Icons.edit, size: 15, color: Colors.white),
+                ),
               ),
             ),
           ],

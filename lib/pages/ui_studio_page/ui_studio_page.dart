@@ -216,13 +216,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                         fontSize: 13,
                       ),
                     ),
-                    onPressed: () => setState(() {
-                      _isPreviewMode = !_isPreviewMode;
-                      _selectedTransformationId = null;
-                      _showConstructionManager = false;
-                      _showLeftDrawer = false;
-                      _showRightDrawer = false;
-                    }),
+                    onPressed: _togglePreviewMode,
                   ),
                 ],
               ),
@@ -248,7 +242,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                       const SizedBox(width: 6),
                       const Expanded(
                         child: Text(
-                          '👁 模拟预览中 · 位置已锁定 · 仅容器面内操作原子有效',
+                          '👁 模拟预览中 · 位置已锁定 · 所有工作区控件可直接操作',
                           style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -290,6 +284,19 @@ class _UIStudioPageState extends State<UIStudioPage>
                       onTap: () => _moveSelectedElementOrder(1),
                     ),
                     const SizedBox(height: 8),
+                    if (_currentElements.any(
+                      (element) =>
+                          element.id == _selectedTransformationId &&
+                          _canAssignSurfaceMembership(element),
+                    )) ...[
+                      _buildFloatingObjectAction(
+                        icon: Icons.layers_outlined,
+                        background: const Color(0xFF7E57C2),
+                        foreground: Colors.white,
+                        onTap: _showSurfaceMembershipDialog,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     _buildFloatingObjectAction(
                       icon: Icons.keyboard_arrow_down_rounded,
                       background: const Color(0xFF111116),
@@ -396,27 +403,12 @@ class _UIStudioPageState extends State<UIStudioPage>
   // ============================================================
   Widget _buildTrueSingleHandleNode(BuildContext nodeCtx, UIElement el, double p) {
     if (_isPreviewMode) {
-      final bool isInside = _isInsideContainerSurface(el);
-      final Widget rendered = UIRenderer.render(nodeCtx, el);
-      final bool isInteractiveControl = ['slider', 'input', 'button', 'switch', 'select'].contains(el.module?.type);
-
-      if (isInteractiveControl && !isInside) {
-        return IgnorePointer(
-          child: Opacity(
-            opacity: 0.45,
-            child: SizedBox(
-              width: el.size.width,
-              height: el.size.height,
-              child: rendered,
-            ),
-          ),
-        );
-      }
-
+      // 模拟预览不再要求交互原子必须位于 Surface 内。
+      // Surface 仅负责视觉布局，所有工作区控件均可直接测试交互与 Linker 协议。
       return SizedBox(
         width: el.size.width,
         height: el.size.height,
-        child: rendered,
+        child: UIRenderer.render(nodeCtx, el),
       );
     }
 

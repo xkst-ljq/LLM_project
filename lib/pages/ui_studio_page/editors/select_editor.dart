@@ -27,7 +27,9 @@ class SelectEditor extends StatefulWidget {
 class _SelectEditorState extends State<SelectEditor> {
   late TextEditingController _nameController;
   late List<String> _options;
+  late List<TextEditingController> _optionControllers;
   late String _defaultValue;
+  late String _expandDirection;
   late TextEditingController _varController;
   late Color _accentColor;
 
@@ -52,8 +54,12 @@ class _SelectEditorState extends State<SelectEditor> {
 
     _options = List<String>.from(props['options'] ?? ['选项 1']);
     if (_options.isEmpty) _options = ['选项 1'];
+    _optionControllers = _options
+        .map((option) => TextEditingController(text: option))
+        .toList();
 
     _defaultValue = props['defaultValue'] ?? _options.first;
+    _expandDirection = props['expandDirection'] == 'up' ? 'up' : 'down';
 
     _varController = TextEditingController(
       text: props['sessionVar'] ?? 'var.select',
@@ -67,6 +73,9 @@ class _SelectEditorState extends State<SelectEditor> {
   void dispose() {
     _nameController.dispose();
     _varController.dispose();
+    for (final controller in _optionControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -74,7 +83,9 @@ class _SelectEditorState extends State<SelectEditor> {
 
   void _addOption() {
     setState(() {
-      _options.add('选项 ${_options.length + 1}');
+      final option = '选项 ${_options.length + 1}';
+      _options.add(option);
+      _optionControllers.add(TextEditingController(text: option));
     });
   }
 
@@ -83,8 +94,7 @@ class _SelectEditorState extends State<SelectEditor> {
 
     setState(() {
       final removed = _options.removeAt(index);
-
-      // 脏数据清洗
+      _optionControllers.removeAt(index).dispose();
       if (_defaultValue == removed) {
         _defaultValue = _options.first;
       }
@@ -93,9 +103,9 @@ class _SelectEditorState extends State<SelectEditor> {
 
   void _updateOption(int index, String value) {
     setState(() {
+      final previousValue = _options[index];
       _options[index] = value;
-
-      if (_defaultValue == _options[index]) {
+      if (_defaultValue == previousValue) {
         _defaultValue = value;
       }
     });
@@ -103,16 +113,31 @@ class _SelectEditorState extends State<SelectEditor> {
 
   // ==================== 保存与删除 ====================
 
+  bool get _hasInvalidOptions {
+    final normalized = _options.map((option) => option.trim()).toList();
+    return normalized.any((option) => option.isEmpty) ||
+        normalized.toSet().length != normalized.length;
+  }
+
   void _save() {
+    if (_hasInvalidOptions) {
+      setState(() {});
+      return;
+    }
+    final normalizedOptions = _options.map((option) => option.trim()).toList();
+    final normalizedDefault = normalizedOptions.contains(_defaultValue.trim())
+        ? _defaultValue.trim()
+        : normalizedOptions.first;
     final prevCurrent = widget.initialProperties['current']?.toString();
-    final validCurrent = (prevCurrent != null && _options.contains(prevCurrent))
+    final validCurrent = (prevCurrent != null && normalizedOptions.contains(prevCurrent))
         ? prevCurrent
-        : _defaultValue;
+        : normalizedDefault;
 
     final newProps = {
-      'options': _options,
-      'defaultValue': _defaultValue,
+      'options': normalizedOptions,
+      'defaultValue': normalizedDefault,
       'current': validCurrent,
+      'expandDirection': _expandDirection,
       'name': _nameController.text.trim(),
       'sessionVar': _varController.text.trim(),
       'accentColor': _accentColor.toARGB32(),
@@ -182,6 +207,8 @@ class _SelectEditorState extends State<SelectEditor> {
                     _buildOptionsSection(),
                     const SizedBox(height: 20),
                     _buildDefaultSection(),
+                    const SizedBox(height: 20),
+                    _buildExpandDirectionSection(),
                     const SizedBox(height: 20),
                     _buildVarSection(),
                     const SizedBox(height: 20),
@@ -274,14 +301,13 @@ class _SelectEditorState extends State<SelectEditor> {
             children: [
               ..._options.asMap().entries.map((entry) {
                 final index = entry.key;
-                final option = entry.value;
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: Row(
                     children: [
                       Expanded(
                         child: TextField(
-                          controller: TextEditingController(text: option),
+                          controller: _optionControllers[index],
                           onChanged: (val) => _updateOption(index, val),
                           decoration: const InputDecoration(
                             border: InputBorder.none,
@@ -319,6 +345,13 @@ class _SelectEditorState extends State<SelectEditor> {
             ],
           ),
         ),
+        if (_hasInvalidOptions) ...[
+          const SizedBox(height: 8),
+          const Text(
+            '选项不能为空且不能重复，请先修正后再保存。',
+            style: TextStyle(fontSize: 12, color: Color(0xFFC62828), fontWeight: FontWeight.w600),
+          ),
+        ],
       ],
     );
   }
@@ -329,8 +362,14 @@ class _SelectEditorState extends State<SelectEditor> {
       children: [
         const Text('初始默认选中项', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          initialValue: _defaultValue,
+        Builder(builder: (context) {
+          final defaultOccurrences =
+              _options.where((option) => option == _defaultValue).length;
+          final safeDefault = defaultOccurrences == 1 ? _defaultValue : null;
+          return DropdownButtonFormField<String>(
+          key: ValueKey('${_options.join('|')}|$safeDefault'),
+          initialValue: safeDefault,
+          hint: const Text('请先修正默认选项'),
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
             isDense: true,
@@ -348,10 +387,40 @@ class _SelectEditorState extends State<SelectEditor> {
               });
             }
           },
-        ),
+        );
+        }),
         const SizedBox(height: 4),
         Text(
           '删除选项后会自动清洗为当前第一项',
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpandDirectionSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('模拟预览展开方向', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          initialValue: _expandDirection,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          items: const [
+            DropdownMenuItem(value: 'down', child: Text('向下展开（默认）')),
+            DropdownMenuItem(value: 'up', child: Text('向上展开')),
+          ],
+          onChanged: (value) {
+            if (value != null) setState(() => _expandDirection = value);
+          },
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '模拟预览将严格按此方向弹出，不再根据屏幕位置自动翻转。',
           style: TextStyle(fontSize: 12, color: Colors.grey[600]),
         ),
       ],

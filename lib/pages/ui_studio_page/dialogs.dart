@@ -145,6 +145,7 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
               final newProps = Map<String, dynamic>.from(targetEl.module!.properties);
               final newLinker = Map<String, dynamic>.from(newProps['linker'] ?? {});
               newLinker['scheme'] = schemeDef.id;
+              newLinker['priority'] ??= 5;
               newLinker.remove('migrationNotice');
               newLinker.remove('retiredSchemeId');
               newLinker['enabled'] = LinkerMatrixEngine.isSchemeSelectable(
