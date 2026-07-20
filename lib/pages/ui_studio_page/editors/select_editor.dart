@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../services/ui_engine/select_option.dart';
+
 /// 下拉单选框规格编辑器
 /// 对应 UI 模块类型：UIModuleType.select
 class SelectEditor extends StatefulWidget {
@@ -26,8 +28,9 @@ class SelectEditor extends StatefulWidget {
 
 class _SelectEditorState extends State<SelectEditor> {
   late TextEditingController _nameController;
-  late List<String> _options;
-  late List<TextEditingController> _optionControllers;
+  late List<SelectOption> _options;
+  late List<TextEditingController> _labelControllers;
+  late List<TextEditingController> _valueControllers;
   late String _defaultValue;
   late String _expandDirection;
   late TextEditingController _varController;
@@ -52,13 +55,15 @@ class _SelectEditorState extends State<SelectEditor> {
 
     _nameController = TextEditingController(text: widget.moduleName);
 
-    _options = List<String>.from(props['options'] ?? ['选项 1']);
-    if (_options.isEmpty) _options = ['选项 1'];
-    _optionControllers = _options
-        .map((option) => TextEditingController(text: option))
+    _options = SelectOption.parseList(props['options']);
+    _labelControllers = _options
+        .map((option) => TextEditingController(text: option.label))
+        .toList();
+    _valueControllers = _options
+        .map((option) => TextEditingController(text: option.value))
         .toList();
 
-    _defaultValue = props['defaultValue'] ?? _options.first;
+    _defaultValue = props['defaultValue']?.toString() ?? _options.first.value;
     _expandDirection = props['expandDirection'] == 'up' ? 'up' : 'down';
 
     _varController = TextEditingController(
@@ -73,7 +78,10 @@ class _SelectEditorState extends State<SelectEditor> {
   void dispose() {
     _nameController.dispose();
     _varController.dispose();
-    for (final controller in _optionControllers) {
+    for (final controller in _labelControllers) {
+      controller.dispose();
+    }
+    for (final controller in _valueControllers) {
       controller.dispose();
     }
     super.dispose();
@@ -83,9 +91,11 @@ class _SelectEditorState extends State<SelectEditor> {
 
   void _addOption() {
     setState(() {
-      final option = '选项 ${_options.length + 1}';
+      final index = _options.length + 1;
+      final option = SelectOption(label: '选项 $index', value: 'option_$index');
       _options.add(option);
-      _optionControllers.add(TextEditingController(text: option));
+      _labelControllers.add(TextEditingController(text: option.label));
+      _valueControllers.add(TextEditingController(text: option.value));
     });
   }
 
@@ -94,29 +104,37 @@ class _SelectEditorState extends State<SelectEditor> {
 
     setState(() {
       final removed = _options.removeAt(index);
-      _optionControllers.removeAt(index).dispose();
-      if (_defaultValue == removed) {
-        _defaultValue = _options.first;
+      _labelControllers.removeAt(index).dispose();
+      _valueControllers.removeAt(index).dispose();
+      if (_defaultValue == removed.value) {
+        _defaultValue = _options.first.value;
       }
     });
   }
 
-  void _updateOption(int index, String value) {
+  void _updateOptionLabel(int index, String label) {
     setState(() {
-      final previousValue = _options[index];
-      _options[index] = value;
-      if (_defaultValue == previousValue) {
-        _defaultValue = value;
-      }
+      final option = _options[index];
+      _options[index] = SelectOption(label: label, value: option.value);
+    });
+  }
+
+  void _updateOptionValue(int index, String value) {
+    setState(() {
+      final previous = _options[index];
+      _options[index] = SelectOption(label: previous.label, value: value);
+      if (_defaultValue == previous.value) _defaultValue = value;
     });
   }
 
   // ==================== 保存与删除 ====================
 
   bool get _hasInvalidOptions {
-    final normalized = _options.map((option) => option.trim()).toList();
-    return normalized.any((option) => option.isEmpty) ||
-        normalized.toSet().length != normalized.length;
+    final labels = _options.map((option) => option.label.trim()).toList();
+    final values = _options.map((option) => option.value.trim()).toList();
+    return labels.any((label) => label.isEmpty) ||
+        values.any((value) => value.isEmpty) ||
+        values.toSet().length != values.length;
   }
 
   void _save() {
@@ -124,17 +142,23 @@ class _SelectEditorState extends State<SelectEditor> {
       setState(() {});
       return;
     }
-    final normalizedOptions = _options.map((option) => option.trim()).toList();
-    final normalizedDefault = normalizedOptions.contains(_defaultValue.trim())
+    final normalizedOptions = _options
+        .map((option) => SelectOption(
+              label: option.label.trim(),
+              value: option.value.trim(),
+            ))
+        .toList();
+    final optionValues = normalizedOptions.map((option) => option.value).toList();
+    final normalizedDefault = optionValues.contains(_defaultValue.trim())
         ? _defaultValue.trim()
-        : normalizedOptions.first;
+        : normalizedOptions.first.value;
     final prevCurrent = widget.initialProperties['current']?.toString();
-    final validCurrent = (prevCurrent != null && normalizedOptions.contains(prevCurrent))
+    final validCurrent = (prevCurrent != null && optionValues.contains(prevCurrent))
         ? prevCurrent
         : normalizedDefault;
 
     final newProps = {
-      'options': normalizedOptions,
+      'options': normalizedOptions.map((option) => option.toJson()).toList(),
       'defaultValue': normalizedDefault,
       'current': validCurrent,
       'expandDirection': _expandDirection,
@@ -307,9 +331,22 @@ class _SelectEditorState extends State<SelectEditor> {
                     children: [
                       Expanded(
                         child: TextField(
-                          controller: _optionControllers[index],
-                          onChanged: (val) => _updateOption(index, val),
+                          controller: _labelControllers[index],
+                          onChanged: (value) => _updateOptionLabel(index, value),
                           decoration: const InputDecoration(
+                            labelText: '显示文案',
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _valueControllers[index],
+                          onChanged: (value) => _updateOptionValue(index, value),
+                          decoration: const InputDecoration(
+                            labelText: '逻辑值',
                             border: InputBorder.none,
                             isDense: true,
                           ),
@@ -364,7 +401,7 @@ class _SelectEditorState extends State<SelectEditor> {
         const SizedBox(height: 8),
         Builder(builder: (context) {
           final defaultOccurrences =
-              _options.where((option) => option == _defaultValue).length;
+              _options.where((option) => option.value == _defaultValue).length;
           final safeDefault = defaultOccurrences == 1 ? _defaultValue : null;
           return DropdownButtonFormField<String>(
           key: ValueKey('${_options.join('|')}|$safeDefault'),
@@ -376,8 +413,8 @@ class _SelectEditorState extends State<SelectEditor> {
           ),
           items: _options.map((option) {
             return DropdownMenuItem<String>(
-              value: option,
-              child: Text(option),
+              value: option.value,
+              child: Text(option.label),
             );
           }).toList(),
           onChanged: (value) {

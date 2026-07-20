@@ -3,6 +3,7 @@ import 'dart:async';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'math_node_engine.dart';
+import 'select_option.dart';
 import 'text_value_extractor.dart';
 import 'ui_models.dart';
 
@@ -150,6 +151,47 @@ class LinkerService {
   }
 
   /// 若 Timer 被有效的系统布尔通路控制，返回该运行状态；否则返回 null。
+  /// Timer 根据当前连接拓扑自动推导运行方式。
+  static String resolveTimerRunMode(UIModule timerModule) {
+    if (resolveTimerSystemRunning(timerModule) != null) return 'controlled';
+    final timerId = _findElementIdForModule(timerModule);
+    if (timerId == null) return 'auto';
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final data = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data?['enabled'] != true ||
+          data?['targetModuleId']?.toString() != timerId ||
+          data?['scheme'] != 'click_to_timer_toggle') {
+        continue;
+      }
+      final sourceId = data?['sourceModuleId']?.toString();
+      if (sourceId != null && _elementModules[sourceId]?.type == 'button') {
+        return 'manual';
+      }
+    }
+    return 'auto';
+  }
+
+  /// Timer 是否连接了可能造成高频状态抖动或计算风暴的输出通路。
+  static bool timerHasHighRiskOutputs(UIModule timerModule) {
+    final timerId = _findElementIdForModule(timerModule);
+    if (timerId == null) return false;
+    const highRiskSchemes = {
+      'timer_tick_to_switch_toggle',
+      'timer_tick_to_math_trigger',
+    };
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final data = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data?['enabled'] == true &&
+          data?['sourceModuleId']?.toString() == timerId &&
+          highRiskSchemes.contains(data?['scheme'])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static bool? resolveTimerSystemRunning(UIModule timerModule) {
     final timerId = _findElementIdForModule(timerModule);
     if (timerId == null) return null;
@@ -168,6 +210,22 @@ class LinkerService {
       if (source?.type == 'switch') running = source!.properties['value'] == true;
     }
     return running;
+  }
+
+  /// 返回最高优先级 Input → Select filter 通路的查询文本；无通路时为 null。
+  static String? resolveSelectFilterQuery(UIModule selectModule) {
+    final targetId = _findElementIdForModule(selectModule);
+    if (targetId == null) return null;
+    for (final linker in _sortedLinkersForTarget(targetId)) {
+      final data = (linker.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data?['scheme'] != 'input_value_to_select_filter') continue;
+      final sourceId = data?['sourceModuleId']?.toString();
+      final source = sourceId == null ? null : _elementModules[sourceId];
+      if (source?.type == 'input') {
+        return source!.properties['text']?.toString() ?? '';
+      }
+    }
+    return null;
   }
 
   static void initEventBusListener(List<UIElement> elements, void Function() onStateChanged) {
@@ -203,6 +261,20 @@ class LinkerService {
         }
 
         if (isMatch && tgtId != null) {
+          final definition = LinkerMatrixEngine.getSchemeDefinition(scheme);
+          if (definition?.isPulse == true) {
+            final now = event.timestamp.microsecondsSinceEpoch;
+            final cooldownMs = (lk['cooldownMs'] as num?)?.toInt() ?? 0;
+            final lastTriggeredAt = (lk['runtimeLastTriggeredAt'] as num?)?.toInt() ?? 0;
+            final maxTriggerCount = (lk['maxTriggerCount'] as num?)?.toInt() ?? 0;
+            final triggerCount = (lk['runtimeTriggerCount'] as num?)?.toInt() ?? 0;
+            if ((cooldownMs > 0 && now - lastTriggeredAt < cooldownMs * 1000) ||
+                (maxTriggerCount > 0 && triggerCount >= maxTriggerCount)) {
+              continue;
+            }
+            lk['runtimeLastTriggeredAt'] = now;
+            lk['runtimeTriggerCount'] = triggerCount + 1;
+          }
           lk['runtimeUpdatedAt'] = event.timestamp.microsecondsSinceEpoch;
           needRefresh = true;
           final tgtIdx = elements.indexWhere((e) => e.id == tgtId);
@@ -236,6 +308,13 @@ class LinkerService {
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
+              } else if (scheme == 'click_to_math_trigger' ||
+                  scheme == 'timer_tick_to_math_trigger') {
+                final mathModule = targetEl.module!.copyWith(properties: props);
+                props['lastResult'] = calculateMathNodeNow(mathModule);
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
               } else if (scheme == 'click_to_timer_toggle') {
                 props['isRunning'] = props['isRunning'] != true;
                 elements[tgtIdx] = targetEl.copyWith(
@@ -254,6 +333,21 @@ class LinkerService {
                 props['current'] = defVal;
                 elements[tgtIdx] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
+                );
+              } else if (scheme == 'event_to_indicator') {
+                props['eventFlashColor'] =
+                    (schemeParams['flashColor'] as num?)?.toInt() ?? 0xFFFFA726;
+                final flashDuration =
+                    (schemeParams['durationMs'] as num?)?.toInt() ?? 300;
+                props['eventFlashDurationMs'] = flashDuration;
+                props['eventFlashTimestamp'] =
+                    DateTime.now().millisecondsSinceEpoch;
+                elements[tgtIdx] = targetEl.copyWith(
+                  module: targetEl.module!.copyWith(properties: props),
+                );
+                Future<void>.delayed(
+                  Duration(milliseconds: flashDuration),
+                  onStateChanged,
                 );
               } else if (scheme == 'click_to_surface_press' || scheme == 'click_to_surface_ripple') {
                 props['anim_trigger'] = scheme;
@@ -296,12 +390,13 @@ class LinkerService {
                   _elementModules[srcId]?.type == 'input') {
                 final inputValue =
                     _elementModules[srcId]!.properties['text']?.toString().trim() ?? '';
-                final options = (props['options'] as List?)
-                        ?.map((option) => option.toString())
-                        .toList() ??
-                    const <String>[];
-                if (inputValue.isNotEmpty && options.contains(inputValue)) {
-                  props['current'] = inputValue;
+                final options = SelectOption.parseList(props['options']);
+                final matched = options.where(
+                  (option) => inputValue.isNotEmpty &&
+                      (option.value == inputValue || option.label == inputValue),
+                );
+                if (matched.isNotEmpty) {
+                  props['current'] = matched.first.value;
                   elements[tgtIdx] = targetEl.copyWith(
                     module: targetEl.module!.copyWith(properties: props),
                   );
@@ -496,7 +591,7 @@ class LinkerService {
           (module.properties['linker'] as Map?)?.cast<String, dynamic>();
       if (linkerData == null) continue;
       if (linkerData['targetModuleId']?.toString() != targetElId ||
-          !['value_to_math_param', 'progress_to_math_param', 'text_extract_to_math_param']
+          !['value_to_math_param', 'progress_to_math_param', 'text_extract_to_math_param', 'slider_commit_to_math_param']
               .contains(linkerData['scheme'])) {
         continue;
       }
@@ -513,6 +608,9 @@ class LinkerService {
           sourceModule,
           paramsData['sourceField']?.toString() ?? 'current',
         );
+      } else if (sourceModule.type == 'slider' &&
+          scheme == 'slider_commit_to_math_param') {
+        rawValue = sourceModule.properties['committedValue'] ?? 0.0;
       } else if (sourceModule.type == 'text' &&
           scheme == 'text_extract_to_math_param') {
         final extracted = TextValueExtractor.extract(
@@ -551,6 +649,22 @@ class LinkerService {
     return const ['paramA', 'paramB'];
   }
 
+  /// Math Node 是否存在控制端口或手动触发通路。
+  static bool hasMathManualControl(UIModule mathModule) {
+    final targetId = _findElementIdForModule(mathModule);
+    if (targetId == null) return false;
+    for (final linker in _sortedLinkersForTarget(targetId)) {
+      final data = (linker.properties['linker'] as Map?)?.cast<String, dynamic>();
+      final scheme = data?['scheme']?.toString();
+      if (data?['targetPort'] == 'gate_in' ||
+          scheme == 'click_to_math_trigger' ||
+          scheme == 'timer_tick_to_math_trigger') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// 计算 Math Node V1 的当前输出。计算链通过 [visited] 防止递归闭环。
   static dynamic resolveMathNodeResult(
     UIModule mathModule, {
@@ -563,12 +677,23 @@ class LinkerService {
 
     final controls = resolveTargetControlState(mathModule);
     final fallback = MathNodeEngine.toNumber(mathModule.properties['fallbackValue']);
-    if (controls.frozen || mathModule.properties['calculationMode'] == 'manual') {
+    final manualMode = hasMathManualControl(mathModule);
+    if (controls.frozen || manualMode) {
       return mathModule.properties['lastResult'] ?? fallback;
     }
+    return calculateMathNodeNow(mathModule, visited: visitedSet);
+  }
 
+  /// 无视 manual 模式立即计算 Math Node；按钮与 Timer trigger 使用此入口。
+  static dynamic calculateMathNodeNow(
+    UIModule mathModule, {
+    Set<String>? visited,
+  }) {
+    final controls = resolveTargetControlState(mathModule);
+    final fallback = MathNodeEngine.toNumber(mathModule.properties['fallbackValue']);
+    if (controls.frozen) return mathModule.properties['lastResult'] ?? fallback;
     final operation = mathModule.properties['operation']?.toString() ?? '+';
-    final params = resolveMathNodeParameters(mathModule, visited: visitedSet);
+    final params = resolveMathNodeParameters(mathModule, visited: visited);
     final activeParams = resolveMathNodeActiveParams(mathModule);
     final operands = activeParams.map((param) => params[param] ?? 0).toList();
     return MathNodeEngine.evaluate(
@@ -648,17 +773,25 @@ class LinkerService {
             return inputState.length.toString();
           case 'input_value_to_select_match':
             final inputValue = inputState.text.trim();
-            final options = (targetModule.properties['options'] as List?)
-                    ?.map((option) => option.toString())
-                    .toList() ??
-                const <String>[];
+            final options = SelectOption.parseList(targetModule.properties['options']);
             for (final option in options) {
-              if (option == inputValue && inputValue.isNotEmpty) {
-                return option;
+              if (inputValue.isNotEmpty &&
+                  (option.value == inputValue || option.label == inputValue)) {
+                return option.value;
               }
             }
             return null;
         }
+      }
+
+      if (sourceModule.type == 'slider' && scheme == 'slider_commit_to_text') {
+        final value = (sourceModule.properties['committedValue'] as num?)?.toDouble() ??
+            0.0;
+        final precision = ((schemeParams['precision'] as num?)?.toInt() ?? 0)
+            .clamp(0, 6)
+            .toInt();
+        final template = schemeParams['template']?.toString() ?? '{{value}}';
+        return template.replaceAll('{{value}}', value.toStringAsFixed(precision));
       }
 
       if (sourceModule.type == 'text') {
@@ -713,6 +846,15 @@ class LinkerService {
             ? (sourceModule.properties['stepValue'] as num?)?.toDouble() ?? 0.0
             : (sourceModule.properties['currentVal'] as num?)?.toDouble() ?? 0.0;
         return value.toStringAsFixed(precision);
+      }
+
+      if (sourceModule.type == 'select' && scheme == 'select_to_text') {
+        final current = sourceModule.properties['current']?.toString() ??
+            sourceModule.properties['defaultValue']?.toString() ?? '';
+        final matches = SelectOption.parseList(sourceModule.properties['options'])
+            .where((item) => item.value == current)
+            .toList();
+        return matches.isEmpty ? current : matches.first.label;
       }
 
       if (sourceModule.type == 'select' && scheme == 'select_value_to_switch') {
@@ -898,15 +1040,17 @@ class LinkerService {
   static LinkerTargetControlState resolveTargetControlState(
     UIModule targetModule,
   ) {
-    bool visible = targetModule.properties['visible'] != false;
-    bool enabled = targetModule.properties['enabled'] != false;
-    bool locked = targetModule.properties['locked'] == true;
-    bool frozen = targetModule.properties['frozen'] == true;
+    final baseVisible = targetModule.properties['visible'] != false;
+    final baseEnabled = targetModule.properties['enabled'] != false;
+    var locked = targetModule.properties['locked'] == true;
+    var frozen = targetModule.properties['frozen'] == true;
+    final enabledSignals = <bool>[];
+    final visibleSignals = <bool>[];
     final targetElId = _findElementIdForModule(targetModule);
     if (targetElId == null) {
       return LinkerTargetControlState(
-        visible: visible,
-        enabled: enabled,
+        visible: baseVisible,
+        enabled: baseEnabled,
         locked: locked,
         frozen: frozen,
       );
@@ -931,14 +1075,13 @@ class LinkerService {
       if (sourceModule.type == 'text') {
         final textValue = _textSourceValue(sourceModule);
         if (scheme == 'text_nonempty_to_button_enable') {
-          enabled = enabled && textValue.trim().isNotEmpty;
+          enabledSignals.add(textValue.trim().isNotEmpty);
           continue;
         }
         if (scheme == 'text_match_to_button_enable') {
           final triggerText =
               (linkerData['schemeParams'] as Map?)?['triggerText']?.toString() ?? '';
-          enabled = enabled &&
-              triggerText.isNotEmpty && textValue == triggerText;
+          enabledSignals.add(triggerText.isNotEmpty && textValue == triggerText);
           continue;
         }
       }
@@ -946,24 +1089,21 @@ class LinkerService {
           scheme == 'progress_threshold_to_button_enable') {
         final progressParams =
             (linkerData['schemeParams'] as Map?)?.cast<String, dynamic>() ?? {};
-        final operator = progressParams['operator']?.toString() ?? '>=';
-        final threshold =
-            (progressParams['threshold'] as num?)?.toDouble() ?? 100.0;
-        enabled = enabled && _matchesThreshold(
+        enabledSignals.add(_matchesThreshold(
           _progressFieldValue(sourceModule, 'current'),
-          operator,
-          threshold,
-        );
+          progressParams['operator']?.toString() ?? '>=',
+          (progressParams['threshold'] as num?)?.toDouble() ?? 100.0,
+        ));
         continue;
       }
       if (sourceModule.type == 'input') {
         final inputState = resolveInputValidationState(sourceModule);
         switch (scheme) {
           case 'input_nonempty_to_button_enable':
-            enabled = enabled && !inputState.isEmpty;
+            enabledSignals.add(!inputState.isEmpty);
             continue;
           case 'input_valid_to_button_enable':
-            enabled = enabled && inputState.isValid;
+            enabledSignals.add(inputState.isValid);
             continue;
         }
       }
@@ -974,8 +1114,9 @@ class LinkerService {
         final selectedValue = sourceModule.properties['current']?.toString() ??
             sourceModule.properties['defaultValue']?.toString() ??
             '';
-        visible = visible &&
-            triggerValue.isNotEmpty && selectedValue == triggerValue;
+        visibleSignals.add(
+          triggerValue.isNotEmpty && selectedValue == triggerValue,
+        );
         continue;
       }
       if (sourceModule.type == 'indicator') {
@@ -986,17 +1127,23 @@ class LinkerService {
         final matches =
             resolveIndicatorActiveState(sourceModule).colorValue == triggerColor;
         switch (scheme) {
-          case 'indicator_color_to_button_enable':
-            enabled = enabled && matches;
+          case 'indicator_color_to_enabled':
+            enabledSignals.add(matches);
+            continue;
+          case 'indicator_color_to_locked':
+            locked = locked || matches;
+            continue;
+          case 'indicator_color_to_frozen':
+            frozen = frozen || matches;
             continue;
           case 'indicator_color_to_visible':
-            visible = visible && matches;
+            visibleSignals.add(matches);
             continue;
         }
       }
 
       final rawValue = sourceModule.properties['value'];
-      final bool? sourceValue = rawValue is bool
+      final sourceValue = rawValue is bool
           ? rawValue
           : rawValue == null
               ? null
@@ -1004,12 +1151,11 @@ class LinkerService {
       if (sourceValue == null) continue;
 
       switch (scheme) {
-        case 'bool_to_visibility':
         case 'boolean_to_visible':
-          visible = visible && sourceValue;
+          visibleSignals.add(sourceValue);
           break;
         case 'boolean_to_enabled':
-          enabled = enabled && sourceValue;
+          enabledSignals.add(sourceValue);
           break;
         case 'boolean_to_locked':
           locked = locked || sourceValue;
@@ -1017,22 +1163,29 @@ class LinkerService {
         case 'boolean_to_frozen':
           frozen = frozen || sourceValue;
           break;
-        default:
-          break;
       }
     }
 
+    bool combine(bool base, List<bool> signals, String mode) {
+      if (!base || signals.isEmpty) return base;
+      return mode == 'or' ? signals.any((value) => value) : signals.every((value) => value);
+    }
+
     return LinkerTargetControlState(
-      visible: visible,
-      enabled: enabled,
+      visible: combine(
+        baseVisible,
+        visibleSignals,
+        targetModule.properties['visibleCombineMode']?.toString() ?? 'and',
+      ),
+      enabled: combine(
+        baseEnabled,
+        enabledSignals,
+        targetModule.properties['enabledCombineMode']?.toString() ?? 'and',
+      ),
       locked: locked,
       frozen: frozen,
     );
   }
 
-  /// 兼容现有渲染入口；新代码应直接使用 [resolveTargetControlState]。
-  static bool isTargetHiddenBySwitch(String targetElId) {
-    final targetModule = _elementModules[targetElId];
-    return targetModule != null && !resolveTargetControlState(targetModule).visible;
-  }
+
 }

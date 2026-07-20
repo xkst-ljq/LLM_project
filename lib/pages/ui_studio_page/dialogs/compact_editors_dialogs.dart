@@ -2010,6 +2010,95 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         ),
         const SizedBox(height: 12),
 
+        if (schemeDef?.isPulse == true) ...[
+          const Text('脉冲安全限制（0 = 不限制）', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  initialValue: ((linkerData['cooldownMs'] as num?)?.toInt() ?? 0).toString(),
+                  keyboardType: TextInputType.number,
+                  decoration: _softInputDecoration(label: '冷却毫秒'),
+                  onChanged: (value) {
+                    linkerData['cooldownMs'] = int.tryParse(value) ?? 0;
+                    props['linker'] = linkerData;
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextFormField(
+                  initialValue: ((linkerData['maxTriggerCount'] as num?)?.toInt() ?? 0).toString(),
+                  keyboardType: TextInputType.number,
+                  decoration: _softInputDecoration(label: '最大触发次数'),
+                  onChanged: (value) {
+                    linkerData['maxTriggerCount'] = int.tryParse(value) ?? 0;
+                    props['linker'] = linkerData;
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        if (tgtElem != null &&
+            ['button', 'input', 'slider', 'switch', 'select', 'indicator']
+                .contains(tgtElem.module?.type)) ...[
+          const Text('目标交互使能合并方式', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+          const SizedBox(height: 4),
+          DropdownButtonFormField<String>(
+            initialValue: tgtElem.module!.properties['enabledCombineMode']?.toString() == 'or' ? 'or' : 'and',
+            decoration: _softInputDecoration(),
+            items: const [
+              DropdownMenuItem(value: 'and', child: Text('AND：所有控制通路满足才启用')),
+              DropdownMenuItem(value: 'or', child: Text('OR：任一控制通路满足即可启用')),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              final targetIndex = _currentElements.indexWhere((element) => element.id == tgtElem!.id);
+              if (targetIndex == -1) return;
+              final target = _currentElements[targetIndex];
+              final targetProps = Map<String, dynamic>.from(target.module!.properties);
+              targetProps['enabledCombineMode'] = value;
+              _currentElements[targetIndex] = target.copyWith(
+                module: target.module!.copyWith(properties: targetProps),
+              );
+              setDialogState(() {});
+            },
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        if (tgtElem != null &&
+            ['surface', 'surface_art', 'primitive_art', 'text', 'progress', 'slider', 'input', 'button', 'switch', 'select', 'indicator']
+                .contains(tgtElem.module?.type)) ...[
+          const Text('目标可见性合并方式', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+          const SizedBox(height: 4),
+          DropdownButtonFormField<String>(
+            initialValue: tgtElem.module!.properties['visibleCombineMode']?.toString() == 'or' ? 'or' : 'and',
+            decoration: _softInputDecoration(),
+            items: const [
+              DropdownMenuItem(value: 'and', child: Text('AND：所有控制通路满足才显示')),
+              DropdownMenuItem(value: 'or', child: Text('OR：任一控制通路满足即可显示')),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              final targetIndex = _currentElements.indexWhere((element) => element.id == tgtElem!.id);
+              if (targetIndex == -1) return;
+              final target = _currentElements[targetIndex];
+              final targetProps = Map<String, dynamic>.from(target.module!.properties);
+              targetProps['visibleCombineMode'] = value;
+              _currentElements[targetIndex] = target.copyWith(
+                module: target.module!.copyWith(properties: targetProps),
+              );
+              setDialogState(() {});
+            },
+          ),
+          const SizedBox(height: 12),
+        ],
+
         // 2. 当前关联的 Scheme Label & 描述
         if (schemeDef != null) ...[
           Container(

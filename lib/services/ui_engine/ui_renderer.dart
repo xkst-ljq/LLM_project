@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'linker_event_bus.dart';
 import 'linker_service.dart';
+import 'select_option.dart';
 import 'ui_models.dart';
 
 class UIRenderer {
@@ -596,6 +597,7 @@ class UIRenderer {
         if (linkedVal != null && linkedVal is num) {
           current = linkedVal.toDouble();
         }
+        module.properties['committedValue'] ??= current;
 
         void updatePosition(Offset localPos) {
           final double actualMin = min <= max ? min : max;
@@ -621,11 +623,19 @@ class UIRenderer {
           setSliderState(() {});
         }
 
+        void commitValue() {
+          final value = (module.properties['current'] as num?)?.toDouble() ?? current;
+          module.properties['committedValue'] = value;
+          LinkerEventBus().emit(element.id, 'slider_commit', value);
+        }
+
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapDown: (details) => updatePosition(details.localPosition),
+          onTapUp: (_) => commitValue(),
           onPanStart: (details) => updatePosition(details.localPosition),
           onPanUpdate: (details) => updatePosition(details.localPosition),
+          onPanEnd: (_) => commitValue(),
           child: buildSliderWidget(current),
         );
       },
@@ -1264,19 +1274,23 @@ class UIRenderer {
   /// 白底微圆角矩形，左侧主区域选中，右侧箭头热区点选悬浮展开选项列表，无接线孔
   static Widget _buildSelectBlock(BuildContext context, UIElement element, UIModule module, Size size) {
     final props = module.properties;
-    final List<String> options = (props['options'] as List?)?.map((e) => e.toString()).toList() ?? ['选项 1'];
+    final options = SelectOption.parseList(props['options']);
 
     return StatefulBuilder(
       builder: (ctx, setState) {
-        // 必须在 StatefulBuilder 内计算，手动选择后才能立即刷新当前文案。
+        // current 保存稳定 value；展示时转换为用户可见 label。
         final linkedSelection = LinkerService.resolveTargetValue(module);
-        final String currentText = linkedSelection?.toString() ??
+        final currentValue = linkedSelection?.toString() ??
             props['current']?.toString() ??
             props['defaultValue']?.toString() ??
-            options.first;
+            options.first.value;
+        final matched = options.where((option) => option.value == currentValue).toList();
+        final currentText = matched.isEmpty ? options.first.label : matched.first.label;
         final bool isStudio = UISceneModeScope.of(context);
         final previewSelection =
-            options.contains(currentText) ? currentText : options.first;
+            matched.isEmpty ? options.first.value : currentValue;
+        final filterQuery =
+            LinkerService.resolveSelectFilterQuery(module)?.trim() ?? '';
 
         // 模拟预览使用原生下拉组件，菜单由 Overlay 管理，可在节点边界外正常点击。
         if (!isStudio) {
@@ -1288,6 +1302,7 @@ class UIRenderer {
             currentSelection: previewSelection,
             expandDirection: props['expandDirection'] == 'up' ? 'up' : 'down',
             inputControlled: LinkerService.isSelectInputControlled(module),
+            filterQuery: filterQuery,
           );
         }
 
@@ -1380,20 +1395,20 @@ class UIRenderer {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: options.map((opt) {
-                        final bool active = opt == currentText;
+                      children: options.map((option) {
+                        final bool active = option.value == currentValue;
                         return InkWell(
                           onTap: () {
-                            props['current'] = opt;
+                            props['current'] = option.value;
                             props['is_expanded_preview'] = false;
-                            LinkerEventBus().emit(element.id, 'select_change', opt);
+                            LinkerEventBus().emit(element.id, 'select_change', option.value);
                             setState(() {});
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                             color: active ? const Color(0xFFEDE7F6) : Colors.transparent,
                             child: Text(
-                              opt,
+                              option.label,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: active ? const Color(0xFF512DA8) : const Color(0xFF111116),
@@ -1427,6 +1442,19 @@ class UIRenderer {
     if (!controls.enabled) {
       activeColorInt = 0xFF9E9E9E;
       activeGlow = false;
+    } else {
+      final flashTimestamp =
+          (props['eventFlashTimestamp'] as num?)?.toInt() ?? 0;
+      final flashDuration =
+          (props['eventFlashDurationMs'] as num?)?.toInt() ?? 0;
+      final isFlashing = flashTimestamp > 0 &&
+          DateTime.now().millisecondsSinceEpoch - flashTimestamp < flashDuration;
+      if (isFlashing) {
+        activeColorInt =
+            (props['eventFlashColor'] as num?)?.toInt() ?? activeColorInt;
+        activeGlow = true;
+        glowRadius = 16.0;
+      }
     }
 
     final Color activeColor = Color(activeColorInt);
@@ -1480,10 +1508,11 @@ class UIRenderer {
 class _PreviewSelectWidget extends StatefulWidget {
   final UIElement element;
   final UIModule module;
-  final List<String> options;
+  final List<SelectOption> options;
   final String currentSelection;
   final String expandDirection;
   final bool inputControlled;
+  final String filterQuery;
 
   const _PreviewSelectWidget({
     super.key,
@@ -1493,6 +1522,7 @@ class _PreviewSelectWidget extends StatefulWidget {
     required this.currentSelection,
     required this.expandDirection,
     required this.inputControlled,
+    required this.filterQuery,
   });
 
   @override
@@ -1577,17 +1607,17 @@ class _PreviewSelectWidgetState extends State<_PreviewSelectWidget> {
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       shrinkWrap: true,
-                      itemCount: widget.options.length,
+                      itemCount: _filteredOptions.length,
                       itemBuilder: (context, index) {
-                  final option = widget.options[index];
-                  final selected = option == _selectedValue;
+                  final option = _filteredOptions[index];
+                  final selected = option.value == _selectedValue;
                   return InkWell(
-                    onTap: widget.inputControlled ? null : () => _selectOption(option),
+                    onTap: widget.inputControlled ? null : () => _selectOption(option.value),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       color: selected ? const Color(0xFFEDE7F6) : Colors.transparent,
                       child: Text(
-                        option,
+                        option.label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -1629,6 +1659,23 @@ class _PreviewSelectWidgetState extends State<_PreviewSelectWidget> {
     super.dispose();
   }
 
+  List<SelectOption> get _filteredOptions {
+    final query = widget.filterQuery.toLowerCase();
+    if (query.isEmpty) return widget.options;
+    return widget.options
+        .where((option) =>
+            option.label.toLowerCase().contains(query) ||
+            option.value.toLowerCase().contains(query))
+        .toList();
+  }
+
+  String get _selectedLabel {
+    final matches = widget.options
+        .where((option) => option.value == _selectedValue)
+        .toList();
+    return matches.isEmpty ? _selectedValue : matches.first.label;
+  }
+
   @override
   Widget build(BuildContext context) {
     return CompositedTransformTarget(
@@ -1650,7 +1697,7 @@ class _PreviewSelectWidgetState extends State<_PreviewSelectWidget> {
             children: [
               Expanded(
                 child: Text(
-                  _selectedValue,
+                  _selectedLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -1881,20 +1928,34 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
 
   void _checkTimerState() {
     final props = widget.module.properties;
+    final runMode = LinkerService.resolveTimerRunMode(widget.module);
     final systemRunning = LinkerService.resolveTimerSystemRunning(widget.module);
-    final isRunning = widget.isStudio
-        ? false
-        : (systemRunning ?? (props['isRunning'] == true));
-    final intervalMs = ((props['interval'] as num?)?.toDouble() ?? 1.0)
-        .clamp(0.1, 60.0)
+    final highRisk = LinkerService.timerHasHighRiskOutputs(widget.module);
+    final configuredInterval =
+        (props['interval'] as num?)?.toDouble() ?? 1.0;
+    final minimumInterval = runMode == 'manual'
+        ? 0.1
+        : highRisk
+            ? 1.0
+            : 0.5;
+    final intervalSeconds = configuredInterval
+        .clamp(minimumInterval, 60.0)
         .toDouble();
-    final initialDelayMs = ((props['initialDelay'] as num?)?.toDouble() ?? 0.0)
-        .clamp(0.0, 3600.0)
-        .toDouble();
+    final initialDelaySeconds =
+        ((props['initialDelay'] as num?)?.toDouble() ?? 0.0)
+            .clamp(0.0, 3600.0)
+            .toDouble();
     final maxTicks = (props['maxTicks'] as num?)?.toInt() ?? 0;
     final pulseType = props['pulseType']?.toString() ?? 'increment';
     final stepValue = (props['stepValue'] as num?)?.toDouble() ?? 1.0;
     final loop = props['loop'] != false;
+    final isRunning = widget.isStudio
+        ? false
+        : (runMode == 'controlled'
+            ? systemRunning == true
+            : runMode == 'manual'
+                ? props['isRunning'] == true
+                : true);
 
     if (isRunning && _timer == null && _initialDelayTimer == null) {
       _tickCount = (props['tickCount'] as num?)?.toInt() ?? 0;
@@ -1902,7 +1963,7 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
         if (!mounted) return;
         _initialDelayTimer = null;
         _startPeriodicTimer(
-          intervalMs: (intervalMs * 1000).toInt(),
+          intervalMs: (intervalSeconds * 1000).toInt(),
           maxTicks: maxTicks,
           props: props,
           pulseType: pulseType,
@@ -1910,8 +1971,11 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
           loop: loop,
         );
       }
-      if (initialDelayMs > 0) {
-        _initialDelayTimer = Timer(Duration(milliseconds: (initialDelayMs * 1000).toInt()), start);
+      if (initialDelaySeconds > 0) {
+        _initialDelayTimer = Timer(
+          Duration(milliseconds: (initialDelaySeconds * 1000).toInt()),
+          start,
+        );
       } else {
         start();
       }
@@ -1937,14 +2001,27 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
       return const SizedBox.shrink();
     }
     final props = widget.module.properties;
+    final runMode = LinkerService.resolveTimerRunMode(widget.module);
     final systemRunning = LinkerService.resolveTimerSystemRunning(widget.module);
-    final isRunning = widget.isStudio
-        ? false
-        : (systemRunning ?? (props['isRunning'] == true));
-    final interval = (props['interval'] as num?)?.toDouble() ?? 1.0;
+    final highRisk = LinkerService.timerHasHighRiskOutputs(widget.module);
+    final configuredInterval =
+        (props['interval'] as num?)?.toDouble() ?? 1.0;
+    final minimumInterval = runMode == 'manual'
+        ? 0.1
+        : highRisk
+            ? 1.0
+            : 0.5;
+    final interval = configuredInterval.clamp(minimumInterval, 60.0).toDouble();
     final currentVal = (props['currentVal'] as num?)?.toDouble() ?? 0.0;
     final tickCount = (props['tickCount'] as num?)?.toInt() ?? 0;
     final maxTicks = (props['maxTicks'] as num?)?.toInt() ?? 0;
+    final isRunning = widget.isStudio
+        ? false
+        : (runMode == 'controlled'
+            ? systemRunning == true
+            : runMode == 'manual'
+                ? props['isRunning'] == true
+                : true);
     final pulseType = props['pulseType']?.toString() ?? 'increment';
     final label = pulseType == 'countdown'
         ? '倒计时脉冲'

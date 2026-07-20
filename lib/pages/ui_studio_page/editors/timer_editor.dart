@@ -406,7 +406,7 @@ class _TimerEditorState extends State<TimerEditor> {
         const Text('运行控制', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 8),
         const Text(
-          'Timer 默认静止。请通过 Button 的切换运行/重置方案，或 Switch 的系统条件控制方案触发运行。',
+          'Timer 会根据连接拓扑自动决定运行方式：系统条件控制优先；存在 Button toggle 时等待手动触发；没有控制通路时进入预览/运行时自动启动。',
           style: TextStyle(fontSize: 11, color: Color(0xFF555562), height: 1.35),
         ),
         const SizedBox(height: 10),

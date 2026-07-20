@@ -458,6 +458,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
         linkerElement.module!.properties['linker'] ?? {},
       );
       linkerData['priority'] ??= 5;
+      linkerData['cooldownMs'] ??= 0;
+      linkerData['maxTriggerCount'] ??= 0;
 
       final previousSourceId = linkerData['sourceModuleId']?.toString();
       final previousTargetId = linkerData['targetModuleId']?.toString();

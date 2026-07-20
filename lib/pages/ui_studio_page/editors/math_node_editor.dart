@@ -25,13 +25,21 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
     double paramC = (props['paramC'] as num?)?.toDouble() ?? 0;
     double fallbackValue = (props['fallbackValue'] as num?)?.toDouble() ?? 0;
     bool frozen = props['frozen'] == true;
+    final hasControlLink = _currentElements.any((candidate) {
+      if (candidate.module?.type != 'linker') return false;
+      final data = (candidate.module!.properties['linker'] as Map?)?.cast<String, dynamic>();
+      return data?['targetModuleId'] == el.id &&
+          (data?['targetPort'] == 'gate_in' ||
+              data?['scheme'] == 'click_to_math_trigger' ||
+              data?['scheme'] == 'timer_tick_to_math_trigger');
+    });
     final storedActive = props['activeParams'];
     final activeParams = storedActive is List
         ? storedActive
-        .map((value) => value.toString())
-        .where(_paramKeys.contains)
-        .toSet()
-        .toList()
+            .map((value) => value.toString())
+            .where(_paramKeys.contains)
+            .toSet()
+            .toList()
         : <String>[];
     if (activeParams.isEmpty) activeParams.addAll(['paramA', 'paramB']);
 
@@ -84,8 +92,8 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
           final requirement = operation == 'set'
               ? '设定值需要且只能启用 1 个参数口'
               : isComparison
-              ? '比较运算需要且只能启用 2 个参数口'
-              : '四则运算至少启用 2 个参数口；顺序即运算顺序';
+                  ? '比较运算需要且只能启用 2 个参数口'
+                  : '四则运算至少启用 2 个参数口；顺序即运算顺序';
           return Dialog(
             backgroundColor: Colors.white,
             insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -173,6 +181,15 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  if (hasControlLink) ...[
+                                    const Text('控制端口状态', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      '控制端口已连通，运行时会自动采用手动计算模式。',
+                                      style: TextStyle(fontSize: 11, color: Color(0xFFE65100)),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
                                   const Text('运算规则与有序操作数', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF512DA8))),
                                   const SizedBox(height: 8),
                                   DropdownButtonFormField<String>(
@@ -222,7 +239,10 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
                               onChanged: (value) => fallbackValue = double.tryParse(value) ?? fallbackValue,
                             ),
                             const SizedBox(height: 10),
-                            const Text('前方编号代表参与顺序。点击灰色圆点可加入序列；点击编号圆点可移除；使用上下箭头调整顺序。未启用参数的 Linker 连接会保留，但不会参与当前计算。', style: TextStyle(fontSize: 11, color: Color(0xFF555562), height: 1.35)),
+                            const Text(
+                            '前方编号代表参与顺序。点击灰色圆点可加入序列；点击编号圆点可移除；使用上下箭头调整顺序。未启用参数的 Linker 连接会保留，但不会参与当前计算。控制端口连通时，输出会等待 Button 或 Timer 触发。',
+                            style: TextStyle(fontSize: 11, color: Color(0xFF555562), height: 1.35),
+                          ),
                           ],
                         ),
                       ),
@@ -290,13 +310,13 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
   }
 
   Widget _buildMathOperandRow(
-      String label,
-      String paramKey,
-      TextEditingController controller,
-      List<String> activeParams,
-      StateSetter setDialogState,
-      ValueChanged<String> onChanged,
-      ) {
+    String label,
+    String paramKey,
+    TextEditingController controller,
+    List<String> activeParams,
+    StateSetter setDialogState,
+    ValueChanged<String> onChanged,
+  ) {
     final order = activeParams.indexOf(paramKey);
     final active = order != -1;
     return Row(
@@ -349,10 +369,10 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
                   icon: const Icon(Icons.keyboard_arrow_up, size: 18),
                   onPressed: active && order > 0
                       ? () => setDialogState(() {
-                    final previous = activeParams[order - 1];
-                    activeParams[order - 1] = paramKey;
-                    activeParams[order] = previous;
-                  })
+                            final previous = activeParams[order - 1];
+                            activeParams[order - 1] = paramKey;
+                            activeParams[order] = previous;
+                          })
                       : null,
                 ),
               ),
@@ -366,10 +386,10 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
                   icon: const Icon(Icons.keyboard_arrow_down, size: 18),
                   onPressed: active && order < activeParams.length - 1
                       ? () => setDialogState(() {
-                    final next = activeParams[order + 1];
-                    activeParams[order + 1] = paramKey;
-                    activeParams[order] = next;
-                  })
+                            final next = activeParams[order + 1];
+                            activeParams[order + 1] = paramKey;
+                            activeParams[order] = next;
+                          })
                       : null,
                 ),
               ),

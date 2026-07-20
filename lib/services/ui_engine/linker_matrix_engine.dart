@@ -35,6 +35,7 @@ class SchemeDefinition {
   final String sourceType; // 源组件类型，'any' 或具体原语名称
   final String targetType; // 目标组件类型，'any' 或具体原语名称
   final List<String>? allowedTargetTypes; // targetType 为 any 时的精确目标白名单
+  final List<String>? allowedSourceTypes; // sourceType 为 any 时的精确来源白名单
   final List<String>? excludedSourceTypes; // sourceType 为 any 时排除的来源类型
   final bool isPulse; // 是否为脉冲事件型（而非状态持续型）
   final List<SchemeParamField> params; // 该 Scheme 专用的配置参数列表
@@ -46,6 +47,7 @@ class SchemeDefinition {
     required this.sourceType,
     required this.targetType,
     this.allowedTargetTypes,
+    this.allowedSourceTypes,
     this.excludedSourceTypes,
     this.isPulse = false,
     this.params = const [],
@@ -56,14 +58,14 @@ class SchemeDefinition {
 class LinkerMatrixEngine {
   /// 组件黑名单 (Blacklist Matrix): 数据源 -> 不可连接的接收端组件列表
   static const Map<String, List<String>> _blacklistMap = {
-    'button': ['text', 'progress', 'indicator', 'math_node', 'line', 'image', 'button'],
+    'button': ['text', 'progress', 'line', 'image', 'button'],
     'math_node': ['input', 'select', 'timer', 'line', 'image', 'surface'],
     'switch': ['line', 'image'],
     'input': ['line', 'image', 'timer'],
     'slider': ['button', 'input', 'select', 'switch', 'timer', 'line', 'image', 'surface'],
     'select': ['progress', 'slider', 'input', 'timer', 'line', 'image'],
     'progress': ['input', 'select', 'timer', 'line', 'image', 'surface'],
-    'timer': ['input', 'select', 'slider', 'math_node', 'line', 'image', 'surface'],
+    'timer': ['input', 'select', 'slider', 'line', 'image', 'surface'],
     'indicator': ['progress', 'slider', 'input', 'select', 'timer', 'line', 'image'],
     'text': ['progress', 'slider', 'input', 'timer', 'line', 'image', 'surface'],
     'surface': ['math_node', 'timer', 'line', 'image'],
@@ -168,6 +170,14 @@ class LinkerMatrixEngine {
       description: '点击脉冲停止 Timer 并清空当前值与 Tick 计数',
       sourceType: 'button',
       targetType: 'timer',
+      isPulse: true,
+    ),
+    SchemeDefinition(
+      id: 'click_to_math_trigger',
+      label: '手动触发计算节点 (click → math)',
+      description: '点击脉冲使目标 Math Node 立即计算并更新 lastResult',
+      sourceType: 'button',
+      targetType: 'math_node',
       isPulse: true,
     ),
 
@@ -382,6 +392,13 @@ class LinkerMatrixEngine {
       targetType: 'select',
     ),
     SchemeDefinition(
+      id: 'input_value_to_select_filter',
+      label: '输入过滤选项列表 (input → select)',
+      description: '输入关键词实时过滤 Select 菜单；清空输入后恢复全部选项',
+      sourceType: 'input',
+      targetType: 'select',
+    ),
+    SchemeDefinition(
       id: 'input_to_progress',
       label: '数值输入驱动进度条 (input → progress)',
       description: '尝试解析输入的数值，驱动进度条变化',
@@ -430,6 +447,43 @@ class LinkerMatrixEngine {
           defaultValue: 'ratio',
           options: ['ratio', 'absolute'],
           description: 'ratio: 相对 0~100% 比例归一化折算；absolute: 绝对物理数值透传截断',
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'slider_commit_to_text',
+      label: '滑块松手后更新文本 (slider → text)',
+      description: '只在点击结束或拖动松手后将最终值写入 Text',
+      sourceType: 'slider',
+      targetType: 'text',
+      params: [
+        SchemeParamField(
+          key: 'template',
+          label: '格式模板（可选 {{value}}）',
+          type: SchemeParamType.text,
+          defaultValue: '{{value}}',
+        ),
+        SchemeParamField(
+          key: 'precision',
+          label: '保留小数位数',
+          type: SchemeParamType.number,
+          defaultValue: 0,
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'slider_commit_to_math_param',
+      label: '滑块松手后注入计算参数 (slider → math)',
+      description: '只在点击结束或拖动松手后将最终值注入 Math Node 参数口',
+      sourceType: 'slider',
+      targetType: 'math_node',
+      params: [
+        SchemeParamField(
+          key: 'targetParam',
+          label: '目标参数口',
+          type: SchemeParamType.choice,
+          defaultValue: 'paramA',
+          options: ['paramA', 'paramB', 'paramC'],
         ),
       ],
     ),
@@ -747,6 +801,14 @@ class LinkerMatrixEngine {
     ),
 
     SchemeDefinition(
+      id: 'timer_tick_to_math_trigger',
+      label: '定时脉冲触发计算节点 (timer → math)',
+      description: '每次 Timer Tick 使目标 Math Node 重算并更新 lastResult',
+      sourceType: 'timer',
+      targetType: 'math_node',
+      isPulse: true,
+    ),
+    SchemeDefinition(
       id: 'timer_value_to_text',
       label: '计时器数值显示文本 (timer → text)',
       description: '输出当前值、Tick 次数或步长，由 Text 负责格式化展示',
@@ -770,6 +832,31 @@ class LinkerMatrixEngine {
     ),
 
     // --- indicator (状态指示点数据源) ---
+
+    // --- event (Button / Timer → Indicator) ---
+    SchemeDefinition(
+      id: 'event_to_indicator',
+      label: '事件高亮状态灯 (event → indicator)',
+      description: 'Button 点击或 Timer Tick 使状态灯短暂闪烁，随后恢复原状态',
+      sourceType: 'any',
+      allowedSourceTypes: ['button', 'timer'],
+      targetType: 'indicator',
+      isPulse: true,
+      params: [
+        SchemeParamField(
+          key: 'flashColor',
+          label: '高亮颜色',
+          type: SchemeParamType.color,
+          defaultValue: 0xFFFFA726,
+        ),
+        SchemeParamField(
+          key: 'durationMs',
+          label: '高亮时长（毫秒）',
+          type: SchemeParamType.number,
+          defaultValue: 300,
+        ),
+      ],
+    ),
 
     // --- indicator (颜色通道路由源) ---
     SchemeDefinition(
@@ -815,11 +902,46 @@ class LinkerMatrixEngine {
       ],
     ),
     SchemeDefinition(
-      id: 'indicator_color_to_button_enable',
-      label: '颜色通道控制按钮使能 (indicator → button)',
-      description: '当前激活颜色匹配时按钮可点击，不匹配时禁用',
+      id: 'indicator_color_to_enabled',
+      label: '颜色通道控制交互使能 (indicator → enabled)',
+      description: '当前激活颜色匹配时启用目标，不匹配时禁用',
       sourceType: 'indicator',
-      targetType: 'button',
+      targetType: 'any',
+      allowedTargetTypes: [
+        'button', 'input', 'slider', 'switch', 'select', 'indicator',
+      ],
+      params: [
+        SchemeParamField(
+          key: 'triggerColor',
+          label: '监听颜色通道',
+          type: SchemeParamType.color,
+          defaultValue: 0xFF4CAF50,
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'indicator_color_to_locked',
+      label: '颜色通道控制编辑锁定 (indicator → locked)',
+      description: '当前激活颜色匹配时锁定目标编辑，不匹配时解除锁定',
+      sourceType: 'indicator',
+      targetType: 'any',
+      allowedTargetTypes: ['button', 'input', 'slider', 'switch', 'select'],
+      params: [
+        SchemeParamField(
+          key: 'triggerColor',
+          label: '监听颜色通道',
+          type: SchemeParamType.color,
+          defaultValue: 0xFF4CAF50,
+        ),
+      ],
+    ),
+    SchemeDefinition(
+      id: 'indicator_color_to_frozen',
+      label: '颜色通道控制数值冻结 (indicator → frozen)',
+      description: '当前激活颜色匹配时冻结 Progress 或 Math Node，不匹配时恢复',
+      sourceType: 'indicator',
+      targetType: 'any',
+      allowedTargetTypes: ['progress', 'math_node'],
       params: [
         SchemeParamField(
           key: 'triggerColor',
@@ -891,8 +1013,9 @@ class LinkerMatrixEngine {
 
     final result = <SchemeDefinition>[];
     for (final def in _schemeRegistry) {
-      final matchSrc = (def.sourceType == 'any' ||
-              def.sourceType == normalizedSrc) &&
+      final matchSrc = (def.allowedSourceTypes != null
+              ? def.allowedSourceTypes!.contains(normalizedSrc)
+              : def.sourceType == 'any' || def.sourceType == normalizedSrc) &&
           !(def.excludedSourceTypes?.contains(normalizedSrc) ?? false);
       final matchTgt = def.allowedTargetTypes != null
           ? def.allowedTargetTypes!.contains(normalizedTgt)
