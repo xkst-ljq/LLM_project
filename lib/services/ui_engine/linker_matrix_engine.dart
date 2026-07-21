@@ -990,6 +990,21 @@ class LinkerMatrixEngine {
     ),
   ];
 
+  /// 面向创作者的三段式说明；协议 ID 与底层运行逻辑保持不变。
+  static String userFacingDescription(SchemeDefinition definition) {
+    const custom = <String, String>{
+      'click_to_surface_press': '触发条件：点击按钮。\n目标变化：目标面板播放一次按压反馈。\n典型用途：为透明按钮或图片热区增加按下手感。',
+      'click_to_math_trigger': '触发条件：点击按钮。\n目标变化：目标计算节点立即重新计算。\n典型用途：制作确认计算、提交表单或手动刷新。',
+      'timer_tick_to_math_trigger': '触发条件：定时器每次触发。\n目标变化：目标计算节点重新计算。\n典型用途：周期刷新状态、倒计时或自动数值计算。',
+      'input_value_to_select_match': '触发条件：输入内容与选项显示名称或逻辑值完全匹配。\n目标变化：下拉选择自动切换到匹配选项。\n典型用途：根据输入指令或外部变量自动选择模式。',
+      'input_value_to_select_filter': '触发条件：输入内容发生变化。\n目标变化：下拉菜单仅显示匹配选项。\n典型用途：为较长选项列表提供搜索过滤。',
+      'value_to_math_param': '触发条件：来源数值变化。\n目标变化：写入指定计算参数。\n典型用途：将进度、滑块或状态值送入计算节点。',
+      'event_to_indicator': '触发条件：按钮点击或定时器触发。\n目标变化：状态指示灯短暂高亮。\n典型用途：提示操作已执行或后台事件到达。',
+    };
+    if (custom.containsKey(definition.id)) return custom[definition.id]!;
+    return '触发条件：${definition.sourceType == 'any' ? '来源状态满足方案条件。' : '来源组件产生对应变化。'}\n目标变化：${definition.targetType == 'any' ? '目标组件按方案规则更新。' : '目标${definition.targetType}按方案规则更新。'}\n典型用途：${definition.label.split(' (').first}。';
+  }
+
   /// 仅已注册的方案可被选择和执行。
   static bool isSchemeSelectable(String schemeId) =>
       getSchemeDefinition(schemeId) != null;

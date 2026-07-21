@@ -126,11 +126,13 @@ class LinkerConnectionPainter extends CustomPainter {
   final Offset start;
   final Offset end;
   final Color color;
+  final bool isControlLine;
 
   LinkerConnectionPainter({
     required this.start,
     required this.end,
     required this.color,
+    this.isControlLine = false,
   });
 
   @override
@@ -141,41 +143,44 @@ class LinkerConnectionPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    final path = Path();
-    path.moveTo(start.dx, start.dy);
+    final path = Path()..moveTo(start.dx, start.dy);
+    late Offset arrowCenter;
+    late double arrowAngle;
 
     final controlOffset = (end.dx - start.dx).abs() * 0.4;
     final cp1 = Offset(start.dx + controlOffset, start.dy);
-    final cp2 = Offset(end.dx - controlOffset, end.dy);
-
+    // 普通端口以水平方向进入；顶部 Gate 仅调整末端切线为垂直向下。
+    // 这仍是一条连续贝塞尔曲线，不再添加生硬的固定长度引导段。
+    final cp2 = isControlLine
+        ? Offset(end.dx, end.dy - math.max(24.0, controlOffset * 0.55))
+        : Offset(end.dx - controlOffset, end.dy);
     path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, end.dx, end.dy);
-    canvas.drawPath(path, paint);
 
-    final t = 0.5;
-    final midX = _bezierPoint(start.dx, cp1.dx, cp2.dx, end.dx, t);
-    final midY = _bezierPoint(start.dy, cp1.dy, cp2.dy, end.dy, t);
-
+    const t = 0.5;
+    arrowCenter = Offset(
+      _bezierPoint(start.dx, cp1.dx, cp2.dx, end.dx, t),
+      _bezierPoint(start.dy, cp1.dy, cp2.dy, end.dy, t),
+    );
     final dx = _bezierDerivative(start.dx, cp1.dx, cp2.dx, end.dx, t);
     final dy = _bezierDerivative(start.dy, cp1.dy, cp2.dy, end.dy, t);
-    final angle = math.atan2(dy, dx);
+    arrowAngle = math.atan2(dy, dx);
+    canvas.drawPath(path, paint);
 
     final arrowPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
-
     const arrowSize = 9.0;
-    final arrowPath = Path();
-    arrowPath.moveTo(midX, midY);
-    arrowPath.lineTo(
-      midX - arrowSize * math.cos(angle - 0.5),
-      midY - arrowSize * math.sin(angle - 0.5),
-    );
-    arrowPath.lineTo(
-      midX - arrowSize * math.cos(angle + 0.5),
-      midY - arrowSize * math.sin(angle + 0.5),
-    );
-    arrowPath.close();
-
+    final arrowPath = Path()
+      ..moveTo(arrowCenter.dx, arrowCenter.dy)
+      ..lineTo(
+        arrowCenter.dx - arrowSize * math.cos(arrowAngle - 0.5),
+        arrowCenter.dy - arrowSize * math.sin(arrowAngle - 0.5),
+      )
+      ..lineTo(
+        arrowCenter.dx - arrowSize * math.cos(arrowAngle + 0.5),
+        arrowCenter.dy - arrowSize * math.sin(arrowAngle + 0.5),
+      )
+      ..close();
     canvas.drawPath(arrowPath, arrowPaint);
   }
 
@@ -197,7 +202,10 @@ class LinkerConnectionPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant LinkerConnectionPainter oldDelegate) {
-    return oldDelegate.start != start || oldDelegate.end != end;
+    return oldDelegate.start != start ||
+        oldDelegate.end != end ||
+        oldDelegate.color != color ||
+        oldDelegate.isControlLine != isControlLine;
   }
 }
 
@@ -263,4 +271,17 @@ class ConnectionLinePainter extends CustomPainter {
         oldDelegate.color != color ||
         oldDelegate.isDashed != isDashed;
   }
+}
+
+
+
+/// 模拟预览不绘制工作室网格的空画笔。
+class _PreviewBlankPainter extends CustomPainter {
+  const _PreviewBlankPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {}
+
+  @override
+  bool shouldRepaint(covariant _PreviewBlankPainter oldDelegate) => false;
 }

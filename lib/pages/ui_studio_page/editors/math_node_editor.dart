@@ -185,7 +185,7 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
                                     const Text('控制端口状态', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                                     const SizedBox(height: 4),
                                     const Text(
-                                      '控制端口已连通，运行时会自动采用手动计算模式。',
+                                      '顶部金色“计算触发”端口已连通，运行时会自动采用手动计算模式。',
                                       style: TextStyle(fontSize: 11, color: Color(0xFFE65100)),
                                     ),
                                     const SizedBox(height: 12),
@@ -240,7 +240,7 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
                             ),
                             const SizedBox(height: 10),
                             const Text(
-                            '前方编号代表参与顺序。点击灰色圆点可加入序列；点击编号圆点可移除；使用上下箭头调整顺序。未启用参数的 Linker 连接会保留，但不会参与当前计算。控制端口连通时，输出会等待 Button 或 Timer 触发。',
+                            '左侧青色“数值”端口只接收参数 A/B/C 的数值通路；顶部金色“计算触发”端口只接收 Button 或 Timer 触发通路。前方编号代表参与顺序。点击灰色圆点可加入序列；点击编号圆点可移除；使用上下箭头调整顺序。未启用参数的 Linker 连接会保留，但不会参与当前计算。触发端口连通时，输出会等待 Button 或 Timer 触发。',
                             style: TextStyle(fontSize: 11, color: Color(0xFF555562), height: 1.35),
                           ),
                           ],

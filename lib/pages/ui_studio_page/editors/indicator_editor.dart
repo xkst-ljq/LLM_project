@@ -597,7 +597,7 @@ class _IndicatorEditorState extends State<IndicatorEditor> {
                           const SizedBox(width: 4),
                           Wrap(
                             spacing: 4,
-                            children: _swatchColors.take(4).map((col) {
+                            children: _swatchColors.map((col) {
                               final sel = col.toARGB32() == ruleColor.toARGB32();
                               return GestureDetector(
                                 onTap: () => setState(() => rule['color'] = col.toARGB32()),

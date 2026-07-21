@@ -4,6 +4,7 @@ part of 'ui_studio_page.dart';
 mixin _UIStudioDrawers on _UIStudioDialogs {
   // ===== 左侧原材料抽屉 =====
   Widget _buildLeftCompactAssetPreviewDrawer() {
+    final modules = _assetService.getFoundationModules();
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.85),
@@ -24,610 +25,44 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 16, 8, 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      '原材料',
-                      style: TextStyle(
-                        color: Color(0xFF111116),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => setState(() => _showLeftDrawer = false),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF4081).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          children: [
-                            Text(
-                              '收回 ',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Color(0xFFFF4081),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Icon(Icons.arrow_back_ios,
-                                size: 10, color: Color(0xFFFF4081)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(14, 16, 8, 8),
+                child: Center(child: Text('原材料', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13))),
               ),
               const Divider(color: Colors.black12),
               Expanded(
-                child: ListView(
+                child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  children: [
-                    const Text('数据条原子预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'prog',
-                        name: '数据条原子',
-                        type: 'progress',
-                        properties: {'min': 0, 'max': 100, 'current': 75},
-                        color: const Color(0xFFFF4081),
-                      ),
-                      Container(
-                        height: 28,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: 0.75,
+                  itemCount: modules.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final module = modules[index];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
                           child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFF4081),
-                              borderRadius: BorderRadius.circular(99),
+                              color: const Color(0xFFECECF2),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              module.name,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF555562),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('面原子预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'surface',
-                        name: '面原子 / 胶囊',
-                        type: 'surface',
-                        properties: {},
-                        color: const Color(0xFF651FFF),
-                        material: UIModuleMaterial.gradient,
-                        shape: UIModuleShape.capsule,
-                      ),
-                      Container(
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF651FFF),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('点击热区原子预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'btn',
-                        name: '点击热区原子',
-                        type: 'button',
-                        properties: {'action': 'tap'},
-                        color: Colors.transparent,
-                      ),
-                      Container(
-                        height: 34,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: const Color(0xFFFF4081),
-                            width: 1,
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          '点击热区',
-                          style: TextStyle(
-                            color: Color(0xFFFF4081),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('文本原子预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'txt',
-                        name: '文本原子',
-                        type: 'text',
-                        properties: {'text': '文本'},
-                        color: const Color(0xFF00B0FF),
-                      ),
-                      const SizedBox(
-                        height: 30,
-                        child: Center(
-                          child: Text(
-                            '文本',
-                            style: TextStyle(
-                              color: Color(0xFF00B0FF),
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('滑块原子预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'slider',
-                        name: '滑块原子',
-                        type: 'slider',
-                        properties: {'min': 0, 'max': 100, 'current': 50},
-                        color: const Color(0xFF00ACC1),
-                      ),
-                      SizedBox(
-                        height: 34,
-                        child: Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            Container(
-                              height: 5,
-                              margin: const EdgeInsets.symmetric(horizontal: 10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE2E2E8),
-                                borderRadius: BorderRadius.circular(99),
-                              ),
-                            ),
-                            Container(
-                              height: 5,
-                              width: 62,
-                              margin: const EdgeInsets.only(left: 10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF00ACC1),
-                                borderRadius: BorderRadius.circular(99),
-                              ),
-                            ),
-                            Positioned(
-                              left: 58,
-                              child: Container(
-                                width: 18,
-                                height: 18,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF00ACC1),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 2),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('输入热区原子预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'inp',
-                        name: '输入热区原子',
-                        type: 'input',
-                        properties: {'variable': 'var.input'},
-                        color: Colors.transparent,
-                      ),
-                      Container(
-                        height: 34,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: const Color(0xFF00ACC1),
-                            width: 1,
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          '输入热区',
-                          style: TextStyle(
-                            color: Color(0xFF00ACC1),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('布尔开关预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'sw',
-                        name: '布尔开关原子',
-                        type: 'switch',
-                        properties: {'value': true, 'variable': 'switch_var'},
-                        color: const Color(0xFF00E676),
-                      ),
-                      Container(
-                        height: 32,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF00E676),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        alignment: Alignment.centerRight,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('多功能线段预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'ln',
-                        name: '多功能线段原子',
-                        type: 'line',
-                        properties: {'thickness': 2.0, 'lineStyle': 'solid', 'axis': 'horizontal', 'dashLength': 6.0, 'gapLength': 3.0},
-                        color: const Color(0xFFB0BEC5),
-                      ),
-                      Container(
-                        height: 20,
-                        alignment: Alignment.center,
-                        child: Container(
-                          height: 2,
-                          color: const Color(0xFFB0BEC5),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('静态位图插槽预览',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'img',
-                        name: '静态位图插槽原子',
-                        type: 'image',
-                        properties: {'url': '', 'fit': 'cover', 'shape': 'rectangle', 'borderRadius': 8.0, 'assetPath': ''},
-                        color: const Color(0xFF2979FF),
-                      ),
-                      Container(
-                        height: 40,
-                        width: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE3F2FD),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF90CAF9)),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.image_outlined, size: 20, color: Color(0xFF2979FF)),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('联动器节点',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'linker_mvp',
-                        name: '联动器',
-                        type: 'linker',
-                        properties: {
-                          'linker': {
-                            'sourceModuleId': '',
-                            'sourcePort': '',
-                            'sourceType': '',
-                            'targetModuleId': '',
-                            'targetPort': '',
-                            'targetType': '',
-                            'scheme': '未配置',
-                            'enabled': true,
-                          },
-                        },
-                        color: const Color(0xFF00ACC1),
-                      ),
-                      Container(
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: const Color(0xFF00ACC1).withValues(alpha: 0.4),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Stack(
-                          children: [
-                            Positioned(
-                              left: 8,
-                              top: 6,
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF00ACC1),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 3),
-                                  const Text(
-                                    'current',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      color: Color(0xFF555562),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Positioned(
-                              right: 8,
-                              top: 6,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text(
-                                    'text',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      color: Color(0xFF555562),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF00ACC1),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Center(
-                              child: Text(
-                                'current→text',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF111116),
-                                ),
-                              ),
-                            ),
-                            const Positioned(
-                              bottom: 3,
-                              left: 0,
-                              right: 0,
-                              child: Center(
-                                child: Text(
-                                  '联动器',
-                                  style: TextStyle(
-                                    fontSize: 7,
-                                    color: Color(0xFF00ACC1),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('算术计算节点',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'math_node_mvp',
-                        name: '算术节点',
-                        type: 'math_node',
-                        properties: {
-                          'operation': '+',
-                          'paramA': 0.0,
-                          'paramB': 1.0,
-                          'paramC': 0.0,
-                          'activeParams': ['paramA', 'paramB'],
-                          'fallbackValue': 0.0,
-                          'calculationMode': 'auto',
-                          'frozen': false,
-                        },
-                        color: const Color(0xFFD1C4E9),
-                      ),
-                      Container(
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEDE7F6),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF9575CD), width: 1.2),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          '算术 : A + B',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF512DA8),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('下拉单选节点',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'select_mvp',
-                        name: '下拉单选框',
-                        type: 'select',
-                        properties: {
-                          'options': ['选项 1'],
-                          'current': '选项 1',
-                          'variable': 'var.select',
-                        },
-                        color: const Color(0xFF7E57C2),
-                      ),
-                      Container(
-                        height: 34,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFD0D0D8)),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('选项 1', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
-                            Text('▼', style: TextStyle(fontSize: 8, color: Color(0xFF888896))),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('多态状态指示点',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'indicator_mvp',
-                        name: '状态指示点',
-                        type: 'indicator',
-                        properties: {
-                          'currentValue': '',
-                          'defaultColor': 0xFF9E9E9E,
-                          'defaultGlow': false,
-                          'dotSize': 14.0,
-                          'statusRules': [
-                            {
-                              'matchType': 'exact',
-                              'matchValue': '正常',
-                              'color': 0xFF4CAF50,
-                              'isGlow': true,
-                              'glowRadius': 12.0,
-                            },
-                            {
-                              'matchType': 'exact',
-                              'matchValue': '警报',
-                              'color': 0xFFEF5350,
-                              'isGlow': true,
-                              'glowRadius': 14.0,
-                            },
-                          ],
-                        },
-                        color: const Color(0xFF4CAF50),
-                      ),
-                      Container(
-                        height: 34,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFD0D0D8)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF4CAF50),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text('正常 / 警报', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text('定时脉冲发生器',
-                        style: TextStyle(color: Color(0xFF888896), fontSize: 10)),
-                    const SizedBox(height: 4),
-                    _buildPreviewDraggableCard(
-                      UIModule(
-                        id: 'timer_mvp',
-                        name: '定时脉冲发生器',
-                        type: 'timer',
-                        properties: {
-                          'interval': 1.0,
-                          'initialDelay': 0.0,
-                          'maxTicks': 0,
-                          'isRunning': false,
-                          'loop': true,
-                          'pulseType': 'increment',
-                          'currentVal': 0.0,
-                        },
-                        color: const Color(0xFFFF9100),
-                      ),
-                      Container(
-                        height: 48,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF8E1),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFFF9100), width: 1.2),
-                        ),
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.timer_outlined, size: 13, color: Color(0xFFF57C00)),
-                                SizedBox(width: 4),
-                                Text('1.0s', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFF57C00))),
-                              ],
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('#0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFFE65100))),
-                                Icon(Icons.play_arrow, size: 14, color: Color(0xFFF57C00)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                        const SizedBox(height: 5),
+                        _buildPreviewDraggableCard(module),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -637,33 +72,89 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
     );
   }
 
-  Widget _buildPreviewDraggableCard(UIModule module, Widget visualPreview) {
-    final card = Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
-        ],
-      ),
+  /// 左侧原材料预览与画布共用 UIRenderer，确保默认形态不再有两套实现。
+  Widget _buildPreviewDraggableCard(UIModule module) {
+    final payload = DragPayload(module: module);
+    final previewSize = _initialSizeForModule(module);
+    final previewElement = UIElement(
+      id: 'asset_preview_${module.id}',
+      module: module,
+      size: previewSize,
+      isComposite: false,
+    );
+    final visualPreview = LayoutBuilder(
+      builder: (context, constraints) {
+        const previewHeight = 66.0;
+        final availableWidth = constraints.maxWidth;
+        final scale = math.min(
+          availableWidth / previewSize.width,
+          previewHeight / previewSize.height,
+        );
+        final renderedWidth = previewSize.width * scale;
+        final renderedHeight = previewSize.height * scale;
+        final left = (availableWidth - renderedWidth) / 2;
+        final top = (previewHeight - renderedHeight) / 2;
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (event) {
+            // 将预览中的按下点换算为原组件尺寸比例，供进入画布后的真实元素沿用。
+            payload.pointerId = event.pointer;
+            payload.anchorFraction = Offset(
+              ((event.localPosition.dx - left) / renderedWidth)
+                  .clamp(0.0, 1.0),
+              ((event.localPosition.dy - top) / renderedHeight)
+                  .clamp(0.0, 1.0),
+            );
+          },
+          child: SizedBox(
+            height: previewHeight,
+            width: double.infinity,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: previewSize.width,
+                  height: previewSize.height,
+                  child: IgnorePointer(
+                    child: UISceneModeScope(
+                      isStudioCreationMode: true,
+                      child: Builder(
+                        builder: (previewContext) =>
+                            UIRenderer.render(previewContext, previewElement),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    // 原材料库不再给每个组件套额外展示卡片；只呈现组件的真实默认形态。
+    final card = Padding(
+      padding: const EdgeInsets.only(bottom: 2),
       child: visualPreview,
     );
 
-    return LongPressDraggable<DragPayload>(
-      data: DragPayload(module: module),
-      delay: const Duration(milliseconds: 180),
-      feedback: Material(
-        color: Colors.transparent,
-        child: Opacity(
-          opacity: 0.88,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 150),
-            child: card,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPressStart: (details) =>
+          _startLibraryPlacement(payload, details.globalPosition),
+      child: ValueListenableBuilder<bool>(
+        valueListenable: payload.isLibraryDragging,
+        child: MouseRegion(cursor: SystemMouseCursors.grab, child: card),
+        builder: (context, isDragging, child) => AnimatedScale(
+          scale: isDragging ? 0.94 : 1.0,
+          duration: const Duration(milliseconds: 130),
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: isDragging ? 0.42 : 1.0,
+            duration: const Duration(milliseconds: 100),
+            child: child,
           ),
         ),
       ),
-      childWhenDragging: Opacity(opacity: 0.38, child: card),
-      child: MouseRegion(cursor: SystemMouseCursors.grab, child: card),
     );
   }
 
@@ -816,8 +307,6 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                         borderRadius: BorderRadius.circular(10),
                         onTap: () => setState(
                                 () => _selectedTransformationId = el.id),
-                        onLongPress: () =>
-                            _showTailoredPrecisionEditorDialog(el),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 7),
@@ -940,7 +429,7 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
 
   // ===== 右侧资产库抽屉 =====
   Widget _buildRightCompletedAssetsDrawer() {
-    final modules = _assetService.getAllModules();
+    final modules = _assetService.getUserModules();
     final composites = _assetService.getAllComposites();
     final isEmpty = modules.isEmpty && composites.isEmpty;
 
@@ -964,47 +453,9 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 16, 14, 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => setState(() => _showRightDrawer = false),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.arrow_forward_ios,
-                                size: 10, color: Color(0xFF00ACC1)),
-                            Text(
-                              ' 收回',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Color(0xFF00ACC1),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const Text(
-                      '完成资产库',
-                      style: TextStyle(
-                        color: Color(0xFF111116),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(8, 16, 14, 8),
+                child: Center(child: Text('完成资产库', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold, fontSize: 13))),
               ),
               const Divider(color: Colors.black12),
               Expanded(
@@ -1052,6 +503,7 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
   }
 
   Widget _buildAssetLibraryModuleCard(UIModule module) {
+    final payload = DragPayload(module: module);
     final card = Card(
       color: const Color(0xFFF6F6F9),
       elevation: 0,
@@ -1102,19 +554,36 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
       ),
     );
 
-    return LongPressDraggable<DragPayload>(
-      data: DragPayload(module: module),
-      delay: const Duration(milliseconds: 180),
-      feedback: Material(
-        color: Colors.transparent,
-        child: SizedBox(width: 150, child: Opacity(opacity: 0.9, child: card)),
+    return Listener(
+      onPointerDown: (event) {
+        payload.pointerId = event.pointer;
+        // 右侧是资产清单卡片而非等比真实预览，采用稳定中心锚点。
+        payload.anchorFraction = const Offset(0.5, 0.5);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPressStart: (details) =>
+            _startLibraryPlacement(payload, details.globalPosition),
+        child: ValueListenableBuilder<bool>(
+          valueListenable: payload.isLibraryDragging,
+          child: MouseRegion(cursor: SystemMouseCursors.grab, child: card),
+          builder: (context, isDragging, child) => AnimatedScale(
+            scale: isDragging ? 0.96 : 1.0,
+            duration: const Duration(milliseconds: 130),
+            curve: Curves.easeOutCubic,
+            child: AnimatedOpacity(
+              opacity: isDragging ? 0.48 : 1.0,
+              duration: const Duration(milliseconds: 100),
+              child: child,
+            ),
+          ),
+        ),
       ),
-      childWhenDragging: Opacity(opacity: 0.38, child: card),
-      child: card,
     );
   }
 
   Widget _buildAssetLibraryCompositeCard(UIComposite composite) {
+    final payload = DragPayload(composite: composite);
     final card = Card(
       color: const Color(0xFFF3E5F5),
       elevation: 0,
@@ -1163,15 +632,31 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
       ),
     );
 
-    return LongPressDraggable<DragPayload>(
-      data: DragPayload(composite: composite),
-      delay: const Duration(milliseconds: 180),
-      feedback: Material(
-        color: Colors.transparent,
-        child: SizedBox(width: 150, child: Opacity(opacity: 0.9, child: card)),
+    return Listener(
+      onPointerDown: (event) {
+        payload.pointerId = event.pointer;
+        // 右侧是资产清单卡片而非等比真实预览，采用稳定中心锚点。
+        payload.anchorFraction = const Offset(0.5, 0.5);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPressStart: (details) =>
+            _startLibraryPlacement(payload, details.globalPosition),
+        child: ValueListenableBuilder<bool>(
+          valueListenable: payload.isLibraryDragging,
+          child: MouseRegion(cursor: SystemMouseCursors.grab, child: card),
+          builder: (context, isDragging, child) => AnimatedScale(
+            scale: isDragging ? 0.96 : 1.0,
+            duration: const Duration(milliseconds: 130),
+            curve: Curves.easeOutCubic,
+            child: AnimatedOpacity(
+              opacity: isDragging ? 0.48 : 1.0,
+              duration: const Duration(milliseconds: 100),
+              child: child,
+            ),
+          ),
+        ),
       ),
-      childWhenDragging: Opacity(opacity: 0.38, child: card),
-      child: card,
     );
   }
 }

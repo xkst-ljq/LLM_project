@@ -34,7 +34,24 @@ part 'painters.dart';
 class DragPayload {
   final UIModule? module;
   final UIComposite? composite;
-  DragPayload({this.module, this.composite});
+
+  /// 按下点相对于原组件真实尺寸的比例锚点。
+  /// 进入画布后以它维持“按住哪里，哪里就跟随指针”。
+  Offset anchorFraction;
+  String? spawnedElementId;
+  int? pointerId;
+
+  /// 统一放置状态机直接记录的原始全局指针坐标。
+  Offset? lastPointerGlobalPosition;
+
+  /// 资产库源组件的按住 / 拖动视觉状态。
+  final ValueNotifier<bool> isLibraryDragging = ValueNotifier(false);
+
+  DragPayload({
+    this.module,
+    this.composite,
+    this.anchorFraction = const Offset(0.5, 0.5),
+  });
 }
 
 class UIStudioPage extends StatefulWidget {
@@ -56,6 +73,8 @@ class _UIStudioPageState extends State<UIStudioPage>
   Offset _rotationCenter = Offset.zero;
   double _startHandleAngle = 0.0;
   double _startRotation = 0.0;
+  final Set<String> _fineTuneOpenIds = <String>{};
+  Offset _lastCanvasTapGlobalPosition = Offset.zero;
 
   @override
   void initState() {
@@ -90,36 +109,17 @@ class _UIStudioPageState extends State<UIStudioPage>
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFF6F6F9),
-        body: Stack(
-          children: [
+        body: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerMove: _handleLibraryPlacementPointerMove,
+          onPointerUp: _finishLibraryPlacementPointer,
+          onPointerCancel: _finishLibraryPlacementPointer,
+          child: Stack(
+            children: [
             // ===== 1. 无限画布 =====
             Positioned.fill(
               child: DragTarget<DragPayload>(
                 key: _canvasDropKey,
-                onAcceptWithDetails: (details) {
-                  final box = _canvasDropKey.currentContext?.findRenderObject()
-                  as RenderBox?;
-                  if (box == null) return;
-                  final local = box.globalToLocal(details.offset);
-                  final payload = details.data;
-                  final Size payloadSize;
-                  if (payload.module != null) {
-                    payloadSize = _initialSizeForModule(payload.module!);
-                  } else if (payload.composite != null) {
-                    payloadSize = _compositeBounds(payload.composite!) ??
-                        const Size(200, 120);
-                  } else {
-                    payloadSize = const Size(150, 68);
-                  }
-                  final canvasOffset = local -
-                      _workspaceOffset -
-                      Offset(payloadSize.width / 2, payloadSize.height / 2);
-                  if (payload.module != null) {
-                    _addElementAt(payload.module!, canvasOffset);
-                  } else if (payload.composite != null) {
-                    _addCompositeAt(payload.composite!, canvasOffset);
-                  }
-                },
                 builder: (context, candidateData, rejectedData) {
                   return Listener(
                     behavior: HitTestBehavior.translucent,
@@ -142,10 +142,15 @@ class _UIStudioPageState extends State<UIStudioPage>
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onPanUpdate: (details) {
-                        if (_isDraggingConnection || _isPreviewMode) return;
+                        if (_isDraggingConnection) return;
                         setState(() => _workspaceOffset += details.delta);
                       },
+                      onTapDown: (details) => _lastCanvasTapGlobalPosition = details.globalPosition,
                       onTap: () {
+                        if (_pendingPaste != null) {
+                          _pasteClipboardAt(_lastCanvasTapGlobalPosition);
+                          return;
+                        }
                         if (_isLinkingMode) {
                           setState(() => _isLinkingMode = false);
                         } else {
@@ -157,7 +162,9 @@ class _UIStudioPageState extends State<UIStudioPage>
                           isStudioCreationMode: !_isPreviewMode,
                           selectedElementId: _isPreviewMode ? null : _selectedTransformationId,
                           child: CustomPaint(
-                            painter: StudioWarmGridPainter(_workspaceOffset),
+                            painter: _isPreviewMode
+                                ? const _PreviewBlankPainter()
+                                : StudioWarmGridPainter(_workspaceOffset),
                             child: Stack(
                               clipBehavior: Clip.none,
                               children: [
@@ -197,64 +204,42 @@ class _UIStudioPageState extends State<UIStudioPage>
 
             // ===== 2. 左上角返回 & 模式切换 =====
             Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
+              top: MediaQuery.of(context).padding.top + 4,
               left: 16,
-              child: Row(
-                children: [
-                  _buildGlassIconButton(
-                    icon: Icons.reply_rounded,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    style: _glassButtonStyle,
-                    icon: Icon(_isPreviewMode ? Icons.edit_rounded : Icons.remove_red_eye_rounded, size: 18),
-                    label: Text(
-                      _isPreviewMode ? '退出预览' : '模拟预览',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
+              child: _isPreviewMode
+                  ? FilledButton.icon(
+                      style: _glassButtonStyle,
+                      icon: const Icon(Icons.close_fullscreen_rounded, size: 18),
+                      label: const Text(
+                        '退出预览',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
+                      onPressed: _togglePreviewMode,
+                    )
+                  : Row(
+                      children: [
+                        _buildGlassIconButton(
+                          icon: Icons.reply_rounded,
+                          onTap: () => Navigator.pop(context),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          style: _glassButtonStyle,
+                          icon: const Icon(Icons.remove_red_eye_rounded, size: 18),
+                          label: const Text(
+                            '模拟预览',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          onPressed: _togglePreviewMode,
+                        ),
+                      ],
                     ),
-                    onPressed: _togglePreviewMode,
-                  ),
-                ],
-              ),
             ),
 
-            if (_isPreviewMode)
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 16,
-                left: 210,
-                right: 90,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00ACC1),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 3)),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.visibility, size: 14, color: Colors.white),
-                      const SizedBox(width: 6),
-                      const Expanded(
-                        child: Text(
-                          '👁 模拟预览中 · 位置已锁定 · 所有工作区控件可直接操作',
-                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
             // ===== 3. 右上角控制 =====
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
+            if (!_isPreviewMode)
+              Positioned(
+              top: MediaQuery.of(context).padding.top + 4,
               right: 16,
               child: FilledButton.icon(
                 style: _glassButtonStyle,
@@ -270,13 +255,112 @@ class _UIStudioPageState extends State<UIStudioPage>
               ),
             ),
 
-            // ===== 4. 选中元素操作按钮 =====
-            if (_selectedTransformationId != null)
+            // ===== 画布级历史与清空（仅未选中元素时显示） =====
+            if (!_isPreviewMode && _selectedTransformationId == null)
               Positioned(
-                top: MediaQuery.of(context).padding.top + 68,
+                top: MediaQuery.of(context).padding.top + 112,
+                right: 16,
+                child: _buildFloatingObjectAction(
+                  icon: Icons.delete_sweep_rounded,
+                  background: const Color(0xFF8B4B4B),
+                  foreground: Colors.white,
+                  onTap: _showClearWorkspaceDialog,
+                ),
+              ),
+            if (!_isPreviewMode && _selectedTransformationId == null)
+              Positioned(
+                right: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 84,
+                child: Row(
+                  children: [
+                    _buildFloatingObjectAction(
+                      icon: Icons.undo_rounded,
+                      background: const Color(0xFF37474F),
+                      foreground: Colors.white,
+                      onTap: _undoWorkspace,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFloatingObjectAction(
+                      icon: Icons.redo_rounded,
+                      background: const Color(0xFF37474F),
+                      foreground: Colors.white,
+                      onTap: _redoWorkspace,
+                    ),
+                  ],
+                ),
+              ),
+
+            // ===== 4. 选中元素操作按钮 =====
+            if (!_isPreviewMode && _selectedTransformationId != null)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 112,
                 right: 16,
                 child: Column(
                   children: [
+                    if (_currentElements.any((element) =>
+                        element.id == _selectedTransformationId &&
+                        _canUseBackgroundRuntimePlacement(element))) ...[
+                      _buildFloatingObjectAction(
+                        icon: _currentElements.any((element) =>
+                                element.id == _selectedTransformationId &&
+                                element.module?.properties['runtimePlacement'] == 'background')
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        background: const Color(0xFF546E7A),
+                        foreground: Colors.white,
+                        onTap: _toggleSelectedRuntimePlacement,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    _buildFloatingObjectAction(
+                      icon: Icons.straighten_rounded,
+                      background: const Color(0xFF37474F), foreground: Colors.white,
+                      onTap: () { final items=_currentElements.where((e)=>e.id==_selectedTransformationId).toList(); if(items.isNotEmpty) _showGeometryEditorDialog(items.first); },
+                    ),
+                    const SizedBox(height: 8),
+                    if (_currentElements.any((element) => element.id == _selectedTransformationId && !_isGeometryLocked(element))) ...[
+                      _buildFloatingObjectAction(
+                        icon: Icons.control_camera_rounded,
+                        background: const Color(0xFF37474F), foreground: Colors.white,
+                        onTap: () => setState(() { final id=_selectedTransformationId; if(id!=null) _fineTuneOpenIds.contains(id) ? _fineTuneOpenIds.remove(id) : _fineTuneOpenIds.add(id); }),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    _buildFloatingObjectAction(
+                      icon: Icons.tune_rounded,
+                      background: const Color(0xFF37474F),
+                      foreground: Colors.white,
+                      onTap: () {
+                        final element = _currentElements.where((item) =>
+                            item.id == _selectedTransformationId).toList();
+                        if (element.isNotEmpty) {
+                          _showTailoredPrecisionEditorDialog(element.first);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    _buildFloatingObjectAction(
+                      iconWidget: _buildLockModeGlyph(
+                        sealed: true,
+                        locked: _currentElements.any((element) =>
+                            element.id == _selectedTransformationId && element.sealed),
+                      ),
+                      background: const Color(0xFFFFB300),
+                      foreground: const Color(0xFF424242),
+                      onTap: _toggleSelectedSeal,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildFloatingObjectAction(
+                      iconWidget: _buildLockModeGlyph(
+                        sealed: false,
+                        locked: _currentElements.any((element) =>
+                            element.id == _selectedTransformationId && element.layoutLocked),
+                      ),
+                      background: const Color(0xFF4FC3F7),
+                      foreground: const Color(0xFF424242),
+                      onTap: _toggleSelectedLayoutLock,
+                    ),
+                    const SizedBox(height: 8),
                     _buildFloatingObjectAction(
                       icon: Icons.keyboard_arrow_up_rounded,
                       background: const Color(0xFF111116),
@@ -315,62 +399,122 @@ class _UIStudioPageState extends State<UIStudioPage>
               ),
 
             // ===== 5. 抽屉 =====
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-              right: _showConstructionManager ? 0 : -260,
+            if (!_isPreviewMode)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOut,
+                right: _showConstructionManager ? 0 : -260,
               top: 120,
               bottom: 120,
               width: 240,
               child: _buildAtomicConstructionDrawer(),
             ),
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-              left: _showLeftDrawer ? 0 : -150,
-              top: 100,
+            if (!_isPreviewMode)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOut,
+                left: _showLeftDrawer ? 0 : -150,
+              top: MediaQuery.of(context).padding.top + 164,
               bottom: 100,
               width: 150,
               child: _buildLeftCompactAssetPreviewDrawer(),
             ),
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-              right: _showRightDrawer ? 0 : -rightDrawerWidth,
-              top: 120,
+            if (!_isPreviewMode)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOut,
+                right: _showRightDrawer ? 0 : -rightDrawerWidth,
+              top: MediaQuery.of(context).padding.top + 164,
               bottom: 120,
               width: rightDrawerWidth,
               child: _buildRightCompletedAssetsDrawer(),
             ),
 
             // ===== 6. 侧边展开按钮 =====
-            if (!_showLeftDrawer)
+            if (!_isPreviewMode)
               Positioned(
                 left: 0,
-                top: MediaQuery.of(context).size.height / 2 - 24,
+                top: MediaQuery.of(context).padding.top + 54,
                 child: _buildEdgeOpenButton(
-                  icon: Icons.arrow_forward_ios,
-                  onTap: () => setState(() => _showLeftDrawer = true),
+                  icon: _showLeftDrawer ? Icons.arrow_back_ios : Icons.arrow_forward_ios,
+                  onTap: () => setState(() => _showLeftDrawer = !_showLeftDrawer),
                   left: true,
                 ),
               ),
-            if (!_showRightDrawer &&
-                !_showConstructionManager)
+            if (!_isPreviewMode && !_showConstructionManager)
               Positioned(
                 right: 0,
-                top: MediaQuery.of(context).size.height / 2 - 24,
+                top: MediaQuery.of(context).padding.top + 54,
                 child: _buildEdgeOpenButton(
-                  icon: Icons.arrow_back_ios,
-                  onTap: () => setState(() => _showRightDrawer = true),
+                  icon: _showRightDrawer ? Icons.arrow_forward_ios : Icons.arrow_back_ios,
+                  onTap: () => setState(() => _showRightDrawer = !_showRightDrawer),
                   left: false,
                 ),
               ),
 
+            // ===== 左下编辑工具 =====
+            if (!_isPreviewMode)
+              Positioned(
+                left: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 24,
+                child: _pendingPaste != null
+                    ? Row(children: [
+                        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12), decoration: BoxDecoration(color: const Color(0xFF37474F), borderRadius: BorderRadius.circular(18)), child: Text('正在放置「${_pendingPaste!.label}」', style: const TextStyle(color: Colors.white, fontSize: 11))),
+                        const SizedBox(width: 8),
+                        _buildFloatingObjectAction(icon: Icons.close_rounded, background: const Color(0xFF8B4B4B), foreground: Colors.white, onTap: () => setState(() => _pendingPaste = null)),
+                      ])
+                    : _isMultiDeleteMode
+                        ? Row(children: [
+                            Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12), decoration: BoxDecoration(color: const Color(0xFF8B4B4B), borderRadius: BorderRadius.circular(18)), child: Text('已选 ${_pendingDeleteIds.length} 项', style: const TextStyle(color: Colors.white, fontSize: 11))),
+                            const SizedBox(width: 8),
+                            _buildFloatingObjectAction(icon: Icons.close_rounded, background: const Color(0xFF546E7A), foreground: Colors.white, onTap: _toggleMultiDeleteMode),
+                            const SizedBox(width: 8),
+                            _buildFloatingObjectAction(icon: Icons.delete_rounded, background: const Color(0xFF8B4B4B), foreground: Colors.white, onTap: _confirmPendingDelete),
+                          ])
+                        : Row(children: [
+                            _buildFloatingObjectAction(icon: Icons.content_copy_rounded, background: const Color(0xFF37474F), foreground: Colors.white, onTap: _copySelectedToClipboard),
+                            if (_selectedTransformationId == null) ...[
+                              const SizedBox(width: 8),
+                              _buildFloatingObjectAction(icon: Icons.playlist_remove_rounded, background: const Color(0xFF8B4B4B), foreground: Colors.white, onTap: _toggleMultiDeleteMode),
+                            ],
+                          ]),
+              ),
+
+            // ===== 固定精调手柄 =====
+            if (!_isPreviewMode && _selectedTransformationId != null && _fineTuneOpenIds.contains(_selectedTransformationId))
+              Positioned(
+                // 3×3 标准 D-Pad：总宽 40×3 + 16×2 = 152，严格以屏幕中轴居中。
+                left: MediaQuery.of(context).size.width / 2 - 76,
+                bottom: MediaQuery.of(context).padding.bottom + 24,
+                child: Column(children: [
+                  Row(children: [
+                    const SizedBox(width: 56),
+                    _buildFineTuneButton(Icons.keyboard_arrow_up_rounded, () => _nudgeElement(_selectedTransformationId!, const Offset(0, -1))),
+                    const SizedBox(width: 56),
+                  ]),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    _buildFineTuneButton(Icons.keyboard_arrow_left_rounded, () => _nudgeElement(_selectedTransformationId!, const Offset(-1, 0))),
+                    const SizedBox(width: 16),
+                    Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFF546E7A), borderRadius: BorderRadius.circular(10))),
+                    const SizedBox(width: 16),
+                    _buildFineTuneButton(Icons.keyboard_arrow_right_rounded, () => _nudgeElement(_selectedTransformationId!, const Offset(1, 0))),
+                  ]),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    const SizedBox(width: 56),
+                    _buildFineTuneButton(Icons.keyboard_arrow_down_rounded, () => _nudgeElement(_selectedTransformationId!, const Offset(0, 1))),
+                    const SizedBox(width: 56),
+                  ]),
+                ]),
+              ),
+
             // ===== 7. 保存按钮 =====
-            Positioned(
-              right: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 24,
-              child: FilledButton.icon(
+            if (!_isPreviewMode)
+              Positioned(
+                right: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 24,
+                child: FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFFF4081),
                   foregroundColor: Colors.white,
@@ -392,7 +536,8 @@ class _UIStudioPageState extends State<UIStudioPage>
                 onPressed: _showSaveMenu,
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -438,6 +583,17 @@ class _UIStudioPageState extends State<UIStudioPage>
         clipBehavior: Clip.none,
         children: [
           UIRenderer.render(nodeCtx, elNoRot),
+          if (_isMultiDeleteMode && _pendingDeleteIds.contains(el.id))
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE53935), width: 2),
+                    color: const Color(0xFFE53935).withValues(alpha: 0.14),
+                  ),
+                ),
+              ),
+            ),
           if (isTransformationActive && !isLinker)
             Positioned.fill(
               child: IgnorePointer(
@@ -526,18 +682,15 @@ class _UIStudioPageState extends State<UIStudioPage>
                         setState(() => _selectedTransformationId = el.id);
                         _showLinkerSchemeQuickSelectDialog(el);
                       },
-                      onLongPress: () {
-                        setState(() => _selectedTransformationId = el.id);
-                        _showTailoredPrecisionEditorDialog(el);
-                      },
                       onPanStart: (details) {
+                        if (_isGeometryLocked(el)) return;
                         if (_isDraggingConnection) _cancelConnection();
                         _startTouchScreenPos = details.globalPosition;
                         _startTouchElemOffset = el.offset;
                         setState(() => _selectedTransformationId = el.id);
                       },
                       onPanUpdate: (details) {
-                        if (_isDraggingConnection) return;
+                        if (_isDraggingConnection || _isGeometryLocked(el)) return;
                         final delta = details.globalPosition - _startTouchScreenPos;
                         setState(() {
                           final idx = _currentElements.indexWhere((e) => e.id == el.id);
@@ -590,23 +743,21 @@ class _UIStudioPageState extends State<UIStudioPage>
     } else {
       touchableContent = GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _selectedTransformationId = el.id),
+        onTap: () {
+          if (_isMultiDeleteMode) { _togglePendingDelete(el); } else { setState(() => _selectedTransformationId = el.id); }
+        },
         onDoubleTap: () {
           setState(() => _selectedTransformationId = el.id);
           _showTailoredPrecisionEditorDialog(el);
         },
-        onLongPress: () {
-          setState(() => _selectedTransformationId = el.id);
-          _showTailoredPrecisionEditorDialog(el);
-        },
         onPanStart: (details) {
-          if (_isDraggingConnection) return;
+          if (_isDraggingConnection || _isGeometryLocked(el)) return;
           _startTouchScreenPos = details.globalPosition;
           _startTouchElemOffset = el.offset;
           setState(() => _selectedTransformationId = el.id);
         },
         onPanUpdate: (details) {
-          if (_isDraggingConnection) return;
+          if (_isDraggingConnection || _isGeometryLocked(el)) return;
           final delta = details.globalPosition - _startTouchScreenPos;
           setState(() {
             final idx = _currentElements.indexWhere((e) => e.id == el.id);
@@ -628,12 +779,27 @@ class _UIStudioPageState extends State<UIStudioPage>
     final stackChildren = <Widget>[
       Positioned(left: p, top: p, child: touchableContent),
       layerBadge,
+      if (el.module?.properties['runtimePlacement'] == 'background')
+        Positioned(
+          left: p + 4,
+          bottom: p + 3,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF546E7A),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: const Text('后台', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ),
     ];
 
     final bool isMathNode = el.module?.type == 'math_node';
     final bool isIndicator = el.module?.type == 'indicator';
     final bool isTimer = el.module?.type == 'timer';
-    if (isTransformationActive && !isLinker && !isMathNode && !isIndicator && !isTimer) {
+    if (isTransformationActive && !_isGeometryLocked(el) && !isLinker && !isMathNode && !isIndicator && !isTimer) {
       final bool isRotateMode = _elementRotateModes.contains(el.id);
       stackChildren.add(
         Positioned(
@@ -696,8 +862,11 @@ class _UIStudioPageState extends State<UIStudioPage>
               } else {
                 final dx = details.globalPosition.dx - _startTouchGlobalPos.dx;
                 final dy = details.globalPosition.dy - _startTouchGlobalPos.dy;
-                final newWidth = (_startTouchWidth + dx).clamp(40.0, 600.0);
-                final newHeight = (_startTouchHeight + dy).clamp(20.0, 400.0);
+                final isProgress = el.module?.type == 'progress';
+                final isSurface = const {'surface', 'surface_art', 'primitive_art', 'base_box'}
+                    .contains(el.module?.type);
+                final newWidth = (_startTouchWidth + dx).clamp(isProgress ? 12.0 : (isSurface ? 20.0 : 40.0), isSurface ? 4096.0 : 600.0);
+                final newHeight = (_startTouchHeight + dy).clamp(isProgress ? 6.0 : 20.0, isSurface ? 4096.0 : 400.0);
                 setState(() {
                   final idx = _currentElements.indexWhere((e) => e.id == el.id);
                   if (idx != -1) {
@@ -742,6 +911,7 @@ class _UIStudioPageState extends State<UIStudioPage>
       );
     }
 
+
     Widget rootTree = SizedBox(
       width: el.size.width + p * 2,
       height: el.size.height + p * 2,
@@ -751,22 +921,89 @@ class _UIStudioPageState extends State<UIStudioPage>
       ),
     );
 
-    return Transform.rotate(
-      angle: el.rotation * math.pi / 180.0,
-      alignment: Alignment.center,
-      child: rootTree,
+    final shouldPassThrough = el.sealed ||
+        (el.layoutLocked && !isLinker && !_isMultiDeleteMode);
+    final transformedNode = IgnorePointer(
+      ignoring: shouldPassThrough,
+      child: Transform.rotate(
+        angle: el.rotation * math.pi / 180.0,
+        alignment: Alignment.center,
+        child: rootTree,
+      ),
+    );
+
+    // 锁定主体保持命中穿透；右上角只保留一个极小的解锁入口。
+    // 它不拦截元素主体区域，因此仍可操作下层元素与连线。
+    if (!el.layoutLocked && !el.sealed) return transformedNode;
+    return SizedBox(
+      width: el.size.width + p * 2,
+      height: el.size.height + p * 2,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(child: transformedNode),
+          Positioned(
+            right: p + 2,
+            top: p + 2,
+            child: Material(
+              color: el.sealed ? const Color(0xFFFFB300) : const Color(0xFF4FC3F7),
+              shape: const CircleBorder(),
+              elevation: 2,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => setState(() => _selectedTransformationId = el.id),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: _buildLockModeGlyph(sealed: el.sealed, locked: true, size: 16),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   // ============================================================
   //  小型 UI 辅助组件
   // ============================================================
+  void _nudgeElement(String id, Offset delta) {
+    final index = _currentElements.indexWhere((element) => element.id == id);
+    if (index == -1 || _isGeometryLocked(_currentElements[index])) return;
+    setState(() => _currentElements[index] = _currentElements[index]
+        .copyWith(offset: _currentElements[index].offset + delta));
+    _autoSave();
+  }
+
+  Widget _buildFineTuneButton(IconData icon, VoidCallback onTap) => Material(
+    color: const Color(0xFF37474F), shape: const CircleBorder(), elevation: 3,
+    child: InkWell(borderRadius: BorderRadius.circular(20), onTap: onTap,
+      child: SizedBox(width: 40, height: 40, child: Icon(icon, color: Colors.white, size: 28))),
+  );
+
+  Widget _buildLockModeGlyph({
+    required bool sealed,
+    required bool locked,
+    double size = 20,
+  }) {
+    return Icon(
+      locked
+          ? Icons.lock_rounded
+          : (sealed ? Icons.brightness_1 : Icons.brightness_2),
+      size: locked ? size * 0.74 : size,
+      color: const Color(0xFF424242),
+    );
+  }
+
+
   Widget _buildFloatingObjectAction({
-    required IconData icon,
+    IconData? icon,
+    Widget? iconWidget,
     required Color background,
     required Color foreground,
     required VoidCallback onTap,
   }) {
+    assert(icon != null || iconWidget != null);
     return Material(
       color: background,
       shape: const CircleBorder(),
@@ -777,7 +1014,7 @@ class _UIStudioPageState extends State<UIStudioPage>
         child: SizedBox(
           width: 42,
           height: 42,
-          child: Icon(icon, color: foreground, size: 24),
+          child: iconWidget ?? Icon(icon, color: foreground, size: 24),
         ),
       ),
     );
@@ -852,4 +1089,13 @@ class _UIStudioPageState extends State<UIStudioPage>
       ),
     );
   }
+}
+
+// Clipboard entry is declared in the UI Studio library so logic/drawers can share it.
+class StudioClipboardEntry {
+  final String label;
+  final List<Map<String, dynamic>> elements;
+  final DateTime createdAt;
+  StudioClipboardEntry({required this.label, required this.elements})
+      : createdAt = DateTime.now();
 }

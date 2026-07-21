@@ -249,12 +249,31 @@ class LinkerService {
         final bool isGestureEvent = event.eventType == 'tap' ||
             event.eventType == 'double_tap' ||
             event.eventType == 'long_press';
+        final bool isImmediateVisualEvent = event.eventType == 'tap_down';
+        final bool isSurfaceVisualScheme = scheme == 'click_to_surface_press' ||
+            scheme == 'click_to_surface_ripple';
 
         bool isMatch = false;
         if (srcId == event.sourceModuleId) {
-          if (isGestureEvent) {
-            isMatch = (srcPort == event.eventType ||
-                (event.eventType == 'tap' && (srcPort == 'output' || srcPort == 'current' || srcPort == 'tap')));
+          if (isImmediateVisualEvent) {
+            // `tap_down` 只负责消除 Surface 视觉反馈的双击等待延迟，
+            // 绝不可提前触发开关、计时器等单击语义动作。
+            isMatch = isSurfaceVisualScheme &&
+                (srcPort == 'output' || srcPort == 'current' || srcPort == 'tap');
+          } else if (isGestureEvent) {
+            final isGenericTapPort = srcPort == 'output' ||
+                srcPort == 'current' ||
+                srcPort == 'tap';
+            // Surface 动画已经由同一次按下的 tap_down 即刻完成；
+            // 跳过随后延迟抵达的 tap，避免重复动画或重复消耗脉冲限额。
+            if (event.eventType == 'tap' &&
+                isSurfaceVisualScheme &&
+                isGenericTapPort) {
+              isMatch = false;
+            } else {
+              isMatch = srcPort == event.eventType ||
+                  (event.eventType == 'tap' && isGenericTapPort);
+            }
           } else {
             isMatch = true;
           }

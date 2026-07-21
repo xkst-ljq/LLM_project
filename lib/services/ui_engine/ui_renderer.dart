@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import 'linker_event_bus.dart';
+import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
 import 'select_option.dart';
 import 'ui_models.dart';
@@ -26,6 +27,13 @@ class UIRenderer {
     if (!isStudio &&
         (!controls.visible ||
             !LinkerService.isElementVisibleInSurfaceHierarchy(element))) {
+      return const SizedBox.shrink();
+    }
+    // 后台逻辑模式：编辑器中保留节点与通路，预览/运行时不渲染也不接收用户交互。
+    const backgroundCapableTypes = {'text', 'switch', 'progress', 'indicator', 'input'};
+    if (!isStudio &&
+        backgroundCapableTypes.contains(module?.type) &&
+        module?.properties['runtimePlacement'] == 'background') {
       return const SizedBox.shrink();
     }
 
@@ -720,17 +728,9 @@ class UIRenderer {
       return childWidget;
     }
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        LinkerEventBus().emit(element.id, 'tap');
-      },
-      onDoubleTap: () {
-        LinkerEventBus().emit(element.id, 'double_tap');
-      },
-      onLongPress: () {
-        LinkerEventBus().emit(element.id, 'long_press');
-      },
+    return _ButtonGestureWidget(
+      elementId: element.id,
+      module: module,
       child: !showOnRuntime ? const SizedBox.expand() : childWidget,
     );
   }
@@ -836,17 +836,19 @@ class UIRenderer {
         placeholder = '请输入${linkedVal.toString().trim()}...';
       }
     }
+    final visualMode = module.properties['visualMode']?.toString() ?? 'filled';
+    final placeholderColor = Color((module.properties['placeholderColor'] as num?)?.toInt() ?? 0xFF888896);
     final displayBox = Container(
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: module.color.withValues(alpha: module.opacity * 0.12),
+        color: visualMode == 'filled' ? module.color.withValues(alpha: module.opacity * 0.12) : Colors.transparent,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: module.color.withValues(alpha: 0.38), width: 1),
+        border: visualMode == 'transparent' ? null : Border.all(color: module.color.withValues(alpha: visualMode == 'outline' ? 0.8 : 0.38), width: visualMode == 'outline' ? 1.4 : 1),
       ),
       child: Text(
         placeholder,
-        style: TextStyle(color: module.color.withValues(alpha: 0.75), fontSize: 13),
+        style: TextStyle(color: placeholderColor, fontSize: 13),
         overflow: TextOverflow.ellipsis,
       ),
     );
@@ -1007,6 +1009,35 @@ class UIRenderer {
     );
   }
 
+  static String _linkerDisplayPort(String port) {
+    const labels = {'input':'输入','output':'输出','current':'当前值','currentVal':'当前值','currentValue':'当前值','value':'开关值','tap':'单击','double_tap':'双击','long_press':'长按','data_in':'数值输入','data_out':'计算结果','gate_in':'计算触发','timer_tick':'定时触发','tickCount':'触发次数','committedValue':'已提交值'};
+    return labels[port] ?? port;
+  }
+
+  static String _linkerDisplayScheme(String scheme) {
+    const labels = <String, String>{
+      'click_to_surface_press': '按压反馈', 'click_to_surface_ripple': '涟漪反馈',
+      'click_to_switch_toggle': '切换开关', 'click_to_switch_set_true': '开启开关',
+      'click_to_switch_set_false': '关闭开关', 'click_to_input_clear': '清空输入',
+      'click_to_slider_reset': '重置滑块', 'click_to_timer_toggle': '切换定时器',
+      'click_to_timer_reset': '重置定时器', 'click_to_math_trigger': '触发计算',
+      'timer_tick_to_math_trigger': '定时触发计算',
+      'timer_tick_to_progress_increment': '定时增加进度', 'timer_tick_to_progress_decrement': '定时减少进度',
+      'value_to_math_param': '注入计算参数', 'progress_to_math_param': '进度注入参数',
+      'text_extract_to_math_param': '文本取数计算', 'slider_commit_to_math_param': '滑块提交参数',
+      'input_live_to_text': '实时同步文本', 'input_commit_to_text': '提交同步文本',
+      'input_submit_to_text_clear': '提交后清空', 'input_value_to_select_match': '匹配下拉选项',
+      'input_value_to_select_filter': '过滤下拉选项',
+      'indicator_color_to_enabled': '颜色控制可交互', 'indicator_color_to_visible': '颜色控制显示',
+      'indicator_color_to_locked': '颜色控制运行锁定', 'indicator_color_to_frozen': '颜色控制数值冻结',
+      'event_to_indicator': '事件高亮指示灯',
+    };
+    if (labels.containsKey(scheme)) return labels[scheme]!;
+    if (scheme == '未配置' || scheme == '未连接') return scheme;
+    final definition = LinkerMatrixEngine.getSchemeDefinition(scheme);
+    return definition?.label.split(' (').first ?? '已配置通路';
+  }
+
   /// 联动器节点渲染（MVP）
   /// 样式：圆角矩形 + 左右端口原点（垂直居中）+ 端口旁标签 + 中间传输方案
   /// 端口已放大并移至中点，方便后续拖拽接线
@@ -1018,9 +1049,10 @@ class UIRenderer {
     final bool hasSource = sourceId.trim().isNotEmpty && sourceId != 'null' && sourceId != '—';
     final bool hasTarget = targetId.trim().isNotEmpty && targetId != 'null' && targetId != '—';
 
-    final sourcePort = hasSource ? (linkerData['sourcePort']?.toString() ?? '—') : '';
-    final targetPort = hasTarget ? (linkerData['targetPort']?.toString() ?? '—') : '';
+    final sourcePort = hasSource ? _linkerDisplayPort(linkerData['sourcePort']?.toString() ?? '—') : '';
+    final targetPort = hasTarget ? _linkerDisplayPort(linkerData['targetPort']?.toString() ?? '—') : '';
     final scheme = (hasSource && hasTarget) ? (linkerData['scheme']?.toString() ?? '未配置') : '未连接';
+    final displayScheme = _linkerDisplayScheme(scheme);
     final bool isEnabled = hasSource &&
         hasTarget &&
         linkerData['enabled'] == true &&
@@ -1056,7 +1088,7 @@ class UIRenderer {
           if (sourcePort.isNotEmpty && sourcePort != '—')
             Positioned(
               left: 8,
-              top: 6,
+              top: 2,
               child: Text(
                 sourcePort,
                 style: const TextStyle(fontSize: 9, color: Color(0xFF444455), fontWeight: FontWeight.w700),
@@ -1089,7 +1121,7 @@ class UIRenderer {
           if (targetPort.isNotEmpty && targetPort != '—')
             Positioned(
               right: 8,
-              top: 6,
+              top: 2,
               child: Text(
                 targetPort,
                 style: const TextStyle(fontSize: 9, color: Color(0xFF444455), fontWeight: FontWeight.w700),
@@ -1121,9 +1153,9 @@ class UIRenderer {
           // 中间传输方案
           Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
               child: Text(
-                scheme,
+                displayScheme,
                 style: TextStyle(
                   fontSize: 11,
                   color: statusColor,
@@ -1131,7 +1163,7 @@ class UIRenderer {
                 ),
                 textAlign: TextAlign.center,
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                overflow: TextOverflow.visible,
               ),
             ),
           ),
@@ -1223,45 +1255,52 @@ class UIRenderer {
               ),
             ),
           ),
-          // 左侧端口 Data IN (青色)
+          // 三个端口保持同一圆点外观；说明改为悬停提示，避免侵占公式区域。
           Positioned(
             left: 4,
             top: (size.height - portSize) / 2,
-            child: Container(
-              width: portSize,
-              height: portSize,
-              decoration: BoxDecoration(
-                color: const Color(0xFF00ACC1),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
+            child: Tooltip(
+              message: '数值输入：为参数 A / B / C 提供数值',
+              child: Container(
+                width: portSize,
+                height: portSize,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00ACC1),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
               ),
             ),
           ),
-          // 右侧端口 Data OUT (绿色)
           Positioned(
             right: 4,
             top: (size.height - portSize) / 2,
-            child: Container(
-              width: portSize,
-              height: portSize,
-              decoration: BoxDecoration(
-                color: const Color(0xFF66BB6A),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
+            child: Tooltip(
+              message: '计算结果输出',
+              child: Container(
+                width: portSize,
+                height: portSize,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF66BB6A),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
               ),
             ),
           ),
-          // 顶部使能控制孔 Gate IN (金色)
           Positioned(
             top: 2.5,
             left: (size.width - portSize) / 2,
-            child: Container(
-              width: portSize,
-              height: portSize,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFB300),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
+            child: Tooltip(
+              message: '计算触发：仅接收 Button、Timer 等控制通路',
+              child: Container(
+                width: portSize,
+                height: portSize,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB300),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
               ),
             ),
           ),
@@ -1502,6 +1541,115 @@ class UIRenderer {
     return _TimerBlockWidget(element: element, module: module, size: size, isStudio: isStudio);
   }
 
+}
+
+/// Button 的运行时手势分发器。
+///
+/// 单击的语义事件需要等待双击判定窗口结束，避免一次双击同时触发两次单击；
+/// 但按下瞬间会立即发出仅供 Surface 视觉反馈使用的 `tap_down` 脉冲，
+/// 因此按压/涟漪动画不会被双击判定窗口拖慢。
+class _ButtonGestureWidget extends StatefulWidget {
+  final String elementId;
+  final UIModule module;
+  final Widget child;
+
+  const _ButtonGestureWidget({
+    required this.elementId,
+    required this.module,
+    required this.child,
+  });
+
+  @override
+  State<_ButtonGestureWidget> createState() => _ButtonGestureWidgetState();
+}
+
+class _ButtonGestureWidgetState extends State<_ButtonGestureWidget> {
+  Timer? _doubleTapTimer;
+  Timer? _longPressTimer;
+  int? _activePointer;
+  bool _longPressFired = false;
+  bool _waitingForSecondTap = false;
+
+  int get _doubleTapIntervalMs =>
+      ((widget.module.properties['doubleTapIntervalMs'] as num?)?.toInt() ?? 300)
+          .clamp(100, 1000)
+          .toInt();
+
+  int get _longPressThresholdMs =>
+      ((widget.module.properties['longPressThresholdMs'] as num?)?.toInt() ??
+              500)
+          .clamp(150, 3000)
+          .toInt();
+
+  void _onPointerDown(PointerDownEvent event) {
+    // 一个按钮只跟踪首个有效指针，避免多指产生重复语义事件。
+    if (_activePointer != null) return;
+    _activePointer = event.pointer;
+    _longPressFired = false;
+
+    // 视觉脉冲不等待双击判定：LinkerService 仅允许其驱动 Surface 动画。
+    LinkerEventBus().emit(widget.elementId, 'tap_down');
+    _longPressTimer = Timer(
+      Duration(milliseconds: _longPressThresholdMs),
+      () {
+        if (!mounted || _activePointer == null) return;
+        _longPressFired = true;
+        _doubleTapTimer?.cancel();
+        _doubleTapTimer = null;
+        _waitingForSecondTap = false;
+        LinkerEventBus().emit(widget.elementId, 'long_press');
+      },
+    );
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _activePointer) return;
+    _activePointer = null;
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+    if (_longPressFired) return;
+
+    if (_waitingForSecondTap) {
+      _doubleTapTimer?.cancel();
+      _doubleTapTimer = null;
+      _waitingForSecondTap = false;
+      LinkerEventBus().emit(widget.elementId, 'double_tap');
+      return;
+    }
+
+    _waitingForSecondTap = true;
+    _doubleTapTimer = Timer(Duration(milliseconds: _doubleTapIntervalMs), () {
+      if (!mounted || !_waitingForSecondTap) return;
+      _waitingForSecondTap = false;
+      _doubleTapTimer = null;
+      LinkerEventBus().emit(widget.elementId, 'tap');
+    });
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _activePointer) return;
+    _activePointer = null;
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _doubleTapTimer?.cancel();
+    _longPressTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _onPointerDown,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: widget.child,
+    );
+  }
 }
 
 /// 运行时输入框：持久化 controller，避免上游刷新时重置光标和输入法编辑状态。
@@ -1815,13 +1963,16 @@ class _InputBlockWidgetState extends State<_InputBlockWidget> {
   @override
   Widget build(BuildContext context) {
     final module = widget.module;
+    final visualMode = module.properties['visualMode']?.toString() ?? 'filled';
+    final placeholderColor = Color((module.properties['placeholderColor'] as num?)?.toInt() ?? 0xFF888896);
+    final inputTextColor = Color((module.properties['inputTextColor'] as num?)?.toInt() ?? 0xFF111116);
     return Container(
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
+        color: visualMode == 'filled' ? Colors.white.withValues(alpha: 0.9) : Colors.transparent,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: module.color.withValues(alpha: 0.5), width: 1),
+        border: visualMode == 'transparent' ? null : Border.all(color: module.color.withValues(alpha: visualMode == 'outline' ? 0.9 : 0.5), width: visualMode == 'outline' ? 1.4 : 1),
       ),
       child: TextField(
         controller: _controller,
@@ -1829,11 +1980,11 @@ class _InputBlockWidgetState extends State<_InputBlockWidget> {
         enabled: widget.controls.enabled,
         readOnly: widget.controls.locked,
         maxLength: (module.properties['maxLength'] as num?)?.toInt(),
-        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+        style: TextStyle(fontSize: 13, color: inputTextColor),
         decoration: InputDecoration(
           border: InputBorder.none,
           hintText: widget.placeholder,
-          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF888896)),
+          hintStyle: TextStyle(fontSize: 12, color: placeholderColor),
           isDense: true,
           contentPadding: EdgeInsets.zero,
           counterText: '',

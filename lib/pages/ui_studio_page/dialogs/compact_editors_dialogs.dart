@@ -1,6 +1,15 @@
 part of '../ui_studio_page.dart';
 
 mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
+  static const _inputColorChoices = [
+    _InputColorChoice('深灰', 0xFF111116), _InputColorChoice('灰色', 0xFF888896),
+    _InputColorChoice('浅灰', 0xFFB8B8C2), _InputColorChoice('白色', 0xFFFFFFFF),
+    _InputColorChoice('黑色', 0xFF000000), _InputColorChoice('浅蓝', 0xFF4FC3F7),
+    _InputColorChoice('深蓝', 0xFF1565C0), _InputColorChoice('紫色', 0xFF7E57C2),
+    _InputColorChoice('粉色', 0xFFFF4081), _InputColorChoice('橙色', 0xFFFF9800),
+    _InputColorChoice('红色', 0xFFE53935), _InputColorChoice('绿色', 0xFF43A047),
+    _InputColorChoice('青色', 0xFF00ACC1),
+  ];
   // ===== 紧凑型数值控件专属规格编辑器 (Progress & Slider) =====
   void _showCompactNumericEditorDialog(UIElement el) {
     if (el.module == null) return;
@@ -440,6 +449,9 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     String placeholder = props['placeholder']?.toString() ?? '请输入...';
     bool required = props['required'] == true;
     int? maxLength = (props['maxLength'] as num?)?.toInt();
+    String visualMode = props['visualMode']?.toString() ?? 'filled';
+    String placeholderColorHex = ((props['placeholderColor'] as num?)?.toInt() ?? 0xFF888896).toRadixString(16).padLeft(8, '0');
+    String inputTextColorHex = ((props['inputTextColor'] as num?)?.toInt() ?? 0xFF111116).toRadixString(16).padLeft(8, '0');
 
     String? linkedSourceText;
     for (final elem in _currentElements) {
@@ -564,6 +576,15 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                           setState(() => syncLivePreview());
                         },
                       ),
+                      const SizedBox(height: 12),
+                      const Text('输入视觉模式', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      DropdownButtonFormField<String>(initialValue: visualMode, decoration: _softInputDecoration(), items: const [DropdownMenuItem(value:'filled',child:Text('填充背景')),DropdownMenuItem(value:'transparent',child:Text('透明无背景')),DropdownMenuItem(value:'outline',child:Text('透明描边'))], onChanged:(v){if(v!=null){visualMode=v;props['visualMode']=v;setState(()=>syncLivePreview());}}),
+                      const SizedBox(height: 8),
+                      const Text('提示文字颜色', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      DropdownButtonFormField<int>(initialValue: int.tryParse(placeholderColorHex, radix: 16), decoration: _softInputDecoration(), items: _inputColorChoices.map((c)=>DropdownMenuItem(value:c.value,child:Row(children:[Container(width:14,height:14,decoration:BoxDecoration(color:Color(c.value),shape:BoxShape.circle)),const SizedBox(width:8),Text(c.label)]))).toList(), onChanged:(v){if(v!=null)props['placeholderColor']=v;}),
+                      const SizedBox(height: 8),
+                      const Text('输入文字颜色', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                      DropdownButtonFormField<int>(initialValue: int.tryParse(inputTextColorHex, radix: 16), decoration: _softInputDecoration(), items: _inputColorChoices.map((c)=>DropdownMenuItem(value:c.value,child:Row(children:[Container(width:14,height:14,decoration:BoxDecoration(color:Color(c.value),shape:BoxShape.circle)),const SizedBox(width:8),Text(c.label)]))).toList(), onChanged:(v){if(v!=null)props['inputTextColor']=v;}),
                       const SizedBox(height: 12),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -2057,7 +2078,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
             ],
             onChanged: (value) {
               if (value == null) return;
-              final targetIndex = _currentElements.indexWhere((element) => element.id == tgtElem!.id);
+              final targetIndex = _currentElements.indexWhere((element) => element.id == tgtElem.id);
               if (targetIndex == -1) return;
               final target = _currentElements[targetIndex];
               final targetProps = Map<String, dynamic>.from(target.module!.properties);
@@ -2085,7 +2106,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
             ],
             onChanged: (value) {
               if (value == null) return;
-              final targetIndex = _currentElements.indexWhere((element) => element.id == tgtElem!.id);
+              final targetIndex = _currentElements.indexWhere((element) => element.id == tgtElem.id);
               if (targetIndex == -1) return;
               final target = _currentElements[targetIndex];
               final targetProps = Map<String, dynamic>.from(target.module!.properties);
@@ -2129,7 +2150,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  schemeDef.description,
+                  LinkerMatrixEngine.userFacingDescription(schemeDef),
                   style: const TextStyle(fontSize: 11, color: Color(0xFF555562)),
                 ),
               ],
@@ -2424,3 +2445,5 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     );
   }
 }
+
+class _InputColorChoice { final String label; final int value; const _InputColorChoice(this.label, this.value); }

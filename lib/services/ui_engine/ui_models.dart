@@ -335,6 +335,8 @@ class UIElement {
   final int layerIndex; // 动态所属的图层 ID
   final String? parentSurfaceId; // 显式所属面；为空表示顶层元素
   final double rotation; // 旋转角度（度），围绕元素自身中心
+  final bool layoutLocked; // 编辑器布局锁：禁止移动 / 缩放 / 旋转
+  final bool sealed; // 编辑器完全锁：禁止几何与 Linker 编辑，且命中穿透
 
   UIElement({
     required this.id,
@@ -346,6 +348,8 @@ class UIElement {
     this.layerIndex = 0,
     this.parentSurfaceId,
     this.rotation = 0.0,
+    this.layoutLocked = false,
+    this.sealed = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -357,6 +361,8 @@ class UIElement {
       'layerIndex': layerIndex,
       'parentSurfaceId': parentSurfaceId,
       'rotation': rotation,
+      'layoutLocked': layoutLocked,
+      'sealed': sealed,
     };
     if (isComposite) {
       map['composite'] = composite?.toJson();
@@ -398,6 +404,8 @@ class UIElement {
       layerIndex: json['layerIndex'] ?? 0,
       parentSurfaceId: json['parentSurfaceId']?.toString(),
       rotation: (json['rotation'] ?? 0.0).toDouble(),
+      layoutLocked: json['layoutLocked'] == true,
+      sealed: json['sealed'] == true,
     );
   }
 
@@ -411,6 +419,8 @@ class UIElement {
     String? parentSurfaceId,
     bool clearParentSurface = false,
     double? rotation,
+    bool? layoutLocked,
+    bool? sealed,
   }) {
     return UIElement(
       id: id,
@@ -424,6 +434,8 @@ class UIElement {
           ? null
           : parentSurfaceId ?? this.parentSurfaceId,
       rotation: rotation ?? this.rotation,
+      layoutLocked: layoutLocked ?? this.layoutLocked,
+      sealed: sealed ?? this.sealed,
     );
   }
 }

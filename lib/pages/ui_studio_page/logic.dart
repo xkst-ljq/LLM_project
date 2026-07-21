@@ -25,6 +25,19 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   List<LayerScene> _sceneLayers = [];
   List<UIElement> _currentElements = [];
 
+  // 工作区快照历史：保存完成态，最多保留 100 步。
+  final List<String> _undoHistory = <String>[];
+  final List<String> _redoHistory = <String>[];
+  bool _isRestoringHistory = false;
+
+  // 资产库 → 画布的统一放置会话：由根 Listener 的原始 PointerEvent 驱动。
+  DragPayload? _activeLibraryPlacement;
+  final List<StudioClipboardEntry> _clipboardHistory = <StudioClipboardEntry>[];
+  StudioClipboardEntry? _pendingPaste;
+  bool _isMultiDeleteMode = false;
+  final Set<String> _pendingDeleteIds = <String>{};
+
+
   // ============================================================
   //  工作区持久化
   // ============================================================
@@ -53,6 +66,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
           _workspaceOffset = Offset(offsetX, offsetY);
           _activeLayerIndex = activeLayer;
         });
+        _captureHistorySnapshot();
         _setupEventBusListener();
       } catch (_) {
         _initDefaultState();
@@ -99,7 +113,111 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       _currentElements = [];
       _workspaceOffset = Offset.zero;
     });
+    _captureHistorySnapshot();
     _setupEventBusListener();
+  }
+
+  String _workspaceHistorySnapshot() => jsonEncode({
+        'layers': _sceneLayers.map((element) => element.toJson()).toList(),
+        'elements': _currentElements.map((element) => element.toJson()).toList(),
+        'offsetX': _workspaceOffset.dx,
+        'offsetY': _workspaceOffset.dy,
+        'activeLayer': _activeLayerIndex,
+      });
+
+  void _captureHistorySnapshot() {
+    if (_isRestoringHistory) return;
+    final snapshot = _workspaceHistorySnapshot();
+    if (_undoHistory.isNotEmpty && _undoHistory.last == snapshot) return;
+    _undoHistory.add(snapshot);
+    if (_undoHistory.length > 100) _undoHistory.removeAt(0);
+    _redoHistory.clear();
+  }
+
+  void _restoreHistorySnapshot(String snapshot) {
+    try {
+      final data = jsonDecode(snapshot) as Map<String, dynamic>;
+      final layers = (data['layers'] as List?)
+              ?.map((item) => LayerScene.fromJson(item as Map<String, dynamic>))
+              .toList() ??
+          <LayerScene>[];
+      final elements = (data['elements'] as List?)
+              ?.map((item) => UIElement.fromJson(item as Map<String, dynamic>))
+              .toList() ??
+          <UIElement>[];
+      _isRestoringHistory = true;
+      setState(() {
+        _sceneLayers = layers.isEmpty ? [LayerScene(id: 0, name: '默认图层')] : layers;
+        _currentElements = _sanitizeLinkerElements(elements);
+        _workspaceOffset = Offset(
+          (data['offsetX'] as num?)?.toDouble() ?? 0,
+          (data['offsetY'] as num?)?.toDouble() ?? 0,
+        );
+        _activeLayerIndex = (data['activeLayer'] as num?)?.toInt() ?? 0;
+        _selectedTransformationId = null;
+      });
+      _isRestoringHistory = false;
+      _setupEventBusListener();
+      _saveWorkspaceDraft(showMessage: false);
+    } catch (_) {
+      _isRestoringHistory = false;
+    }
+  }
+
+  void _undoWorkspace() {
+    if (_undoHistory.length <= 1) return;
+    final current = _undoHistory.removeLast();
+    _redoHistory.add(current);
+    _restoreHistorySnapshot(_undoHistory.last);
+  }
+
+  void _redoWorkspace() {
+    if (_redoHistory.isEmpty) return;
+    final next = _redoHistory.removeLast();
+    _undoHistory.add(next);
+    _restoreHistorySnapshot(next);
+  }
+
+  void _showClearWorkspaceDialog() {
+    var retainSurfaces = false;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('清空画布'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('此操作会移除当前工作区元素，可通过撤销恢复。'),
+              const SizedBox(height: 10),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('保留所有面板 / 容器面'),
+                value: retainSurfaces,
+                onChanged: (value) => setDialogState(() => retainSurfaces = value == true),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF8B4B4B)),
+              onPressed: () {
+                setState(() {
+                  _currentElements = retainSurfaces
+                      ? _currentElements.where(_isSurfaceElement).toList()
+                      : <UIElement>[];
+                  _selectedTransformationId = null;
+                });
+                _autoSave();
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('确认清空'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _saveWorkspaceDraft({bool showMessage = true}) async {
@@ -126,6 +244,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   }
 
   void _autoSave() {
+    _captureHistorySnapshot();
     _saveWorkspaceDraft(showMessage: false);
   }
 
@@ -219,33 +338,277 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   // ============================================================
   //  元素增删改
   // ============================================================
-  void _addElementAt(UIModule module, Offset canvasOffset) {
-    final String uniqueId = 'elem_${DateTime.now().millisecondsSinceEpoch}_${_currentElements.length}';
-    final uniqueModule = module.copyWith(id: uniqueId);
+  void _copySelectedToClipboard() {
+    final id = _selectedTransformationId;
+    if (id == null) {
+      _showClipboardHistory();
+      return;
+    }
+    final selected = _currentElements.where((element) => element.id == id).toList();
+    if (selected.isEmpty || selected.first.sealed) return;
+    final source = selected.first;
+    final ids = _isSurfaceElement(source) ? _surfaceGroupIds(source.id) : <String>{source.id};
+    final copied = _currentElements.where((element) => ids.contains(element.id)).where((element) {
+      if (element.module?.type != 'linker') return true;
+      final data = element.module!.properties['linker'] as Map?;
+      return ids.contains(data?['sourceModuleId']) && ids.contains(data?['targetModuleId']);
+    }).map((element) => element.toJson()).toList();
+    final entry = StudioClipboardEntry(label: source.module?.name ?? source.composite?.name ?? '组件', elements: copied);
     setState(() {
-      _currentElements.add(UIElement(
-        id: uniqueId,
-        module: uniqueModule,
-        offset: canvasOffset,
-        size: _initialSizeForModule(uniqueModule),
-        layerIndex: _activeLayerIndex,
-        isComposite: false,
-      ));
+      _clipboardHistory.insert(0, entry);
+      if (_clipboardHistory.length > 20) _clipboardHistory.removeLast();
+      _pendingPaste = entry;
+    });
+  }
+
+  void _showClipboardHistory() {
+    showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('复制历史'),
+      content: SizedBox(width: 300, child: _clipboardHistory.isEmpty
+          ? const Text('暂无复制记录')
+          : ListView(shrinkWrap: true, children: _clipboardHistory.map((entry) => ListTile(
+              leading: const Icon(Icons.content_copy_rounded),
+              title: Text(entry.label),
+              subtitle: Text('${entry.elements.length} 个元素 · ${entry.createdAt.hour.toString().padLeft(2, '0')}:${entry.createdAt.minute.toString().padLeft(2, '0')}'),
+              onTap: () { setState(() => _pendingPaste = entry); Navigator.pop(ctx); },
+            )).toList())),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+        if (_clipboardHistory.isNotEmpty) TextButton(onPressed: () { setState(_clipboardHistory.clear); Navigator.pop(ctx); }, child: const Text('清空历史'))],
+    ));
+  }
+
+  void _pasteClipboardAt(Offset globalPosition) {
+    final entry = _pendingPaste;
+    final box = _canvasDropKey.currentContext?.findRenderObject() as RenderBox?;
+    if (entry == null || box == null) return;
+    final originals = entry.elements.map((json) => UIElement.fromJson(json)).toList();
+    if (originals.isEmpty) return;
+    var minX = originals.map((e) => e.offset.dx).reduce(math.min);
+    var minY = originals.map((e) => e.offset.dy).reduce(math.min);
+    var maxX = originals.map((e) => e.offset.dx + e.size.width).reduce(math.max);
+    var maxY = originals.map((e) => e.offset.dy + e.size.height).reduce(math.max);
+    final targetOrigin = box.globalToLocal(globalPosition) - _workspaceOffset - Offset((maxX - minX) / 2, (maxY - minY) / 2);
+    final ids = <String, String>{};
+    for (final element in originals) { ids[element.id] = 'elem_${DateTime.now().microsecondsSinceEpoch}_${ids.length}'; }
+    final pasted = <UIElement>[];
+    for (final old in originals) {
+      final newId = ids[old.id]!;
+      var module = old.module?.copyWith(id: newId);
+      if (module?.type == 'linker') {
+        final props = Map<String, dynamic>.from(module!.properties);
+        final data = Map<String, dynamic>.from(props['linker'] ?? {});
+        final src = data['sourceModuleId']?.toString(); final tgt = data['targetModuleId']?.toString();
+        if (ids.containsKey(src) && ids.containsKey(tgt)) { data['sourceModuleId']=ids[src]; data['targetModuleId']=ids[tgt]; } else { continue; }
+        props['linker']=data; module=module.copyWith(properties: props);
+      }
+      pasted.add(UIElement(id:newId,isComposite:old.isComposite,module:module,composite:old.composite,offset:targetOrigin + Offset(old.offset.dx-minX,old.offset.dy-minY),size:old.size,layerIndex:_activeLayerIndex,parentSurfaceId: old.parentSurfaceId == null ? null : ids[old.parentSurfaceId!],rotation:old.rotation,layoutLocked:old.layoutLocked,sealed:old.sealed));
+    }
+    // 同一复制组内始终先绘制父面，再绘制成员；保留原 copied 列表中的兄弟局部顺序。
+    pasted.sort((a, b) {
+      if (a.parentSurfaceId == b.id) return 1;
+      if (b.parentSurfaceId == a.id) return -1;
+      return 0;
+    });
+    setState(() { _currentElements.addAll(pasted); _selectedTransformationId = null; _pendingPaste=null; });
+    _autoSave();
+  }
+
+  void _toggleMultiDeleteMode() {
+    setState(() { _isMultiDeleteMode = !_isMultiDeleteMode; _pendingDeleteIds.clear(); });
+  }
+
+  void _togglePendingDelete(UIElement element) {
+    if (element.sealed) return;
+    setState(() { _pendingDeleteIds.contains(element.id) ? _pendingDeleteIds.remove(element.id) : _pendingDeleteIds.add(element.id); });
+  }
+
+  void _confirmPendingDelete() {
+    if (_pendingDeleteIds.isEmpty) return;
+    showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+      title: Text('删除 ${_pendingDeleteIds.length} 个组件？'),
+      content: const Text('此操作可通过撤销恢复。'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+        FilledButton(onPressed: () { setState(() { _currentElements.removeWhere((e) => _pendingDeleteIds.contains(e.id) && !e.sealed); _pendingDeleteIds.clear(); _isMultiDeleteMode=false; _currentElements=_sanitizeLinkerElements(_currentElements); }); _autoSave(); Navigator.pop(ctx); }, child: const Text('确认删除'))],
+    ));
+  }
+
+  void _startLibraryPlacement(DragPayload payload, Offset globalPosition) {
+    _activeLibraryPlacement?.isLibraryDragging.value = false;
+    payload.lastPointerGlobalPosition = globalPosition;
+    payload.spawnedElementId = null;
+    payload.isLibraryDragging.value = true;
+    HapticFeedback.selectionClick();
+    _activeLibraryPlacement = payload;
+  }
+
+  bool _isGlobalPositionInsideCanvas(Offset globalPosition) {
+    final box = _canvasDropKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return false;
+    return (box.localToGlobal(Offset.zero) & box.size).contains(globalPosition);
+  }
+
+  /// 根 Listener 接收统一的原始 PointerMoveEvent；不再借助 DragAvatar / DragTarget 坐标。
+  void _handleLibraryPlacementPointerMove(PointerMoveEvent event) {
+    final payload = _activeLibraryPlacement;
+    if (payload == null || payload.pointerId != event.pointer) return;
+    payload.lastPointerGlobalPosition = event.position;
+    if (_isGlobalPositionInsideCanvas(event.position)) {
+      if (payload.spawnedElementId == null) {
+        _beginDragPlacement(payload, event.position);
+      } else {
+        _updateDragPlacement(payload, event.position);
+      }
+    }
+  }
+
+  void _finishLibraryPlacementPointer(PointerEvent event) {
+    final payload = _activeLibraryPlacement;
+    if (payload == null || payload.pointerId != event.pointer) return;
+    payload.lastPointerGlobalPosition = event.position;
+    if (payload.spawnedElementId != null) {
+      _finishDragPlacement(payload, event.position);
+    }
+    payload.isLibraryDragging.value = false;
+    _activeLibraryPlacement = null;
+  }
+
+  Size _sizeForDragPayload(DragPayload payload) {
+    if (payload.module != null) return _initialSizeForModule(payload.module!);
+    if (payload.composite != null) {
+      return _compositeBounds(payload.composite!) ?? const Size(200, 120);
+    }
+    return const Size(150, 68);
+  }
+
+  Offset? _canvasOffsetFromGlobalDragPosition(
+    Offset globalPosition,
+    DragPayload payload,
+  ) {
+    final box = _canvasDropKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    // DragTargetDetails.offset 可能受 Drag Avatar / feedback 锚点影响；
+    // 组件定位优先使用 Draggable.onDragUpdate 记录的原始指针坐标。
+    final rawPointerPosition = payload.lastPointerGlobalPosition ?? globalPosition;
+    final local = box.globalToLocal(rawPointerPosition);
+    final size = _sizeForDragPayload(payload);
+    final anchor = Offset(
+      size.width * payload.anchorFraction.dx.clamp(0.0, 1.0),
+      size.height * payload.anchorFraction.dy.clamp(0.0, 1.0),
+    );
+    return local - _workspaceOffset - anchor;
+  }
+
+  /// 指针首次进入画布时创建真实元素；创建后不再依赖拖拽反馈位置。
+  void _beginDragPlacement(DragPayload payload, Offset globalPosition) {
+    if (payload.spawnedElementId != null) return;
+    final offset = _canvasOffsetFromGlobalDragPosition(globalPosition, payload);
+    if (offset == null) return;
+    final uniqueId = 'elem_${DateTime.now().millisecondsSinceEpoch}_${_currentElements.length}';
+    final size = _sizeForDragPayload(payload);
+    setState(() {
+      if (payload.module != null) {
+        _currentElements.add(UIElement(
+          id: uniqueId,
+          module: payload.module!.copyWith(id: uniqueId),
+          offset: offset,
+          size: size,
+          layerIndex: _activeLayerIndex,
+          isComposite: false,
+        ));
+      } else if (payload.composite != null) {
+        _currentElements.add(UIElement(
+          id: uniqueId,
+          composite: payload.composite,
+          offset: offset,
+          size: size,
+          layerIndex: _activeLayerIndex,
+          isComposite: true,
+        ));
+      } else {
+        return;
+      }
+      payload.spawnedElementId = uniqueId;
+      _selectedTransformationId = uniqueId;
+    });
+  }
+
+  /// 已生成的元素跟随真实指针坐标，保留用户最初按住的相对位置。
+  void _updateDragPlacement(DragPayload payload, Offset globalPosition) {
+    final id = payload.spawnedElementId;
+    if (id == null) {
+      _beginDragPlacement(payload, globalPosition);
+      return;
+    }
+    final offset = _canvasOffsetFromGlobalDragPosition(globalPosition, payload);
+    if (offset == null) return;
+    final index = _currentElements.indexWhere((element) => element.id == id);
+    if (index == -1) return;
+    setState(() => _currentElements[index] =
+        _currentElements[index].copyWith(offset: offset));
+  }
+
+  void _finishDragPlacement(DragPayload payload, Offset globalPosition) {
+    _updateDragPlacement(payload, globalPosition);
+    if (payload.spawnedElementId != null) _autoSave();
+  }
+
+  bool _canUseBackgroundRuntimePlacement(UIElement element) {
+    // 明确白名单：只保留确有后台判断 / 状态传导价值的原子。
+    const backgroundCapableTypes = {'text', 'switch', 'progress', 'indicator', 'input'};
+    return !element.isComposite &&
+        backgroundCapableTypes.contains(element.module?.type);
+  }
+
+  void _toggleSelectedRuntimePlacement() {
+    final id = _selectedTransformationId;
+    if (id == null) return;
+    final index = _currentElements.indexWhere((element) => element.id == id);
+    if (index == -1) return;
+    final element = _currentElements[index];
+    if (!_canUseBackgroundRuntimePlacement(element) || element.module == null) return;
+    final props = Map<String, dynamic>.from(element.module!.properties);
+    final isBackground = props['runtimePlacement'] == 'background';
+    if (isBackground) {
+      props.remove('runtimePlacement');
+    } else {
+      props['runtimePlacement'] = 'background';
+    }
+    setState(() {
+      _currentElements[index] = element.copyWith(
+        module: element.module!.copyWith(properties: props),
+      );
     });
     _autoSave();
   }
 
-  void _addCompositeAt(UIComposite composite, Offset canvasOffset) {
-    final bounds = _compositeBounds(composite) ?? const Size(200, 120);
+  bool _isGeometryLocked(UIElement element) =>
+      element.layoutLocked || element.sealed;
+
+  void _toggleSelectedLayoutLock() {
+    final id = _selectedTransformationId;
+    if (id == null) return;
+    final index = _currentElements.indexWhere((element) => element.id == id);
+    if (index == -1) return;
     setState(() {
-      _currentElements.add(UIElement(
-        id: 'comp_${DateTime.now().millisecondsSinceEpoch}_${_currentElements.length}',
-        composite: composite,
-        offset: canvasOffset,
-        size: bounds,
-        layerIndex: _activeLayerIndex,
-        isComposite: true,
-      ));
+      final current = _currentElements[index];
+      // 两种编辑锁互斥：布局锁 <-> 全局锁 <-> 未锁定。
+      _currentElements[index] = current.layoutLocked
+          ? current.copyWith(layoutLocked: false, sealed: false)
+          : current.copyWith(layoutLocked: true, sealed: false);
+    });
+    _autoSave();
+  }
+
+  void _toggleSelectedSeal() {
+    final id = _selectedTransformationId;
+    if (id == null) return;
+    final index = _currentElements.indexWhere((element) => element.id == id);
+    if (index == -1) return;
+    setState(() {
+      final current = _currentElements[index];
+      _currentElements[index] = current.sealed
+          ? current.copyWith(sealed: false, layoutLocked: false)
+          : current.copyWith(sealed: true, layoutLocked: false);
     });
     _autoSave();
   }
@@ -256,6 +619,8 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   }
 
   void _deleteElement(String id) {
+    final existingIndex = _currentElements.indexWhere((element) => element.id == id);
+    if (existingIndex != -1 && _currentElements[existingIndex].sealed) return;
     setState(() {
       _currentElements.removeWhere((e) => e.id == id);
       _currentElements = _sanitizeLinkerElements(_currentElements);
@@ -357,10 +722,20 @@ mixin _UIStudioLogic on State<UIStudioPage> {
                   final index = _currentElements
                       .indexWhere((candidate) => candidate.id == element.id);
                   if (index == -1) return;
-                  _currentElements[index] = selectedSurfaceId == null
-                      ? _currentElements[index].copyWith(clearParentSurface: true)
-                      : _currentElements[index]
-                          .copyWith(parentSurfaceId: selectedSurfaceId);
+                  if (selectedSurfaceId == null) {
+                    _currentElements[index] =
+                        _currentElements[index].copyWith(clearParentSurface: true);
+                  } else {
+                    // 加入所属面时脱离原全局 Z 位置，直接排到父面组的最上层；
+                    // 此后只通过组内局部排序改变与兄弟成员的前后关系。
+                    final joined = _currentElements.removeAt(index)
+                        .copyWith(parentSurfaceId: selectedSurfaceId);
+                    final groupIds = _surfaceGroupIds(selectedSurfaceId!);
+                    final lastGroupIndex = _currentElements.lastIndexWhere(
+                      (candidate) => groupIds.contains(candidate.id),
+                    );
+                    _currentElements.insert(lastGroupIndex + 1, joined);
+                  }
                 });
                 _autoSave();
                 Navigator.pop(dialogContext);
@@ -373,29 +748,146 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     );
   }
 
+  bool _isSurfaceElement(UIElement element) =>
+      const {'surface', 'surface_art', 'primitive_art', 'base_box'}
+          .contains(element.module?.type);
+
+  /// 返回一个 Surface 及其所有递归所属成员；保存成员在当前画布中的局部 Z 顺序。
+  Set<String> _surfaceGroupIds(String surfaceId) {
+    final ids = <String>{surfaceId};
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (final element in _currentElements) {
+        if (element.parentSurfaceId != null &&
+            ids.contains(element.parentSurfaceId) &&
+            ids.add(element.id)) {
+          changed = true;
+        }
+      }
+    }
+    return ids;
+  }
+
   void _moveSelectedElementOrder(int direction) {
-    if (_selectedTransformationId == null) return;
-    final idx = _currentElements.indexWhere((e) => e.id == _selectedTransformationId);
-    if (idx == -1) return;
-    final newIdx = (idx + direction).clamp(0, _currentElements.length - 1);
-    if (newIdx == idx) return;
+    final id = _selectedTransformationId;
+    if (id == null) return;
+    _moveElementWithGroupOrder(id, direction);
+  }
+
+  /// Surface 选中时移动整个所属面组；成员选中时只在自身组内局部排序。
+  void _moveElementWithGroupOrder(String id, int direction) {
+    final index = _currentElements.indexWhere((element) => element.id == id);
+    if (index == -1 || _currentElements[index].sealed) return;
+    final selected = _currentElements[index];
+    if (_isSurfaceElement(selected)) {
+      _moveSurfaceGroupOrder(selected.id, direction);
+    } else if (selected.parentSurfaceId != null) {
+      _moveMemberWithinSurfaceGroup(selected, direction);
+    } else {
+      _moveStandaloneElementOrder(index, direction);
+    }
+  }
+
+  void _moveStandaloneElementOrder(int index, int direction) {
+    final target = (index + direction).clamp(0, _currentElements.length - 1);
+    if (target == index) return;
     setState(() {
-      final el = _currentElements.removeAt(idx);
-      _currentElements.insert(newIdx, el);
+      final element = _currentElements.removeAt(index);
+      _currentElements.insert(target, element);
+    });
+    _autoSave();
+  }
+
+  /// Surface 始终是所属面组的视觉底板，递归成员随后绘制，确保子组件位于父面上方。
+  List<UIElement> _orderedSurfaceGroupElements(String surfaceId) {
+    final byId = <String, UIElement>{
+      for (final element in _currentElements) element.id: element,
+    };
+    final ordered = <UIElement>[];
+    void visit(String id) {
+      final surface = byId[id];
+      if (surface == null) return;
+      ordered.add(surface);
+      for (final child in _currentElements.where((element) => element.parentSurfaceId == id)) {
+        if (_isSurfaceElement(child)) {
+          visit(child.id);
+        } else {
+          ordered.add(child);
+        }
+      }
+    }
+    visit(surfaceId);
+    return ordered;
+  }
+
+  void _moveSurfaceGroupOrder(String surfaceId, int direction) {
+    final groupIds = _surfaceGroupIds(surfaceId);
+    final groupElements = _orderedSurfaceGroupElements(surfaceId);
+    if (groupElements.isEmpty) return;
+    final groupIndexes = <int>[
+      for (var i = 0; i < _currentElements.length; i++)
+        if (groupIds.contains(_currentElements[i].id)) i,
+    ];
+    final boundary = direction > 0 ? groupIndexes.last : groupIndexes.first;
+    final candidateIndex = boundary + direction;
+    if (candidateIndex < 0 || candidateIndex >= _currentElements.length) return;
+
+    // 若历史草稿的组成员 Z 顺序不连续，本次组操作会将它们收拢为一个连续块。
+    final others = _currentElements
+        .where((element) => !groupIds.contains(element.id))
+        .toList();
+    final crossed = _currentElements[candidateIndex];
+    final crossedIndex = others.indexWhere((element) => element.id == crossed.id);
+    final insertIndex = direction > 0 ? crossedIndex + 1 : crossedIndex;
+    setState(() {
+      _currentElements
+        ..clear()
+        ..addAll(others.take(insertIndex))
+        ..addAll(groupElements)
+        ..addAll(others.skip(insertIndex));
+    });
+    _autoSave();
+  }
+
+  void _moveMemberWithinSurfaceGroup(UIElement selected, int direction) {
+    final parentId = selected.parentSurfaceId;
+    if (parentId == null) return;
+    final parentIndex = _currentElements.indexWhere((element) => element.id == parentId);
+    final selectedIndex = _currentElements.indexWhere((element) => element.id == selected.id);
+    // 旧草稿中若成员被排到父面下方，第一次局部排序时先恢复“父面为底板”的基础关系。
+    if (parentIndex != -1 && selectedIndex != -1 && selectedIndex < parentIndex) {
+      setState(() {
+        final element = _currentElements.removeAt(selectedIndex);
+        _currentElements.insert(parentIndex, element);
+      });
+      _autoSave();
+      return;
+    }
+    final members = _currentElements
+        .where((element) => element.parentSurfaceId == parentId)
+        .toList();
+    final memberIndex = members.indexWhere((element) => element.id == selected.id);
+    final targetMemberIndex = memberIndex + direction;
+    if (memberIndex == -1 ||
+        targetMemberIndex < 0 ||
+        targetMemberIndex >= members.length) {
+      return;
+    }
+    final targetId = members[targetMemberIndex].id;
+    final sourceIndex = _currentElements.indexWhere((element) => element.id == selected.id);
+    final targetIndex = _currentElements.indexWhere((element) => element.id == targetId);
+    if (sourceIndex == -1 || targetIndex == -1) return;
+    setState(() {
+      final element = _currentElements.removeAt(sourceIndex);
+      // removeAt 后，target 已经自然向前收缩；插入原 targetIndex 即可完成交换。
+      _currentElements.insert(targetIndex, element);
     });
     _autoSave();
   }
 
   void _moveAtomicConstructionLayer(String id, int direction) {
-    final idx = _currentElements.indexWhere((e) => e.id == id);
-    if (idx == -1) return;
-    final newIdx = (idx + direction).clamp(0, _currentElements.length - 1);
-    if (newIdx == idx) return;
-    setState(() {
-      final el = _currentElements.removeAt(idx);
-      _currentElements.insert(newIdx, el);
-    });
-    _autoSave();
+    _moveElementWithGroupOrder(id, direction);
   }
 
   // ============================================================
@@ -404,7 +896,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   Size _initialSizeForModule(UIModule module) {
     switch (module.type) {
       case 'progress':
-        return const Size(150, 28);
+        return const Size(96, 16);
       case 'slider':
         return const Size(150, 34);
       case 'text':

@@ -36,9 +36,12 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final startOffset = _resolvePortGlobalOffset(fromEl, false, conn['fromPort'] as String?);
       final endOffset = _resolvePortGlobalOffset(toEl, true, conn['toPort'] as String?);
 
-      final lineColor = lineType == 'input'
-          ? const Color(0xFF00ACC1)
-          : const Color(0xFF66BB6A);
+      final isControlLine = conn['toPort'] == 'gate_in';
+      final lineColor = isControlLine
+          ? const Color(0xFFFFB300)
+          : lineType == 'input'
+              ? const Color(0xFF00ACC1)
+              : const Color(0xFF66BB6A);
 
       widgets.add(
         CustomPaint(
@@ -46,6 +49,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
             start: startOffset,
             end: endOffset,
             color: lineColor,
+            isControlLine: isControlLine,
           ),
         ),
       );
@@ -61,13 +65,13 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     if (portName == 'gate_in') {
       if (el.rotation == 0.0) {
-        return Offset(cx, elTop + 2.5);
+        return Offset(cx, elTop + 7.0);
       }
       final rad = el.rotation * math.pi / 180.0;
-      final halfHeight = el.size.height / 2;
+      final distanceToGateCenter = math.max(0.0, el.size.height / 2 - 7.0);
       return Offset(
-        cx + halfHeight * math.sin(rad),
-        cy - halfHeight * math.cos(rad),
+        cx + distanceToGateCenter * math.sin(rad),
+        cy - distanceToGateCenter * math.cos(rad),
       );
     }
 
@@ -120,12 +124,20 @@ mixin _UIStudioLinker on _UIStudioLogic {
     if (sourceEl.id.isEmpty) return const SizedBox.shrink();
 
     final isLeftPort = _draggingSourcePort == 'input';
-    final startOffset = _resolvePortGlobalOffset(sourceEl, isLeftPort);
+    final startOffset = _resolvePortGlobalOffset(
+      sourceEl,
+      isLeftPort,
+      _draggingSourcePort,
+    );
 
-    final dragColor = isLeftPort
-        ? const Color(0xFF00ACC1)
-        : const Color(0xFF66BB6A);
-    final lineColor = _hoveringTargetId != null
+    final isControlLine = _hoveringTargetPort == 'gate_in' ||
+        _draggingSourcePort == 'gate_in';
+    final dragColor = isControlLine
+        ? const Color(0xFFFFB300)
+        : isLeftPort
+            ? const Color(0xFF00ACC1)
+            : const Color(0xFF66BB6A);
+    final lineColor = _hoveringTargetId != null && !isControlLine
         ? const Color(0xFF00E676)
         : dragColor;
 
@@ -145,6 +157,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
         start: startOffset,
         end: endOffset,
         color: lineColor,
+        isControlLine: isControlLine,
       ),
     );
   }
@@ -160,7 +173,13 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final sourceId = linkerData['sourceModuleId']?.toString();
       final targetId = linkerData['targetModuleId']?.toString();
       final sourcePort = linkerData['sourcePort']?.toString() ?? 'current';
-      final targetPort = linkerData['targetPort']?.toString() ?? 'text';
+      final storedTargetPort = linkerData['targetPort']?.toString() ?? 'text';
+      final scheme = linkerData['scheme']?.toString();
+      // 兼容早期草稿：触发方案即使旧数据未写 gate_in，也按控制端口绘制。
+      final targetPort =
+          scheme == 'click_to_math_trigger' || scheme == 'timer_tick_to_math_trigger'
+              ? 'gate_in'
+              : storedTargetPort;
 
       if (sourceId != null) {
         connections.add({
@@ -195,6 +214,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     for (final el in _currentElements) {
       if (el.id == _draggingSourceId) continue;
+      if (el.sealed) continue;
       if (el.layerIndex != _activeLayerIndex) continue;
 
       final elType = el.module?.type;
@@ -204,12 +224,24 @@ mixin _UIStudioLinker on _UIStudioLogic {
         if (_canConnect(el, 'input')) {
           String assignedPort = 'input';
           if (elType == 'math_node' && _draggingSourceType == 'output') {
-            final elLeft = _workspaceOffset.dx + el.offset.dx;
-            final elTop = _workspaceOffset.dy + el.offset.dy;
-            final double distLeft = (globalPosition - Offset(elLeft, elTop + el.size.height / 2)).distanceSquared;
-            final double distTop = (globalPosition - Offset(elLeft + el.size.width / 2, elTop)).distanceSquared;
-            if (distTop < distLeft) {
+            final sourceKind = _effectiveConnectionSourceType();
+            // Math 的目标端口取决于来源语义，因此先完成 Linker 左侧来源连接，
+            // 才允许连接 Math，避免“未知来源”绕过控制/数据端口约束。
+            if (sourceKind == null) continue;
+            final isControlSource = sourceKind == 'button' || sourceKind == 'timer';
+            final gateOffset = _resolvePortGlobalOffset(el, true, 'gate_in');
+            final dataOffset = _resolvePortGlobalOffset(el, true, 'data_in');
+            final isNearGate = (globalPosition - gateOffset).distanceSquared <= 34 * 34;
+            final isNearData = (globalPosition - dataOffset).distanceSquared <= 34 * 34;
+
+            // 触发源只能进入顶部控制端口；数值源只能进入左侧数据口。
+            // 节点卡片的其他区域不再作为 Math 的模糊落点。
+            if (isControlSource && isNearGate) {
               assignedPort = 'gate_in';
+            } else if (!isControlSource && isNearData) {
+              assignedPort = 'data_in';
+            } else {
+              continue;
             }
           }
           newHoverTargetId = el.id;
@@ -236,13 +268,36 @@ mixin _UIStudioLinker on _UIStudioLogic {
     }
   }
 
+  /// 当前拖出 Linker 输出端所代表的原始组件类型。
+  /// Math Node 用它将 Button / Timer 的触发通路与数值数据通路严格分开。
+  String? _effectiveConnectionSourceType() {
+    if (_draggingSourceId == null) return null;
+    final source = _currentElements.firstWhere(
+      (element) => element.id == _draggingSourceId,
+      orElse: () => UIElement(id: '', isComposite: false),
+    );
+    if (source.id.isEmpty) return null;
+    if (source.module?.type != 'linker') return source.module?.type;
+    final data =
+        (source.module?.properties['linker'] as Map?)?.cast<String, dynamic>();
+    final sourceId = data?['sourceModuleId']?.toString();
+    if (sourceId == null) return null;
+    final origin = _currentElements.firstWhere(
+      (element) => element.id == sourceId,
+      orElse: () => UIElement(id: '', isComposite: false),
+    );
+    return origin.module?.type;
+  }
+
   bool _canConnect(UIElement target, String portDirection) {
     if (_draggingSourceId == null || _draggingSourceType == null) return false;
     final sourceElement = _currentElements.firstWhere(
           (e) => e.id == _draggingSourceId,
       orElse: () => UIElement(id: '', isComposite: false),
     );
-    if (sourceElement.id.isEmpty) return false;
+    if (sourceElement.id.isEmpty || sourceElement.sealed || target.sealed) {
+      return false;
+    }
     final sourceType = sourceElement.module?.type;
     final targetType = target.module?.type;
     final dragType = _draggingSourceType;
@@ -338,8 +393,20 @@ mixin _UIStudioLinker on _UIStudioLogic {
     if (sourceType == 'linker' &&
         _draggingSourceType == 'output' &&
         ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
-        (_hoveringTargetPort == 'input' || _hoveringTargetPort == 'gate_in')) {
+        (_hoveringTargetPort == 'input' ||
+            _hoveringTargetPort == 'data_in' ||
+            _hoveringTargetPort == 'gate_in')) {
       final bool isGate = _hoveringTargetPort == 'gate_in';
+      if (targetType == 'math_node') {
+        final sourceKind = _effectiveConnectionSourceType();
+        final requiresGate = sourceKind == 'button' || sourceKind == 'timer';
+        if (isGate != requiresGate) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('触发通路只能接入计算触发端口；数值通路只能接入左侧数据端口')),
+          );
+          return;
+        }
+      }
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         targetModuleId: targetElement.id,
@@ -468,6 +535,31 @@ mixin _UIStudioLinker on _UIStudioLogic {
         linkerData['sourceModuleId'] = sourceModuleId;
         linkerData['sourcePort'] = sourcePort ?? 'current';
         linkerData['sourceType'] = sourceType ?? 'number';
+
+        // Linker 已经挂在 Math 上时，更换来源也必须重新校验端口语义。
+        // 不能让“原 Button → gate_in”残留为一个可被数值来源复用的间接控制连接。
+        final existingTargetId = linkerData['targetModuleId']?.toString();
+        final existingTarget = existingTargetId == null
+            ? null
+            : _currentElements.firstWhere(
+                (element) => element.id == existingTargetId,
+                orElse: () => UIElement(id: '', isComposite: false),
+              );
+        if (existingTarget?.module?.type == 'math_node') {
+          final newSourceElement = _currentElements.firstWhere(
+            (element) => element.id == sourceModuleId,
+            orElse: () => UIElement(id: '', isComposite: false),
+          );
+          final newSourceKind = newSourceElement.module?.type;
+          final isControlSource =
+              newSourceKind == 'button' || newSourceKind == 'timer';
+          final isGateTarget = linkerData['targetPort'] == 'gate_in';
+          if (isControlSource != isGateTarget) {
+            linkerData.remove('targetModuleId');
+            linkerData.remove('targetPort');
+            linkerData.remove('targetType');
+          }
+        }
       } else if (connectionType == 'output' && targetModuleId != null) {
         linkerData['targetModuleId'] = targetModuleId;
         linkerData['targetPort'] = targetPort ?? 'text';
@@ -502,7 +594,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
   }
 
   void _disconnectLinkerPort(UIElement el, String portDirection) {
-    if (el.module?.type != 'linker') return;
+    if (el.module?.type != 'linker' || el.sealed) return;
     setState(() {
       final idx = _currentElements.indexWhere((e) => e.id == el.id);
       if (idx == -1) return;
@@ -512,9 +604,17 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
 
       if (portDirection == 'input') {
+        // gate_in 是严格的控制边：来源断开后连同目标一起断开，
+        // 防止之后接入其他类型来源时遗留间接控制端口。
+        final wasMathGate = linkerData['targetPort'] == 'gate_in';
         linkerData.remove('sourceModuleId');
         linkerData.remove('sourcePort');
         linkerData.remove('sourceType');
+        if (wasMathGate) {
+          linkerData.remove('targetModuleId');
+          linkerData.remove('targetPort');
+          linkerData.remove('targetType');
+        }
       } else {
         linkerData.remove('targetModuleId');
         linkerData.remove('targetPort');

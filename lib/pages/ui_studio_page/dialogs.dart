@@ -4,6 +4,12 @@ part of 'ui_studio_page.dart';
 mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDialogs, _SwitchEditorDialog, _LineEditorDialog, _ImageEditorDialog, _MathNodeEditorDialog {
   // ===== 元素编辑器主调度分流入口 =====
   void _showTailoredPrecisionEditorDialog(UIElement el) {
+    if (el.sealed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('组件处于全局锁定状态，解除锁定后才能编辑')),
+      );
+      return;
+    }
     if (el.isComposite) {
       _showCompactCompositeEditorDialog(el);
       return;
@@ -37,6 +43,23 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
     } else if (type == 'timer') {
       _showCompactTimerEditorDialog(el);
     }
+  }
+
+  void _showGeometryEditorDialog(UIElement el) {
+    if (el.sealed) return;
+    final isSurface = const {'surface', 'surface_art', 'primitive_art', 'base_box'}
+        .contains(el.module?.type);
+    final maxWidth = isSurface ? 4096.0 : 600.0;
+    final maxHeight = isSurface ? 4096.0 : 400.0;
+    final minWidth = el.module?.type == 'progress' ? 12.0 : (isSurface ? 20.0 : 20.0);
+    final minHeight = el.module?.type == 'progress' ? 6.0 : 20.0;
+    var x = el.offset.dx, y = el.offset.dy, w = el.size.width, h = el.size.height, r = el.rotation;
+    final xc=TextEditingController(text:x.toStringAsFixed(0)), yc=TextEditingController(text:y.toStringAsFixed(0)), wc=TextEditingController(text:w.toStringAsFixed(0)), hc=TextEditingController(text:h.toStringAsFixed(0)), rc=TextEditingController(text:r.toStringAsFixed(0));
+    showDialog<void>(context: context, builder: (ctx) => AlertDialog(title: const Text('精确几何'), content: Column(mainAxisSize: MainAxisSize.min, children: [
+      Row(children:[Expanded(child:TextField(controller:xc,decoration:_softInputDecoration(label:'X'),onChanged:(v)=>x=double.tryParse(v)??x)),const SizedBox(width:8),Expanded(child:TextField(controller:yc,decoration:_softInputDecoration(label:'Y'),onChanged:(v)=>y=double.tryParse(v)??y))]),
+      const SizedBox(height:8),Row(children:[Expanded(child:TextField(controller:wc,decoration:_softInputDecoration(label:'宽度'),onChanged:(v)=>w=double.tryParse(v)??w)),const SizedBox(width:8),Expanded(child:TextField(controller:hc,decoration:_softInputDecoration(label:'高度'),onChanged:(v)=>h=double.tryParse(v)??h))]),
+      const SizedBox(height:8),TextField(controller:rc,decoration:_softInputDecoration(label:'旋转角度'),onChanged:(v)=>r=double.tryParse(v)??r),
+    ]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('取消')),FilledButton(onPressed:(){final i=_currentElements.indexWhere((e)=>e.id==el.id);if(i!=-1)setState(()=>_currentElements[i]=_currentElements[i].copyWith(offset:Offset(x,y),size:Size(w.clamp(minWidth,maxWidth),h.clamp(minHeight,maxHeight)),rotation:r));_autoSave();Navigator.pop(ctx);},child:const Text('应用'))]));
   }
 
   // ===== Linker 快捷传输方案选择弹窗 =====
@@ -213,7 +236,7 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    schemeDef.description,
+                    LinkerMatrixEngine.userFacingDescription(schemeDef),
                     style: const TextStyle(fontSize: 11, color: Color(0xFF888896)),
                   ),
                 ],
