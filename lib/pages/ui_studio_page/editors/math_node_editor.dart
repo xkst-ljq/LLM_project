@@ -126,16 +126,6 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
                             const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                             const SizedBox(height: 4),
                             TextField(controller: nameCtrl, decoration: _softInputDecoration(), onChanged: (value) => name = value),
-                            const SizedBox(height: 12),
-                            const Text('绝对像素坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Expanded(child: TextField(controller: xCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (value) => offsetX = double.tryParse(value) ?? offsetX)),
-                                const SizedBox(width: 10),
-                                Expanded(child: TextField(controller: yCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (value) => offsetY = double.tryParse(value) ?? offsetY)),
-                              ],
-                            ),
                             const SizedBox(height: 16),
                             if (!isOperationValid()) ...[
                               Container(

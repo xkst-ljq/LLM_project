@@ -104,17 +104,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                     TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
                     const SizedBox(height: 12),
 
-                    const Text('绝对像素坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: offsetXCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX)),
-                        const SizedBox(width: 10),
-                        Expanded(child: TextField(controller: offsetYCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
                     const Text('数值范围极限 (最小值 / 最大值)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 4),
                     Row(
@@ -352,26 +341,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                     ),
                     const SizedBox(height: 12),
 
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('旋转角度 (${rotation.round()}°)', style: const TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                        InkWell(
-                          onTap: () {
-                            setDialogState(() => rotation = 0.0);
-                            setState(() {
-                              final idx = _currentElements.indexWhere((e) => e.id == el.id);
-                              if (idx != -1) _currentElements[idx] = _currentElements[idx].copyWith(rotation: 0.0);
-                            });
-                          },
-                          child: const Text('复位', style: TextStyle(fontSize: 11, color: Color(0xFFFF4081), fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                    Slider(
-                      value: rotation.clamp(-180.0, 180.0).toDouble(), min: -180, max: 180, activeColor: const Color(0xFFFF4081),
-                      onChanged: (v) { setDialogState(() => rotation = v); setState(() => syncLivePreview()); },
-                    ),
                   ],
                 ),
               ),
