@@ -73,10 +73,8 @@ mixin _UIStudioDialogs on _UIStudioLogic, _StudioMenuDialogs, _CompactEditorsDia
     final targetId = linkerData['targetModuleId']?.toString();
 
     UIElement? sourceEl, targetEl;
-    for (final e in _currentElements) {
-      if (e.id == sourceId) sourceEl = e;
-      if (e.id == targetId) targetEl = e;
-    }
+    sourceEl = _findElementById(sourceId ?? '');
+    targetEl = _findElementById(targetId ?? '');
 
     final bool isFullyConnected = sourceEl != null && targetEl != null;
 

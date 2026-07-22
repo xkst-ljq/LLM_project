@@ -268,6 +268,18 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     final elementById = <String, UIElement>{
       for (final element in normalizedElements) element.id: element,
     };
+    // 注册复合件内部子元素，使指向内部端口的 linker 不会被误判为孤立
+    for (final element in normalizedElements) {
+      if (element.isComposite && element.composite != null) {
+        void reg(List<UIElement> ks) {
+          for (final c in ks) {
+            elementById[c.id] = c;
+            if (c.isComposite && c.composite != null) reg(c.composite!.children);
+          }
+        }
+        reg(element.composite!.children);
+      }
+    }
     final sanitized = <UIElement>[];
     final acceptedEdges = <String, Set<String>>{};
 
@@ -432,8 +444,12 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     ));
   }
 
+  /// 长按触发：记录起始位置，激活动画与触觉反馈；元素仅在手指拖动超出阈值后才真正生成。
+  static const double _dragThreshold = 24.0;
+
   void _startLibraryPlacement(DragPayload payload, Offset globalPosition) {
     _activeLibraryPlacement?.isLibraryDragging.value = false;
+    payload.longPressOrigin = globalPosition;
     payload.lastPointerGlobalPosition = globalPosition;
     payload.spawnedElementId = null;
     payload.isLibraryDragging.value = true;
@@ -452,6 +468,16 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     final payload = _activeLibraryPlacement;
     if (payload == null || payload.pointerId != event.pointer) return;
     payload.lastPointerGlobalPosition = event.position;
+
+    // 未生成元素时：仅检查手指是否已从长按起点水平拖出足够距离，竖直滑动不触发生成（留给抽屉滚动）。
+    if (payload.spawnedElementId == null) {
+      final origin = payload.longPressOrigin;
+      if (origin != null) {
+        final dx = (event.position.dx - origin.dx).abs();
+        if (dx < _dragThreshold) return;
+      }
+    }
+
     if (_isGlobalPositionInsideCanvas(event.position)) {
       if (payload.spawnedElementId == null) {
         _beginDragPlacement(payload, event.position);
@@ -467,6 +493,11 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     payload.lastPointerGlobalPosition = event.position;
     if (payload.spawnedElementId != null) {
       _finishDragPlacement(payload, event.position);
+      // 成功放入画布后自动收起抽屉，让用户立即看到完整画布。
+      setState(() {
+        _showLeftDrawer = false;
+        _showRightDrawer = false;
+      });
     }
     payload.isLibraryDragging.value = false;
     _activeLibraryPlacement = null;
@@ -618,7 +649,42 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     _deleteElement(_selectedTransformationId!);
   }
 
-  void _deleteElement(String id) {
+  UIElement? _findElementById(String id, {List<UIElement>? parentList, int? index}) {
+    // 先查顶层
+    for (var i = 0; i < _currentElements.length; i++) {
+      if (_currentElements[i].id == id) {
+        return _currentElements[i];
+      }
+      if (_currentElements[i].isComposite && _currentElements[i].composite != null) {
+        final found = _searchInChildren(_currentElements[i].composite!.children, id);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
+  UIElement? _searchInChildren(List<UIElement> kids, String id) {
+    for (final c in kids) {
+      if (c.id == id) return c;
+      if (c.isComposite && c.composite != null) {
+        final found = _searchInChildren(c.composite!.children, id);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
+  bool _isInsideComposite(String id) {
+    for (final el in _currentElements) {
+      if (el.isComposite && el.composite != null) {
+        if (_searchInChildren(el.composite!.children, id) != null) return true;
+      }
+    }
+    return false;
+  }
+
+
+    void _deleteElement(String id) {
     final existingIndex = _currentElements.indexWhere((element) => element.id == id);
     if (existingIndex != -1 && _currentElements[existingIndex].sealed) return;
     setState(() {
@@ -628,6 +694,64 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       if (_selectedTransformationId == id) {
         _selectedTransformationId = null;
       }
+    });
+    _autoSave();
+  }
+
+  /// 从复合件编辑器内调用：解散并删除，同时重映射内部连线 ID。
+  void _explodeComposite(UIElement el) {
+    final idx = _currentElements.indexWhere((e) => e.id == el.id);
+    if (idx == -1 || !el.isComposite || el.composite == null) return;
+
+    final baseOffset = el.offset;
+    final layer = el.layerIndex;
+    final parent = el.parentSurfaceId;
+    final totalChildren = el.composite!.children.length;
+
+    // 建立旧 ID → 新 ID 映射表
+    final idMap = <String, String>{};
+    final children = <UIElement>[];
+    for (var i = 0; i < totalChildren; i++) {
+      final child = el.composite!.children[i];
+      final newId = 'elem_${DateTime.now().millisecondsSinceEpoch}_${_currentElements.length + i}';
+      idMap[child.id] = newId;
+      children.add(UIElement(
+        id: newId,
+        isComposite: child.isComposite,
+        module: child.module,
+        composite: child.composite,
+        offset: Offset(baseOffset.dx + child.offset.dx, baseOffset.dy + child.offset.dy),
+        size: child.size,
+        layerIndex: layer,
+        parentSurfaceId: parent,
+        rotation: child.rotation,
+        layoutLocked: child.layoutLocked,
+        sealed: child.sealed,
+      ));
+    }
+
+    // 遍历所有子元素，对 linker 内部引用的旧 ID 做重映射
+    for (var i = 0; i < children.length; i++) {
+      final child = children[i];
+      if (child.isComposite || child.module?.type != 'linker') continue;
+      final props = Map<String, dynamic>.from(child.module!.properties);
+      final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
+      final src = linkerData['sourceModuleId']?.toString();
+      final tgt = linkerData['targetModuleId']?.toString();
+      if (src != null && idMap.containsKey(src)) {
+        linkerData['sourceModuleId'] = idMap[src];
+      }
+      if (tgt != null && idMap.containsKey(tgt)) {
+        linkerData['targetModuleId'] = idMap[tgt];
+      }
+      props['linker'] = linkerData;
+      children[i] = child.copyWith(module: child.module!.copyWith(properties: props));
+    }
+
+    setState(() {
+      _currentElements.removeAt(idx);
+      _currentElements.addAll(children);
+      _selectedTransformationId = null;
     });
     _autoSave();
   }
@@ -932,6 +1056,13 @@ mixin _UIStudioLogic on State<UIStudioPage> {
 
   Size? _compositeBounds(UIComposite composite) {
     if (composite.children.isEmpty) return null;
+    // 以容器面为锚定外框，保证复合组件边框 = 底板面板尺寸
+    for (final child in composite.children) {
+      if (!child.isComposite && child.module?.properties['is_container_boundary'] == true) {
+        return child.size;
+      }
+    }
+    // 兜底：没有容器面时用包围盒
     double maxX = 0, maxY = 0;
     for (final child in composite.children) {
       final cx = child.offset.dx + child.size.width;

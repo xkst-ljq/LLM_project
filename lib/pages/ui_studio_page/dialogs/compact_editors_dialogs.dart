@@ -66,8 +66,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     }
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
     final minCtrl = TextEditingController(text: minVal.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: minVal.toStringAsFixed(0).length);
     final maxCtrl = TextEditingController(text: maxVal.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: maxVal.toStringAsFixed(0).length);
     final stepCtrl = TextEditingController(text: stepVal.toString());
@@ -388,8 +386,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
         minCtrl.dispose();
         maxCtrl.dispose();
         stepCtrl.dispose();
@@ -410,8 +406,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex) ? _activeLayerIndex : _sceneLayers.first.id;
     }
-    double offsetX = el.offset.dx;
-    double offsetY = el.offset.dy;
+    final double offsetX = el.offset.dx;
+    final double offsetY = el.offset.dy;
 
     final props = Map<String, dynamic>.from(mod.properties);
     String varName = props['variable']?.toString() ?? props['label']?.toString() ?? '';
@@ -462,8 +458,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     }
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
     final varCtrl = TextEditingController(text: varName)..selection = TextSelection.collapsed(offset: varName.length);
     final phCtrl = TextEditingController(text: placeholder)..selection = TextSelection.collapsed(offset: placeholder.length);
     final maxLengthCtrl = TextEditingController(text: maxLength?.toString() ?? '');
@@ -495,17 +489,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                     const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 4),
                     TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
-                    const SizedBox(height: 12),
-
-                    const Text('绝对像素坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: offsetXCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX)),
-                        const SizedBox(width: 10),
-                        Expanded(child: TextField(controller: offsetYCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY)),
-                      ],
-                    ),
                     const SizedBox(height: 12),
 
                     if (mod.type == 'input') ...[
@@ -668,8 +651,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
         varCtrl.dispose();
         phCtrl.dispose();
         maxLengthCtrl.dispose();
@@ -689,8 +670,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex) ? _activeLayerIndex : _sceneLayers.first.id;
     }
-    double offsetX = el.offset.dx;
-    double offsetY = el.offset.dy;
+    final double offsetX = el.offset.dx;
+    final double offsetY = el.offset.dy;
 
     final props = Map<String, dynamic>.from(mod.properties);
     String btnText = props['text']?.toString() ?? '点击热区';
@@ -722,8 +703,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     }
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
     final txtCtrl = TextEditingController(text: btnText)..selection = TextSelection.collapsed(offset: btnText.length);
 
     showDialog<void>(
@@ -766,17 +745,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                               const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                               const SizedBox(height: 4),
                               TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
-                              const SizedBox(height: 12),
-
-                              const Text('绝对物理坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Expanded(child: TextField(controller: offsetXCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX)),
-                                  const SizedBox(width: 10),
-                                  Expanded(child: TextField(controller: offsetYCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY)),
-                                ],
-                              ),
                               const SizedBox(height: 12),
 
                               const Text('按钮展示文案 (创作排版期可见)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
@@ -973,8 +941,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
         txtCtrl.dispose();
       });
     });
@@ -992,8 +958,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex) ? _activeLayerIndex : _sceneLayers.first.id;
     }
-    double offsetX = el.offset.dx;
-    double offsetY = el.offset.dy;
+    final double offsetX = el.offset.dx;
+    final double offsetY = el.offset.dy;
 
     final props = Map<String, dynamic>.from(mod.properties);
     double rotation = ((el.rotation + 180) % 360 + 360) % 360 - 180;
@@ -1003,8 +969,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     bool isApplied = false;
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
 
     showDialog<void>(
       context: context,
@@ -1039,17 +1003,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                       style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
                       items: _sceneLayers.map((ly) => DropdownMenuItem<int>(value: ly.id, child: Text(ly.name))).toList(),
                       onChanged: (v) => setDialogState(() => selectedLayer = v ?? _activeLayerIndex),
-                    ),
-                    const SizedBox(height: 12),
-
-                    const Text('绝对像素坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: offsetXCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX)),
-                        const SizedBox(width: 10),
-                        Expanded(child: TextField(controller: offsetYCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY)),
-                      ],
                     ),
                     const SizedBox(height: 16),
 
@@ -1104,8 +1057,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
       });
     });
   }
@@ -1122,8 +1073,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex) ? _activeLayerIndex : _sceneLayers.first.id;
     }
-    double offsetX = el.offset.dx;
-    double offsetY = el.offset.dy;
+    final double offsetX = el.offset.dx;
+    final double offsetY = el.offset.dy;
 
     final props = Map<String, dynamic>.from(mod.properties);
     String textProp = props['text']?.toString() ?? '';
@@ -1170,8 +1121,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     }
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
     final textCtrl = TextEditingController(text: textProp)..selection = TextSelection.collapsed(offset: textProp.length);
 
     showDialog<void>(
@@ -1201,19 +1150,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                     const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 4),
                     TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
-                    const SizedBox(height: 12),
-
-                    const Text('绝对像素坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-
-                    const Text('绝对像素坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: offsetXCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX)),
-                        const SizedBox(width: 10),
-                        Expanded(child: TextField(controller: offsetYCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY)),
-                      ],
-                    ),
                     const SizedBox(height: 12),
 
                     const Text('默认展示文本内容', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
@@ -1432,8 +1368,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
         textCtrl.dispose();
       });
     });
@@ -1451,8 +1385,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex) ? _activeLayerIndex : _sceneLayers.first.id;
     }
-    double offsetX = el.offset.dx;
-    double offsetY = el.offset.dy;
+    final double offsetX = el.offset.dx;
+    final double offsetY = el.offset.dy;
 
     final props = Map<String, dynamic>.from(mod.properties);
     bool isContainer = props['is_container_boundary'] == true;
@@ -1464,8 +1398,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     double rotation = ((el.rotation + 180) % 360 + 360) % 360 - 180;
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
 
     showDialog<void>(
       context: context,
@@ -1494,19 +1426,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                     const Text('模块标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                     const SizedBox(height: 4),
                     TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
-                    const SizedBox(height: 12),
-
-                    const Text('绝对像素坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-
-                    const Text('绝对像素坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: offsetXCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX)),
-                        const SizedBox(width: 10),
-                        Expanded(child: TextField(controller: offsetYCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY)),
-                      ],
-                    ),
                     const SizedBox(height: 12),
 
                     SwitchListTile(
@@ -1686,8 +1605,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     ).then((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
       });
     });
   }
@@ -1704,8 +1621,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     if (!_sceneLayers.any((ly) => ly.id == selectedLayer)) {
       selectedLayer = _sceneLayers.any((ly) => ly.id == _activeLayerIndex) ? _activeLayerIndex : _sceneLayers.first.id;
     }
-    double offsetX = el.offset.dx;
-    double offsetY = el.offset.dy;
+    final double offsetX = el.offset.dx;
+    final double offsetY = el.offset.dy;
 
     Color color = comp.color;
     UIModuleMaterial material = comp.material;
@@ -1715,6 +1632,11 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     final initialComp = comp.copyWith();
     final initialRot = el.rotation;
     bool isApplied = false;
+
+    // 端口暴露状态（由下方面板管理），默认从现有 comp.exposedPorts 初始化
+    List<ExposedPort> exposedPorts = comp.exposedPorts != null
+        ? comp.exposedPorts!.map((p) => p.copyWith()).toList()
+        : <ExposedPort>[];
 
     void syncLivePreview() {
       final idx = _currentElements.indexWhere((e) => e.id == el.id);
@@ -1734,8 +1656,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     }
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
 
     showDialog<void>(
       context: context,
@@ -1777,17 +1697,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                               const Text('复合件组合标识名称', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
                               const SizedBox(height: 4),
                               TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
-                              const SizedBox(height: 12),
-
-                              const Text('绝对物理坐标 (X, Y)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Expanded(child: TextField(controller: offsetXCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'X坐标'), onChanged: (v) => offsetX = double.tryParse(v) ?? offsetX)),
-                                  const SizedBox(width: 10),
-                                  Expanded(child: TextField(controller: offsetYCtrl, keyboardType: TextInputType.number, decoration: _softInputDecoration(label: 'Y坐标'), onChanged: (v) => offsetY = double.tryParse(v) ?? offsetY)),
-                                ],
-                              ),
                               const SizedBox(height: 12),
 
                               const Text('外框材质渲染模式', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
@@ -1854,6 +1763,108 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                                 value: rotation.clamp(-180.0, 180.0).toDouble(), min: -180, max: 180, activeColor: const Color(0xFFFF4081),
                                 onChanged: (v) { setDialogState(() => rotation = v); setState(() => syncLivePreview()); },
                               ),
+                              const SizedBox(height: 16),
+                              // ===== 端口暴露配置 =====
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEDE7F6),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFD1C4E9)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Row(
+                                      children: [
+                                        Icon(Icons.settings_input_component_rounded, size: 16, color: Color(0xFF512DA8)),
+                                        SizedBox(width: 6),
+                                        Text('端口暴露配置', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF512DA8))),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    const Text('勾选后在装配页显示边框引脚；勾选后默认同时暴露接收和输出端口。', style: TextStyle(fontSize: 10, color: Color(0xFF7E57C2))),
+                                    const SizedBox(height: 10),
+                                    if (comp.children.isEmpty)
+                                      const Text('此复合件暂无内部元素。', style: TextStyle(fontSize: 11, color: Color(0xFF888896)))
+                                    else
+                                      ...List.generate(comp.children.length, (i) {
+                                        final child = comp.children[i];
+                                        final mod = child.module;
+                                        if (mod == null || mod.type == 'linker' || mod.type == 'math_node' || mod.type == 'timer') {
+                                          return const SizedBox.shrink();
+                                        }
+                                        final childName = mod.name.isNotEmpty ? mod.name : (mod.type);
+                                        final colorDot = _exposedPortColorForType(mod.type);
+                                        final ep = exposedPorts.where((p) => p.elementId == child.id).toList();
+                                        final existing = ep.isNotEmpty ? ep.first : null;
+                                        final isChecked = existing != null;
+                                        final inp = existing?.exposeInput ?? true;
+                                        final outp = existing?.exposeOutput ?? true;
+                                        return Padding(
+                                          padding: const EdgeInsets.only(bottom: 8),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: isChecked ? const Color(0xFFF3E5F5) : const Color(0xFFF6F6F9),
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(color: isChecked ? const Color(0xFFCE93D8) : Colors.black.withValues(alpha: 0.06)),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Container(width: 10, height: 10, decoration: BoxDecoration(color: colorDot, shape: BoxShape.circle)),
+                                                    const SizedBox(width: 8),
+                                                    Text(childName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF111116))),
+                                                    const Spacer(),
+                                                    Switch(
+                                                      value: isChecked,
+                                                      activeThumbColor: const Color(0xFF512DA8),
+                                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                      onChanged: (val) {
+                                                        setDialogState(() {
+                                                          if (val) {
+                                                            exposedPorts.add(ExposedPort(elementId: child.id, exposeInput: true, exposeOutput: true));
+                                                          } else {
+                                                            exposedPorts.removeWhere((p) => p.elementId == child.id);
+                                                          }
+                                                        });
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                                if (isChecked) ...[
+                                                  const SizedBox(height: 6),
+                                                  Row(
+                                                    children: [
+                                                      _buildPortToggle('⬅ 接收', inp, (v) {
+                                                        setDialogState(() {
+                                                          final idx2 = exposedPorts.indexWhere((p) => p.elementId == child.id);
+                                                          if (idx2 != -1) exposedPorts[idx2] = exposedPorts[idx2].copyWith(exposeInput: v);
+                                                        });
+                                                      }),
+                                                      const SizedBox(width: 12),
+                                                      _buildPortToggle('➡ 输出', outp, (v) {
+                                                        setDialogState(() {
+                                                          final idx2 = exposedPorts.indexWhere((p) => p.elementId == child.id);
+                                                          if (idx2 != -1) exposedPorts[idx2] = exposedPorts[idx2].copyWith(exposeOutput: v);
+                                                        });
+                                                      }),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
                             ],
                           ),
                         ),
@@ -1862,6 +1873,17 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
+                                _explodeComposite(el);
+                              });
+                            },
+                            child: const Text('解散', style: TextStyle(color: Color(0xFFE65100))),
+                          ),
+                          const Spacer(),
                           TextButton(
                             onPressed: () {
                               setState(() {
@@ -1883,7 +1905,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                                 setState(() {
                                   final idx = _currentElements.indexWhere((e) => e.id == el.id);
                                   if (idx != -1) {
-                                    final updatedComp = comp.copyWith(name: name, color: color, material: material, opacity: opacity);
+                                    final updatedComp = comp.copyWith(name: name, color: color, material: material, opacity: opacity, exposedPorts: exposedPorts.isNotEmpty ? List<ExposedPort>.from(exposedPorts) : null);
                                     _currentElements[idx] = el.copyWith(offset: Offset(offsetX, offsetY), layerIndex: selectedLayer, rotation: rotation, composite: updatedComp);
                                   }
                                 });
@@ -1911,8 +1933,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
       });
     });
   }
@@ -2409,6 +2429,45 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
           Text(field.label, style: const TextStyle(fontSize: 12, color: Color(0xFF555562), fontWeight: FontWeight.w500)),
           const SizedBox(height: 4),
           controlWidget,
+        ],
+      ),
+    );
+  }
+  // ===== 端口暴露配置辅助 =====
+  static Color _exposedPortColorForType(String type) {
+    switch (type) {
+      case 'progress':
+      case 'slider':
+        return const Color(0xFF00E676); // 绿：数值
+      case 'text':
+      case 'input':
+      case 'select':
+        return const Color(0xFF651FFF); // 紫：文本/字符串
+      case 'switch':
+        return const Color(0xFFFFA726); // 橙：布尔
+      case 'button':
+        return const Color(0xFFFFD740); // 黄：脉冲
+      default:
+        return const Color(0xFF9E9E9E);
+    }
+  }
+
+  Widget _buildPortToggle(String label, bool value, ValueChanged<bool> onChanged) {
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 16, height: 16,
+            decoration: BoxDecoration(
+              color: value ? const Color(0xFF512DA8) : const Color(0xFFE0E0E6),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: value ? const Icon(Icons.check, size: 12, color: Colors.white) : null,
+          ),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(fontSize: 11, color: value ? const Color(0xFF512DA8) : const Color(0xFF888896), fontWeight: value ? FontWeight.bold : FontWeight.normal)),
         ],
       ),
     );

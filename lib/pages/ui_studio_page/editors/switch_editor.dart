@@ -50,8 +50,6 @@ mixin _SwitchEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
     }
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
     final varCtrl = TextEditingController(text: varName)..selection = TextSelection.collapsed(offset: varName.length);
 
     showDialog<void>(
@@ -256,8 +254,6 @@ mixin _SwitchEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
         varCtrl.dispose();
       });
     });

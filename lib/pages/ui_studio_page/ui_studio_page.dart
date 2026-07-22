@@ -44,6 +44,9 @@ class DragPayload {
   /// 统一放置状态机直接记录的原始全局指针坐标。
   Offset? lastPointerGlobalPosition;
 
+  /// 长按触发时的原始全局坐标，用于计算拖移距离阈值。
+  Offset? longPressOrigin;
+
   /// 资产库源组件的按住 / 拖动视觉状态。
   final ValueNotifier<bool> isLibraryDragging = ValueNotifier(false);
 
@@ -182,11 +185,17 @@ class _UIStudioPageState extends State<UIStudioPage>
                                       el.module?.type != 'linker')
                                       ? 20.0
                                       : 0.0;
+                                  final double elemW = el.size.width + p * 2;
+                                  final double elemH = el.size.height + p * 2;
+                                  // 对角线尺寸保证旋转后所有区域可命中
+                                  final double diag = math.sqrt(elemW * elemW + elemH * elemH);
+                                  final double cx = _workspaceOffset.dx + el.offset.dx + el.size.width / 2;
+                                  final double cy = _workspaceOffset.dy + el.offset.dy + el.size.height / 2;
                                   return Positioned(
-                                    left: _workspaceOffset.dx + el.offset.dx - p,
-                                    top: _workspaceOffset.dy + el.offset.dy - p,
-                                    width: el.size.width + p * 2,
-                                    height: el.size.height + p * 2,
+                                    left: cx - diag / 2,
+                                    top: cy - diag / 2,
+                                    width: diag,
+                                    height: diag,
                                     child: Builder(builder: (nCtx) => _buildTrueSingleHandleNode(nCtx, el, p)),
                                   );
                                 });
@@ -243,13 +252,16 @@ class _UIStudioPageState extends State<UIStudioPage>
               right: 16,
               child: FilledButton.icon(
                 style: _glassButtonStyle,
-                icon: const Icon(Icons.view_list_rounded, size: 18),
-                label: const Text(
-                  '构造层',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                icon: Icon(
+                  _showConstructionManager ? Icons.close_rounded : Icons.view_list_rounded,
+                  size: 18,
+                ),
+                label: Text(
+                  _showConstructionManager ? '收起' : '构造层',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 onPressed: () => setState(() {
-                  _showConstructionManager = true;
+                  _showConstructionManager = !_showConstructionManager;
                   _showRightDrawer = false;
                 }),
               ),
@@ -290,11 +302,12 @@ class _UIStudioPageState extends State<UIStudioPage>
                 ),
               ),
 
-            // ===== 4. 选中元素操作按钮 =====
-            if (!_isPreviewMode && _selectedTransformationId != null)
+            // ===== 4. 选中元素操作按钮（左侧：编辑 + 锁定 / 右侧：排序 + 删除）=====
+            if (!_isPreviewMode && _selectedTransformationId != null) ...[
+              // ----- 左列：编辑类 + 状态锁定类 -----
               Positioned(
                 top: MediaQuery.of(context).padding.top + 112,
-                right: 16,
+                left: 16,
                 child: Column(
                   children: [
                     if (_currentElements.any((element) =>
@@ -360,7 +373,15 @@ class _UIStudioPageState extends State<UIStudioPage>
                       foreground: const Color(0xFF424242),
                       onTap: _toggleSelectedLayoutLock,
                     ),
-                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+              // ----- 右列：排序类 + 危险操作 -----
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 112,
+                right: 16,
+                child: Column(
+                  children: [
                     _buildFloatingObjectAction(
                       icon: Icons.keyboard_arrow_up_rounded,
                       background: const Color(0xFF111116),
@@ -397,16 +418,17 @@ class _UIStudioPageState extends State<UIStudioPage>
                   ],
                 ),
               ),
+            ],
 
             // ===== 5. 抽屉 =====
             if (!_isPreviewMode)
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOut,
-                right: _showConstructionManager ? 0 : -260,
+                right: _showConstructionManager ? 0 : -190,
               top: 120,
               bottom: 120,
-              width: 240,
+              width: 180,
               child: _buildAtomicConstructionDrawer(),
             ),
             if (!_isPreviewMode)
@@ -414,20 +436,20 @@ class _UIStudioPageState extends State<UIStudioPage>
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOut,
                 left: _showLeftDrawer ? 0 : -150,
-              top: MediaQuery.of(context).padding.top + 164,
-              bottom: 100,
-              width: 150,
-              child: _buildLeftCompactAssetPreviewDrawer(),
+                top: MediaQuery.of(context).padding.top + 100,
+                bottom: 100,
+                width: 150,
+                child: _buildLeftCompactAssetPreviewDrawer(),
             ),
             if (!_isPreviewMode)
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOut,
                 right: _showRightDrawer ? 0 : -rightDrawerWidth,
-              top: MediaQuery.of(context).padding.top + 164,
-              bottom: 120,
-              width: rightDrawerWidth,
-              child: _buildRightCompletedAssetsDrawer(),
+                top: MediaQuery.of(context).padding.top + 100,
+                bottom: 120,
+                width: rightDrawerWidth,
+                child: _buildRightCompletedAssetsDrawer(),
             ),
 
             // ===== 6. 侧边展开按钮 =====
@@ -796,11 +818,72 @@ class _UIStudioPageState extends State<UIStudioPage>
         ),
     ];
 
+
+
+    // ===== 暴露端口渲染（复合件边框引脚） =====
+    if (el.isComposite && el.composite?.exposedPorts != null) {
+      final ports = el.composite!.exposedPorts!.where((p) =>
+        el.composite!.children.any((c) => c.id == p.elementId)
+      ).toList();
+      final double bodyH = el.size.height;
+      // 左侧接收端口
+      final leftPorts = ports.where((p) => p.exposeInput).toList();
+      for (var i = 0; i < leftPorts.length; i++) {
+        final port = leftPorts[i];
+        final child = el.composite!.children.firstWhere((c) => c.id == port.elementId);
+        final dataType = child.module?.type ?? '';
+        final dotColor = _exposedPortVisualColor(dataType);
+        final y = p + (bodyH / (leftPorts.length + 1)) * (i + 1);
+        // 左侧接收端口：不可拖出，只接受外来连线
+        stackChildren.add(
+          Positioned(
+            left: p - 6,
+            top: y - 6,
+            child: Container(
+              width: 12, height: 12,
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 3)],
+              ),
+            ),
+          ),
+        );
+      }
+      // 右侧输出端口
+      final rightPorts = ports.where((p) => p.exposeOutput).toList();
+      for (var i = 0; i < rightPorts.length; i++) {
+        final port = rightPorts[i];
+        final child = el.composite!.children.firstWhere((c) => c.id == port.elementId);
+        final dataType = child.module?.type ?? '';
+        final dotColor = _exposedPortVisualColor(dataType);
+        final y = p + (bodyH / (rightPorts.length + 1)) * (i + 1);
+        // 右侧输出端口：不发起拖拽，由 linker 侧连线接入
+        stackChildren.add(
+          Positioned(
+            right: p - 6,
+            top: y - 6,
+            child: Container(
+              width: 12, height: 12,
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 3)],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
     final bool isMathNode = el.module?.type == 'math_node';
     final bool isIndicator = el.module?.type == 'indicator';
     final bool isTimer = el.module?.type == 'timer';
     if (isTransformationActive && !_isGeometryLocked(el) && !isLinker && !isMathNode && !isIndicator && !isTimer) {
-      final bool isRotateMode = _elementRotateModes.contains(el.id);
+      // 复合件只支持旋转，形变由未来 Assembly 页 FittedBox 统一处理
+      final bool isRotateMode = el.isComposite || _elementRotateModes.contains(el.id);
       stackChildren.add(
         Positioned(
           right: 0,
@@ -808,6 +891,7 @@ class _UIStudioPageState extends State<UIStudioPage>
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
+              if (el.isComposite) return;
               setState(() {
                 if (_elementRotateModes.contains(el.id)) {
                   _elementRotateModes.remove(el.id);
@@ -912,12 +996,27 @@ class _UIStudioPageState extends State<UIStudioPage>
     }
 
 
+    final double eW = el.size.width + p * 2;
+    final double eH = el.size.height + p * 2;
+    final double eDiag = math.sqrt(eW * eW + eH * eH);
+
     Widget rootTree = SizedBox(
-      width: el.size.width + p * 2,
-      height: el.size.height + p * 2,
+      width: eDiag,
+      height: eDiag,
       child: Stack(
         clipBehavior: Clip.none,
-        children: stackChildren,
+        children: [
+          Positioned(
+            left: (eDiag - eW) / 2,
+            top: (eDiag - eH) / 2,
+            width: eW,
+            height: eH,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: stackChildren,
+            ),
+          ),
+        ],
       ),
     );
 
@@ -936,8 +1035,8 @@ class _UIStudioPageState extends State<UIStudioPage>
     // 它不拦截元素主体区域，因此仍可操作下层元素与连线。
     if (!el.layoutLocked && !el.sealed) return transformedNode;
     return SizedBox(
-      width: el.size.width + p * 2,
-      height: el.size.height + p * 2,
+      width: eDiag,
+      height: eDiag,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -967,6 +1066,24 @@ class _UIStudioPageState extends State<UIStudioPage>
   // ============================================================
   //  小型 UI 辅助组件
   // ============================================================
+  Color _exposedPortVisualColor(String type) {
+    switch (type) {
+      case 'progress':
+      case 'slider':
+        return const Color(0xFF00E676);
+      case 'text':
+      case 'select':
+      case 'input':
+        return const Color(0xFF651FFF);
+      case 'switch':
+        return const Color(0xFFFFA726);
+      case 'button':
+        return const Color(0xFFFFD740);
+      default:
+        return const Color(0xFF9E9E9E);
+    }
+  }
+
   void _nudgeElement(String id, Offset delta) {
     final index = _currentElements.indexWhere((element) => element.id == id);
     if (index == -1 || _isGeometryLocked(_currentElements[index])) return;

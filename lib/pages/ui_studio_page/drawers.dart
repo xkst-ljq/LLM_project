@@ -1,7 +1,7 @@
 part of 'ui_studio_page.dart';
 
 /// 侧边抽屉
-mixin _UIStudioDrawers on _UIStudioDialogs {
+mixin _UIStudioDrawers on _UIStudioLogic, _UIStudioDialogs {
   // ===== 左侧原材料抽屉 =====
   Widget _buildLeftCompactAssetPreviewDrawer() {
     final modules = _assetService.getFoundationModules();
@@ -37,30 +37,37 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final module = modules[index];
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFECECF2),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              module.name,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFF555562),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
+                    return Container(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE4E4EA),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDCDCE4),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                module.name,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Color(0xFF555562),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 5),
-                        _buildPreviewDraggableCard(module),
-                      ],
+                          const SizedBox(height: 4),
+                          _buildPreviewDraggableCard(module),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -139,8 +146,9 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onLongPressStart: (details) =>
-          _startLibraryPlacement(payload, details.globalPosition),
+      onLongPressStart: (details) {
+        _startLibraryPlacement(payload, details.globalPosition);
+      },
       child: ValueListenableBuilder<bool>(
         valueListenable: payload.isLibraryDragging,
         child: MouseRegion(cursor: SystemMouseCursors.grab, child: card),
@@ -562,8 +570,9 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onLongPressStart: (details) =>
-            _startLibraryPlacement(payload, details.globalPosition),
+        onLongPressStart: (details) {
+          _startLibraryPlacement(payload, details.globalPosition);
+        },
         child: ValueListenableBuilder<bool>(
           valueListenable: payload.isLibraryDragging,
           child: MouseRegion(cursor: SystemMouseCursors.grab, child: card),
@@ -640,8 +649,9 @@ mixin _UIStudioDrawers on _UIStudioDialogs {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onLongPressStart: (details) =>
-            _startLibraryPlacement(payload, details.globalPosition),
+        onLongPressStart: (details) {
+          _startLibraryPlacement(payload, details.globalPosition);
+        },
         child: ValueListenableBuilder<bool>(
           valueListenable: payload.isLibraryDragging,
           child: MouseRegion(cursor: SystemMouseCursors.grab, child: card),

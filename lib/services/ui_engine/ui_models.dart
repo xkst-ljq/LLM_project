@@ -249,17 +249,49 @@ class UIModule {
   }
 }
 
+/// 复合组件暴露端口定义（从 Studio 到 Assembly 页的接口契约）
+class ExposedPort {
+  final String elementId; // 内部子元素 ID
+  final bool exposeInput; // 左侧边轨：接收端口
+  final bool exposeOutput; // 右侧边轨：输出端口
+
+  const ExposedPort({
+    required this.elementId,
+    this.exposeInput = true,
+    this.exposeOutput = true,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'elementId': elementId,
+    'exposeInput': exposeInput,
+    'exposeOutput': exposeOutput,
+  };
+
+  factory ExposedPort.fromJson(Map<String, dynamic> json) => ExposedPort(
+    elementId: json['elementId']?.toString() ?? '',
+    exposeInput: json['exposeInput'] != false,
+    exposeOutput: json['exposeOutput'] != false,
+  );
+
+  ExposedPort copyWith({String? elementId, bool? exposeInput, bool? exposeOutput}) => ExposedPort(
+    elementId: elementId ?? this.elementId,
+    exposeInput: exposeInput ?? this.exposeInput,
+    exposeOutput: exposeOutput ?? this.exposeOutput,
+  );
+}
+
 /// UI 组合块定义 (Composite / 多重组件容器)
 class UIComposite {
   final String id;
   final String name;
-  final String layoutType; // 'column', 'row', 'stack', 'wrap', 'base_box'
+  final String layoutType;
   final List<UIElement> children;
   final UIModuleMaterial material;
   final double borderRadius;
   final Color color;
   final double opacity;
   final UISceneRenderingMode renderingMode;
+  final List<ExposedPort>? exposedPorts;
 
   UIComposite({
     required this.id,
@@ -271,6 +303,7 @@ class UIComposite {
     Color? color,
     this.opacity = 1.0,
     UISceneRenderingMode? renderingMode,
+    this.exposedPorts,
   })  : material = material ?? UIModuleMaterial.glass,
         color = color ?? Colors.white,
         renderingMode = renderingMode ?? UISceneRenderingMode.inlineHybrid;
@@ -285,6 +318,8 @@ class UIComposite {
     'color': color.toARGB32(),
     'opacity': opacity,
     'renderingMode': renderingMode.index,
+    if (exposedPorts != null && exposedPorts!.isNotEmpty)
+      'exposedPorts': exposedPorts!.map((p) => p.toJson()).toList(),
   };
 
   factory UIComposite.fromJson(Map<String, dynamic> json) => UIComposite(
@@ -297,6 +332,9 @@ class UIComposite {
     color: Color(json['color'] ?? Colors.white.toARGB32()),
     opacity: (json['opacity'] ?? 1.0).toDouble(),
     renderingMode: UISceneRenderingMode.values[json['renderingMode'] ?? 2],
+    exposedPorts: (json['exposedPorts'] as List?)
+        ?.map((e) => ExposedPort.fromJson(e as Map<String, dynamic>))
+        .toList(),
   );
 
   UIComposite copyWith({
@@ -308,6 +346,7 @@ class UIComposite {
     Color? color,
     double? opacity,
     UISceneRenderingMode? renderingMode,
+    List<ExposedPort>? exposedPorts,
   }) {
     return UIComposite(
       id: id,
@@ -319,6 +358,7 @@ class UIComposite {
       color: color ?? this.color,
       opacity: opacity ?? this.opacity,
       renderingMode: renderingMode ?? this.renderingMode,
+      exposedPorts: exposedPorts ?? this.exposedPorts,
     );
   }
 }

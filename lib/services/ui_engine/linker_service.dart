@@ -233,8 +233,16 @@ class LinkerService {
     _pulseSubscription = LinkerEventBus().onPulse.listen((event) {
       bool needRefresh = false;
 
-      for (final el in elements) {
-        if (el.isComposite || el.module?.type != 'linker') continue;
+      final allLinkers = <UIElement>[];
+      void collect(List<UIElement> l) {
+        for (final el in l) {
+          if (!el.isComposite && el.module?.type == 'linker') allLinkers.add(el);
+          if (el.isComposite && el.composite != null) collect(el.composite!.children);
+        }
+      }
+      collect(elements);
+
+      for (final el in allLinkers) {
         final lk = (el.module?.properties['linker'] as Map?)?.cast<String, dynamic>();
         if (lk == null || lk['enabled'] == false) continue;
 
@@ -296,9 +304,9 @@ class LinkerService {
           }
           lk['runtimeUpdatedAt'] = event.timestamp.microsecondsSinceEpoch;
           needRefresh = true;
-          final tgtIdx = elements.indexWhere((e) => e.id == tgtId);
-          if (tgtIdx != -1) {
-            final targetEl = elements[tgtIdx];
+          final tgtRef = <dynamic>[];
+          final targetEl = _findElementInTree(elements, tgtId, tgtRef);
+          if (targetEl != null) {
             if (!targetEl.isComposite && targetEl.module != null) {
               final props = Map<String, dynamic>.from(targetEl.module!.properties);
               final schemeParams = (lk['schemeParams'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -306,51 +314,51 @@ class LinkerService {
               if (scheme == 'click_to_switch_toggle' || scheme == 'timer_tick_to_switch_toggle') {
                 final cur = props['value'] == true;
                 props['value'] = !cur;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'click_to_switch_set_true' ||
                   scheme == 'timer_tick_to_switch_set_true') {
                 props['value'] = true;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'click_to_switch_set_false' ||
                   scheme == 'timer_tick_to_switch_set_false') {
                 props['value'] = false;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'click_to_input_clear') {
                 props['text'] = '';
                 props['value'] = '';
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'click_to_math_trigger' ||
                   scheme == 'timer_tick_to_math_trigger') {
                 final mathModule = targetEl.module!.copyWith(properties: props);
                 props['lastResult'] = calculateMathNodeNow(mathModule);
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'click_to_timer_toggle') {
                 props['isRunning'] = props['isRunning'] != true;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'click_to_timer_reset') {
                 props['isRunning'] = false;
                 props['currentVal'] = 0.0;
                 props['tickCount'] = 0;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'click_to_slider_reset') {
                 final defVal = (props['defaultValue'] as num?)?.toDouble() ??
                     ((props['min'] as num?)?.toDouble() ?? 0.0);
                 props['current'] = defVal;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'event_to_indicator') {
@@ -361,7 +369,7 @@ class LinkerService {
                 props['eventFlashDurationMs'] = flashDuration;
                 props['eventFlashTimestamp'] =
                     DateTime.now().millisecondsSinceEpoch;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
                 Future<void>.delayed(
@@ -373,7 +381,7 @@ class LinkerService {
                 props['anim_duration'] = (schemeParams['durationMs'] as num?)?.toInt() ?? 300;
                 props['anim_radius'] = (schemeParams['rippleRadius'] as num?)?.toDouble() ?? 150.0;
                 props['anim_timestamp'] = DateTime.now().millisecondsSinceEpoch;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'timer_tick_to_progress_increment' ||
@@ -401,7 +409,7 @@ class LinkerService {
                   }
                 }
                 props['current'] = next;
-                elements[tgtIdx] = targetEl.copyWith(
+                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
               } else if (scheme == 'input_value_to_select_match' &&
@@ -416,7 +424,7 @@ class LinkerService {
                 );
                 if (matched.isNotEmpty) {
                   props['current'] = matched.first.value;
-                  elements[tgtIdx] = targetEl.copyWith(
+                  (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                     module: targetEl.module!.copyWith(properties: props),
                   );
                 }
@@ -441,7 +449,38 @@ class LinkerService {
         _elementModules[el.id] = el.module!;
         _elementSurfaceParents[el.id] = el.parentSurfaceId;
       }
+      if (el.isComposite && el.composite != null) {
+        _registerCompositeChildren(el.composite!.children);
+      }
     }
+  }
+
+  static void _registerCompositeChildren(List<UIElement> kids) {
+    for (final c in kids) {
+      if (!c.isComposite && c.module != null) {
+        _elementModules[c.id] = c.module!;
+        _elementSurfaceParents[c.id] = c.parentSurfaceId;
+      }
+      if (c.isComposite && c.composite != null) {
+        _registerCompositeChildren(c.composite!.children);
+      }
+    }
+  }
+
+  static UIElement? _findElementInTree(List<UIElement> list, String id, List<dynamic> outRef) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id == id) {
+        outRef
+          ..clear()
+          ..addAll([list, i]);
+        return list[i];
+      }
+      if (list[i].isComposite && list[i].composite != null) {
+        final found = _findElementInTree(list[i].composite!.children, id, outRef);
+        if (found != null) return found;
+      }
+    }
+    return null;
   }
 
   /// 元素的有效可见性：自身可见，且所有所属 Surface 祖先均可见。

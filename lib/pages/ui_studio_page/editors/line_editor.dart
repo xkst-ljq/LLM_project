@@ -48,8 +48,6 @@ mixin _LineEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
     }
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final offsetXCtrl = TextEditingController(text: offsetX.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetX.toStringAsFixed(0).length);
-    final offsetYCtrl = TextEditingController(text: offsetY.toStringAsFixed(0))..selection = TextSelection.collapsed(offset: offsetY.toStringAsFixed(0).length);
 
     showDialog<void>(
       context: context,
@@ -262,8 +260,6 @@ mixin _LineEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        offsetXCtrl.dispose();
-        offsetYCtrl.dispose();
       });
     });
   }

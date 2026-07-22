@@ -44,8 +44,6 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
     if (activeParams.isEmpty) activeParams.addAll(['paramA', 'paramB']);
 
     final nameCtrl = TextEditingController(text: name);
-    final xCtrl = TextEditingController(text: offsetX.toStringAsFixed(0));
-    final yCtrl = TextEditingController(text: offsetY.toStringAsFixed(0));
     final aCtrl = TextEditingController(text: paramA.toString());
     final bCtrl = TextEditingController(text: paramB.toString());
     final cCtrl = TextEditingController(text: paramC.toString());
@@ -289,8 +287,6 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
     ).then((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        xCtrl.dispose();
-        yCtrl.dispose();
         aCtrl.dispose();
         bCtrl.dispose();
         cCtrl.dispose();

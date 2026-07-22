@@ -190,7 +190,15 @@ class UIRenderer {
   static Widget _renderComposite(BuildContext context, UIComposite composite, Size size) {
     // 复合组件渲染其子元素（当前简化实现：stack 布局）
     final children = <Widget>[];
+    // 编辑模式下跳过纯后端逻辑组件与后台标记元素，保持画布整洁
+    final isStudioMode = UISceneModeScope.of(context);
+    const backendTypes = {'linker', 'math_node', 'timer'};
     for (final child in composite.children) {
+      final isBackendNode = !child.isComposite && child.module != null && backendTypes.contains(child.module!.type);
+      final isBackground = child.module?.properties['runtimePlacement'] == 'background';
+      if (isStudioMode && (isBackendNode || isBackground)) {
+        continue;
+      }
       final childWidget = render(context, child);
       children.add(
         Positioned(
