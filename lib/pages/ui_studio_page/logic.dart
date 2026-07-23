@@ -36,6 +36,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   StudioClipboardEntry? _pendingPaste;
   bool _isMultiDeleteMode = false;
   final Set<String> _pendingDeleteIds = <String>{};
+  final Map<String, Offset> _compositePortPositions = <String, Offset>{};
 
 
   // ============================================================
@@ -649,7 +650,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     _deleteElement(_selectedTransformationId!);
   }
 
-  UIElement? _findElementById(String id, {List<UIElement>? parentList, int? index}) {
+  UIElement? _findElementById(String id) {
     // 先查顶层
     for (var i = 0; i < _currentElements.length; i++) {
       if (_currentElements[i].id == id) {
@@ -683,8 +684,29 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     return false;
   }
 
+  void _precomputeCompositePortPositions() {
+    for (final el in _currentElements) {
+      if (!el.isComposite || el.composite?.exposedPorts == null) continue;
+      final ports = el.composite!.exposedPorts!
+          .where((p) => el.composite!.children.any((c) => c.id == p.elementId))
+          .toList();
+      final gx = _workspaceOffset.dx + el.offset.dx;
+      final gy = _workspaceOffset.dy + el.offset.dy;
+      final bodyH = el.size.height;
+      final leftPorts = ports.where((p) => p.exposeInput).toList();
+      for (var i = 0; i < leftPorts.length; i++) {
+        final py = (bodyH / (leftPorts.length + 1)) * (i + 1);
+        _compositePortPositions["${leftPorts[i].elementId}::input"] = Offset(gx, gy + py);
+      }
+      final rightPorts = ports.where((p) => p.exposeOutput).toList();
+      for (var i = 0; i < rightPorts.length; i++) {
+        final py = (bodyH / (rightPorts.length + 1)) * (i + 1);
+        _compositePortPositions["${rightPorts[i].elementId}::output"] = Offset(gx + el.size.width, gy + py);
+      }
+    }
+  }
 
-    void _deleteElement(String id) {
+  void _deleteElement(String id) {
     final existingIndex = _currentElements.indexWhere((element) => element.id == id);
     if (existingIndex != -1 && _currentElements[existingIndex].sealed) return;
     setState(() {
@@ -1234,7 +1256,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   // ============================================================
   //  保存相关
   // ============================================================
-  Future<void> _saveCurrentWorkspaceAsComposite() async {
+  Future<void> _saveCurrentWorkspaceAsComposite({String? name}) async {
     _ensureContainerBoundaryMarker();
     final rootSurface = _findRootContainerSurface(_currentElements);
 
@@ -1259,7 +1281,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
 
     final composite = UIComposite(
       id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
-      name: '复合组件 ${_assetService.getAllComposites().length + 1}',
+      name: name ?? '复合组件 ${_assetService.getAllComposites().length + 1}',
       layoutType: 'stack',
       children: children,
       color: const Color(0xFF651FFF),
@@ -1275,51 +1297,6 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     _autoSave();
   }
 
-  Future<void> _bakeCurrentWorkspaceAsAtom() async {
-    _ensureContainerBoundaryMarker();
-    final bakeableElements = _currentElements.where(_isBakeableElement).toList();
-    if (bakeableElements.isEmpty) return;
-
-    final rootSurface = _findRootContainerSurface(bakeableElements);
-    if (rootSurface == null) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('烘焙失败：可烘焙队列中未找到作为标准外框的视觉面。'),
-            backgroundColor: Color(0xFFFF8F00),
-          ),
-        );
-      }
-      return;
-    }
-
-    final rootOffset = rootSurface.offset;
-    final normalizedElements = bakeableElements.map((el) {
-      return el.copyWith(
-        offset: Offset(el.offset.dx - rootOffset.dx, el.offset.dy - rootOffset.dy),
-      );
-    }).toList();
-
-    final module = UIModule(
-      id: 'baked_${DateTime.now().millisecondsSinceEpoch}',
-      name: '烘焙面原子 ${_assetService.getAllModules().length + 1}',
-      type: 'surface_art',
-      properties: {
-        'baked_from': normalizedElements.map((e) => e.toJson()).toList(),
-      },
-      color: const Color(0xFF651FFF),
-      material: UIModuleMaterial.gradient,
-      shape: UIModuleShape.rounded,
-      opacity: 1.0,
-    );
-    _assetService.addModule(module);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已烘焙为面原子 (${bakeableElements.length} 层)')),
-      );
-    }
-    _autoSave();
-  }
 
 
 }

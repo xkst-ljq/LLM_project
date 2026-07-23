@@ -1638,6 +1638,11 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         ? comp.exposedPorts!.map((p) => p.copyWith()).toList()
         : <ExposedPort>[];
 
+    void persistPorts() {
+      final u = comp.copyWith(exposedPorts: exposedPorts.isNotEmpty ? List<ExposedPort>.from(exposedPorts) : null);
+      _assetService.addComposite(u);
+    }
+
     void syncLivePreview() {
       final idx = _currentElements.indexWhere((e) => e.id == el.id);
       if (idx != -1) {
@@ -1827,9 +1832,13 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                                                       onChanged: (val) {
                                                         setDialogState(() {
                                                           if (val) {
-                                                            exposedPorts.add(ExposedPort(elementId: child.id, exposeInput: true, exposeOutput: true));
+                                                            final childType = comp.children.firstWhere((c) => c.id == child.id).module?.type ?? '';
+                                                            final defaultC = _exposedPortColorForType(childType).toARGB32();
+                                                            exposedPorts.add(ExposedPort(elementId: child.id, exposeInput: true, exposeOutput: true, customColor: defaultC));
+                                                            persistPorts();
                                                           } else {
                                                             exposedPorts.removeWhere((p) => p.elementId == child.id);
+                                                            persistPorts();
                                                           }
                                                         });
                                                       },
@@ -1844,6 +1853,7 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                                                         setDialogState(() {
                                                           final idx2 = exposedPorts.indexWhere((p) => p.elementId == child.id);
                                                           if (idx2 != -1) exposedPorts[idx2] = exposedPorts[idx2].copyWith(exposeInput: v);
+                                                            persistPorts();
                                                         });
                                                       }),
                                                       const SizedBox(width: 12),
@@ -1851,10 +1861,13 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                                                         setDialogState(() {
                                                           final idx2 = exposedPorts.indexWhere((p) => p.elementId == child.id);
                                                           if (idx2 != -1) exposedPorts[idx2] = exposedPorts[idx2].copyWith(exposeOutput: v);
+                                                            persistPorts();
                                                         });
                                                       }),
                                                     ],
                                                   ),
+                                                  const SizedBox(height: 6),
+                                                  _buildPortColorPicker(child.id, exposedPorts, setDialogState, persistPorts),
                                                 ],
                                               ],
                                             ),
@@ -2450,6 +2463,56 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
       default:
         return const Color(0xFF9E9E9E);
     }
+  }
+
+  static const _portColorSwatches = [
+    0xFF00E676, // 绿
+    0xFF651FFF, // 紫
+    0xFFFFA726, // 橙
+    0xFFFFD740, // 黄
+    0xFFFF4081, // 粉
+    0xFF4FC3F7, // 蓝
+    0xFF00ACC1, // 青
+    0xFFE53935, // 红
+    0xFFFFFFFF, // 白
+    0xFF37474F, // 深灰
+  ];
+
+  Widget _buildPortColorPicker(String childId, List<ExposedPort> exposedPorts, StateSetter sd, VoidCallback onChanged) {
+    final ep = exposedPorts.where((p) => p.elementId == childId).toList();
+    final currentColor = ep.isNotEmpty ? ep.first.customColor : null;
+    return Row(
+      children: [
+        const SizedBox(width: 4),
+        const Text('色盘', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+        const SizedBox(width: 6),
+        ..._portColorSwatches.map((c) {
+          final sel = currentColor == c || (currentColor == null && c == _portColorSwatches.first);
+          return GestureDetector(
+            onTap: () {
+              sd(() {
+                final i = exposedPorts.indexWhere((p) => p.elementId == childId);
+                if (i != -1) {
+                  exposedPorts[i] = exposedPorts[i].copyWith(customColor: c);
+                } else {
+                  exposedPorts.add(ExposedPort(elementId: childId, exposeInput: true, exposeOutput: true, customColor: c));
+                }
+              });
+              onChanged();
+            },
+            child: Container(
+              width: 16, height: 16,
+              margin: const EdgeInsets.only(right: 4),
+              decoration: BoxDecoration(
+                color: Color(c),
+                shape: BoxShape.circle,
+                border: Border.all(color: sel ? const Color(0xFF37474F) : Colors.black12, width: sel ? 2 : 1),
+              ),
+            ),
+          );
+        }),
+      ],
+    );
   }
 
   Widget _buildPortToggle(String label, bool value, ValueChanged<bool> onChanged) {

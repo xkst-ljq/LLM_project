@@ -20,112 +20,47 @@ mixin _StudioMenuDialogs on _UIStudioLogic {
     );
   }
 
-  // ===== 保存菜单 =====
+  // ===== 保存 =====
   void _showSaveMenu() {
-    showModalBottomSheet<void>(
+    _showCompositeNameDialog();
+  }
+
+
+
+  // ===== 复合组件命名 =====
+  void _showCompositeNameDialog() {
+    final nameCtrl = TextEditingController(
+      text: '复合组件 ${_assetService.getAllComposites().length + 1}',
+    );
+    showDialog(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        final bakeable = _currentElements.where(_isBakeableElement).length;
-        final skipped = _currentElements.length - bakeable;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  '保存成果',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF111116),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '当前工作台元素：${_currentElements.length} 个 · 可烘焙视觉层：$bakeable 个 · 跳过：$skipped 个',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF777783),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _buildSaveMenuTile(
-                  icon: Icons.save_alt_rounded,
-                  title: '保存工作台草稿',
-                  subtitle: '只保存当前画布，方便下次继续编辑；不加入资产库。',
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _saveWorkspaceDraft();
-                  },
-                ),
-                _buildSaveMenuTile(
-                  icon: Icons.dashboard_customize_rounded,
-                  title: '保存为复合组件',
-                  subtitle: '把当前画布元素保存为一个通用组件，子元素运行时仍独立存在。',
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _saveCurrentWorkspaceAsComposite();
-                  },
-                ),
-                _buildSaveMenuTile(
-                  icon: Icons.layers_clear_rounded,
-                  title: '烘焙为面原子',
-                  subtitle: '只合成可烘焙视觉层，文本/数据/交互热区会被跳过。',
-                  onTap: bakeable == 0
-                      ? null
-                      : () {
-                          Navigator.pop(ctx);
-                          _bakeCurrentWorkspaceAsAtom();
-                        },
-                ),
-              ],
-            ),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('命名复合组件', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+        content: TextField(
+          controller: nameCtrl,
+          autofocus: true,
+          decoration: _softInputDecoration(label: '组件名称'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF888896))),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildSaveMenuTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback? onTap,
-  }) {
-    final enabled = onTap != null;
-    return Card(
-      elevation: 0,
-      color: enabled ? const Color(0xFFF6F6F9) : const Color(0xFFE9E9EF),
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ListTile(
-        enabled: enabled,
-        leading: Icon(
-          icon,
-          color: enabled ? const Color(0xFFFF4081) : const Color(0xFFAAAAB4),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF111116),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF4081)),
+            onPressed: () {
+              final name = nameCtrl.text.trim();
+              Navigator.pop(ctx);
+              _saveCurrentWorkspaceAsComposite(name: name.isEmpty ? null : name);
+            },
+            child: const Text('保存', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: const TextStyle(fontSize: 11, color: Color(0xFF777783)),
-        ),
-        onTap: onTap,
+        ],
       ),
     );
   }
-
 
   // ===== 删除确认 =====
   void _confirmDeleteModule(UIModule module) {

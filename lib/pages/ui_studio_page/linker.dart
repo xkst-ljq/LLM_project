@@ -35,8 +35,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
       final endOffset = _resolvePortGlobalOffset(toEl, true, conn['toPort'] as String?);
 
       // 检查端点是否在复合件内部（复合件端口连线用粉红/浅蓝）
-      final isCompositePort = fromEl != null && toEl != null &&
-          (_isInsideComposite(fromEl!.id) || _isInsideComposite(toEl!.id));
+      final isCompositePort = (_isInsideComposite(fromEl.id) || _isInsideComposite(toEl.id));
       final isControlLine = conn['toPort'] == 'gate_in';
       final lineColor = isControlLine
           ? const Color(0xFFFFB300)
@@ -60,59 +59,27 @@ mixin _UIStudioLinker on _UIStudioLogic {
     return widgets;
   }
 
-  /// 计算复合件内部子元素端口在全局坐标系下的位置
-  Offset? _resolveCompositeChildGlobalOffset(String childId) {
-    for (final el in _currentElements) {
-      if (!el.isComposite || el.composite == null) continue;
-      final portIndex = el.composite!.exposedPorts?.indexWhere((p) => p.elementId == childId) ?? -1;
-      if (portIndex == -1) {
-        // also search nested composites
-        final found = _searchChildPortInComposite(el.composite!.children, childId, el.offset, el.size);
-        if (found != null) return found;
-        continue;
-      }
-      // Found - calculate port position relative to the composite's global position
-      final child = el.composite!.children.firstWhere((c) => c.id == childId, orElse: () => el.composite!.children.first);
-      final ports = el.composite!.exposedPorts!
-          .where((p) => el.composite!.children.any((c) => c.id == p.elementId))
-          .toList();
-      final leftPorts = ports.where((p) => p.exposeInput).toList();
-      final rightPorts = ports.where((p) => p.exposeOutput).toList();
-      final p = (el.id == _selectedTransformationId) ? 20.0 : 0.0;
-      final bodyH = el.size.height;
-      final gx = _workspaceOffset.dx + el.offset.dx;
-      final gy = _workspaceOffset.dy + el.offset.dy;
-      
-      // p offsets cancel out in the centered diagonal layout — port global positions are independent of selection padding
-      int idx;
-      if ((idx = leftPorts.indexWhere((p) => p.elementId == childId)) != -1) {
-        final py = (bodyH / (leftPorts.length + 1)) * (idx + 1);
-        return Offset(gx, gy + py);
-      }
-      if ((idx = rightPorts.indexWhere((p) => p.elementId == childId)) != -1) {
-        final py = (bodyH / (rightPorts.length + 1)) * (idx + 1);
-        return Offset(gx + el.size.width, gy + py);
-      }
-      return null;
-    }
-    return null;
-  }
-
-  Offset? _searchChildPortInComposite(List<UIElement> kids, String childId, Offset parentOffset, Size parentSize) {
-    for (final child in kids) {
-      if (child.isComposite && child.composite != null) {
-        final nestedOffset = parentOffset + child.offset;
-        final found = _searchChildPortInComposite(child.composite!.children, childId, nestedOffset, child.size);
-        if (found != null) return found;
-      }
-    }
-    return null;
+  /// 从渲染侧缓存的端口全局位置直接读取
+  /// [isInput]：true=目标端口(接收端)，false=源端口(发送端)
+  Offset? _resolveCompositeChildGlobalOffset(String childId, bool isInput) {
+    final key = isInput ? '$childId::input' : '$childId::output';
+    return _compositePortPositions[key];
   }
 
   Offset _resolvePortGlobalOffset(UIElement el, bool isInput, [String? portName]) {
     // 优先检查是否指向复合件内部子元素
-    final compositeChildOffset = _resolveCompositeChildGlobalOffset(el.id);
+    final compositeChildOffset = _resolveCompositeChildGlobalOffset(el.id, isInput);
     if (compositeChildOffset != null) return compositeChildOffset;
+
+    // 如果元素在复合件内部但不在暴露端口列表中，以容纳它的复合件外框为视觉锚点
+    for (final top in _currentElements) {
+      if (top.isComposite && top.composite != null) {
+        if (_searchInChildren(top.composite!.children, el.id) != null) {
+          final cy = _workspaceOffset.dy + top.offset.dy + top.size.height / 2;
+          return Offset(isInput ? _workspaceOffset.dx + top.offset.dx : _workspaceOffset.dx + top.offset.dx + top.size.width, cy);
+        }
+      }
+    }
 
     final elLeft = _workspaceOffset.dx + el.offset.dx;
     final elTop = _workspaceOffset.dy + el.offset.dy;
@@ -314,42 +281,28 @@ mixin _UIStudioLinker on _UIStudioLogic {
       }
     }
 
-    // 如果未命中普通元素，检查复合件的暴露端口
+    // 如果未命中普通元素，检查复合件的暴露端口（方位直接读取缓存，保证一致）
     if (newHoverTargetId == null) {
       for (final el in _currentElements) {
         if (!el.isComposite || el.composite?.exposedPorts == null) continue;
         if (el.sealed || el.layerIndex != _activeLayerIndex) continue;
 
-        final ports = el.composite!.exposedPorts!
-            .where((p) => el.composite!.children.any((c) => c.id == p.elementId))
-            .toList();
-        if (ports.isEmpty) continue;
+        final eps = el.composite!.exposedPorts!;
+        for (final ep in eps) {
+          if (!el.composite!.children.any((c) => c.id == ep.elementId)) continue;
 
-        final elemGlobal = _workspaceOffset + el.offset;
-        final bodyH = el.size.height;
+          final portKey = ep.exposeInput ? "${ep.elementId}::input" : "${ep.elementId}::output";
+          final pos = _compositePortPositions[portKey];
+          if (pos == null) continue;
 
-        // Linker「输出端」拖出 → 可接复合件「左侧接收端口」
-        if (_draggingSourceType == 'output') {
-          final leftPorts = ports.where((p) => p.exposeInput).toList();
-          for (var i = 0; i < leftPorts.length; i++) {
-            final py = elemGlobal.dy + (bodyH / (leftPorts.length + 1)) * (i + 1);
-            final px = elemGlobal.dx;
-            if ((globalPosition - Offset(px, py)).distance < 24) {
-              newHoverTargetId = leftPorts[i].elementId;
+          if ((globalPosition - pos).distance < 24) {
+            if (ep.exposeInput && _draggingSourceType == 'output') {
+              newHoverTargetId = ep.elementId;
               newHoverTargetPort = 'input';
               break;
             }
-          }
-        }
-
-        // Linker「输入端」朝外拖 → 可接复合件「右侧输出端口」
-        if (newHoverTargetId == null && _draggingSourceType == 'input') {
-          final rightPorts = ports.where((p) => p.exposeOutput).toList();
-          for (var i = 0; i < rightPorts.length; i++) {
-            final py = elemGlobal.dy + (bodyH / (rightPorts.length + 1)) * (i + 1);
-            final px = elemGlobal.dx + el.size.width;
-            if ((globalPosition - Offset(px, py)).distance < 24) {
-              newHoverTargetId = rightPorts[i].elementId;
+            if (ep.exposeOutput && _draggingSourceType == 'input') {
+              newHoverTargetId = ep.elementId;
               newHoverTargetPort = 'output';
               break;
             }
@@ -444,6 +397,39 @@ mixin _UIStudioLinker on _UIStudioLogic {
     return reachesSource(targetId);
   }
 
+  bool _isSameCompositeOrSelf(String id1, String id2) {
+    if (id1 == id2) return true;
+    for (final el in _currentElements) {
+      if (!el.isComposite || el.composite == null) continue;
+      final in1 = _searchInChildren(el.composite!.children, id1) != null;
+      final in2 = _searchInChildren(el.composite!.children, id2) != null;
+      if (in1 && in2) return true;
+    }
+    return false;
+  }
+
+  void _disconnectBothPorts(UIElement el) {
+    if (el.module?.type != 'linker') return;
+    final idx = _currentElements.indexWhere((e) => e.id == el.id);
+    if (idx == -1) return;
+    final props = Map<String, dynamic>.from(el.module!.properties);
+    final linkerData = Map<String, dynamic>.from(props['linker'] ?? {});
+    linkerData.remove('sourceModuleId');
+    linkerData.remove('sourcePort');
+    linkerData.remove('sourceType');
+    linkerData.remove('targetModuleId');
+    linkerData.remove('targetPort');
+    linkerData.remove('targetType');
+    linkerData['scheme'] = '未配置';
+    linkerData.remove('schemeParams');
+    linkerData['enabled'] = false;
+    props['linker'] = linkerData;
+    setState(() {
+      _currentElements[idx] = el.copyWith(module: el.module!.copyWith(properties: props));
+    });
+    _autoSave();
+  }
+
   // ===== 连接完成 =====
   void _completeConnection() {
     if (_hoveringTargetId == null || _draggingSourceId == null) return;
@@ -473,6 +459,15 @@ mixin _UIStudioLinker on _UIStudioLogic {
         _wouldCreateLinkerCycle(prospectiveSourceId, prospectiveTargetId)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('不允许创建联动器环依赖')),
+      );
+      return;
+    }
+
+    // 禁止同组内自连
+    if (_isSameCompositeOrSelf(prospectiveSourceId ?? sourceElement.id,
+        prospectiveTargetId ?? targetElement.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('禁止同一复合组件内部自连接，请跨组件连线。')),
       );
       return;
     }
@@ -570,6 +565,19 @@ mixin _UIStudioLinker on _UIStudioLogic {
           final el = _currentElements[idx];
           final lkData = (el.module?.properties['linker'] as Map?)?.cast<String, dynamic>();
           if (lkData != null && lkData['sourceModuleId'] != null && lkData['targetModuleId'] != null) {
+            final sId = lkData['sourceModuleId'];
+            final tId = lkData['targetModuleId'];
+            final sEl = _findElementById(sId);
+            final tEl = _findElementById(tId);
+            final schemes = LinkerMatrixEngine.getAvailableSchemes(
+              sEl?.module?.type, tEl?.module?.type);
+            if (schemes.isEmpty) {
+              _disconnectBothPorts(el);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('该通路协议不可用，已自动断开')),
+              );
+              return;
+            }
             _showLinkerSchemeQuickSelectDialog(el);
           }
         }

@@ -104,6 +104,8 @@ class _UIStudioPageState extends State<UIStudioPage>
         return (elementOrder[a.id] ?? 0).compareTo(elementOrder[b.id] ?? 0);
       });
     const double rightDrawerWidth = 160.0;
+    _compositePortPositions.clear();
+    _precomputeCompositePortPositions();
 
     return PopScope(
       canPop: true,
@@ -185,17 +187,11 @@ class _UIStudioPageState extends State<UIStudioPage>
                                       el.module?.type != 'linker')
                                       ? 20.0
                                       : 0.0;
-                                  final double elemW = el.size.width + p * 2;
-                                  final double elemH = el.size.height + p * 2;
-                                  // 对角线尺寸保证旋转后所有区域可命中
-                                  final double diag = math.sqrt(elemW * elemW + elemH * elemH);
-                                  final double cx = _workspaceOffset.dx + el.offset.dx + el.size.width / 2;
-                                  final double cy = _workspaceOffset.dy + el.offset.dy + el.size.height / 2;
                                   return Positioned(
-                                    left: cx - diag / 2,
-                                    top: cy - diag / 2,
-                                    width: diag,
-                                    height: diag,
+                                    left: _workspaceOffset.dx + el.offset.dx - p,
+                                    top: _workspaceOffset.dy + el.offset.dy - p,
+                                    width: el.size.width + p * 2,
+                                    height: el.size.height + p * 2,
                                     child: Builder(builder: (nCtx) => _buildTrueSingleHandleNode(nCtx, el, p)),
                                   );
                                 });
@@ -825,16 +821,18 @@ class _UIStudioPageState extends State<UIStudioPage>
       final ports = el.composite!.exposedPorts!.where((p) =>
         el.composite!.children.any((c) => c.id == p.elementId)
       ).toList();
-      final double bodyH = el.size.height;
+      final bodyH = el.size.height;
+      final gx = _workspaceOffset.dx + el.offset.dx;
+      final gy = _workspaceOffset.dy + el.offset.dy;
       // 左侧接收端口
       final leftPorts = ports.where((p) => p.exposeInput).toList();
       for (var i = 0; i < leftPorts.length; i++) {
         final port = leftPorts[i];
-        final child = el.composite!.children.firstWhere((c) => c.id == port.elementId);
-        final dataType = child.module?.type ?? '';
-        final dotColor = _exposedPortVisualColor(dataType);
+        final dataType = el.composite!.children.firstWhere((c) => c.id == port.elementId).module?.type ?? '';
+        final dotColor = _exposedPortColor(port, dataType);
         final y = p + (bodyH / (leftPorts.length + 1)) * (i + 1);
-        // 左侧接收端口：不可拖出，只接受外来连线
+        // 记录端口全局位置供连线使用
+        _compositePortPositions["${port.elementId}::input"] = Offset(gx, gy - p + y);
         stackChildren.add(
           Positioned(
             left: p - 6,
@@ -855,14 +853,13 @@ class _UIStudioPageState extends State<UIStudioPage>
       final rightPorts = ports.where((p) => p.exposeOutput).toList();
       for (var i = 0; i < rightPorts.length; i++) {
         final port = rightPorts[i];
-        final child = el.composite!.children.firstWhere((c) => c.id == port.elementId);
-        final dataType = child.module?.type ?? '';
-        final dotColor = _exposedPortVisualColor(dataType);
+        final dataType = el.composite!.children.firstWhere((c) => c.id == port.elementId).module?.type ?? '';
+        final dotColor = _exposedPortColor(port, dataType);
         final y = p + (bodyH / (rightPorts.length + 1)) * (i + 1);
-        // 右侧输出端口：不发起拖拽，由 linker 侧连线接入
+        _compositePortPositions["${port.elementId}::output"] = Offset(gx + el.size.width, gy - p + y);
         stackChildren.add(
           Positioned(
-            right: p - 6,
+            left: el.size.width + p * 2 - (p - 6) - 12,
             top: y - 6,
             child: Container(
               width: 12, height: 12,
@@ -996,27 +993,12 @@ class _UIStudioPageState extends State<UIStudioPage>
     }
 
 
-    final double eW = el.size.width + p * 2;
-    final double eH = el.size.height + p * 2;
-    final double eDiag = math.sqrt(eW * eW + eH * eH);
-
     Widget rootTree = SizedBox(
-      width: eDiag,
-      height: eDiag,
+      width: el.size.width + p * 2,
+      height: el.size.height + p * 2,
       child: Stack(
         clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            left: (eDiag - eW) / 2,
-            top: (eDiag - eH) / 2,
-            width: eW,
-            height: eH,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: stackChildren,
-            ),
-          ),
-        ],
+        children: stackChildren,
       ),
     );
 
@@ -1035,8 +1017,8 @@ class _UIStudioPageState extends State<UIStudioPage>
     // 它不拦截元素主体区域，因此仍可操作下层元素与连线。
     if (!el.layoutLocked && !el.sealed) return transformedNode;
     return SizedBox(
-      width: eDiag,
-      height: eDiag,
+      width: el.size.width + p * 2,
+      height: el.size.height + p * 2,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1066,6 +1048,11 @@ class _UIStudioPageState extends State<UIStudioPage>
   // ============================================================
   //  小型 UI 辅助组件
   // ============================================================
+  Color _exposedPortColor(ExposedPort port, String type) {
+    if (port.customColor != null) return Color(port.customColor!);
+    return _exposedPortVisualColor(type);
+  }
+
   Color _exposedPortVisualColor(String type) {
     switch (type) {
       case 'progress':
@@ -1083,6 +1070,8 @@ class _UIStudioPageState extends State<UIStudioPage>
         return const Color(0xFF9E9E9E);
     }
   }
+
+
 
   void _nudgeElement(String id, Offset delta) {
     final index = _currentElements.indexWhere((element) => element.id == id);

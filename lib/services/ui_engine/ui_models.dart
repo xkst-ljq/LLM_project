@@ -254,29 +254,34 @@ class ExposedPort {
   final String elementId; // 内部子元素 ID
   final bool exposeInput; // 左侧边轨：接收端口
   final bool exposeOutput; // 右侧边轨：输出端口
+  final int? customColor; // 自定义端口颜色，null 时使用类型默认色
 
   const ExposedPort({
     required this.elementId,
     this.exposeInput = true,
     this.exposeOutput = true,
+    this.customColor,
   });
 
   Map<String, dynamic> toJson() => {
     'elementId': elementId,
     'exposeInput': exposeInput,
     'exposeOutput': exposeOutput,
+    if (customColor != null) 'customColor': customColor,
   };
 
   factory ExposedPort.fromJson(Map<String, dynamic> json) => ExposedPort(
     elementId: json['elementId']?.toString() ?? '',
     exposeInput: json['exposeInput'] != false,
     exposeOutput: json['exposeOutput'] != false,
+    customColor: json['customColor'] as int?,
   );
 
-  ExposedPort copyWith({String? elementId, bool? exposeInput, bool? exposeOutput}) => ExposedPort(
+  ExposedPort copyWith({String? elementId, bool? exposeInput, bool? exposeOutput, int? customColor}) => ExposedPort(
     elementId: elementId ?? this.elementId,
     exposeInput: exposeInput ?? this.exposeInput,
     exposeOutput: exposeOutput ?? this.exposeOutput,
+    customColor: customColor ?? this.customColor,
   );
 }
 
