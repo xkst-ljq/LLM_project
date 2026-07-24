@@ -34,6 +34,9 @@ class CharacterMeta {
   /// 角色专属的 UI 引擎排版布局元素列表
   List<UIElement> uiElements;
 
+  /// 角色绑定的 UI 组装方案列表（JSON 字符串）
+  List<String> uiAssemblies;
+
   CharacterMeta({
     List<String>? tags,
     this.creator = '',
@@ -44,9 +47,11 @@ class CharacterMeta {
     this.mesExample = '',
     List<StatusBarField>? statusBarFields,
     List<UIElement>? uiElements,
+    List<String>? uiAssemblies,
   })  : tags = tags ?? <String>[],
         statusBarFields = statusBarFields ?? <StatusBarField>[],
-        uiElements = uiElements ?? <UIElement>[];
+        uiElements = uiElements ?? <UIElement>[],
+        uiAssemblies = uiAssemblies ?? <String>[];
 
   bool get isEmpty =>
       tags.isEmpty &&
@@ -107,6 +112,7 @@ class CharacterMeta {
       mesExample: json['mes_example']?.toString() ?? '',
       statusBarFields: readFields(json['status_bar_fields']),
       uiElements: readUIElements(json['ui_elements']),
+      uiAssemblies: (json['ui_assemblies'] as List?)?.map((e) => e.toString()).toList() ?? <String>[],
     );
   }
 
@@ -136,6 +142,7 @@ class CharacterMeta {
       'mes_example': mesExample,
       'status_bar_fields': statusBarFields.map((f) => f.toJson()).toList(),
       'ui_elements': uiElements.map((e) => e.toJson()).toList(),
+      'ui_assemblies': uiAssemblies,
     };
   }
 
