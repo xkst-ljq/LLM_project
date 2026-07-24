@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../models/character_meta.dart';
 import '../models/ui_assembly_info.dart';
+import 'character_assembly_page.dart';
 
 /// 角色 UI 拼装列表页：浏览已有 UI，新建 UI（选模式后进拼装页）
 class UIAssemblyListPage extends StatefulWidget {
@@ -121,7 +123,7 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
     final result = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => _CharacterAssemblyStubPage(assemblyInfo: info),
+        builder: (_) => CharacterAssemblyPage(assemblyInfo: info),
       ),
     );
     if (result != null && result.isNotEmpty) {
@@ -235,60 +237,6 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                 );
               },
             ),
-    );
-  }
-}
-
-/// 占位拼装页（A1 骨架：只显示模式名 + 保存按钮）
-class _CharacterAssemblyStubPage extends StatefulWidget {
-  final UIAssemblyInfo assemblyInfo;
-  const _CharacterAssemblyStubPage({required this.assemblyInfo});
-
-  @override
-  State<_CharacterAssemblyStubPage> createState() => _CharacterAssemblyStubPageState();
-}
-
-class _CharacterAssemblyStubPageState extends State<_CharacterAssemblyStubPage> {
-  late UIAssemblyInfo _info;
-
-  @override
-  void initState() {
-    super.initState();
-    _info = widget.assemblyInfo;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF1E1E24),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2A2A32),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(_info.modeLabel, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.pop(context, _info.toJsonString()),
-            icon: const Icon(Icons.save_rounded, color: Color(0xFF00E676), size: 18),
-            label: const Text('保存', style: TextStyle(color: Color(0xFF00E676))),
-          ),
-        ],
-      ),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(_info.modeIcon, size: 80, color: Colors.white24),
-            const SizedBox(height: 16),
-            Text('${_info.modeLabel} · 拼装画布', style: const TextStyle(color: Colors.white70, fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text('画布即将在此渲染', style: TextStyle(color: Colors.white38, fontSize: 13)),
-          ],
-        ),
-      ),
     );
   }
 }

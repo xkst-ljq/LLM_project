@@ -11,8 +11,8 @@ import '../models/ui_assembly_info.dart';
 import '../services/database_service.dart';
 import '../services/image_pick_service.dart';
 import '../utils/id_utils.dart';
-import 'status_bar_fields_edit_page.dart';
 import 'character_assembly_list_page.dart';
+import 'status_bar_fields_edit_page.dart';
 
 class CharacterEditOverlay extends StatefulWidget {
   final CharacterCard character;
@@ -407,13 +407,40 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   void _pickWorldBook() async {
     final books = await DatabaseService.getAllWorldBooks();
     if (!mounted) return;
-    showModalBottomSheet(context: context, builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
-      const Padding(padding: EdgeInsets.all(16), child: Text('选择世界书', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
-      ...books.map((b) => ListTile(title: Text(b['name'] as String? ?? '未命名'), selected: b['id'] == _worldBookId, onTap: () { setState(() { _worldBookId = b['id'] as String; _worldBookName = b['name'] as String? ?? ''; }); Navigator.pop(ctx); })),
-      const Divider(),
-      ListTile(leading: const Icon(Icons.clear, color: Colors.red), title: const Text('解除绑定', style: TextStyle(color: Colors.red)), onTap: () { setState(() { _worldBookId = null; _worldBookName = ''; }); Navigator.pop(ctx); }),
-      const SizedBox(height: 8),
-    ]));
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.85,
+        minChildSize: 0.3,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(padding: EdgeInsets.all(16), child: Text('选择世界书', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                children: [
+                  ...books.map((b) => ListTile(
+                    title: Text(b['name'] as String? ?? '未命名'),
+                    selected: b['id'] == _worldBookId,
+                    onTap: () { setState(() { _worldBookId = b['id'] as String; _worldBookName = b['name'] as String? ?? ''; }); Navigator.pop(ctx); },
+                  )),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.clear, color: Colors.red),
+                    title: const Text('解除绑定', style: TextStyle(color: Colors.red)),
+                    onTap: () { setState(() { _worldBookId = null; _worldBookName = ''; }); Navigator.pop(ctx); },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _switchCardType(String type) {
