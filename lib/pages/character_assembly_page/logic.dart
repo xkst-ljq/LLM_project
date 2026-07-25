@@ -13,8 +13,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   static const Size _defaultPcbSize = Size(360, 800);
   late Size _pcbSize;
   late Offset _pcbOffset;
-  Color _pcbColor = Colors.white;
-  bool _pcbRounded = true;
+  final Color _pcbColor = Colors.white;
+  final bool _pcbRounded = true;
   bool _didInitialViewportCenter = false;
 
   // 拖放状态
@@ -89,7 +89,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   String _generateElementId() {
     _generatedElementIdSeed++;
-    return 'elem_${DateTime.now().microsecondsSinceEpoch}_${_generatedElementIdSeed}';
+    return 'elem_${DateTime.now().microsecondsSinceEpoch}_$_generatedElementIdSeed';
   }
 
   dynamic _deepCloneValue(dynamic value) {
@@ -154,18 +154,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     UIElement cloneElement(UIElement element) {
       final newId = idMap[element.id] ?? _generateElementId();
-      final clonedModule = element.module == null
-          ? null
-          : element.module!.copyWith(
-              id: newId,
-              properties: remapModuleProperties(
-                element.module!.type,
-                element.module!.properties,
-              ),
-              linkedSources: element.module!.linkedSources
-                  .map((sourceId) => idMap[sourceId] ?? sourceId)
-                  .toList(),
-            );
+      final clonedModule = element.module?.copyWith(
+        id: newId,
+        properties: remapModuleProperties(
+          element.module!.type,
+          element.module!.properties,
+        ),
+        linkedSources: element.module!.linkedSources
+            .map((sourceId) => idMap[sourceId] ?? sourceId)
+            .toList(),
+      );
 
       UIComposite? clonedComposite;
       if (element.isComposite && element.composite != null) {

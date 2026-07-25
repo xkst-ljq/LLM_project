@@ -353,7 +353,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
 
   String _generateElementId() {
     _generatedElementIdSeed++;
-    return 'elem_${DateTime.now().microsecondsSinceEpoch}_${_generatedElementIdSeed}';
+    return 'elem_${DateTime.now().microsecondsSinceEpoch}_$_generatedElementIdSeed';
   }
 
   Offset _rotateLocalPoint(Offset point, Offset center, double degrees) {
@@ -460,18 +460,16 @@ mixin _UIStudioLogic on State<UIStudioPage> {
 
     UIElement cloneElement(UIElement element) {
       final newId = idMap[element.id] ?? _generateElementId();
-      final clonedModule = element.module == null
-          ? null
-          : element.module!.copyWith(
-              id: newId,
-              properties: remapModuleProperties(
-                element.module!.type,
-                element.module!.properties,
-              ),
-              linkedSources: element.module!.linkedSources
-                  .map((sourceId) => idMap[sourceId] ?? sourceId)
-                  .toList(),
-            );
+      final clonedModule = element.module?.copyWith(
+        id: newId,
+        properties: remapModuleProperties(
+          element.module!.type,
+          element.module!.properties,
+        ),
+        linkedSources: element.module!.linkedSources
+            .map((sourceId) => idMap[sourceId] ?? sourceId)
+            .toList(),
+      );
 
       UIComposite? clonedComposite;
       if (element.isComposite && element.composite != null) {

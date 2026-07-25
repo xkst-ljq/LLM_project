@@ -1639,8 +1639,8 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
         : <ExposedPort>[];
 
     void persistPorts() {
-      final u = comp.copyWith(exposedPorts: exposedPorts.isNotEmpty ? List<ExposedPort>.from(exposedPorts) : null);
-      _assetService.addComposite(u);
+      // 画布中的复合组件编辑只修改当前实例快照；
+      // 模板端口请从资产库卡片点击进入单独编辑，避免实例与模板互相污染。
     }
 
     void syncLivePreview() {

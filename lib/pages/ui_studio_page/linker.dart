@@ -223,6 +223,24 @@ mixin _UIStudioLinker on _UIStudioLogic {
     );
   }
 
+  int _compositePortColorForType(String type) {
+    switch (type) {
+      case 'progress':
+      case 'slider':
+        return const Color(0xFF00E676).toARGB32();
+      case 'text':
+      case 'input':
+      case 'select':
+        return const Color(0xFF651FFF).toARGB32();
+      case 'switch':
+        return const Color(0xFFFFA726).toARGB32();
+      case 'button':
+        return const Color(0xFFFFD740).toARGB32();
+      default:
+        return const Color(0xFF9E9E9E).toARGB32();
+    }
+  }
+
   List<_CompositePortCandidate> _compositePortCandidatesForDirection(
     UIElement compositeElement,
     String portDirection,
@@ -245,7 +263,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
           label: child.module?.name ?? child.composite?.name ?? child.id,
           type: child.module?.type ?? '复合组件',
           portDirection: portDirection,
-          colorValue: port.customColor ?? _exposedPortVisualColor(child.module?.type ?? '' ).toARGB32(),
+          colorValue:
+              port.customColor ?? _compositePortColorForType(child.module?.type ?? ''),
         ),
       );
     }
