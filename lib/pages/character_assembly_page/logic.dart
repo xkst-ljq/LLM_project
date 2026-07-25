@@ -15,6 +15,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   late Offset _pcbOffset;
   Color _pcbColor = Colors.white;
   bool _pcbRounded = true;
+  bool _didInitialViewportCenter = false;
 
   // 拖放状态
   _AssemblyDragPayload? _activePlacement;
@@ -24,10 +25,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _info = info;
     _nameCtrl = TextEditingController(text: info.name);
     _pcbSize = _defaultPcbSize;
-    _pcbOffset = const Offset(20, 20);
-    _canvasOffset = const Offset(80, 60);
+    _pcbOffset = Offset.zero;
+    _canvasOffset = Offset.zero;
     _restoreAssemblyElements();
     _setupEventBusListener();
+    _scheduleInitialViewportCenter();
     _assetService.ensureLoaded().then((_) {
       if (mounted) setState(() {});
     });
@@ -49,6 +51,21 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     } catch (_) {
       // 保持为空，避免损坏数据阻断编辑页打开。
     }
+  }
+
+  void _scheduleInitialViewportCenter() {
+    if (_didInitialViewportCenter) return;
+    _didInitialViewportCenter = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final size = MediaQuery.sizeOf(context);
+      final centeredX = math.max(0.0, (size.width - _pcbSize.width) / 2);
+      final centeredY = math.max(0.0, (size.height - _pcbSize.height) / 2);
+      setState(() {
+        _canvasOffset = Offset(centeredX, centeredY);
+        _pcbOffset = Offset.zero;
+      });
+    });
   }
 
   void _setupEventBusListener() {

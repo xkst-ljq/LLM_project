@@ -903,24 +903,32 @@ mixin _UIStudioLogic on State<UIStudioPage> {
           .where((p) => el.composite!.children.any((c) => c.id == p.elementId))
           .toList();
       final bodyH = el.size.height;
+      final selectionPadding =
+          (!_isPreviewMode &&
+                  el.id == _selectedTransformationId &&
+                  el.module?.type != 'linker')
+              ? 20.0
+              : 0.0;
       final leftPorts = ports.where((p) => p.exposeInput).toList();
       for (var i = 0; i < leftPorts.length; i++) {
-        final py = (bodyH / (leftPorts.length + 1)) * (i + 1);
+        final py = selectionPadding + (bodyH / (leftPorts.length + 1)) * (i + 1);
         _compositePortPositions["${leftPorts[i].elementId}::input"] =
             _compositePortGlobalPosition(
           el,
           localY: py,
           isInput: true,
+          selectionPadding: selectionPadding,
         );
       }
       final rightPorts = ports.where((p) => p.exposeOutput).toList();
       for (var i = 0; i < rightPorts.length; i++) {
-        final py = (bodyH / (rightPorts.length + 1)) * (i + 1);
+        final py = selectionPadding + (bodyH / (rightPorts.length + 1)) * (i + 1);
         _compositePortPositions["${rightPorts[i].elementId}::output"] =
             _compositePortGlobalPosition(
           el,
           localY: py,
           isInput: false,
+          selectionPadding: selectionPadding,
         );
       }
     }

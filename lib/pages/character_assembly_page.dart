@@ -106,18 +106,11 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                               ),
                             ),
                             ..._elements.map((el) {
-                              const portPad = 6.0;
                               return Positioned(
-                                left: _canvasOffset.dx +
-                                    _pcbOffset.dx +
-                                    el.offset.dx -
-                                    portPad,
-                                top: _canvasOffset.dy +
-                                    _pcbOffset.dy +
-                                    el.offset.dy -
-                                    portPad,
-                                width: el.size.width + portPad * 2,
-                                height: el.size.height + portPad * 2,
+                                left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,
+                                top: _canvasOffset.dy + _pcbOffset.dy + el.offset.dy,
+                                width: el.size.width,
+                                height: el.size.height,
                                 child: _buildElementWidget(el),
                               );
                             }),
