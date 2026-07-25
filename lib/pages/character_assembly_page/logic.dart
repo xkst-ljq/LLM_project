@@ -334,20 +334,24 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                               hasSlot
                                   ? TextButton(
                                       onPressed: () {
-                                        _removePropertyOverride(child.id);
+                                        setState(() {
+                                          _removePropertyOverride(child.id);
+                                        });
                                         setDialogState(() {});
                                       },
                                       child: const Text('移除'),
                                     )
                                   : FilledButton.tonal(
                                       onPressed: () {
-                                        _ensurePropertyOverride(
-                                          componentId: child.id,
-                                          sourceElementId: compositeElement.id,
-                                          sourceCompositeId:
-                                              compositeElement.composite?.id,
-                                        );
-                                        _persistAssemblyElements();
+                                        setState(() {
+                                          _ensurePropertyOverride(
+                                            componentId: child.id,
+                                            sourceElementId: compositeElement.id,
+                                            sourceCompositeId:
+                                                compositeElement.composite?.id,
+                                          );
+                                          _persistAssemblyElements();
+                                        });
                                         setDialogState(() {});
                                       },
                                       child: const Text('创建'),
