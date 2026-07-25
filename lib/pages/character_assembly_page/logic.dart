@@ -5,6 +5,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   late UIAssemblyInfo _info;
   late TextEditingController _nameCtrl;
   final List<UIElement> _elements = [];
+  final List<AssemblyPage> _pages = <AssemblyPage>[];
+  String? _activePageId;
   Offset _canvasOffset = Offset.zero;
   bool _showLayerPanel = false;
   bool _showAssetDrawer = false;
@@ -36,7 +38,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _pcbRounded = info.pcbRounded;
     _pcbOffset = Offset.zero;
     _canvasOffset = Offset.zero;
-    _restoreAssemblyElements();
+    _restoreAssemblyPages();
     _setupEventBusListener();
     _scheduleInitialViewportCenter();
     _assetService.ensureLoaded().then((_) {
@@ -44,22 +46,218 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     });
   }
 
-  void _restoreAssemblyElements() {
-    _elements.clear();
-    final raw = _info.elementsJson.trim();
-    if (raw.isEmpty) return;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is List) {
-        _elements.addAll(
-          decoded
-              .whereType<Map>()
-              .map((item) => UIElement.fromJson(Map<String, dynamic>.from(item))),
-        );
+  void _restoreAssemblyPages() {
+    _pages.clear();
+    final rawPages = _info.pagesJson.trim();
+    if (rawPages.isNotEmpty && rawPages != '[]') {
+      try {
+        final decoded = jsonDecode(rawPages);
+        if (decoded is List) {
+          _pages.addAll(
+            decoded
+                .whereType<Map>()
+                .map((item) => AssemblyPage.fromJson(Map<String, dynamic>.from(item))),
+          );
+        }
+      } catch (_) {
+        _pages.clear();
       }
-    } catch (_) {
-      // 保持为空，避免损坏数据阻断编辑页打开。
     }
+
+    if (_pages.isEmpty) {
+      final legacyElements = <UIElement>[];
+      final raw = _info.elementsJson.trim();
+      if (raw.isNotEmpty && raw != '[]') {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is List) {
+            legacyElements.addAll(
+              decoded
+                  .whereType<Map>()
+                  .map((item) => UIElement.fromJson(Map<String, dynamic>.from(item))),
+            );
+          }
+        } catch (_) {
+          // 忽略损坏旧数据，退回空白默认页。
+        }
+      }
+      _pages.add(
+        AssemblyPage(
+          id: 'page_${DateTime.now().millisecondsSinceEpoch}',
+          name: '主界面',
+          type: 'base',
+          sortOrder: 0,
+          elements: legacyElements,
+        ),
+      );
+    }
+
+    _pages.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    _activePageId = _pages.first.id;
+    _loadActivePageElements();
+  }
+
+  AssemblyPage get _activePage {
+    return _pages.firstWhere(
+      (page) => page.id == _activePageId,
+      orElse: () => _pages.first,
+    );
+  }
+
+  void _syncCanvasElementsIntoActivePage() {
+    final targetIndex = _pages.indexWhere((page) => page.id == _activePageId);
+    if (targetIndex == -1) return;
+    _pages[targetIndex].elements = _elements
+        .map((element) => UIElement.fromJson(element.toJson()))
+        .toList();
+  }
+
+  void _loadActivePageElements() {
+    _elements
+      ..clear()
+      ..addAll(
+        _activePage.elements
+            .map((element) => UIElement.fromJson(element.toJson())),
+      );
+  }
+
+  List<AssemblyPage> _orderedPages() {
+    final bases = _pages.where((page) => page.isBase).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final ordered = <AssemblyPage>[];
+
+    void appendChildren(String parentId) {
+      final children = _pages
+          .where((page) => page.parentPageId == parentId)
+          .toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      for (final child in children) {
+        ordered.add(child);
+        appendChildren(child.id);
+      }
+    }
+
+    for (final base in bases) {
+      ordered.add(base);
+      appendChildren(base.id);
+    }
+    return ordered;
+  }
+
+  int _pageDepth(AssemblyPage page) {
+    var depth = 0;
+    var parentId = page.parentPageId;
+    final visited = <String>{page.id};
+    while (parentId != null && parentId.isNotEmpty && visited.add(parentId)) {
+      final index = _pages.indexWhere((candidate) => candidate.id == parentId);
+      if (index == -1) break;
+      depth++;
+      parentId = _pages[index].parentPageId;
+    }
+    return depth;
+  }
+
+  List<AssemblyPage> _ancestorPagesForActivePage() {
+    final ancestors = <AssemblyPage>[];
+    var parentId = _activePage.parentPageId;
+    final visited = <String>{_activePage.id};
+    while (parentId != null && parentId.isNotEmpty && visited.add(parentId)) {
+      final index = _pages.indexWhere((page) => page.id == parentId);
+      if (index == -1) break;
+      final page = _pages[index];
+      ancestors.insert(0, page);
+      parentId = page.parentPageId;
+    }
+    return ancestors;
+  }
+
+  void _activatePage(String pageId) {
+    if (_activePageId == pageId) return;
+    _syncCanvasElementsIntoActivePage();
+    _activePageId = pageId;
+    _loadActivePageElements();
+    _setupEventBusListener();
+    _persistAssemblyElements();
+    setState(() {
+      _showLayerPanel = false;
+    });
+  }
+
+  void _createPage({required String type}) {
+    _syncCanvasElementsIntoActivePage();
+    final pageType = type == 'overlay' ? 'overlay' : 'base';
+    final parentPageId = pageType == 'overlay' ? _activePage.id : null;
+    final siblingCount = _pages.where((page) => page.parentPageId == parentPageId).length;
+    final page = AssemblyPage(
+      id: 'page_${DateTime.now().millisecondsSinceEpoch}_${_pages.length}',
+      name: pageType == 'overlay'
+          ? '叠加层 ${siblingCount + 1}'
+          : '页面 ${_pages.where((candidate) => candidate.isBase).length + 1}',
+      type: pageType,
+      parentPageId: parentPageId,
+      sortOrder: siblingCount,
+    );
+    _pages.add(page);
+    _activePageId = page.id;
+    _elements.clear();
+    _setupEventBusListener();
+    _persistAssemblyElements();
+    setState(() {});
+  }
+
+  void _renamePage(AssemblyPage page) {
+    final controller = TextEditingController(text: page.name);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重命名页面'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '页面名称'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                final index = _pages.indexWhere((candidate) => candidate.id == page.id);
+                if (index != -1) {
+                  setState(() => _pages[index].name = name);
+                  _persistAssemblyElements();
+                }
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    ).whenComplete(controller.dispose);
+  }
+
+  void _movePageOrder(AssemblyPage page, int direction) {
+    final siblings = _pages
+        .where((candidate) => candidate.parentPageId == page.parentPageId)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final currentIndex = siblings.indexWhere((candidate) => candidate.id == page.id);
+    final targetIndex = currentIndex + direction;
+    if (currentIndex == -1 || targetIndex < 0 || targetIndex >= siblings.length) return;
+    final a = siblings[currentIndex];
+    final b = siblings[targetIndex];
+    final aIndex = _pages.indexWhere((candidate) => candidate.id == a.id);
+    final bIndex = _pages.indexWhere((candidate) => candidate.id == b.id);
+    if (aIndex == -1 || bIndex == -1) return;
+    final temp = _pages[aIndex].sortOrder;
+    _pages[aIndex].sortOrder = _pages[bIndex].sortOrder;
+    _pages[bIndex].sortOrder = temp;
+    setState(() {});
+    _persistAssemblyElements();
   }
 
   void _scheduleInitialViewportCenter() {
@@ -86,8 +284,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   void _persistAssemblyElements() {
+    _syncCanvasElementsIntoActivePage();
     _info.elementsJson = jsonEncode(
       _elements.map((element) => element.toJson()).toList(),
+    );
+    _info.pagesJson = jsonEncode(
+      _orderedPages().map((page) => page.toJson()).toList(),
     );
     _info.pcbHeight = _pcbSize.height;
     _info.pcbColorValue = _pcbColor.toARGB32();
@@ -294,6 +496,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   int get _illegalPcbElementCount =>
       _elements.where((element) => !_isElementInsidePcb(element)).length;
 
+  int get _totalIllegalPcbElementCount {
+    _syncCanvasElementsIntoActivePage();
+    return _pages.fold<int>(
+      0,
+      (sum, page) =>
+          sum + page.elements.where((element) => !_isElementInsidePcb(element)).length,
+    );
+  }
+
   Offset _clampCompositeOffsetInsidePcb(Offset desired, Size size) {
     final minX = 0.0;
     final minY = 0.0;
@@ -311,12 +522,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   bool _validateAssemblyBeforeExit() {
-    if (!_hasIllegalPcbElements) return true;
+    final illegalCount = _totalIllegalPcbElementCount;
+    if (illegalCount == 0) return true;
     if (!mounted) return false;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '当前有 $_illegalPcbElementCount 个复合组件超出 PCB 边界，请先移回可视区域后再保存。',
+          '当前有 $illegalCount 个复合组件超出 PCB 边界，请先移回可视区域后再保存。',
         ),
         backgroundColor: const Color(0xFF8B4B4B),
       ),

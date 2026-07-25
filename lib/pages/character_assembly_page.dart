@@ -51,7 +51,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
   @override
   Widget build(BuildContext context) {
-    final linkerSnapshot = LinkerSnapshot.fromElements(_elements);
+    final ancestorPages = _ancestorPagesForActivePage();
+    final renderedElements = <UIElement>[
+      ...ancestorPages.expand((page) => page.elements),
+      ..._elements,
+    ];
+    final linkerSnapshot = LinkerSnapshot.fromElements(renderedElements);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -157,6 +162,17 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                 ),
                               ),
                             ),
+                            ...ancestorPages.expand((page) {
+                              return page.elements.map(
+                                (el) => Positioned(
+                                  left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,
+                                  top: _canvasOffset.dy + _pcbOffset.dy + el.offset.dy,
+                                  width: el.size.width,
+                                  height: el.size.height,
+                                  child: _buildReadonlyPageElement(el),
+                                ),
+                              );
+                            }),
                             ..._elements.map((el) {
                               return Positioned(
                                 left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,
@@ -227,6 +243,30 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                 ),
                               ],
                             ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _activePage.isOverlay
+                                ? const Color(0xFF37474F).withValues(alpha: 0.12)
+                                : const Color(0xFF651FFF).withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: Text(
+                            _activePage.name,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _activePage.isOverlay
+                                  ? const Color(0xFF37474F)
+                                  : const Color(0xFF651FFF),
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const Spacer(),
@@ -512,23 +552,237 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   Color _portColor(ExposedPort port, String type) {
     if (port.customColor != null) return Color(port.customColor!);
     switch (type) {
-      case 'progress': case 'slider': return const Color(0xFF00E676);
-      case 'text':   case 'select': case 'input': return const Color(0xFF651FFF);
-      case 'switch': return const Color(0xFFFFA726);
-      case 'button': return const Color(0xFFFFD740);
-      default: return const Color(0xFF9E9E9E);
+      case 'progress':
+      case 'slider':
+        return const Color(0xFF00E676);
+      case 'text':
+      case 'select':
+      case 'input':
+        return const Color(0xFF651FFF);
+      case 'switch':
+        return const Color(0xFFFFA726);
+      case 'button':
+        return const Color(0xFFFFD740);
+      default:
+        return const Color(0xFF9E9E9E);
     }
   }
 
+  Widget _buildReadonlyPageElement(UIElement el) {
+    return IgnorePointer(
+      child: Opacity(
+        opacity: 0.35,
+        child: SizedBox(
+          width: el.size.width,
+          height: el.size.height,
+          child: UIRenderer.render(context, el),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLayerPanel() {
+    final orderedPages = _orderedPages();
     return Container(
-      width: 200,
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black12),
-          boxShadow: const [BoxShadow(color: Color(0x18000000), blurRadius: 12)]),
-      child: const Padding(padding: EdgeInsets.all(16),
-        child: Text('图层列表（A6 实现）', style: TextStyle(color: Color(0xFF888896), fontSize: 12))),
+      width: 240,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black12),
+        boxShadow: const [
+          BoxShadow(color: Color(0x18000000), blurRadius: 12),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '页面图层',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF111116),
+                    ),
+                  ),
+                ),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _createPage(type: 'base'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF651FFF).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      '+ 平级',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF651FFF),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _createPage(type: 'overlay'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF37474F).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      '+ 叠加',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF37474F),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              itemCount: orderedPages.length,
+              itemBuilder: (context, index) {
+                final page = orderedPages[index];
+                final selected = page.id == _activePage.id;
+                final depth = _pageDepth(page);
+                return Container(
+                  margin: EdgeInsets.only(
+                    left: depth * 16.0,
+                    bottom: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? const Color(0xFF111116)
+                        : (page.isOverlay
+                            ? const Color(0xFFF3F4F6)
+                            : const Color(0xFFF8F8FB)),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: selected
+                          ? const Color(0xFF00E5FF)
+                          : Colors.black.withValues(alpha: 0.04),
+                    ),
+                  ),
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 2,
+                    ),
+                    leading: Icon(
+                      page.isOverlay
+                          ? Icons.layers_outlined
+                          : Icons.crop_square_rounded,
+                      size: 16,
+                      color: selected
+                          ? Colors.white
+                          : (page.isOverlay
+                              ? const Color(0xFF546E7A)
+                              : const Color(0xFF651FFF)),
+                    ),
+                    title: Text(
+                      page.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: selected
+                            ? Colors.white
+                            : const Color(0xFF111116),
+                      ),
+                    ),
+                    subtitle: Text(
+                      page.isOverlay ? '叠加页' : '平级页',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: selected
+                            ? Colors.white70
+                            : const Color(0xFF777783),
+                      ),
+                    ),
+                    trailing: SizedBox(
+                      width: 74,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          InkWell(
+                            onTap: () => _movePageOrder(page, -1),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.keyboard_arrow_up_rounded,
+                                size: 16,
+                                color: selected
+                                    ? Colors.white
+                                    : const Color(0xFF555562),
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => _movePageOrder(page, 1),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 16,
+                                color: selected
+                                    ? Colors.white
+                                    : const Color(0xFF555562),
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => _renamePage(page),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.edit_rounded,
+                                size: 14,
+                                color: selected
+                                    ? Colors.white
+                                    : const Color(0xFF555562),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    onTap: () => _activatePage(page.id),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
