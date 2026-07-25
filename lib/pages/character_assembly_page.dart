@@ -758,7 +758,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 dragIndex: index,
               ),
               if (_directChildPages(page.id).isNotEmpty)
-                _buildPageGroup(page.id, depth + 1),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: _buildPageGroup(page.id, depth + 1),
+                ),
             ],
           ),
         );
@@ -855,6 +858,19 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   child: Icon(
                     Icons.edit_rounded,
                     size: 14,
+                    color: selected ? Colors.white : const Color(0xFF555562),
+                  ),
+                ),
+              ),
+            if (page.isOverlay)
+              InkWell(
+                onTap: () => _showReparentPageDialog(page),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.drive_file_move_outline_rounded,
+                    size: 15,
                     color: selected ? Colors.white : const Color(0xFF555562),
                   ),
                 ),

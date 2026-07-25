@@ -197,9 +197,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _loadActivePageElements();
     _setupEventBusListener();
     _persistAssemblyElements();
-    setState(() {
-      _showLayerPanel = false;
-    });
+    setState(() {});
   }
 
   void _createPage({required String type}) {
@@ -230,10 +228,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     setState(() {});
   }
 
-  void _renamePage(AssemblyPage page) {
+  Future<void> _renamePage(AssemblyPage page) async {
     if (_isRootBasePage(page)) return;
     final controller = TextEditingController(text: page.name);
-    showDialog<void>(
+    final renamed = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('重命名页面'),
@@ -244,29 +242,37 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () async {
+              FocusManager.instance.primaryFocus?.unfocus();
+              await Future<void>.delayed(const Duration(milliseconds: 16));
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+            },
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final name = controller.text.trim();
-              Navigator.pop(ctx);
-              if (name.isEmpty) return;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                final index =
-                    _pages.indexWhere((candidate) => candidate.id == page.id);
-                if (index != -1) {
-                  setState(() => _pages[index].name = name);
-                  _persistAssemblyElements();
-                }
-              });
+              FocusManager.instance.primaryFocus?.unfocus();
+              await Future<void>.delayed(const Duration(milliseconds: 16));
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx, name);
             },
             child: const Text('确定'),
           ),
         ],
       ),
-    ).whenComplete(controller.dispose);
+    );
+    controller.dispose();
+    if (!mounted || renamed == null || renamed.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final index = _pages.indexWhere((candidate) => candidate.id == page.id);
+      if (index != -1) {
+        setState(() => _pages[index].name = renamed);
+        _persistAssemblyElements();
+      }
+    });
   }
 
   void _reorderPageGroup(
@@ -287,6 +293,126 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       final index = _pages.indexWhere((page) => page.id == siblings[i].id);
       if (index != -1) _pages[index].sortOrder = excludeRoot ? i + 1 : i;
     }
+    setState(() {});
+    _persistAssemblyElements();
+  }
+
+  bool _isDescendantPage(String pageId, String ancestorId) {
+    var currentId = pageId;
+    final visited = <String>{};
+    while (visited.add(currentId)) {
+      final index = _pages.indexWhere((page) => page.id == currentId);
+      if (index == -1) return false;
+      final parentId = _pages[index].parentPageId;
+      if (parentId == null || parentId.isEmpty) return false;
+      if (parentId == ancestorId) return true;
+      currentId = parentId;
+    }
+    return false;
+  }
+
+  List<AssemblyPage> _reparentCandidatesForPage(AssemblyPage page) {
+    final depth = _pageDepth(page);
+    if (depth == 0) return const <AssemblyPage>[];
+    final candidates = <AssemblyPage>[];
+    for (final candidate in _pages) {
+      if (candidate.id == page.id) continue;
+      if (_isDescendantPage(candidate.id, page.id)) continue;
+      final candidateDepth = _pageDepth(candidate);
+      if (depth == 1) {
+        if (candidateDepth <= 1) candidates.add(candidate);
+      } else {
+        if (candidate.isOverlay && candidateDepth == 1) candidates.add(candidate);
+      }
+    }
+    candidates.sort((a, b) {
+      final depthCompare = _pageDepth(a).compareTo(_pageDepth(b));
+      if (depthCompare != 0) return depthCompare;
+      return a.sortOrder.compareTo(b.sortOrder);
+    });
+    return candidates;
+  }
+
+  Future<void> _showReparentPageDialog(AssemblyPage page) async {
+    final candidates = _reparentCandidatesForPage(page);
+    if (candidates.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前没有可用的目标父层')),
+        );
+      }
+      return;
+    }
+    final selectedParentId = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('选择新的父层级'),
+        content: SizedBox(
+          width: 320,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: candidates.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final candidate = candidates[index];
+              final isBase = candidate.isBase;
+              return ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(
+                    color: Colors.black.withValues(alpha: 0.05),
+                  ),
+                ),
+                tileColor: const Color(0xFFF6F6F9),
+                leading: Icon(
+                  isBase ? Icons.crop_square_rounded : Icons.layers_outlined,
+                  size: 18,
+                  color: isBase
+                      ? const Color(0xFF651FFF)
+                      : const Color(0xFF546E7A),
+                ),
+                title: Text(
+                  _displayPageName(candidate),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: Text(
+                  isBase ? '平级页' : '叠加页',
+                  style: const TextStyle(fontSize: 10),
+                ),
+                onTap: () => Navigator.pop(ctx, candidate.id),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || selectedParentId == null) return;
+    final pageIndex = _pages.indexWhere((candidate) => candidate.id == page.id);
+    if (pageIndex == -1) return;
+    final oldParentId = _pages[pageIndex].parentPageId;
+    final newParentId = selectedParentId;
+    final newSiblingCount = _pages.where((p) => p.parentPageId == newParentId).length;
+    _pages[pageIndex].parentPageId = newParentId;
+    _pages[pageIndex].sortOrder = newSiblingCount;
+
+    final oldSiblings = _pages
+        .where((p) => p.parentPageId == oldParentId && p.id != page.id)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    for (var i = 0; i < oldSiblings.length; i++) {
+      final index = _pages.indexWhere((candidate) => candidate.id == oldSiblings[i].id);
+      if (index != -1) _pages[index].sortOrder = i;
+    }
+
     setState(() {});
     _persistAssemblyElements();
   }
