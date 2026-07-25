@@ -11,6 +11,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
   Offset? _dragConnectionEnd;
   String? _hoveringTargetId;
   String? _hoveringTargetPort;
+  String? _hoveringCompositeTargetId;
+  String? _hoveringCompositeTargetPort;
 
   // ===== 连线渲染 =====
   List<Widget> _buildLinkerConnectionsLayer() {
@@ -140,7 +142,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
       return const SizedBox.shrink();
     }
 
-    final sourceEl = _findElementById(_draggingSourceId!) ?? UIElement(id: '', isComposite: false);
+    final sourceEl =
+        _findElementById(_draggingSourceId!) ?? UIElement(id: '', isComposite: false);
     if (sourceEl.id.isEmpty) return const SizedBox.shrink();
 
     final isLeftPort = _draggingSourcePort == 'input';
@@ -150,28 +153,48 @@ mixin _UIStudioLinker on _UIStudioLogic {
       _draggingSourcePort,
     );
 
+    final compositeHoverEl = _hoveringCompositeTargetId == null
+        ? null
+        : (_findElementById(_hoveringCompositeTargetId!) ??
+            UIElement(id: '', isComposite: false));
     final srcIsComposite = _isInsideComposite(sourceEl.id);
-    final tgtIsComposite = _hoveringTargetId != null && _isInsideComposite(_hoveringTargetId!);
+    final tgtIsComposite = (_hoveringTargetId != null &&
+            _isInsideComposite(_hoveringTargetId!)) ||
+        (compositeHoverEl != null && compositeHoverEl.id.isNotEmpty);
     final isCompositePort = srcIsComposite || tgtIsComposite;
     final isControlLine = _hoveringTargetPort == 'gate_in' ||
         _draggingSourcePort == 'gate_in';
     final dragColor = isControlLine
         ? const Color(0xFFFFB300)
         : isCompositePort
-            ? (isLeftPort ? const Color(0xFFFF4081) : const Color(0xFF4FC3F7))
+            ? (isLeftPort
+                ? const Color(0xFFFF4081)
+                : const Color(0xFF4FC3F7))
             : isLeftPort
                 ? const Color(0xFF00ACC1)
                 : const Color(0xFF66BB6A);
-    final lineColor = _hoveringTargetId != null && !isControlLine
-        ? (isCompositePort ? (_draggingSourceType == 'input' ? const Color(0xFFFF4081) : const Color(0xFF4FC3F7)) : const Color(0xFF00E676))
-        : dragColor;
+    final lineColor =
+        (_hoveringTargetId != null || _hoveringCompositeTargetId != null) &&
+                !isControlLine
+            ? (isCompositePort
+                ? (_draggingSourceType == 'input'
+                    ? const Color(0xFFFF4081)
+                    : const Color(0xFF4FC3F7))
+                : const Color(0xFF00E676))
+            : dragColor;
 
     Offset endOffset = _dragConnectionEnd!;
     if (_hoveringTargetId != null) {
-      final targetEl = _findElementById(_hoveringTargetId!) ?? UIElement(id: '', isComposite: false);
+      final targetEl =
+          _findElementById(_hoveringTargetId!) ?? UIElement(id: '', isComposite: false);
       if (targetEl.id.isNotEmpty) {
         endOffset = _resolvePortGlobalOffset(targetEl, true, _hoveringTargetPort);
       }
+    } else if (compositeHoverEl != null && compositeHoverEl.id.isNotEmpty) {
+      endOffset = _resolveCompositeBodyHoverAnchor(
+        compositeHoverEl,
+        _hoveringCompositeTargetPort ?? 'input',
+      );
     }
 
     return CustomPaint(
@@ -180,6 +203,139 @@ mixin _UIStudioLinker on _UIStudioLogic {
         end: endOffset,
         color: lineColor,
         isControlLine: isControlLine,
+      ),
+    );
+  }
+
+  Offset _resolveCompositeBodyHoverAnchor(UIElement element, String portDirection) {
+    final selectionPadding =
+        (!_isPreviewMode &&
+                element.id == _selectedTransformationId &&
+                element.module?.type != 'linker')
+            ? 20.0
+            : 0.0;
+    final localY = selectionPadding + element.size.height / 2;
+    return _compositePortGlobalPosition(
+      element,
+      localY: localY,
+      isInput: portDirection == 'input',
+      selectionPadding: selectionPadding,
+    );
+  }
+
+  List<_CompositePortCandidate> _compositePortCandidatesForDirection(
+    UIElement compositeElement,
+    String portDirection,
+  ) {
+    final composite = compositeElement.composite;
+    if (!compositeElement.isComposite || composite == null) return const [];
+    final isInputDirection = portDirection == 'input';
+    final candidates = <_CompositePortCandidate>[];
+    final ports = composite.exposedPorts ?? const <ExposedPort>[];
+    for (final port in ports) {
+      final childMatches =
+          composite.children.where((child) => child.id == port.elementId).toList();
+      if (childMatches.isEmpty) continue;
+      if (isInputDirection && !port.exposeInput) continue;
+      if (!isInputDirection && !port.exposeOutput) continue;
+      final child = childMatches.first;
+      candidates.add(
+        _CompositePortCandidate(
+          elementId: child.id,
+          label: child.module?.name ?? child.composite?.name ?? child.id,
+          type: child.module?.type ?? '复合组件',
+          portDirection: portDirection,
+          colorValue: port.customColor ?? _exposedPortVisualColor(child.module?.type ?? '' ).toARGB32(),
+        ),
+      );
+    }
+    return candidates;
+  }
+
+  Future<_CompositePortCandidate?> _showCompositePortSelectionDialog({
+    required UIElement compositeElement,
+    required String portDirection,
+    required List<_CompositePortCandidate> candidates,
+  }) async {
+    final title = portDirection == 'input' ? '选择接收端口' : '选择输出端口';
+    final subtitle = portDirection == 'input'
+        ? '当前正在连接到复合组件的输入侧，请选择一个已暴露的接收端口。'
+        : '当前正在连接到复合组件的输出侧，请选择一个已暴露的输出端口。';
+    return showDialog<_CompositePortCandidate>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '复合组件：${compositeElement.composite?.name ?? compositeElement.id}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF111116),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF777783)),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: math.min(280.0, candidates.length * 72.0),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: candidates.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final candidate = candidates[index];
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.05),
+                        ),
+                      ),
+                      tileColor: const Color(0xFFF6F6F9),
+                      leading: Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: Color(candidate.colorValue),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      title: Text(
+                        candidate.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${candidate.type} · ${portDirection == 'input' ? '接收端口' : '输出端口'}',
+                        style: const TextStyle(fontSize: 10),
+                      ),
+                      onTap: () => Navigator.pop(ctx, candidate),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+        ],
       ),
     );
   }
@@ -233,6 +389,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
 
     String? newHoverTargetId;
     String? newHoverTargetPort;
+    String? newHoverCompositeTargetId;
+    String? newHoverCompositeTargetPort;
 
     for (final el in _currentElements) {
       if (el.id == _draggingSourceId) continue;
@@ -291,7 +449,9 @@ mixin _UIStudioLinker on _UIStudioLogic {
         for (final ep in eps) {
           if (!el.composite!.children.any((c) => c.id == ep.elementId)) continue;
 
-          final portKey = ep.exposeInput ? "${ep.elementId}::input" : "${ep.elementId}::output";
+          final portKey = ep.exposeInput
+              ? "${ep.elementId}::input"
+              : "${ep.elementId}::output";
           final pos = _compositePortPositions[portKey];
           if (pos == null) continue;
 
@@ -312,11 +472,38 @@ mixin _UIStudioLinker on _UIStudioLogic {
       }
     }
 
+    // 端口太密或边太窄时，允许拖到复合组件本体后再弹窗选端口。
+    if (newHoverTargetId == null) {
+      for (final el in _currentElements) {
+        if (!el.isComposite || el.composite?.exposedPorts == null) continue;
+        if (el.sealed || el.layerIndex != _activeLayerIndex) continue;
+        if (!_isPointInsideRotatedRect(globalPosition, el)) continue;
+        final desiredDirection = _draggingSourceType == 'output' ? 'input' : 'output';
+        final candidates = _compositePortCandidatesForDirection(
+          el,
+          desiredDirection,
+        );
+        if (candidates.isEmpty) continue;
+        if (candidates.length == 1) {
+          newHoverTargetId = candidates.first.elementId;
+          newHoverTargetPort = desiredDirection;
+        } else {
+          newHoverCompositeTargetId = el.id;
+          newHoverCompositeTargetPort = desiredDirection;
+        }
+        break;
+      }
+    }
+
     if (newHoverTargetId != _hoveringTargetId ||
-        newHoverTargetPort != _hoveringTargetPort) {
+        newHoverTargetPort != _hoveringTargetPort ||
+        newHoverCompositeTargetId != _hoveringCompositeTargetId ||
+        newHoverCompositeTargetPort != _hoveringCompositeTargetPort) {
       setState(() {
         _hoveringTargetId = newHoverTargetId;
         _hoveringTargetPort = newHoverTargetPort;
+        _hoveringCompositeTargetId = newHoverCompositeTargetId;
+        _hoveringCompositeTargetPort = newHoverCompositeTargetPort;
       });
     }
   }
@@ -431,12 +618,52 @@ mixin _UIStudioLinker on _UIStudioLogic {
   }
 
   // ===== 连接完成 =====
-  void _completeConnection() {
-    if (_hoveringTargetId == null || _draggingSourceId == null) return;
+  Future<void> _completeConnection() async {
+    if ((_hoveringTargetId == null && _hoveringCompositeTargetId == null) ||
+        _draggingSourceId == null) {
+      return;
+    }
 
-    final sourceElement = _findElementById(_draggingSourceId!) ?? UIElement(id: '', isComposite: false);
-    final targetElement = _findElementById(_hoveringTargetId!) ?? UIElement(id: '', isComposite: false);
-    if (sourceElement.id.isEmpty || targetElement.id.isEmpty) return;
+    final sourceElement =
+        _findElementById(_draggingSourceId!) ?? UIElement(id: '', isComposite: false);
+    if (sourceElement.id.isEmpty) return;
+
+    String? resolvedTargetId = _hoveringTargetId;
+    String? resolvedTargetPort = _hoveringTargetPort;
+    if (resolvedTargetId == null && _hoveringCompositeTargetId != null) {
+      final compositeElement = _findElementById(_hoveringCompositeTargetId!) ??
+          UIElement(id: '', isComposite: false);
+      if (compositeElement.id.isEmpty) return;
+      final desiredDirection = _hoveringCompositeTargetPort ??
+          (_draggingSourceType == 'output' ? 'input' : 'output');
+      final candidates = _compositePortCandidatesForDirection(
+        compositeElement,
+        desiredDirection,
+      );
+      if (candidates.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('该复合组件当前没有可用的暴露端口')),
+          );
+        }
+        return;
+      }
+      final selected = candidates.length == 1
+          ? candidates.first
+          : await _showCompositePortSelectionDialog(
+              compositeElement: compositeElement,
+              portDirection: desiredDirection,
+              candidates: candidates,
+            );
+      if (!mounted || selected == null) return;
+      resolvedTargetId = selected.elementId;
+      resolvedTargetPort = selected.portDirection;
+    }
+    if (resolvedTargetId == null) return;
+
+    final targetElement =
+        _findElementById(resolvedTargetId) ?? UIElement(id: '', isComposite: false);
+    if (targetElement.id.isEmpty) return;
 
     final sourceType = sourceElement.module?.type;
     final targetType = targetElement.module?.type;
@@ -475,10 +702,10 @@ mixin _UIStudioLinker on _UIStudioLogic {
     if (sourceType == 'linker' &&
         _draggingSourceType == 'output' &&
         ['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
-        (_hoveringTargetPort == 'input' ||
-            _hoveringTargetPort == 'data_in' ||
-            _hoveringTargetPort == 'gate_in')) {
-      final bool isGate = _hoveringTargetPort == 'gate_in';
+        (resolvedTargetPort == 'input' ||
+            resolvedTargetPort == 'data_in' ||
+            resolvedTargetPort == 'gate_in')) {
+      final bool isGate = resolvedTargetPort == 'gate_in';
       if (targetType == 'math_node') {
         final sourceKind = _effectiveConnectionSourceType();
         final requiresGate = sourceKind == 'button' || sourceKind == 'timer';
@@ -520,7 +747,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
     } else if (sourceType == 'linker' &&
         _draggingSourceType == 'input' &&
         ['text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(targetType) &&
-        _hoveringTargetPort == 'output') {
+        resolvedTargetPort == 'output') {
       _updateLinkerConnection(
         linkerId: sourceElement.id,
         sourceModuleId: targetElement.id,
@@ -531,7 +758,7 @@ mixin _UIStudioLinker on _UIStudioLogic {
     } else if (['text', 'progress', 'slider', 'input', 'button', 'math_node', 'switch', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
         _draggingSourceType == 'output' &&
         targetType == 'linker' &&
-        _hoveringTargetPort == 'input') {
+        resolvedTargetPort == 'input') {
       _updateLinkerConnection(
         linkerId: targetElement.id,
         sourceModuleId: sourceElement.id,
@@ -542,8 +769,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
     } else if (['text', 'progress', 'slider', 'input', 'button', 'switch', 'math_node', 'select', 'indicator', 'timer', 'surface', 'surface_art', 'primitive_art'].contains(sourceType) &&
         _draggingSourceType == 'input' &&
         targetType == 'linker' &&
-        (_hoveringTargetPort == 'output' || _hoveringTargetPort == 'gate_in')) {
-      final bool isGate = _hoveringTargetPort == 'gate_in';
+        (resolvedTargetPort == 'output' || resolvedTargetPort == 'gate_in')) {
+      final bool isGate = resolvedTargetPort == 'gate_in';
       _updateLinkerConnection(
         linkerId: targetElement.id,
         targetModuleId: sourceElement.id,
@@ -596,6 +823,8 @@ mixin _UIStudioLinker on _UIStudioLogic {
       _dragConnectionEnd = null;
       _hoveringTargetId = null;
       _hoveringTargetPort = null;
+      _hoveringCompositeTargetId = null;
+      _hoveringCompositeTargetPort = null;
     });
   }
 
@@ -723,4 +952,20 @@ mixin _UIStudioLinker on _UIStudioLogic {
     _cancelConnection();
     _autoSave();
   }
+}
+
+class _CompositePortCandidate {
+  final String elementId;
+  final String label;
+  final String type;
+  final String portDirection;
+  final int colorValue;
+
+  const _CompositePortCandidate({
+    required this.elementId,
+    required this.label,
+    required this.type,
+    required this.portDirection,
+    required this.colorValue,
+  });
 }

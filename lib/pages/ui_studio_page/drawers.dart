@@ -591,6 +591,347 @@ mixin _UIStudioDrawers on _UIStudioLogic, _UIStudioDialogs {
     );
   }
 
+  void _showCompositeTemplatePortEditorDialog(UIComposite composite) {
+    List<ExposedPort> exposedPorts = composite.exposedPorts != null
+        ? composite.exposedPorts!.map((port) => port.copyWith()).toList()
+        : <ExposedPort>[];
+
+    Color fallbackColor(String type) {
+      switch (type) {
+        case 'progress':
+        case 'slider':
+          return const Color(0xFF00E676);
+        case 'text':
+        case 'input':
+        case 'select':
+          return const Color(0xFF651FFF);
+        case 'switch':
+          return const Color(0xFFFFA726);
+        case 'button':
+          return const Color(0xFFFFD740);
+        default:
+          return const Color(0xFF9E9E9E);
+      }
+    }
+
+    const portColorSwatches = <int>[
+      0xFF00E676,
+      0xFF651FFF,
+      0xFFFFA726,
+      0xFFFFD740,
+      0xFFFF4081,
+      0xFF4FC3F7,
+      0xFF00ACC1,
+      0xFFE53935,
+      0xFFFFFFFF,
+      0xFF37474F,
+    ];
+
+    void saveTemplate(List<ExposedPort> ports) {
+      final updated = composite.copyWith(
+        exposedPorts: ports.isEmpty ? null : List<ExposedPort>.from(ports),
+      );
+      _assetService.addComposite(updated);
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('复合组件模板端口已保存')),
+        );
+      }
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('模板暴露端口设置'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '正在编辑模板：${composite.name}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF111116),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '这里修改的是资产库中的复合组件模板，只影响后续新拖入的实例；画布中已存在的实例不会自动同步。',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF777783), height: 1.35),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 360,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ...composite.children.where((child) {
+                          final type = child.module?.type;
+                          return type != null &&
+                              !const {'linker', 'math_node', 'timer'}.contains(type);
+                        }).map((child) {
+                          final type = child.module?.type ?? 'unknown';
+                          final name = child.module?.name ?? child.id;
+                          final current = exposedPorts
+                              .where((port) => port.elementId == child.id)
+                              .toList();
+                          final port = current.isNotEmpty ? current.first : null;
+                          final enabled = port != null;
+                          final exposeInput = port?.exposeInput ?? true;
+                          final exposeOutput = port?.exposeOutput ?? true;
+                          final currentColor =
+                              port?.customColor ?? fallbackColor(type).toARGB32();
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: enabled
+                                  ? const Color(0xFFF3E5F5)
+                                  : const Color(0xFFF6F6F9),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: enabled
+                                    ? const Color(0xFFCE93D8)
+                                    : Colors.black.withValues(alpha: 0.05),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: BoxDecoration(
+                                        color: Color(currentColor),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '$name · $type',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF111116),
+                                        ),
+                                      ),
+                                    ),
+                                    Switch(
+                                      value: enabled,
+                                      activeThumbColor: const Color(0xFF512DA8),
+                                      onChanged: (value) {
+                                        setDialogState(() {
+                                          if (value) {
+                                            exposedPorts.add(
+                                              ExposedPort(
+                                                elementId: child.id,
+                                                exposeInput: true,
+                                                exposeOutput: true,
+                                                customColor: fallbackColor(type)
+                                                    .toARGB32(),
+                                              ),
+                                            );
+                                          } else {
+                                            exposedPorts.removeWhere(
+                                              (candidate) =>
+                                                  candidate.elementId == child.id,
+                                            );
+                                          }
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                if (enabled) ...[
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      GestureDetector(
+                                        onTap: () {
+                                          setDialogState(() {
+                                            final index = exposedPorts.indexWhere(
+                                              (candidate) =>
+                                                  candidate.elementId == child.id,
+                                            );
+                                            if (index != -1) {
+                                              exposedPorts[index] =
+                                                  exposedPorts[index].copyWith(
+                                                exposeInput: !exposeInput,
+                                              );
+                                            }
+                                          });
+                                        },
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 16,
+                                              height: 16,
+                                              decoration: BoxDecoration(
+                                                color: exposeInput
+                                                    ? const Color(0xFF512DA8)
+                                                    : const Color(0xFFE0E0E6),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: exposeInput
+                                                  ? const Icon(
+                                                      Icons.check,
+                                                      size: 12,
+                                                      color: Colors.white,
+                                                    )
+                                                  : null,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '⬅ 接收',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: exposeInput
+                                                    ? const Color(0xFF512DA8)
+                                                    : const Color(0xFF888896),
+                                                fontWeight: exposeInput
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      GestureDetector(
+                                        onTap: () {
+                                          setDialogState(() {
+                                            final index = exposedPorts.indexWhere(
+                                              (candidate) =>
+                                                  candidate.elementId == child.id,
+                                            );
+                                            if (index != -1) {
+                                              exposedPorts[index] =
+                                                  exposedPorts[index].copyWith(
+                                                exposeOutput: !exposeOutput,
+                                              );
+                                            }
+                                          });
+                                        },
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 16,
+                                              height: 16,
+                                              decoration: BoxDecoration(
+                                                color: exposeOutput
+                                                    ? const Color(0xFF512DA8)
+                                                    : const Color(0xFFE0E0E6),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: exposeOutput
+                                                  ? const Icon(
+                                                      Icons.check,
+                                                      size: 12,
+                                                      color: Colors.white,
+                                                    )
+                                                  : null,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '➡ 输出',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: exposeOutput
+                                                    ? const Color(0xFF512DA8)
+                                                    : const Color(0xFF888896),
+                                                fontWeight: exposeOutput
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: portColorSwatches.map((swatch) {
+                                      final selected = currentColor == swatch;
+                                      return GestureDetector(
+                                        onTap: () {
+                                          setDialogState(() {
+                                            final index = exposedPorts.indexWhere(
+                                              (candidate) =>
+                                                  candidate.elementId == child.id,
+                                            );
+                                            if (index != -1) {
+                                              exposedPorts[index] =
+                                                  exposedPorts[index].copyWith(
+                                                customColor: swatch,
+                                              );
+                                            }
+                                          });
+                                        },
+                                        child: Container(
+                                          width: 18,
+                                          height: 18,
+                                          decoration: BoxDecoration(
+                                            color: Color(swatch),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: selected
+                                                  ? const Color(0xFF37474F)
+                                                  : Colors.black12,
+                                              width: selected ? 2 : 1,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                saveTemplate(exposedPorts);
+                Navigator.pop(ctx);
+              },
+              child: const Text('保存模板'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAssetLibraryCompositeCard(UIComposite composite) {
     final payload = DragPayload(composite: composite);
     final card = Card(
@@ -649,6 +990,7 @@ mixin _UIStudioDrawers on _UIStudioLogic, _UIStudioDialogs {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        onTap: () => _showCompositeTemplatePortEditorDialog(composite),
         onLongPressStart: (details) {
           _startLibraryPlacement(payload, details.globalPosition);
         },

@@ -135,10 +135,13 @@ class _UIStudioPageState extends State<UIStudioPage>
                         _updateConnectionHover(event.position);
                       }
                     },
-                    onPointerUp: (event) {
+                    onPointerUp: (event) async {
                       if (_isDraggingConnection) {
                         _updateConnectionHover(event.position);
-                        if (_hoveringTargetId != null) _completeConnection();
+                        if (_hoveringTargetId != null ||
+                            _hoveringCompositeTargetId != null) {
+                          await _completeConnection();
+                        }
                         _cancelConnection();
                       }
                     },
@@ -905,7 +908,8 @@ class _UIStudioPageState extends State<UIStudioPage>
     final bool isIndicator = el.module?.type == 'indicator';
     final bool isTimer = el.module?.type == 'timer';
     if (isTransformationActive && !_isGeometryLocked(el) && !isLinker && !isMathNode && !isIndicator && !isTimer) {
-      // 复合件只支持旋转，形变由未来 Assembly 页 FittedBox 统一处理
+      // 复合件只支持旋转，形变由未来 Assembly 页 FittedBox 统一处理。
+      // 这里的手势模式也必须和图标模式一致，否则会出现“显示旋转图标，实际却在拉伸边框”的错觉。
       final bool isRotateMode = el.isComposite || _elementRotateModes.contains(el.id);
       stackChildren.add(
         Positioned(
@@ -930,7 +934,7 @@ class _UIStudioPageState extends State<UIStudioPage>
               if (el.module?.type == 'linker') {
                 _elementRotateModes.remove(el.id);
               }
-              if (_elementRotateModes.contains(el.id)) {
+              if (isRotateMode) {
                 _rotationCenter = Offset(
                   _workspaceOffset.dx + el.offset.dx + el.size.width / 2,
                   _workspaceOffset.dy + el.offset.dy + el.size.height / 2,
@@ -945,7 +949,7 @@ class _UIStudioPageState extends State<UIStudioPage>
               if (el.module?.type == 'linker') {
                 _elementRotateModes.remove(el.id);
               }
-              if (_elementRotateModes.contains(el.id)) {
+              if (isRotateMode) {
                 final currentAngle =
                     (details.globalPosition - _rotationCenter).direction;
                 var delta = currentAngle - _startHandleAngle;
@@ -987,8 +991,7 @@ class _UIStudioPageState extends State<UIStudioPage>
                   }
                 });
               }
-            },
-            onPanEnd: (_) => _autoSave(),
+            },            onPanEnd: (_) => _autoSave(),
             child: Container(
               width: 28,
               height: 28,
