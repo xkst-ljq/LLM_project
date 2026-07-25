@@ -7,9 +7,11 @@ import '../models/character_card.dart';
 import '../models/character_entry.dart';
 import '../models/character_meta.dart';
 import '../models/status_bar_field.dart';
+import '../models/ui_assembly_info.dart';
 import '../services/database_service.dart';
 import '../services/image_pick_service.dart';
 import '../utils/id_utils.dart';
+import 'character_assembly_list_page.dart';
 import 'status_bar_fields_edit_page.dart';
 
 class CharacterEditOverlay extends StatefulWidget {
@@ -405,13 +407,40 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   void _pickWorldBook() async {
     final books = await DatabaseService.getAllWorldBooks();
     if (!mounted) return;
-    showModalBottomSheet(context: context, builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
-      const Padding(padding: EdgeInsets.all(16), child: Text('选择世界书', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
-      ...books.map((b) => ListTile(title: Text(b['name'] as String? ?? '未命名'), selected: b['id'] == _worldBookId, onTap: () { setState(() { _worldBookId = b['id'] as String; _worldBookName = b['name'] as String? ?? ''; }); Navigator.pop(ctx); })),
-      const Divider(),
-      ListTile(leading: const Icon(Icons.clear, color: Colors.red), title: const Text('解除绑定', style: TextStyle(color: Colors.red)), onTap: () { setState(() { _worldBookId = null; _worldBookName = ''; }); Navigator.pop(ctx); }),
-      const SizedBox(height: 8),
-    ]));
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.85,
+        minChildSize: 0.3,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(padding: EdgeInsets.all(16), child: Text('选择世界书', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                children: [
+                  ...books.map((b) => ListTile(
+                    title: Text(b['name'] as String? ?? '未命名'),
+                    selected: b['id'] == _worldBookId,
+                    onTap: () { setState(() { _worldBookId = b['id'] as String; _worldBookName = b['name'] as String? ?? ''; }); Navigator.pop(ctx); },
+                  )),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.clear, color: Colors.red),
+                    title: const Text('解除绑定', style: TextStyle(color: Colors.red)),
+                    onTap: () { setState(() { _worldBookId = null; _worldBookName = ''; }); Navigator.pop(ctx); },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _switchCardType(String type) {
@@ -987,6 +1016,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                 animation: _rectAnimation!,
                 builder: (context, child) {
                   final rect = _rectAnimation!.value!;
+                  if (rect.width <= 0 || rect.height <= 0) {
+                    return const SizedBox.shrink();
+                  }
                   return Positioned(
                     left: rect.left,
                     top: rect.top,
@@ -1077,50 +1109,28 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                                       ]),
                                       const SizedBox(height: 12),
 
-                                      LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final maxW = constraints.maxWidth;
+                                      // ===== 封面 + 世界书 =====
+                                      SizedBox(
+                                        height: 120,
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            SizedBox(width: 80, child: _buildCardImagePreview()),
+                                            const SizedBox(width: 8),
+                                            Expanded(child: _buildWorldBookBindPanel()),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
 
-                                          // 宽度太窄时，不做左右布局，改成上下布局
-                                          if (maxW < 300) {
-                                            return Column(
-                                              crossAxisAlignment: CrossAxisAlignment
-                                                  .stretch,
-                                              children: [
-                                                Center(
-                                                  child: SizedBox(
-                                                    width: 120,
-                                                    child: _buildCardImagePreview(),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 12),
-                                                SizedBox(
-                                                  height: 120,
-                                                  child: _buildWorldBookBindPanel(),
-                                                ),
-                                              ],
-                                            );
-                                          }
-
-                                          // 正常宽度下使用左右布局
-                                          final previewHeight = maxW < 380
-                                              ? 160.0
-                                              : 180.0;
-
-                                          return SizedBox(
-                                            height: previewHeight,
-                                            child: Row(
-                                              crossAxisAlignment: CrossAxisAlignment
-                                                  .stretch,
-                                              children: [
-                                                _buildCardImagePreview(),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                    child: _buildWorldBookBindPanel()),
-                                              ],
-                                            ),
-                                          );
-                                        },
+                                      // ===== 状态栏 + UI 拼装（双栏） =====
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(child: _buildStatusBarEntry()),
+                                          const SizedBox(width: 8),
+                                          Expanded(child: _buildUIAssemblyEntry()),
+                                        ],
                                       ),
 
                                       const SizedBox(height: 12),
@@ -1165,8 +1175,6 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                                       const Divider(),
                                       _buildSectionHeader('角色信息'),
                                       ..._buildMetaFields(),
-                                      _buildSectionHeader('状态栏'),
-                                      _buildStatusBarEntry(),
                                       const SizedBox(height: 80),
                                     ],
                                   ),
@@ -1266,23 +1274,30 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   // 状态栏字段定义入口：显示当前字段数，点击进入专门编辑页。
   Widget _buildStatusBarEntry() {
     final fields = _meta.statusBarFields;
-    final summary = fields.isEmpty
-        ? '未设置（如：生命、好感、地点）'
-        : '${fields.length} 个字段：'
-            '${fields.map((f) => f.name).where((n) => n.trim().isNotEmpty).join('、')}';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: const Icon(Icons.speed_outlined),
-        title: const Text('状态栏字段'),
-        subtitle: Text(
-          summary,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 12),
+    String summary;
+    if (fields.isEmpty) {
+      summary = '未设置';
+    } else {
+      final textCount = fields.where((f) => f.type == 'text').length;
+      final numCount = fields.where((f) => f.type == 'number').length;
+      final parts = <String>[];
+      if (textCount > 0) parts.add('$textCount 文本');
+      if (numCount > 0) parts.add('$numCount 数值');
+      summary = parts.isEmpty ? '$fields.length 字段' : parts.join(' · ');
+    }
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withValues(alpha: 0.04))),
+      child: InkWell(borderRadius: BorderRadius.circular(12), onTap: _editStatusBarFields,
+        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(children: [
+            const Icon(Icons.speed_outlined, size: 20, color: Color(0xFF651FFF)),
+            const SizedBox(width: 6),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              const Text('状态栏', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(summary, style: const TextStyle(fontSize: 10, color: Color(0xFF888896))),
+            ])),
+          ]),
         ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: _editStatusBarFields,
       ),
     );
   }
@@ -1297,6 +1312,51 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     if (result != null) {
       setState(() => _meta.statusBarFields = result);
     }
+  }
+
+  Widget _buildUIAssemblyEntry() {
+    final assemblies = _meta.uiAssemblies.map((s) => UIAssemblyInfo.fromJsonString(s)).where((a) => a.id.isNotEmpty).toList();
+    String summary;
+    if (assemblies.isEmpty) {
+      summary = '未设置';
+    } else {
+      final parts = <String>[];
+      for (final mode in ['opening', 'scene', 'extra_sticky', 'extra_companion']) {
+        final count = assemblies.where((a) => a.mode == mode).length;
+        if (count > 0) {
+          final label = mode == 'opening' ? '弹窗' : mode == 'scene' ? '场景' : mode == 'extra_sticky' ? '常驻' : '伴生';
+          parts.add('$count $label');
+        }
+      }
+      summary = parts.join(' · ');
+    }
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withValues(alpha: 0.04))),
+      child: InkWell(borderRadius: BorderRadius.circular(12), onTap: _editUIAssemblyList,
+        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(children: [
+            const Icon(Icons.dashboard_customize_rounded, size: 20, color: Color(0xFF651FFF)),
+            const SizedBox(width: 6),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              const Text('UI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(summary, style: const TextStyle(fontSize: 10, color: Color(0xFF888896))),
+            ])),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editUIAssemblyList() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UIAssemblyListPage(
+          meta: _meta.copy(),
+          onMetaChanged: (m) => setState(() => _meta = m),
+        ),
+      ),
+    );
   }
 
   Widget _buildEntryCard(CharacterEntry entry) {
