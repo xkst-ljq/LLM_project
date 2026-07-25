@@ -869,7 +869,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 child: Padding(
                   padding: const EdgeInsets.all(4),
                   child: Icon(
-                    Icons.drive_file_move_outline_rounded,
+                    Icons.drive_file_move_rounded,
                     size: 15,
                     color: selected ? Colors.white : const Color(0xFF555562),
                   ),
