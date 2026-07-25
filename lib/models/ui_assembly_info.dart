@@ -92,6 +92,7 @@ class AssemblyPage {
   int sortOrder;
   List<UIElement> elements;
   List<AssemblyPageGesture> gestures;
+  List<PropertyOverride> propertyOverrides;
 
   AssemblyPage({
     required this.id,
@@ -101,8 +102,10 @@ class AssemblyPage {
     this.sortOrder = 0,
     List<UIElement>? elements,
     List<AssemblyPageGesture>? gestures,
+    List<PropertyOverride>? propertyOverrides,
   })  : elements = elements ?? <UIElement>[],
-        gestures = gestures ?? <AssemblyPageGesture>[];
+        gestures = gestures ?? <AssemblyPageGesture>[],
+        propertyOverrides = propertyOverrides ?? <PropertyOverride>[];
 
   bool get isOverlay => type == 'overlay';
   bool get isBase => !isOverlay;
@@ -115,6 +118,8 @@ class AssemblyPage {
     'sortOrder': sortOrder,
     'elements': elements.map((element) => element.toJson()).toList(),
     'gestures': gestures.map((gesture) => gesture.toJson()).toList(),
+    'propertyOverrides':
+        propertyOverrides.map((override) => override.toJson()).toList(),
   };
 
   factory AssemblyPage.fromJson(Map<String, dynamic> json) => AssemblyPage(
@@ -134,6 +139,12 @@ class AssemblyPage {
                 AssemblyPageGesture.fromJson(Map<String, dynamic>.from(item)))
             .toList() ??
         <AssemblyPageGesture>[],
+    propertyOverrides: (json['propertyOverrides'] as List?)
+            ?.whereType<Map>()
+            .map((item) =>
+                PropertyOverride.fromJson(Map<String, dynamic>.from(item)))
+            .toList() ??
+        <PropertyOverride>[],
   );
 }
 
@@ -160,4 +171,94 @@ class AssemblyPageGesture {
         action: json['action']?.toString() ?? 'switch_page',
         targetPageId: json['targetPageId']?.toString() ?? '',
       );
+}
+
+class AssemblyBinding {
+  String? statusKey;
+  String? fieldType;
+  String direction; // 'bidirectional' | 'upload_only' | 'none'
+
+  AssemblyBinding({
+    this.statusKey,
+    this.fieldType,
+    this.direction = 'none',
+  });
+
+  Map<String, dynamic> toJson() => {
+    'statusKey': statusKey,
+    'fieldType': fieldType,
+    'direction': direction,
+  };
+
+  factory AssemblyBinding.fromJson(Map<String, dynamic> json) =>
+      AssemblyBinding(
+        statusKey: json['statusKey']?.toString(),
+        fieldType: json['fieldType']?.toString(),
+        direction: json['direction']?.toString() ?? 'none',
+      );
+
+  AssemblyBinding copyWith({
+    String? statusKey,
+    String? fieldType,
+    String? direction,
+  }) {
+    return AssemblyBinding(
+      statusKey: statusKey ?? this.statusKey,
+      fieldType: fieldType ?? this.fieldType,
+      direction: direction ?? this.direction,
+    );
+  }
+}
+
+class PropertyOverride {
+  String componentId;
+  Map<String, dynamic> overrides;
+  AssemblyBinding? binding;
+  String? sourceCompositeId;
+  String? sourceElementId;
+
+  PropertyOverride({
+    required this.componentId,
+    Map<String, dynamic>? overrides,
+    this.binding,
+    this.sourceCompositeId,
+    this.sourceElementId,
+  }) : overrides = overrides ?? <String, dynamic>{};
+
+  Map<String, dynamic> toJson() => {
+    'componentId': componentId,
+    'overrides': overrides,
+    'binding': binding?.toJson(),
+    'sourceCompositeId': sourceCompositeId,
+    'sourceElementId': sourceElementId,
+  };
+
+  factory PropertyOverride.fromJson(Map<String, dynamic> json) => PropertyOverride(
+        componentId: json['componentId']?.toString() ?? '',
+        overrides: Map<String, dynamic>.from(json['overrides'] ?? const {}),
+        binding: json['binding'] is Map
+            ? AssemblyBinding.fromJson(
+                Map<String, dynamic>.from(json['binding'] as Map),
+              )
+            : null,
+        sourceCompositeId: json['sourceCompositeId']?.toString(),
+        sourceElementId: json['sourceElementId']?.toString(),
+      );
+
+  PropertyOverride copyWith({
+    String? componentId,
+    Map<String, dynamic>? overrides,
+    AssemblyBinding? binding,
+    String? sourceCompositeId,
+    String? sourceElementId,
+    bool clearBinding = false,
+  }) {
+    return PropertyOverride(
+      componentId: componentId ?? this.componentId,
+      overrides: overrides ?? Map<String, dynamic>.from(this.overrides),
+      binding: clearBinding ? null : (binding ?? this.binding?.copyWith()),
+      sourceCompositeId: sourceCompositeId ?? this.sourceCompositeId,
+      sourceElementId: sourceElementId ?? this.sourceElementId,
+    );
+  }
 }

@@ -365,6 +365,14 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                             fontSize: 9,
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '覆写 $_activePropertyOverrideCount 项',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 9,
+                          ),
+                        ),
                       ],
                     ),
                   ),

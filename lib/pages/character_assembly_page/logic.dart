@@ -5,6 +5,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   late UIAssemblyInfo _info;
   late TextEditingController _nameCtrl;
   final List<UIElement> _elements = [];
+  final List<PropertyOverride> _activePropertyOverrides =
+      <PropertyOverride>[];
   final List<AssemblyPage> _pages = <AssemblyPage>[];
   String? _activePageId;
   Offset _canvasOffset = Offset.zero;
@@ -94,7 +96,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     _pages.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     _activePageId = _pages.first.id;
-    _loadActivePageElements();
+    _loadActivePageState();
   }
 
   AssemblyPage get _activePage {
@@ -104,21 +106,122 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
   }
 
-  void _syncCanvasElementsIntoActivePage() {
+  PropertyOverride _clonePropertyOverride(PropertyOverride override) {
+    return override.copyWith(
+      overrides: _deepCloneValue(override.overrides) as Map<String, dynamic>,
+      binding: override.binding?.copyWith(),
+    );
+  }
+
+  void _syncCanvasStateIntoActivePage() {
     final targetIndex = _pages.indexWhere((page) => page.id == _activePageId);
     if (targetIndex == -1) return;
     _pages[targetIndex].elements = _elements
         .map((element) => UIElement.fromJson(element.toJson()))
         .toList();
+    _pages[targetIndex].propertyOverrides = _activePropertyOverrides
+        .map(_clonePropertyOverride)
+        .toList();
   }
 
-  void _loadActivePageElements() {
+  void _loadActivePageState() {
     _elements
       ..clear()
       ..addAll(
         _activePage.elements
             .map((element) => UIElement.fromJson(element.toJson())),
       );
+    _activePropertyOverrides
+      ..clear()
+      ..addAll(
+        _activePage.propertyOverrides.map(_clonePropertyOverride),
+      );
+    _sanitizeActivePropertyOverrides();
+  }
+
+  int get _activePropertyOverrideCount => _activePropertyOverrides.length;
+
+  void _sanitizeActivePropertyOverrides() {
+    final validIds = <String>{};
+    final compositeIds = <String>{};
+
+    void visit(List<UIElement> nodes, {String? rootCompositeId}) {
+      for (final node in nodes) {
+        validIds.add(node.id);
+        if (node.isComposite && node.composite != null) {
+          compositeIds.add(node.id);
+          visit(node.composite!.children, rootCompositeId: node.id);
+        }
+      }
+    }
+
+    visit(_elements);
+    _activePropertyOverrides.removeWhere((override) {
+      if (override.componentId.isEmpty || !validIds.contains(override.componentId)) {
+        return true;
+      }
+      final sourceId = override.sourceElementId;
+      if (sourceId != null && sourceId.isNotEmpty && !compositeIds.contains(sourceId)) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  List<PropertyOverride> _propertyOverridesForComposite(String sourceElementId) {
+    return _activePropertyOverrides
+        .where((override) => override.sourceElementId == sourceElementId)
+        .map(_clonePropertyOverride)
+        .toList();
+  }
+
+  List<UIElement> _exposedChildrenOfComposite(UIElement compositeElement) {
+    final composite = compositeElement.composite;
+    if (!compositeElement.isComposite || composite == null) return const [];
+    final exposedIds = (composite.exposedPorts ?? const <ExposedPort>[])
+        .map((port) => port.elementId)
+        .toSet();
+    return composite.children
+        .where((child) => exposedIds.contains(child.id))
+        .toList();
+  }
+
+  PropertyOverride _ensurePropertyOverride({
+    required String componentId,
+    required String sourceElementId,
+    String? sourceCompositeId,
+  }) {
+    final existingIndex = _activePropertyOverrides.indexWhere(
+      (override) => override.componentId == componentId,
+    );
+    if (existingIndex != -1) {
+      return _activePropertyOverrides[existingIndex];
+    }
+    final created = PropertyOverride(
+      componentId: componentId,
+      sourceElementId: sourceElementId,
+      sourceCompositeId: sourceCompositeId,
+    );
+    _activePropertyOverrides.add(created);
+    return created;
+  }
+
+  void _upsertPropertyOverride(PropertyOverride override) {
+    final index = _activePropertyOverrides.indexWhere(
+      (candidate) => candidate.componentId == override.componentId,
+    );
+    if (index == -1) {
+      _activePropertyOverrides.add(_clonePropertyOverride(override));
+    } else {
+      _activePropertyOverrides[index] = _clonePropertyOverride(override);
+    }
+    _persistAssemblyElements();
+  }
+
+  void _removePropertyOverride(String componentId) {
+    _activePropertyOverrides
+        .removeWhere((override) => override.componentId == componentId);
+    _persistAssemblyElements();
   }
 
   List<AssemblyPage> _orderedPages() {
@@ -192,16 +295,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   void _activatePage(String pageId) {
     if (_activePageId == pageId) return;
-    _syncCanvasElementsIntoActivePage();
+    _syncCanvasStateIntoActivePage();
     _activePageId = pageId;
-    _loadActivePageElements();
+    _loadActivePageState();
     _setupEventBusListener();
     _persistAssemblyElements();
     setState(() {});
   }
 
   void _createPage({required String type}) {
-    _syncCanvasElementsIntoActivePage();
+    _syncCanvasStateIntoActivePage();
     final pageType = type == 'overlay' ? 'overlay' : 'base';
     if (pageType == 'overlay' && _pageDepth(_activePage) >= 2) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -441,7 +544,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   void _persistAssemblyElements() {
-    _syncCanvasElementsIntoActivePage();
+    _sanitizeActivePropertyOverrides();
+    _syncCanvasStateIntoActivePage();
     _info.elementsJson = jsonEncode(
       _elements.map((element) => element.toJson()).toList(),
     );
@@ -662,7 +766,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _elements.where((element) => !_isElementInsidePcb(element)).length;
 
   int get _totalIllegalPcbElementCount {
-    _syncCanvasElementsIntoActivePage();
+    _syncCanvasStateIntoActivePage();
     return _pages.fold<int>(
       0,
       (sum, page) =>
