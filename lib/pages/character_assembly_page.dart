@@ -92,16 +92,15 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                               ),
                             ),
                           ),
-                          ..._elements.map((el) {
-                            const portPad = 6.0;
-                            return Positioned(
-                              left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx - portPad,
-                              top: _canvasOffset.dy + _pcbOffset.dy + el.offset.dy - portPad,
-                              width: el.size.width + portPad * 2,
-                              height: el.size.height + portPad * 2,
-                              child: _buildElementWidget(el),
-                            );
-                          }),
+          ..._elements.map((el) {
+            return Positioned(
+              left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,
+              top: _canvasOffset.dy + _pcbOffset.dy + el.offset.dy,
+              width: el.size.width,
+              height: el.size.height,
+              child: _buildElementWidget(el),
+            );
+          }),
 
                         ],
                       ),
@@ -224,7 +223,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   // ========== 组件渲染 ==========
   Widget _buildElementWidget(UIElement el) {
     if (el.isComposite && el.composite != null) {
-      const p = 6.0;
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onPanStart: (d) { _startTouchScreenPos = d.globalPosition; _startTouchElemOffset = el.offset; },
@@ -236,25 +234,19 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           });
         },
         child: SizedBox(
-          width: el.size.width + p * 2,
-          height: el.size.height + p * 2,
+          width: el.size.width,
+          height: el.size.height,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              Positioned(
-                left: p,
-                top: p,
-                width: el.size.width,
-                height: el.size.height,
-                child: IgnorePointer(
-                  child: UISceneModeScope(
-                    isStudioCreationMode: false,
-                    child: Builder(builder: (ctx) => UIRenderer.render(ctx, el)),
-                  ),
+              IgnorePointer(
+                child: UISceneModeScope(
+                  isStudioCreationMode: false,
+                  child: Builder(builder: (ctx) => UIRenderer.render(ctx, el)),
                 ),
               ),
               if (el.composite!.exposedPorts != null)
-                ..._buildExposedPorts(el, p),
+                ..._buildExposedPorts(el),
             ],
           ),
         ),
@@ -274,7 +266,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(6)));
   }
 
-  List<Widget> _buildExposedPorts(UIElement el, double p) {
+  List<Widget> _buildExposedPorts(UIElement el) {
     final ports = el.composite!.exposedPorts!
         .where((pt) => el.composite!.children.any((c) => c.id == pt.elementId))
         .toList();
@@ -288,9 +280,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     for (var i = 0; i < leftPorts.length; i++) {
       final child = el.composite!.children.firstWhere((c) => c.id == leftPorts[i].elementId);
       final color = _portColor(leftPorts[i], child.module?.type ?? '');
-      final double y = p + (bodyH / (leftPorts.length + 1)) * (i + 1);
+      final double y = (bodyH / (leftPorts.length + 1)) * (i + 1);
       widgets.add(Positioned(
-        left: p - 6,
+        left: -6,
         top: y - 6,
         width: 12, height: 12,
         child: Container(
@@ -306,9 +298,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     for (var i = 0; i < rightPorts.length; i++) {
       final child = el.composite!.children.firstWhere((c) => c.id == rightPorts[i].elementId);
       final color = _portColor(rightPorts[i], child.module?.type ?? '');
-      final double y = p + (bodyH / (rightPorts.length + 1)) * (i + 1);
+      final double y = (bodyH / (rightPorts.length + 1)) * (i + 1);
       widgets.add(Positioned(
-        left: el.size.width + p - 6,
+        left: el.size.width - 6,
         top: y - 6,
         width: 12, height: 12,
         child: Container(
