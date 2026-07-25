@@ -224,6 +224,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   // ========== 组件渲染 ==========
   Widget _buildElementWidget(UIElement el) {
     if (el.isComposite && el.composite != null) {
+      const p = 6.0;
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onPanStart: (d) { _startTouchScreenPos = d.globalPosition; _startTouchElemOffset = el.offset; },
@@ -235,19 +236,25 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           });
         },
         child: SizedBox(
-          width: el.size.width,
-          height: el.size.height,
+          width: el.size.width + p * 2,
+          height: el.size.height + p * 2,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              IgnorePointer(
-                child: UISceneModeScope(
-                  isStudioCreationMode: false,
-                  child: Builder(builder: (ctx) => UIRenderer.render(ctx, el)),
+              Positioned(
+                left: p,
+                top: p,
+                width: el.size.width,
+                height: el.size.height,
+                child: IgnorePointer(
+                  child: UISceneModeScope(
+                    isStudioCreationMode: false,
+                    child: Builder(builder: (ctx) => UIRenderer.render(ctx, el)),
+                  ),
                 ),
               ),
               if (el.composite!.exposedPorts != null)
-                ..._buildExposedPorts(el),
+                ..._buildExposedPorts(el, p),
             ],
           ),
         ),
@@ -267,23 +274,24 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(6)));
   }
 
-  List<Widget> _buildExposedPorts(UIElement el) {
+  List<Widget> _buildExposedPorts(UIElement el, double p) {
     final ports = el.composite!.exposedPorts!
-        .where((p) => el.composite!.children.any((c) => c.id == p.elementId))
+        .where((pt) => el.composite!.children.any((c) => c.id == pt.elementId))
         .toList();
     final bodyH = el.size.height;
     final widgets = <Widget>[];
 
-    final leftPorts = ports.where((p) => p.exposeInput).toList();
-    final rightPorts = ports.where((p) => p.exposeOutput).toList();
+    final leftPorts = ports.where((pt) => pt.exposeInput).toList();
+    final rightPorts = ports.where((pt) => pt.exposeOutput).toList();
 
     // 左侧接收端口
     for (var i = 0; i < leftPorts.length; i++) {
       final child = el.composite!.children.firstWhere((c) => c.id == leftPorts[i].elementId);
       final color = _portColor(leftPorts[i], child.module?.type ?? '');
-      final double centerY = (bodyH / (leftPorts.length + 1)) * (i + 1);
+      final double y = p + (bodyH / (leftPorts.length + 1)) * (i + 1);
       widgets.add(Positioned(
-        left: -6, top: centerY - 6,
+        left: p - 6,
+        top: y - 6,
         width: 12, height: 12,
         child: Container(
           decoration: BoxDecoration(
@@ -298,9 +306,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     for (var i = 0; i < rightPorts.length; i++) {
       final child = el.composite!.children.firstWhere((c) => c.id == rightPorts[i].elementId);
       final color = _portColor(rightPorts[i], child.module?.type ?? '');
-      final double centerY = (bodyH / (rightPorts.length + 1)) * (i + 1);
+      final double y = p + (bodyH / (rightPorts.length + 1)) * (i + 1);
       widgets.add(Positioned(
-        left: el.size.width - 6, top: centerY - 6,
+        left: el.size.width + p - 6,
+        top: y - 6,
         width: 12, height: 12,
         child: Container(
           decoration: BoxDecoration(
