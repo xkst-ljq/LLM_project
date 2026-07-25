@@ -258,7 +258,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                             borderRadius: BorderRadius.circular(7),
                           ),
                           child: Text(
-                            _activePage.name,
+                            _displayPageName(_activePage),
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -453,6 +453,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                           color: const Color(0xFFE53935),
                           width: 2,
                         ),
+                        borderRadius: BorderRadius.circular(12),
                         color: const Color(0xFFE53935)
                             .withValues(alpha: 0.08),
                       ),
@@ -582,11 +583,16 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   }
 
   Widget _buildLayerPanel() {
-    final orderedPages = _orderedPages();
+    final rootPage = _rootBasePage;
+    final rootOverlays = _directChildPages(rootPage.id);
+    final siblingBasePages = _directChildPages(null)
+        .where((page) => page.id != rootPage.id)
+        .toList();
+
     return Container(
-      width: 240,
+      width: 248,
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.7,
+        maxHeight: MediaQuery.of(context).size.height * 0.72,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -664,126 +670,217 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           ),
           const Divider(height: 1),
           Flexible(
-            child: ListView.builder(
-              shrinkWrap: true,
+            child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              itemCount: orderedPages.length,
-              itemBuilder: (context, index) {
-                final page = orderedPages[index];
-                final selected = page.id == _activePage.id;
-                final depth = _pageDepth(page);
-                return Container(
-                  margin: EdgeInsets.only(
-                    left: depth * 16.0,
-                    bottom: 6,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildPageTile(
+                    rootPage,
+                    depth: 0,
+                    draggable: false,
+                    showMenuBadge: true,
                   ),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? const Color(0xFF111116)
-                        : (page.isOverlay
-                            ? const Color(0xFFF3F4F6)
-                            : const Color(0xFFF8F8FB)),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: selected
-                          ? const Color(0xFF00E5FF)
-                          : Colors.black.withValues(alpha: 0.04),
+                  if (rootOverlays.isNotEmpty)
+                    _buildPageGroup(
+                      rootPage.id,
+                      1,
                     ),
-                  ),
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 2,
-                    ),
-                    leading: Icon(
-                      page.isOverlay
-                          ? Icons.layers_outlined
-                          : Icons.crop_square_rounded,
-                      size: 16,
-                      color: selected
-                          ? Colors.white
-                          : (page.isOverlay
-                              ? const Color(0xFF546E7A)
-                              : const Color(0xFF651FFF)),
-                    ),
-                    title: Text(
-                      page.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: selected
-                            ? Colors.white
-                            : const Color(0xFF111116),
+                  if (siblingBasePages.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(4, 2, 4, 8),
+                      child: Text(
+                        '其他平级页',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Color(0xFF888896),
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    subtitle: Text(
-                      page.isOverlay ? '叠加页' : '平级页',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: selected
-                            ? Colors.white70
-                            : const Color(0xFF777783),
-                      ),
-                    ),
-                    trailing: SizedBox(
-                      width: 74,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          InkWell(
-                            onTap: () => _movePageOrder(page, -1),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                Icons.keyboard_arrow_up_rounded,
-                                size: 16,
-                                color: selected
-                                    ? Colors.white
-                                    : const Color(0xFF555562),
-                              ),
-                            ),
-                          ),
-                          InkWell(
-                            onTap: () => _movePageOrder(page, 1),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                size: 16,
-                                color: selected
-                                    ? Colors.white
-                                    : const Color(0xFF555562),
-                              ),
-                            ),
-                          ),
-                          InkWell(
-                            onTap: () => _renamePage(page),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                Icons.edit_rounded,
-                                size: 14,
-                                color: selected
-                                    ? Colors.white
-                                    : const Color(0xFF555562),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    onTap: () => _activatePage(page.id),
-                  ),
-                );
-              },
+                    _buildPageGroup(null, 0, excludeRoot: true),
+                  ],
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildPageGroup(
+    String? parentPageId,
+    int depth, {
+    bool excludeRoot = false,
+  }) {
+    final children = _directChildPages(parentPageId)
+        .where((page) => !excludeRoot || !_isRootBasePage(page))
+        .toList();
+    if (children.isEmpty) return const SizedBox.shrink();
+
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      onReorder: (oldIndex, newIndex) => _reorderPageGroup(
+        parentPageId,
+        oldIndex,
+        newIndex,
+        excludeRoot: excludeRoot,
+      ),
+      proxyDecorator: (child, index, animation) => AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) => Transform.scale(
+          scale: 1.0 + animation.value * 0.04,
+          child: Material(
+            color: Colors.transparent,
+            elevation: 6 * animation.value,
+            borderRadius: BorderRadius.circular(12),
+            child: child,
+          ),
+        ),
+      ),
+      itemCount: children.length,
+      itemBuilder: (context, index) {
+        final page = children[index];
+        return Container(
+          key: ValueKey('page_${page.id}'),
+          margin: const EdgeInsets.only(bottom: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildPageTile(
+                page,
+                depth: depth,
+                draggable: !_isRootBasePage(page),
+                dragIndex: index,
+              ),
+              if (_directChildPages(page.id).isNotEmpty)
+                _buildPageGroup(page.id, depth + 1),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPageTile(
+    AssemblyPage page, {
+    required int depth,
+    required bool draggable,
+    bool showMenuBadge = false,
+    int? dragIndex,
+  }) {
+    final selected = page.id == _activePage.id;
+    final bool isOverlay = page.isOverlay;
+    final background = selected
+        ? (isOverlay
+            ? const Color(0xFF455A64)
+            : const Color(0xFF5E35B1))
+        : (isOverlay
+            ? const Color(0xFFF2F4F7)
+            : const Color(0xFFF8F7FC));
+    final foreground = selected ? Colors.white : const Color(0xFF111116);
+    final accent = isOverlay
+        ? const Color(0xFF546E7A)
+        : const Color(0xFF651FFF);
+
+    Widget tile = Container(
+      margin: EdgeInsets.only(left: depth * 16.0),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: selected
+              ? const Color(0xFFB2EBF2)
+              : Colors.black.withValues(alpha: 0.04),
+        ),
+      ),
+      child: ListTile(
+        dense: true,
+        minLeadingWidth: 18,
+        visualDensity: const VisualDensity(vertical: -2),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+        leading: Icon(
+          isOverlay ? Icons.layers_outlined : Icons.crop_square_rounded,
+          size: 16,
+          color: selected ? Colors.white : accent,
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                _displayPageName(page),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: foreground,
+                ),
+              ),
+            ),
+            if (showMenuBadge)
+              Container(
+                margin: const EdgeInsets.only(left: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.16)
+                      : const Color(0xFF651FFF).withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '主菜单',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: selected ? Colors.white : const Color(0xFF651FFF),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_isRootBasePage(page))
+              InkWell(
+                onTap: () => _renamePage(page),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.edit_rounded,
+                    size: 14,
+                    color: selected ? Colors.white : const Color(0xFF555562),
+                  ),
+                ),
+              ),
+            if (draggable)
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Icon(
+                  Icons.drag_indicator_rounded,
+                  size: 16,
+                  color: selected ? Colors.white : const Color(0xFF555562),
+                ),
+              ),
+          ],
+        ),
+        onTap: () => _activatePage(page.id),
+      ),
+    );
+
+    if (draggable && dragIndex != null) {
+      return ReorderableDelayedDragStartListener(
+        index: dragIndex,
+        child: tile,
+      );
+    }
+    return tile;
   }
 
   Widget _buildAssetDrawer() {

@@ -84,7 +84,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _pages.add(
         AssemblyPage(
           id: 'page_${DateTime.now().millisecondsSinceEpoch}',
-          name: '主界面',
+          name: '主菜单',
           type: 'base',
           sortOrder: 0,
           elements: legacyElements,
@@ -144,6 +144,25 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return ordered;
   }
 
+  List<AssemblyPage> _directChildPages(String? parentPageId) {
+    final pages = _pages
+        .where((page) => page.parentPageId == parentPageId)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return pages;
+  }
+
+  AssemblyPage get _rootBasePage {
+    final bases = _pages.where((page) => page.isBase).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return bases.first;
+  }
+
+  bool _isRootBasePage(AssemblyPage page) => page.id == _rootBasePage.id;
+
+  String _displayPageName(AssemblyPage page) =>
+      _isRootBasePage(page) ? '主菜单' : page.name;
+
   int _pageDepth(AssemblyPage page) {
     var depth = 0;
     var parentId = page.parentPageId;
@@ -186,6 +205,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   void _createPage({required String type}) {
     _syncCanvasElementsIntoActivePage();
     final pageType = type == 'overlay' ? 'overlay' : 'base';
+    if (pageType == 'overlay' && _pageDepth(_activePage) >= 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前已达到最大叠加深度（3 层）')),
+      );
+      return;
+    }
     final parentPageId = pageType == 'overlay' ? _activePage.id : null;
     final siblingCount = _pages.where((page) => page.parentPageId == parentPageId).length;
     final page = AssemblyPage(
@@ -206,6 +231,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   void _renamePage(AssemblyPage page) {
+    if (_isRootBasePage(page)) return;
     final controller = TextEditingController(text: page.name);
     showDialog<void>(
       context: context,
@@ -224,14 +250,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           FilledButton(
             onPressed: () {
               final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                final index = _pages.indexWhere((candidate) => candidate.id == page.id);
+              Navigator.pop(ctx);
+              if (name.isEmpty) return;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final index =
+                    _pages.indexWhere((candidate) => candidate.id == page.id);
                 if (index != -1) {
                   setState(() => _pages[index].name = name);
                   _persistAssemblyElements();
                 }
-              }
-              Navigator.pop(ctx);
+              });
             },
             child: const Text('确定'),
           ),
@@ -240,22 +269,24 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     ).whenComplete(controller.dispose);
   }
 
-  void _movePageOrder(AssemblyPage page, int direction) {
-    final siblings = _pages
-        .where((candidate) => candidate.parentPageId == page.parentPageId)
-        .toList()
-      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    final currentIndex = siblings.indexWhere((candidate) => candidate.id == page.id);
-    final targetIndex = currentIndex + direction;
-    if (currentIndex == -1 || targetIndex < 0 || targetIndex >= siblings.length) return;
-    final a = siblings[currentIndex];
-    final b = siblings[targetIndex];
-    final aIndex = _pages.indexWhere((candidate) => candidate.id == a.id);
-    final bIndex = _pages.indexWhere((candidate) => candidate.id == b.id);
-    if (aIndex == -1 || bIndex == -1) return;
-    final temp = _pages[aIndex].sortOrder;
-    _pages[aIndex].sortOrder = _pages[bIndex].sortOrder;
-    _pages[bIndex].sortOrder = temp;
+  void _reorderPageGroup(
+    String? parentPageId,
+    int oldIndex,
+    int newIndex, {
+    bool excludeRoot = false,
+  }) {
+    final siblings = _directChildPages(parentPageId)
+        .where((page) => !excludeRoot || !_isRootBasePage(page))
+        .toList();
+    if (oldIndex < 0 || oldIndex >= siblings.length) return;
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (newIndex < 0 || newIndex >= siblings.length) return;
+    final moved = siblings.removeAt(oldIndex);
+    siblings.insert(newIndex, moved);
+    for (var i = 0; i < siblings.length; i++) {
+      final index = _pages.indexWhere((page) => page.id == siblings[i].id);
+      if (index != -1) _pages[index].sortOrder = excludeRoot ? i + 1 : i;
+    }
     setState(() {});
     _persistAssemblyElements();
   }
@@ -468,6 +499,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   bool _isElementInsidePcb(UIElement element) {
     if (!_requiresPcbContainment(element)) return true;
     final pcbRect = _pcbLocalRect;
+    bool containsInclusive(Offset point) {
+      const epsilon = 0.001;
+      return point.dx >= pcbRect.left - epsilon &&
+          point.dx <= pcbRect.right + epsilon &&
+          point.dy >= pcbRect.top - epsilon &&
+          point.dy <= pcbRect.bottom + epsilon;
+    }
+
     final center = Offset(
       _pcbOffset.dx + element.offset.dx + element.size.width / 2,
       _pcbOffset.dy + element.offset.dy + element.size.height / 2,
@@ -487,7 +526,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         _pcbOffset.dy + element.offset.dy + element.size.height,
       ),
     ].map((point) => _rotatePoint(point, center, element.rotation)).toList();
-    return corners.every(pcbRect.contains);
+    return corners.every(containsInclusive);
   }
 
   bool get _hasIllegalPcbElements =>
