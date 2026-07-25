@@ -170,7 +170,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                   top: _canvasOffset.dy + _pcbOffset.dy + el.offset.dy,
                                   width: el.size.width,
                                   height: el.size.height,
-                                  child: _buildReadonlyPageElement(el),
+                                  child: _buildReadonlyPageElement(
+                                    el,
+                                    overrides: page.propertyOverrides,
+                                  ),
                                 ),
                               );
                             }),
@@ -426,6 +429,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     final isInsidePcb = _isElementInsidePcb(el);
     if (el.isComposite && el.composite != null) {
       final isSelected = _selectedCompositeId == el.id;
+      final displayElement = _applyPropertyOverridesToElement(
+        el,
+        _propertyOverridesForComposite(el.id),
+      );
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _selectComposite(el.id),
@@ -460,7 +467,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               IgnorePointer(
                 child: UISceneModeScope(
                   isStudioCreationMode: true,
-                  child: Builder(builder: (ctx) => UIRenderer.render(ctx, el)),
+                  child: Builder(
+                    builder: (ctx) => UIRenderer.render(ctx, displayElement),
+                  ),
                 ),
               ),
               if (isSelected)
@@ -629,14 +638,18 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     }
   }
 
-  Widget _buildReadonlyPageElement(UIElement el) {
+  Widget _buildReadonlyPageElement(
+    UIElement el, {
+    List<PropertyOverride> overrides = const <PropertyOverride>[],
+  }) {
+    final displayElement = _applyPropertyOverridesToElement(el, overrides);
     return IgnorePointer(
       child: Opacity(
         opacity: 0.35,
         child: SizedBox(
           width: el.size.width,
           height: el.size.height,
-          child: UIRenderer.render(context, el),
+          child: UIRenderer.render(context, displayElement),
         ),
       ),
     );

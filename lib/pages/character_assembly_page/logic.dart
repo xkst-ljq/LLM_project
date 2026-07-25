@@ -207,10 +207,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   bool _propertyOverrideHasContent(PropertyOverride override) {
-    return override.overrides.isNotEmpty ||
-        override.binding != null ||
-        (override.sourceCompositeId?.isNotEmpty ?? false) ||
-        (override.sourceElementId?.isNotEmpty ?? false);
+    return override.overrides.isNotEmpty || override.binding != null;
   }
 
   Future<void> _showCompositeOverrideEntryDialog(UIElement compositeElement) async {
@@ -235,10 +232,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 .toList();
           }
 
+          final hasEditableChildren = exposedChildren.any(_supportsBasicOverrideEditor);
+
           return AlertDialog(
             title: const Text('实例覆写入口'),
             content: SizedBox(
-              width: 360,
+              width: 380,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,9 +259,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    '这里管理当前页面内这个复合组件实例的覆写槽位，不会影响模板和其他实例。A3-2 先提供黑盒入口与槽位管理，具体字段编辑放在 A3-3。',
-                    style: TextStyle(
+                  Text(
+                    hasEditableChildren
+                        ? '这里管理当前页面内这个复合组件实例的覆写槽位，只影响当前实例。A3-3 已支持 text / progress / switch 的基础字段覆写。'
+                        : '这里管理当前页面内这个复合组件实例的覆写槽位，只影响当前实例。当前暴露端口尚无 A3-3 已支持的字段类型。',
+                    style: const TextStyle(
                       fontSize: 11,
                       color: Color(0xFF777783),
                       height: 1.35,
@@ -279,8 +280,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         final type = child.module?.type ?? 'unknown';
                         final overrides = overridesOf(child);
                         final hasSlot = overrides.isNotEmpty;
-                        final hasContent =
-                            overrides.any(_propertyOverrideHasContent);
+                        final hasContent = overrides.any(_propertyOverrideHasContent);
+                        final canEdit = _supportsBasicOverrideEditor(child);
                         return Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -294,45 +295,61 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                   : Colors.black.withValues(alpha: 0.05),
                             ),
                           ),
-                          child: Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: _compositeChildAccentColor(type),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      child.module?.name ?? child.id,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFF111116),
-                                      ),
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      color: _compositeChildAccentColor(type),
+                                      shape: BoxShape.circle,
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '$type · ${hasSlot ? (hasContent ? '已有覆写内容' : '已创建覆写槽位') : '未创建覆写槽位'}',
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: Color(0xFF777783),
-                                      ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          child.module?.name ?? child.id,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF111116),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '$type · ${hasSlot ? (hasContent ? '已有覆写内容' : '已创建覆写槽位') : '未创建覆写槽位'}',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Color(0xFF777783),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              hasSlot
-                                  ? TextButton(
+                                  ),
+                                  const SizedBox(width: 8),
+                                  if (hasSlot) ...[
+                                    if (canEdit)
+                                      TextButton(
+                                        onPressed: () async {
+                                          final override = overrides.first;
+                                          await _showCompositeOverrideValueEditor(
+                                            compositeElement: compositeElement,
+                                            child: child,
+                                            propertyOverride: override,
+                                          );
+                                          setDialogState(() {});
+                                        },
+                                        child: const Text('编辑'),
+                                      ),
+                                    TextButton(
                                       onPressed: () {
                                         setState(() {
                                           _removePropertyOverride(child.id);
@@ -340,22 +357,44 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                         setDialogState(() {});
                                       },
                                       child: const Text('移除'),
-                                    )
-                                  : FilledButton.tonal(
-                                      onPressed: () {
+                                    ),
+                                  ] else
+                                    FilledButton.tonal(
+                                      onPressed: () async {
+                                        final created = _ensurePropertyOverride(
+                                          componentId: child.id,
+                                          sourceElementId: compositeElement.id,
+                                          sourceCompositeId:
+                                              compositeElement.composite?.id,
+                                        );
                                         setState(() {
-                                          _ensurePropertyOverride(
-                                            componentId: child.id,
-                                            sourceElementId: compositeElement.id,
-                                            sourceCompositeId:
-                                                compositeElement.composite?.id,
-                                          );
                                           _persistAssemblyElements();
                                         });
                                         setDialogState(() {});
+                                        if (canEdit) {
+                                          await _showCompositeOverrideValueEditor(
+                                            compositeElement: compositeElement,
+                                            child: child,
+                                            propertyOverride: created,
+                                          );
+                                          setDialogState(() {});
+                                        }
                                       },
                                       child: const Text('创建'),
                                     ),
+                                ],
+                              ),
+                              if (hasSlot && !canEdit)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    '该暴露类型的字段编辑将在后续步骤开放。',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF777783),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         );
@@ -375,6 +414,227 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         },
       ),
     );
+  }
+
+  bool _supportsBasicOverrideEditor(UIElement child) {
+    final type = child.module?.type;
+    return type == 'text' || type == 'progress' || type == 'switch';
+  }
+
+  UIElement _applyPropertyOverridesToElement(
+    UIElement element,
+    List<PropertyOverride> overrides,
+  ) {
+    if (!element.isComposite || element.composite == null || overrides.isEmpty) {
+      return element;
+    }
+
+    UIElement patchNode(UIElement node) {
+      if (!node.isComposite && node.module != null) {
+        final matched = overrides
+            .where((override) => override.componentId == node.id)
+            .toList();
+        if (matched.isEmpty) return node;
+        final props = Map<String, dynamic>.from(
+          _deepCloneValue(node.module!.properties) as Map,
+        );
+        for (final override in matched) {
+          props.addAll(
+            Map<String, dynamic>.from(
+              _deepCloneValue(override.overrides) as Map,
+            ),
+          );
+        }
+        return node.copyWith(module: node.module!.copyWith(properties: props));
+      }
+      if (node.isComposite && node.composite != null) {
+        return node.copyWith(
+          composite: node.composite!.copyWith(
+            children: node.composite!.children.map(patchNode).toList(),
+          ),
+        );
+      }
+      return node;
+    }
+
+    return element.copyWith(
+      composite: element.composite!.copyWith(
+        children: element.composite!.children.map(patchNode).toList(),
+      ),
+    );
+  }
+
+  Future<void> _showCompositeOverrideValueEditor({
+    required UIElement compositeElement,
+    required UIElement child,
+    required PropertyOverride propertyOverride,
+  }) async {
+    final type = child.module?.type;
+    if (!_supportsBasicOverrideEditor(child)) return;
+
+    if (type == 'text') {
+      final controller = TextEditingController(
+        text: propertyOverride.overrides['text']?.toString() ??
+            child.module?.properties['text']?.toString() ??
+            '',
+      );
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('覆写文本 · ${child.module?.name ?? child.id}'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: '输入实例专属文本',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                controller.clear();
+              },
+              child: const Text('恢复默认'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('应用'),
+            ),
+          ],
+        ),
+      );
+      if (saved == true && mounted) {
+        final nextOverrides =
+            Map<String, dynamic>.from(propertyOverride.overrides);
+        final text = controller.text.trim();
+        if (text.isEmpty) {
+          nextOverrides.remove('text');
+        } else {
+          nextOverrides['text'] = text;
+        }
+        final updated = propertyOverride.copyWith(overrides: nextOverrides);
+        setState(() => _upsertPropertyOverride(updated));
+      }
+      controller.dispose();
+      return;
+    }
+
+    if (type == 'switch') {
+      var currentValue = propertyOverride.overrides['value'] is bool
+          ? propertyOverride.overrides['value'] as bool
+          : (child.module?.properties['value'] == true);
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Text('覆写开关 · ${child.module?.name ?? child.id}'),
+            content: SwitchListTile(
+              value: currentValue,
+              title: Text(currentValue ? '开启' : '关闭'),
+              onChanged: (value) => setDialogState(() => currentValue = value),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('应用'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (saved == true && mounted) {
+        final updated = propertyOverride.copyWith(
+          overrides: {
+            ...propertyOverride.overrides,
+            'value': currentValue,
+          },
+        );
+        setState(() => _upsertPropertyOverride(updated));
+      }
+      return;
+    }
+
+    if (type == 'progress') {
+      final min = (child.module?.properties['min'] as num?)?.toDouble() ?? 0.0;
+      final max = (child.module?.properties['max'] as num?)?.toDouble() ?? 100.0;
+      final actualMin = math.min(min, max);
+      final actualMax = math.max(min, max);
+      double current = (propertyOverride.overrides['current'] as num?)?.toDouble() ??
+          (child.module?.properties['current'] as num?)?.toDouble() ??
+          actualMin;
+      current = current.clamp(actualMin, actualMax).toDouble();
+      final controller = TextEditingController(text: current.toStringAsFixed(0));
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Text('覆写进度值 · ${child.module?.name ?? child.id}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('范围：${actualMin.toStringAsFixed(0)} ~ ${actualMax.toStringAsFixed(0)}'),
+                const SizedBox(height: 8),
+                Slider(
+                  value: current,
+                  min: actualMin,
+                  max: actualMax,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      current = value;
+                      controller.text = value.toStringAsFixed(0);
+                    });
+                  },
+                ),
+                TextField(
+                  controller: controller,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    hintText: '输入当前值',
+                  ),
+                  onChanged: (value) {
+                    final parsed = double.tryParse(value);
+                    if (parsed == null) return;
+                    setDialogState(() {
+                      current = parsed.clamp(actualMin, actualMax).toDouble();
+                    });
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('应用'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (saved == true && mounted) {
+        final updated = propertyOverride.copyWith(
+          overrides: {
+            ...propertyOverride.overrides,
+            'current': current,
+          },
+        );
+        setState(() => _upsertPropertyOverride(updated));
+      }
+      controller.dispose();
+    }
   }
 
   Color _compositeChildAccentColor(String type) {
