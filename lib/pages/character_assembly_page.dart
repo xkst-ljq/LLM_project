@@ -84,6 +84,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     onTap: () {
                       if (_showAssetDrawer) setState(() => _showAssetDrawer = false);
                       if (_showLayerPanel) setState(() => _showLayerPanel = false);
+                      _clearCompositeSelection();
                     },
                     child: ClipRect(
                       child: CustomPaint(
@@ -424,9 +425,19 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   Widget _buildElementWidget(UIElement el) {
     final isInsidePcb = _isElementInsidePcb(el);
     if (el.isComposite && el.composite != null) {
+      final isSelected = _selectedCompositeId == el.id;
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onPanStart: (d) { _startTouchScreenPos = d.globalPosition; _startTouchElemOffset = el.offset; },
+        onTap: () => _selectComposite(el.id),
+        onDoubleTap: () {
+          _selectComposite(el.id);
+          _showCompositeOverrideEntryDialog(el);
+        },
+        onPanStart: (d) {
+          _selectComposite(el.id);
+          _startTouchScreenPos = d.globalPosition;
+          _startTouchElemOffset = el.offset;
+        },
         onPanUpdate: (d) {
           final delta = d.globalPosition - _startTouchScreenPos;
           setState(() {
@@ -452,6 +463,22 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   child: Builder(builder: (ctx) => UIRenderer.render(ctx, el)),
                 ),
               ),
+              if (isSelected)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: const Color(0xFF5E35B1),
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        color: const Color(0xFF5E35B1)
+                            .withValues(alpha: 0.06),
+                      ),
+                    ),
+                  ),
+                ),
               if (!isInsidePcb)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -470,6 +497,31 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 ),
               if (el.composite!.exposedPorts != null)
                 ..._buildExposedPorts(el),
+              if (isSelected)
+                Positioned(
+                  left: 6,
+                  top: 6,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF5E35B1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        '实例黑盒',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

@@ -9,6 +9,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       <PropertyOverride>[];
   final List<AssemblyPage> _pages = <AssemblyPage>[];
   String? _activePageId;
+  String? _selectedCompositeId;
   Offset _canvasOffset = Offset.zero;
   bool _showLayerPanel = false;
   bool _showAssetDrawer = false;
@@ -186,6 +187,208 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         .toList();
   }
 
+  UIElement? _findCompositeElementById(String id) {
+    final index = _elements.indexWhere(
+      (element) => element.id == id && element.isComposite,
+    );
+    return index == -1 ? null : _elements[index];
+  }
+
+  void _selectComposite(String id) {
+    if (_selectedCompositeId == id) return;
+    setState(() => _selectedCompositeId = id);
+  }
+
+  void _clearCompositeSelection() {
+    if (_selectedCompositeId == null) return;
+    setState(() => _selectedCompositeId = null);
+  }
+
+  bool _propertyOverrideHasContent(PropertyOverride override) {
+    return override.overrides.isNotEmpty ||
+        override.binding != null ||
+        (override.sourceCompositeId?.isNotEmpty ?? false) ||
+        (override.sourceElementId?.isNotEmpty ?? false);
+  }
+
+  Future<void> _showCompositeOverrideEntryDialog(UIElement compositeElement) async {
+    if (!compositeElement.isComposite || compositeElement.composite == null) return;
+    final exposedChildren = _exposedChildrenOfComposite(compositeElement);
+    if (exposedChildren.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('该复合组件模板当前没有暴露端口，暂时无法创建实例覆写。')),
+        );
+      }
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          List<PropertyOverride> overridesOf(UIElement child) {
+            return _propertyOverridesForComposite(compositeElement.id)
+                .where((override) => override.componentId == child.id)
+                .toList();
+          }
+
+          return AlertDialog(
+            title: const Text('实例覆写入口'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '页面：${_displayPageName(_activePage)}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '实例：${compositeElement.composite?.name ?? compositeElement.id}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF111116),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '这里管理当前页面内这个复合组件实例的覆写槽位，不会影响模板和其他实例。A3-2 先提供黑盒入口与槽位管理，具体字段编辑放在 A3-3。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: exposedChildren.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final child = exposedChildren[index];
+                        final type = child.module?.type ?? 'unknown';
+                        final overrides = overridesOf(child);
+                        final hasSlot = overrides.isNotEmpty;
+                        final hasContent =
+                            overrides.any(_propertyOverrideHasContent);
+                        return Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: hasSlot
+                                ? const Color(0xFFF3E5F5)
+                                : const Color(0xFFF6F6F9),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: hasSlot
+                                  ? const Color(0xFFD1C4E9)
+                                  : Colors.black.withValues(alpha: 0.05),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: _compositeChildAccentColor(type),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      child.module?.name ?? child.id,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF111116),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '$type · ${hasSlot ? (hasContent ? '已有覆写内容' : '已创建覆写槽位') : '未创建覆写槽位'}',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Color(0xFF777783),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              hasSlot
+                                  ? TextButton(
+                                      onPressed: () {
+                                        _removePropertyOverride(child.id);
+                                        setDialogState(() {});
+                                      },
+                                      child: const Text('移除'),
+                                    )
+                                  : FilledButton.tonal(
+                                      onPressed: () {
+                                        _ensurePropertyOverride(
+                                          componentId: child.id,
+                                          sourceElementId: compositeElement.id,
+                                          sourceCompositeId:
+                                              compositeElement.composite?.id,
+                                        );
+                                        _persistAssemblyElements();
+                                        setDialogState(() {});
+                                      },
+                                      child: const Text('创建'),
+                                    ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('关闭'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Color _compositeChildAccentColor(String type) {
+    switch (type) {
+      case 'progress':
+      case 'slider':
+        return const Color(0xFF00E676);
+      case 'text':
+      case 'input':
+      case 'select':
+        return const Color(0xFF651FFF);
+      case 'switch':
+        return const Color(0xFFFFA726);
+      case 'button':
+        return const Color(0xFFFFD740);
+      default:
+        return const Color(0xFF9E9E9E);
+    }
+  }
+
   PropertyOverride _ensurePropertyOverride({
     required String componentId,
     required String sourceElementId,
@@ -298,6 +501,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _syncCanvasStateIntoActivePage();
     _activePageId = pageId;
     _loadActivePageState();
+    _selectedCompositeId = null;
     _setupEventBusListener();
     _persistAssemblyElements();
     setState(() {});
