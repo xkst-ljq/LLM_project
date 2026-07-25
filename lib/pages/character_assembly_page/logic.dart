@@ -109,7 +109,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   PropertyOverride _clonePropertyOverride(PropertyOverride override) {
     return override.copyWith(
-      overrides: _deepCloneValue(override.overrides) as Map<String, dynamic>,
+      overrides: Map<String, dynamic>.from(
+        _deepCloneValue(override.overrides) as Map,
+      ),
       binding: override.binding?.copyWith(),
     );
   }
