@@ -17,45 +17,9 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
   @override
   void initState() {
     super.initState();
-    _initTestAssets();
-  }
-
-  void _initTestAssets() {
-    // 模组库预览页只注入基础原材料示例，不再自动注入复合资产。
-    _assetService.addModule(UIModule(
-      id: 'test_progress',
-      name: '数据条原子',
-      type: 'progress',
-      color: Colors.redAccent,
-      properties: {'min': 0, 'max': 100, 'current': 65},
-      boundVariable: 'var.value',
-    ));
-
-    _assetService.addModule(UIModule(
-      id: 'test_surface',
-      name: '面原子',
-      type: 'surface',
-      color: Colors.deepPurpleAccent,
-      material: UIModuleMaterial.gradient,
-      shape: UIModuleShape.capsule,
-      properties: {},
-    ));
-
-    _assetService.addModule(UIModule(
-      id: 'test_slider',
-      name: '滑块原子',
-      type: 'slider',
-      color: const Color(0xFF00ACC1),
-      properties: {'min': 0, 'max': 100, 'current': 50},
-    ));
-
-    _assetService.addModule(UIModule(
-      id: 'test_button_logic',
-      name: '点击热区原子',
-      type: 'button',
-      color: Colors.transparent,
-      properties: {'action': 'tap'},
-    ));
+    _assetService.ensureLoaded().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -82,9 +46,21 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
             spacing: 12,
             runSpacing: 12,
             children: modules.map((m) {
+              final element =
+                  UIElement(id: m.id, isComposite: false, module: m);
               return SizedBox(
                 width: 160,
-                child: UIRenderer.render(context, UIElement(id: m.id, isComposite: false, module: m)),
+                child: UILinkerSnapshotScope(
+                  snapshot: LinkerSnapshot.fromElements([element]),
+                  child: UISceneModeScope(
+                    isStudioCreationMode: true,
+                    child: IgnorePointer(
+                      child: Builder(
+                        builder: (ctx) => UIRenderer.render(ctx, element),
+                      ),
+                    ),
+                  ),
+                ),
               );
             }).toList(),
           ),
@@ -101,9 +77,21 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
             spacing: 12,
             runSpacing: 12,
             children: composites.map((c) {
+              final element =
+                  UIElement(id: c.id, isComposite: true, composite: c);
               return SizedBox(
                 width: 200,
-                child: UIRenderer.render(context, UIElement(id: c.id, isComposite: true, composite: c)),
+                child: UILinkerSnapshotScope(
+                  snapshot: LinkerSnapshot.fromElements([element]),
+                  child: UISceneModeScope(
+                    isStudioCreationMode: true,
+                    child: IgnorePointer(
+                      child: Builder(
+                        builder: (ctx) => UIRenderer.render(ctx, element),
+                      ),
+                    ),
+                  ),
+                ),
               );
             }).toList(),
           ),

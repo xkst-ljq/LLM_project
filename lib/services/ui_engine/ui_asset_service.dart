@@ -8,6 +8,8 @@ import 'ui_models.dart';
 class UIAssetService {
   static const String _storageKey = 'global_ui_assets_flat_foundation_v2';
 
+  late final Future<void> _loadFuture;
+
   /// 左侧原材料库的唯一内置原子清单与展示顺序。
   /// 用户保存的资产不在此处展示，统一进入右侧完成资产库。
   static const List<String> _foundationModuleOrder = [
@@ -32,8 +34,10 @@ class UIAssetService {
 
   UIAssetService() {
     _initDefaultAssets();
-    _loadAssets();
+    _loadFuture = _loadAssets();
   }
+
+  Future<void> ensureLoaded() => _loadFuture;
 
   // 提供开箱即用的“扁平化基础原材料”库。
   // 当前默认不再内置复合资产，也不默认暴露玻璃/光效/高级面等风格化原子；
@@ -211,13 +215,13 @@ class UIAssetService {
     _composites = {};
   }
 
-  void _loadAssets() async {
+  Future<void> _loadAssets() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final data = prefs.getString(_storageKey);
       if (data != null) {
         final Map<String, dynamic> decoded = jsonDecode(data);
-        
+
         // 加载原子模组 (与默认模组合并)
         final modulesJson = decoded['modules'] as Map<String, dynamic>? ?? {};
         modulesJson.forEach((k, v) {
@@ -227,7 +231,7 @@ class UIAssetService {
             _modules[k] = UIModule.fromJson(v);
           }
         });
-        
+
         // 加载组合块 (与默认组合块合并)
         final compositesJson = decoded['composites'] as Map<String, dynamic>? ?? {};
         compositesJson.forEach((k, v) {

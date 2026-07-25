@@ -207,7 +207,11 @@ class LinkerService {
       }
       final sourceId = linkerData['sourceModuleId']?.toString();
       final source = sourceId == null ? null : _elementModules[sourceId];
-      if (source?.type == 'switch') running = source!.properties['value'] == true;
+      if (source?.type == 'switch') {
+        final effectiveValue =
+            resolveTargetValue(source!, <String>{timerId}) ?? source.properties['value'];
+        running = effectiveValue == true;
+      }
     }
     return running;
   }
@@ -440,31 +444,18 @@ class LinkerService {
     });
   }
 
-  /// 更新元素快照（每次渲染前调用）
-  static void updateElementSnapshot(List<UIElement> elements) {
-    _elementModules.clear();
-    _elementSurfaceParents.clear();
-    for (final el in elements) {
-      if (!el.isComposite && el.module != null) {
-        _elementModules[el.id] = el.module!;
-        _elementSurfaceParents[el.id] = el.parentSurfaceId;
-      }
-      if (el.isComposite && el.composite != null) {
-        _registerCompositeChildren(el.composite!.children);
-      }
-    }
+  static void installSnapshot(LinkerSnapshot snapshot) {
+    _elementModules
+      ..clear()
+      ..addAll(snapshot.elementModules);
+    _elementSurfaceParents
+      ..clear()
+      ..addAll(snapshot.elementSurfaceParents);
   }
 
-  static void _registerCompositeChildren(List<UIElement> kids) {
-    for (final c in kids) {
-      if (!c.isComposite && c.module != null) {
-        _elementModules[c.id] = c.module!;
-        _elementSurfaceParents[c.id] = c.parentSurfaceId;
-      }
-      if (c.isComposite && c.composite != null) {
-        _registerCompositeChildren(c.composite!.children);
-      }
-    }
+  /// 更新元素快照（每次渲染前调用）
+  static void updateElementSnapshot(List<UIElement> elements) {
+    installSnapshot(LinkerSnapshot.fromElements(elements));
   }
 
   static UIElement? _findElementInTree(List<UIElement> list, String id, List<dynamic> outRef) {
@@ -524,6 +515,27 @@ class LinkerService {
     final current = (progressModule.properties['current'] as num?)?.toDouble() ?? 0.0;
     final max = (progressModule.properties['max'] as num?)?.toDouble() ?? 100.0;
     return field == 'max' ? max : current;
+  }
+
+  static double _effectiveProgressCurrent(
+    UIModule progressModule, [
+    Set<String>? visited,
+  ]) {
+    final incoming = resolveTargetValue(progressModule, visited);
+    return incoming is num
+        ? incoming.toDouble()
+        : (progressModule.properties['current'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  static String _effectiveSelectValue(
+    UIModule selectModule, [
+    Set<String>? visited,
+  ]) {
+    final incoming = resolveTargetValue(selectModule, visited)?.toString();
+    if (incoming != null && incoming.trim().isNotEmpty) return incoming;
+    return selectModule.properties['current']?.toString() ??
+        selectModule.properties['defaultValue']?.toString() ??
+        '';
   }
 
   static bool _matchesThreshold(double value, String operator, double threshold) {
@@ -859,16 +871,18 @@ class LinkerService {
           return triggerText.isNotEmpty && textValue == triggerText;
         }
         if (scheme == 'text_value_to_select_match') {
-          final options = (targetModule.properties['options'] as List?)
-                  ?.map((option) => option.toString())
-                  .toList() ??
-              const <String>[];
-          return options.contains(textValue) ? textValue : null;
+          final options = SelectOption.parseList(targetModule.properties['options']);
+          for (final option in options) {
+            if (textValue == option.value || textValue == option.label) {
+              return option.value;
+            }
+          }
+          return null;
         }
       }
 
       if (sourceModule.type == 'progress') {
-        final current = _progressFieldValue(sourceModule, 'current');
+        final current = _effectiveProgressCurrent(sourceModule, visitedSet);
         final max = _progressFieldValue(sourceModule, 'max');
         if (scheme == 'progress_to_text') {
           final field = schemeParams['sourceField']?.toString() ?? 'current';
@@ -907,20 +921,19 @@ class LinkerService {
       }
 
       if (sourceModule.type == 'select' && scheme == 'select_to_text') {
-        final current = sourceModule.properties['current']?.toString() ??
-            sourceModule.properties['defaultValue']?.toString() ?? '';
+        final current = _effectiveSelectValue(sourceModule, visitedSet);
         final matches = SelectOption.parseList(sourceModule.properties['options'])
             .where((item) => item.value == current)
             .toList();
-        return matches.isEmpty ? current : matches.first.label;
+        final label = matches.isEmpty ? current : matches.first.label;
+        final template = schemeParams['template']?.toString() ?? '{{value}}';
+        return template.replaceAll('{{value}}', label);
       }
 
       if (sourceModule.type == 'select' && scheme == 'select_value_to_switch') {
         final triggerValue =
             schemeParams['triggerValue']?.toString() ?? '';
-        final selectedValue = sourceModule.properties['current']?.toString() ??
-            sourceModule.properties['defaultValue']?.toString() ??
-            '';
+        final selectedValue = _effectiveSelectValue(sourceModule, visitedSet);
         return triggerValue.isNotEmpty && selectedValue == triggerValue;
       }
 
@@ -1148,7 +1161,7 @@ class LinkerService {
         final progressParams =
             (linkerData['schemeParams'] as Map?)?.cast<String, dynamic>() ?? {};
         enabledSignals.add(_matchesThreshold(
-          _progressFieldValue(sourceModule, 'current'),
+          _effectiveProgressCurrent(sourceModule, <String>{targetElId}),
           progressParams['operator']?.toString() ?? '>=',
           (progressParams['threshold'] as num?)?.toDouble() ?? 100.0,
         ));
@@ -1169,9 +1182,10 @@ class LinkerService {
           scheme == 'select_value_to_surface_visible') {
         final triggerValue =
             (linkerData['schemeParams'] as Map?)?['triggerValue']?.toString() ?? '';
-        final selectedValue = sourceModule.properties['current']?.toString() ??
-            sourceModule.properties['defaultValue']?.toString() ??
-            '';
+        final selectedValue = _effectiveSelectValue(
+          sourceModule,
+          <String>{targetElId},
+        );
         visibleSignals.add(
           triggerValue.isNotEmpty && selectedValue == triggerValue,
         );
@@ -1200,12 +1214,15 @@ class LinkerService {
         }
       }
 
-      final rawValue = sourceModule.properties['value'];
-      final sourceValue = rawValue is bool
-          ? rawValue
-          : rawValue == null
+      final effectiveSourceValue = sourceModule.type == 'switch'
+          ? (resolveTargetValue(sourceModule, <String>{targetElId}) ??
+              sourceModule.properties['value'])
+          : sourceModule.properties['value'];
+      final sourceValue = effectiveSourceValue is bool
+          ? effectiveSourceValue
+          : effectiveSourceValue == null
               ? null
-              : rawValue.toString().toLowerCase() == 'true';
+              : effectiveSourceValue.toString().toLowerCase() == 'true';
       if (sourceValue == null) continue;
 
       switch (scheme) {

@@ -37,12 +37,14 @@ mixin _UIStudioLogic on State<UIStudioPage> {
   bool _isMultiDeleteMode = false;
   final Set<String> _pendingDeleteIds = <String>{};
   final Map<String, Offset> _compositePortPositions = <String, Offset>{};
+  int _generatedElementIdSeed = 0;
 
 
   // ============================================================
   //  工作区持久化
   // ============================================================
   Future<void> _loadWorkspaces() async {
+    await _assetService.ensureLoaded();
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('ui_studio_workspace');
     if (saved != null && saved.isNotEmpty) {
@@ -210,6 +212,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
                       : <UIElement>[];
                   _selectedTransformationId = null;
                 });
+                _setupEventBusListener();
                 _autoSave();
                 Navigator.pop(dialogContext);
               },
@@ -348,6 +351,185 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     return sanitized;
   }
 
+  String _generateElementId() {
+    _generatedElementIdSeed++;
+    return 'elem_${DateTime.now().microsecondsSinceEpoch}_${_generatedElementIdSeed}';
+  }
+
+  Offset _rotateLocalPoint(Offset point, Offset center, double degrees) {
+    if (degrees == 0.0) return point;
+    final radians = degrees * math.pi / 180.0;
+    final dx = point.dx - center.dx;
+    final dy = point.dy - center.dy;
+    return Offset(
+      center.dx + dx * math.cos(radians) - dy * math.sin(radians),
+      center.dy + dx * math.sin(radians) + dy * math.cos(radians),
+    );
+  }
+
+  dynamic _deepCloneValue(dynamic value) {
+    if (value is Map) {
+      return value.map(
+        (key, entry) => MapEntry(key, _deepCloneValue(entry)),
+      );
+    }
+    if (value is List) {
+      return value.map(_deepCloneValue).toList();
+    }
+    return value;
+  }
+
+  UIModule _cloneModuleInstance(UIModule module, {required String id}) {
+    return module.copyWith(
+      id: id,
+      properties: Map<String, dynamic>.from(_deepCloneValue(module.properties) as Map),
+      linkedSources: List<String>.from(module.linkedSources),
+    );
+  }
+
+  Offset _compositePortGlobalPosition(
+    UIElement element, {
+    required double localY,
+    required bool isInput,
+    double selectionPadding = 0.0,
+  }) {
+    final localPoint = Offset(
+      isInput ? selectionPadding : element.size.width + selectionPadding,
+      localY,
+    );
+    final center = Offset(
+      selectionPadding + element.size.width / 2,
+      selectionPadding + element.size.height / 2,
+    );
+    final rotatedLocal =
+        _rotateLocalPoint(localPoint, center, element.rotation);
+    final origin = Offset(
+      _workspaceOffset.dx + element.offset.dx - selectionPadding,
+      _workspaceOffset.dy + element.offset.dy - selectionPadding,
+    );
+    return origin + rotatedLocal;
+  }
+
+  UIComposite _instantiateComposite(UIComposite template) {
+    final idMap = <String, String>{};
+
+    void collectIds(List<UIElement> elements) {
+      for (final element in elements) {
+        idMap.putIfAbsent(element.id, _generateElementId);
+        if (element.isComposite && element.composite != null) {
+          collectIds(element.composite!.children);
+        }
+      }
+    }
+
+    Set<String> collectElementIds(List<UIElement> elements) {
+      final ids = <String>{};
+      void visit(List<UIElement> nodes) {
+        for (final node in nodes) {
+          ids.add(node.id);
+          if (node.isComposite && node.composite != null) {
+            visit(node.composite!.children);
+          }
+        }
+      }
+
+      visit(elements);
+      return ids;
+    }
+
+    Map<String, dynamic> remapModuleProperties(
+      String type,
+      Map<String, dynamic> original,
+    ) {
+      final props = Map<String, dynamic>.from(_deepCloneValue(original) as Map);
+      if (type == 'linker' && props['linker'] is Map) {
+        final linkerData =
+            Map<String, dynamic>.from(props['linker'] as Map);
+        final sourceId = linkerData['sourceModuleId']?.toString();
+        final targetId = linkerData['targetModuleId']?.toString();
+        if (sourceId != null && idMap.containsKey(sourceId)) {
+          linkerData['sourceModuleId'] = idMap[sourceId];
+        }
+        if (targetId != null && idMap.containsKey(targetId)) {
+          linkerData['targetModuleId'] = idMap[targetId];
+        }
+        props['linker'] = linkerData;
+      }
+      return props;
+    }
+
+    UIElement cloneElement(UIElement element) {
+      final newId = idMap[element.id] ?? _generateElementId();
+      final clonedModule = element.module == null
+          ? null
+          : element.module!.copyWith(
+              id: newId,
+              properties: remapModuleProperties(
+                element.module!.type,
+                element.module!.properties,
+              ),
+              linkedSources: element.module!.linkedSources
+                  .map((sourceId) => idMap[sourceId] ?? sourceId)
+                  .toList(),
+            );
+
+      UIComposite? clonedComposite;
+      if (element.isComposite && element.composite != null) {
+        final clonedChildren =
+            element.composite!.children.map(cloneElement).toList();
+        final validIds = collectElementIds(clonedChildren);
+        final clonedPorts = element.composite!.exposedPorts
+            ?.map(
+              (port) => port.copyWith(
+                elementId: idMap[port.elementId] ?? port.elementId,
+              ),
+            )
+            .where((port) => validIds.contains(port.elementId))
+            .toList();
+        clonedComposite = element.composite!.copyWith(
+          children: clonedChildren,
+          exposedPorts: clonedPorts == null || clonedPorts.isEmpty
+              ? null
+              : clonedPorts,
+        );
+      }
+
+      return UIElement(
+        id: newId,
+        isComposite: element.isComposite,
+        module: clonedModule,
+        composite: clonedComposite,
+        offset: element.offset,
+        size: element.size,
+        layerIndex: element.layerIndex,
+        parentSurfaceId: element.parentSurfaceId == null
+            ? null
+            : idMap[element.parentSurfaceId!],
+        rotation: element.rotation,
+        layoutLocked: element.layoutLocked,
+        sealed: element.sealed,
+      );
+    }
+
+    collectIds(template.children);
+    final clonedChildren = template.children.map(cloneElement).toList();
+    final validIds = collectElementIds(clonedChildren);
+    final clonedPorts = template.exposedPorts
+        ?.map(
+          (port) => port.copyWith(
+            elementId: idMap[port.elementId] ?? port.elementId,
+          ),
+        )
+        .where((port) => validIds.contains(port.elementId))
+        .toList();
+    return template.copyWith(
+      children: clonedChildren,
+      exposedPorts: clonedPorts == null || clonedPorts.isEmpty
+          ? null
+          : clonedPorts,
+    );
+  }
+
   // ============================================================
   //  元素增删改
   // ============================================================
@@ -402,19 +584,49 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     var maxY = originals.map((e) => e.offset.dy + e.size.height).reduce(math.max);
     final targetOrigin = box.globalToLocal(globalPosition) - _workspaceOffset - Offset((maxX - minX) / 2, (maxY - minY) / 2);
     final ids = <String, String>{};
-    for (final element in originals) { ids[element.id] = 'elem_${DateTime.now().microsecondsSinceEpoch}_${ids.length}'; }
+    for (final element in originals) {
+      ids[element.id] = _generateElementId();
+    }
     final pasted = <UIElement>[];
     for (final old in originals) {
       final newId = ids[old.id]!;
-      var module = old.module?.copyWith(id: newId);
+      var module = old.module == null
+          ? null
+          : _cloneModuleInstance(old.module!, id: newId);
+      UIComposite? composite = old.composite;
       if (module?.type == 'linker') {
         final props = Map<String, dynamic>.from(module!.properties);
         final data = Map<String, dynamic>.from(props['linker'] ?? {});
-        final src = data['sourceModuleId']?.toString(); final tgt = data['targetModuleId']?.toString();
-        if (ids.containsKey(src) && ids.containsKey(tgt)) { data['sourceModuleId']=ids[src]; data['targetModuleId']=ids[tgt]; } else { continue; }
-        props['linker']=data; module=module.copyWith(properties: props);
+        final src = data['sourceModuleId']?.toString();
+        final tgt = data['targetModuleId']?.toString();
+        if (ids.containsKey(src) && ids.containsKey(tgt)) {
+          data['sourceModuleId'] = ids[src];
+          data['targetModuleId'] = ids[tgt];
+        } else {
+          continue;
+        }
+        props['linker'] = data;
+        module = module.copyWith(properties: props);
       }
-      pasted.add(UIElement(id:newId,isComposite:old.isComposite,module:module,composite:old.composite,offset:targetOrigin + Offset(old.offset.dx-minX,old.offset.dy-minY),size:old.size,layerIndex:_activeLayerIndex,parentSurfaceId: old.parentSurfaceId == null ? null : ids[old.parentSurfaceId!],rotation:old.rotation,layoutLocked:old.layoutLocked,sealed:old.sealed));
+      if (old.isComposite && old.composite != null) {
+        composite = _instantiateComposite(old.composite!);
+      }
+      pasted.add(UIElement(
+        id: newId,
+        isComposite: old.isComposite,
+        module: module,
+        composite: composite,
+        offset: targetOrigin +
+            Offset(old.offset.dx - minX, old.offset.dy - minY),
+        size: old.size,
+        layerIndex: _activeLayerIndex,
+        parentSurfaceId: old.parentSurfaceId == null
+            ? null
+            : ids[old.parentSurfaceId!],
+        rotation: old.rotation,
+        layoutLocked: old.layoutLocked,
+        sealed: old.sealed,
+      ));
     }
     // 同一复制组内始终先绘制父面，再绘制成员；保留原 copied 列表中的兄弟局部顺序。
     pasted.sort((a, b) {
@@ -441,7 +653,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       title: Text('删除 ${_pendingDeleteIds.length} 个组件？'),
       content: const Text('此操作可通过撤销恢复。'),
       actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-        FilledButton(onPressed: () { setState(() { _currentElements.removeWhere((e) => _pendingDeleteIds.contains(e.id) && !e.sealed); _pendingDeleteIds.clear(); _isMultiDeleteMode=false; _currentElements=_sanitizeLinkerElements(_currentElements); }); _autoSave(); Navigator.pop(ctx); }, child: const Text('确认删除'))],
+        FilledButton(onPressed: () { setState(() { _currentElements.removeWhere((e) => _pendingDeleteIds.contains(e.id) && !e.sealed); _pendingDeleteIds.clear(); _isMultiDeleteMode=false; _currentElements=_sanitizeLinkerElements(_currentElements); }); _setupEventBusListener(); _autoSave(); Navigator.pop(ctx); }, child: const Text('确认删除'))],
     ));
   }
 
@@ -535,13 +747,13 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     if (payload.spawnedElementId != null) return;
     final offset = _canvasOffsetFromGlobalDragPosition(globalPosition, payload);
     if (offset == null) return;
-    final uniqueId = 'elem_${DateTime.now().millisecondsSinceEpoch}_${_currentElements.length}';
+    final uniqueId = _generateElementId();
     final size = _sizeForDragPayload(payload);
     setState(() {
       if (payload.module != null) {
         _currentElements.add(UIElement(
           id: uniqueId,
-          module: payload.module!.copyWith(id: uniqueId),
+          module: _cloneModuleInstance(payload.module!, id: uniqueId),
           offset: offset,
           size: size,
           layerIndex: _activeLayerIndex,
@@ -550,7 +762,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       } else if (payload.composite != null) {
         _currentElements.add(UIElement(
           id: uniqueId,
-          composite: payload.composite,
+          composite: _instantiateComposite(payload.composite!),
           offset: offset,
           size: size,
           layerIndex: _activeLayerIndex,
@@ -690,18 +902,26 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       final ports = el.composite!.exposedPorts!
           .where((p) => el.composite!.children.any((c) => c.id == p.elementId))
           .toList();
-      final gx = _workspaceOffset.dx + el.offset.dx;
-      final gy = _workspaceOffset.dy + el.offset.dy;
       final bodyH = el.size.height;
       final leftPorts = ports.where((p) => p.exposeInput).toList();
       for (var i = 0; i < leftPorts.length; i++) {
         final py = (bodyH / (leftPorts.length + 1)) * (i + 1);
-        _compositePortPositions["${leftPorts[i].elementId}::input"] = Offset(gx, gy + py);
+        _compositePortPositions["${leftPorts[i].elementId}::input"] =
+            _compositePortGlobalPosition(
+          el,
+          localY: py,
+          isInput: true,
+        );
       }
       final rightPorts = ports.where((p) => p.exposeOutput).toList();
       for (var i = 0; i < rightPorts.length; i++) {
         final py = (bodyH / (rightPorts.length + 1)) * (i + 1);
-        _compositePortPositions["${rightPorts[i].elementId}::output"] = Offset(gx + el.size.width, gy + py);
+        _compositePortPositions["${rightPorts[i].elementId}::output"] =
+            _compositePortGlobalPosition(
+          el,
+          localY: py,
+          isInput: false,
+        );
       }
     }
   }
@@ -717,6 +937,7 @@ mixin _UIStudioLogic on State<UIStudioPage> {
         _selectedTransformationId = null;
       }
     });
+    _setupEventBusListener();
     _autoSave();
   }
 
@@ -1273,9 +1494,12 @@ mixin _UIStudioLogic on State<UIStudioPage> {
     }
 
     final rootOffset = rootSurface.offset;
-    final children = _currentElements.map((el) {
+    final children = _currentElements
+        .map((element) => UIElement.fromJson(element.toJson()))
+        .map((el) {
       return el.copyWith(
-        offset: Offset(el.offset.dx - rootOffset.dx, el.offset.dy - rootOffset.dy),
+        offset:
+            Offset(el.offset.dx - rootOffset.dx, el.offset.dy - rootOffset.dy),
       );
     }).toList();
 

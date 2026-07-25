@@ -104,6 +104,7 @@ class _UIStudioPageState extends State<UIStudioPage>
         return (elementOrder[a.id] ?? 0).compareTo(elementOrder[b.id] ?? 0);
       });
     const double rightDrawerWidth = 160.0;
+    final linkerSnapshot = LinkerSnapshot.fromElements(sortedElements);
     _compositePortPositions.clear();
     _precomputeCompositePortPositions();
 
@@ -163,42 +164,59 @@ class _UIStudioPageState extends State<UIStudioPage>
                         }
                       },
                       child: ClipRect(
-                        child: UISceneModeScope(
-                          isStudioCreationMode: !_isPreviewMode,
-                          selectedElementId: _isPreviewMode ? null : _selectedTransformationId,
-                          child: CustomPaint(
-                            painter: _isPreviewMode
-                                ? const _PreviewBlankPainter()
-                                : StudioWarmGridPainter(_workspaceOffset),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                ..._buildLinkerConnectionsLayer(),
-                                if (!_isPreviewMode &&
-                                    _isDraggingConnection &&
-                                    _dragConnectionEnd != null)
-                                  _buildTemporaryConnectionLine(),
-                              ...() {
-                                LinkerService.updateElementSnapshot(sortedElements);
-                                return sortedElements.map((el) {
-                                  final double p =
-                                  (!_isPreviewMode &&
-                                      el.id == _selectedTransformationId &&
-                                      el.module?.type != 'linker')
-                                      ? 20.0
-                                      : 0.0;
-                                  return Positioned(
-                                    left: _workspaceOffset.dx + el.offset.dx - p,
-                                    top: _workspaceOffset.dy + el.offset.dy - p,
-                                    width: el.size.width + p * 2,
-                                    height: el.size.height + p * 2,
-                                    child: Builder(builder: (nCtx) => _buildTrueSingleHandleNode(nCtx, el, p)),
-                                  );
-                                });
-                              }(),
-                            ],
+                        child: UILinkerSnapshotScope(
+                          snapshot: linkerSnapshot,
+                          child: UISceneModeScope(
+                            isStudioCreationMode: !_isPreviewMode,
+                            selectedElementId:
+                                _isPreviewMode ? null : _selectedTransformationId,
+                            child: CustomPaint(
+                              painter: _isPreviewMode
+                                  ? const _PreviewBlankPainter()
+                                  : StudioWarmGridPainter(_workspaceOffset),
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  ..._buildLinkerConnectionsLayer(),
+                                  if (!_isPreviewMode &&
+                                      _isDraggingConnection &&
+                                      _dragConnectionEnd != null)
+                                    _buildTemporaryConnectionLine(),
+                                  ...() {
+                                    LinkerService.updateElementSnapshot(
+                                      sortedElements,
+                                    );
+                                    return sortedElements.map((el) {
+                                      final double p = (!_isPreviewMode &&
+                                              el.id ==
+                                                  _selectedTransformationId &&
+                                              el.module?.type != 'linker')
+                                          ? 20.0
+                                          : 0.0;
+                                      return Positioned(
+                                        left: _workspaceOffset.dx +
+                                            el.offset.dx -
+                                            p,
+                                        top: _workspaceOffset.dy +
+                                            el.offset.dy -
+                                            p,
+                                        width: el.size.width + p * 2,
+                                        height: el.size.height + p * 2,
+                                        child: Builder(
+                                          builder: (nCtx) =>
+                                              _buildTrueSingleHandleNode(
+                                            nCtx,
+                                            el,
+                                            p,
+                                          ),
+                                        ),
+                                      );
+                                    });
+                                  }(),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
                         ),
                       ),
                     ),
@@ -822,8 +840,6 @@ class _UIStudioPageState extends State<UIStudioPage>
         el.composite!.children.any((c) => c.id == p.elementId)
       ).toList();
       final bodyH = el.size.height;
-      final gx = _workspaceOffset.dx + el.offset.dx;
-      final gy = _workspaceOffset.dy + el.offset.dy;
       // 左侧接收端口
       final leftPorts = ports.where((p) => p.exposeInput).toList();
       for (var i = 0; i < leftPorts.length; i++) {
@@ -832,7 +848,12 @@ class _UIStudioPageState extends State<UIStudioPage>
         final dotColor = _exposedPortColor(port, dataType);
         final y = p + (bodyH / (leftPorts.length + 1)) * (i + 1);
         // 记录端口全局位置供连线使用
-        _compositePortPositions["${port.elementId}::input"] = Offset(gx, gy - p + y);
+        _compositePortPositions["${port.elementId}::input"] = _compositePortGlobalPosition(
+          el,
+          localY: y,
+          isInput: true,
+          selectionPadding: p,
+        );
         stackChildren.add(
           Positioned(
             left: p - 6,
@@ -856,7 +877,12 @@ class _UIStudioPageState extends State<UIStudioPage>
         final dataType = el.composite!.children.firstWhere((c) => c.id == port.elementId).module?.type ?? '';
         final dotColor = _exposedPortColor(port, dataType);
         final y = p + (bodyH / (rightPorts.length + 1)) * (i + 1);
-        _compositePortPositions["${port.elementId}::output"] = Offset(gx + el.size.width, gy - p + y);
+        _compositePortPositions["${port.elementId}::output"] = _compositePortGlobalPosition(
+          el,
+          localY: y,
+          isInput: false,
+          selectionPadding: p,
+        );
         stackChildren.add(
           Positioned(
             left: el.size.width + p * 2 - (p - 6) - 12,

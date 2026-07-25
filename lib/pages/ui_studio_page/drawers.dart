@@ -378,13 +378,13 @@ mixin _UIStudioDrawers on _UIStudioLogic, _UIStudioDialogs {
                                   _buildLayerMiniButton(
                                     Icons.keyboard_arrow_up_rounded,
                                         () => _moveAtomicConstructionLayer(
-                                        el.id, -1),
+                                        el.id, 1),
                                     selected,
                                   ),
                                   _buildLayerMiniButton(
                                     Icons.keyboard_arrow_down_rounded,
                                         () => _moveAtomicConstructionLayer(
-                                        el.id, 1),
+                                        el.id, -1),
                                     selected,
                                   ),
                                   _buildLayerMiniButton(

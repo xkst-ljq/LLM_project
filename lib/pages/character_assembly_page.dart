@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/linker_service.dart';
 import '../services/ui_engine/ui_asset_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
@@ -47,139 +51,230 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
   @override
   Widget build(BuildContext context) {
+    final linkerSnapshot = LinkerSnapshot.fromElements(_elements);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        Navigator.pop(context, _info.toJsonString());
+        Navigator.pop(context, _exportAssemblyInfoJson());
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFE8E8EC),
-        body: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerMove: _handlePlacementPointerMove2,
-          onPointerUp: _finishPlacementPointer2,
-          onPointerCancel: _finishPlacementPointer2,
-          child: Stack(
-            children: [
-              // ===== 1. 无限画布 + PCB =====
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanUpdate: _showAssetDrawer || _showLayerPanel
-                      ? null
-                      : (details) => setState(() => _canvasOffset += details.delta),
-                  onTap: () {
-                    if (_showAssetDrawer) setState(() => _showAssetDrawer = false);
-                    if (_showLayerPanel) setState(() => _showLayerPanel = false);
-                  },
-                  child: ClipRect(
-                    child: CustomPaint(
-                      painter: _AssemblyGridPainter(_canvasOffset),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Positioned(
-                            left: _canvasOffset.dx + _pcbOffset.dx,
-                            top: _canvasOffset.dy + _pcbOffset.dy,
-                            width: _pcbSize.width,
-                            height: _pcbSize.height,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: _pcbColor,
-                                borderRadius: BorderRadius.circular(_pcbRounded ? 20 : 0),
-                                boxShadow: const [BoxShadow(color: Color(0x18000000), blurRadius: 8, offset: Offset(0, 2))],
+        body: UILinkerSnapshotScope(
+          snapshot: linkerSnapshot,
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerMove: _handlePlacementPointerMove2,
+            onPointerUp: _finishPlacementPointer2,
+            onPointerCancel: _finishPlacementPointer2,
+            child: Stack(
+              children: [
+                // ===== 1. 无限画布 + PCB =====
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onPanUpdate: _showAssetDrawer || _showLayerPanel
+                        ? null
+                        : (details) => setState(() => _canvasOffset += details.delta),
+                    onTap: () {
+                      if (_showAssetDrawer) setState(() => _showAssetDrawer = false);
+                      if (_showLayerPanel) setState(() => _showLayerPanel = false);
+                    },
+                    child: ClipRect(
+                      child: CustomPaint(
+                        painter: _AssemblyGridPainter(_canvasOffset),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              left: _canvasOffset.dx + _pcbOffset.dx,
+                              top: _canvasOffset.dy + _pcbOffset.dy,
+                              width: _pcbSize.width,
+                              height: _pcbSize.height,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _pcbColor,
+                                  borderRadius: BorderRadius.circular(_pcbRounded ? 20 : 0),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x18000000),
+                                      blurRadius: 8,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                          ..._elements.map((el) {
-                            const portPad = 6.0;
-                            return Positioned(
-                              left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx - portPad,
-                              top: _canvasOffset.dy + _pcbOffset.dy + el.offset.dy - portPad,
-                              width: el.size.width + portPad * 2,
-                              height: el.size.height + portPad * 2,
-                              child: _buildElementWidget(el),
-                            );
-                          }),
-
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // ===== 2. 顶栏 =====
-              Positioned(
-                top: 0, left: 0, right: 0,
-                child: Container(
-                  height: 48,
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    border: Border(bottom: BorderSide(color: Colors.black.withValues(alpha: 0.06))),
-                  ),
-                  child: Row(children: [
-                    _buildTopIconBtn(Icons.arrow_back_ios_rounded, () => Navigator.pop(context, _info.toJsonString())),
-                    const SizedBox(width: 2),
-                    GestureDetector(
-                      onTap: _editName,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: _modeColor.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(7),
+                            ..._elements.map((el) {
+                              const portPad = 6.0;
+                              return Positioned(
+                                left: _canvasOffset.dx +
+                                    _pcbOffset.dx +
+                                    el.offset.dx -
+                                    portPad,
+                                top: _canvasOffset.dy +
+                                    _pcbOffset.dy +
+                                    el.offset.dy -
+                                    portPad,
+                                width: el.size.width + portPad * 2,
+                                height: el.size.height + portPad * 2,
+                                child: _buildElementWidget(el),
+                              );
+                            }),
+                          ],
                         ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Text(_info.name, style: TextStyle(color: _modeColor, fontSize: 13, fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis),
-                          const SizedBox(width: 5),
-                          Icon(Icons.edit_rounded, size: 13, color: _modeColor.withValues(alpha: 0.7)),
-                        ]),
                       ),
                     ),
-                    const Spacer(),
-                    _buildAssetBtn(),
-                    const SizedBox(width: 4),
-                    _buildTopIconBtn(Icons.layers_outlined, () => setState(() => _showLayerPanel = !_showLayerPanel)),
-                    _buildTopIconBtn(Icons.save_rounded, () => Navigator.pop(context, _info.toJsonString()), color: const Color(0xFF00A86B)),
-                  ]),
-                ),
-              ),
-
-              // ===== 3. 图层弹出窗 =====
-              if (_showLayerPanel)
-                Positioned(top: 48, right: 8, child: _buildLayerPanel()),
-
-              // ===== 4. 资产栏下拉 =====
-              if (_showAssetDrawer)
-                Positioned(top: 48, left: 0, bottom: 0, width: 160, child: _buildAssetDrawer()),
-
-              // ===== 5. 右下角悬浮信息 =====
-              Positioned(
-                right: 12, bottom: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111116).withValues(alpha: 0.78),
-                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(color: _modeColor.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(4)),
-                      child: Text(_info.modeLabel, style: TextStyle(color: _modeColor, fontSize: 9, fontWeight: FontWeight.w700)),
-                    ),
-                    const SizedBox(width: 10),
-                    Text('${_elements.length} 部件', style: const TextStyle(color: Colors.white54, fontSize: 9)),
-                    const SizedBox(width: 8),
-                    const Text('0 连线', style: TextStyle(color: Colors.white54, fontSize: 9)),
-                    const SizedBox(width: 8),
-                    const Text('0 变量', style: TextStyle(color: Colors.white54, fontSize: 9)),
-                  ]),
                 ),
-              ),
-            ],
+
+                // ===== 2. 顶栏 =====
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.06),
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        _buildTopIconBtn(
+                          Icons.arrow_back_ios_rounded,
+                          () => Navigator.pop(context, _exportAssemblyInfoJson()),
+                        ),
+                        const SizedBox(width: 2),
+                        GestureDetector(
+                          onTap: _editName,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _modeColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(7),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _info.name,
+                                  style: TextStyle(
+                                    color: _modeColor,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(width: 5),
+                                Icon(
+                                  Icons.edit_rounded,
+                                  size: 13,
+                                  color: _modeColor.withValues(alpha: 0.7),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        _buildAssetBtn(),
+                        const SizedBox(width: 4),
+                        _buildTopIconBtn(
+                          Icons.layers_outlined,
+                          () => setState(
+                            () => _showLayerPanel = !_showLayerPanel,
+                          ),
+                        ),
+                        _buildTopIconBtn(
+                          Icons.save_rounded,
+                          () => Navigator.pop(context, _exportAssemblyInfoJson()),
+                          color: const Color(0xFF00A86B),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ===== 3. 图层弹出窗 =====
+                if (_showLayerPanel)
+                  Positioned(top: 48, right: 8, child: _buildLayerPanel()),
+
+                // ===== 4. 资产栏下拉 =====
+                if (_showAssetDrawer)
+                  Positioned(
+                    top: 48,
+                    left: 0,
+                    bottom: 0,
+                    width: 160,
+                    child: _buildAssetDrawer(),
+                  ),
+
+                // ===== 5. 右下角悬浮信息 =====
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111116).withValues(alpha: 0.78),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _modeColor.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            _info.modeLabel,
+                            style: TextStyle(
+                              color: _modeColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '${_elements.length} 部件',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 9,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          '0 连线',
+                          style: TextStyle(color: Colors.white54, fontSize: 9),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          '0 变量',
+                          style: TextStyle(color: Colors.white54, fontSize: 9),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -231,9 +326,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           final delta = d.globalPosition - _startTouchScreenPos;
           setState(() {
             final i = _elements.indexWhere((e) => e.id == el.id);
-            if (i != -1) _elements[i] = el.copyWith(offset: _startTouchElemOffset + delta);
+            if (i != -1) {
+              _elements[i] = el.copyWith(offset: _startTouchElemOffset + delta);
+            }
           });
         },
+        onPanEnd: (_) => _persistAssemblyElements(),
         child: SizedBox(
           width: el.size.width,
           height: el.size.height,
@@ -242,7 +340,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             children: [
               IgnorePointer(
                 child: UISceneModeScope(
-                  isStudioCreationMode: false,
+                  isStudioCreationMode: true,
                   child: Builder(builder: (ctx) => UIRenderer.render(ctx, el)),
                 ),
               ),
@@ -274,20 +372,37 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     final bodyH = el.size.height;
     final widgets = <Widget>[];
 
+    Offset rotatePortCenter(Offset point) {
+      if (el.rotation == 0.0) return point;
+      final radians = el.rotation * 3.1415926535897932 / 180.0;
+      final center = Offset(el.size.width / 2, el.size.height / 2);
+      final dx = point.dx - center.dx;
+      final dy = point.dy - center.dy;
+      return Offset(
+        center.dx + dx * math.cos(radians) - dy * math.sin(radians),
+        center.dy + dx * math.sin(radians) + dy * math.cos(radians),
+      );
+    }
+
     final leftPorts = ports.where((p) => p.exposeInput).toList();
     final rightPorts = ports.where((p) => p.exposeOutput).toList();
 
     // 左侧接收端口
     for (var i = 0; i < leftPorts.length; i++) {
-      final child = el.composite!.children.firstWhere((c) => c.id == leftPorts[i].elementId);
+      final child =
+          el.composite!.children.firstWhere((c) => c.id == leftPorts[i].elementId);
       final color = _portColor(leftPorts[i], child.module?.type ?? '');
       final double centerY = (bodyH / (leftPorts.length + 1)) * (i + 1);
+      final center = rotatePortCenter(Offset(0, centerY));
       widgets.add(Positioned(
-        left: -6, top: centerY - 6,
-        width: 12, height: 12,
+        left: center.dx - 6,
+        top: center.dy - 6,
+        width: 12,
+        height: 12,
         child: Container(
           decoration: BoxDecoration(
-            color: color, shape: BoxShape.circle,
+            color: color,
+            shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 2),
             boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
           ),
@@ -296,15 +411,20 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     }
     // 右侧输出端口
     for (var i = 0; i < rightPorts.length; i++) {
-      final child = el.composite!.children.firstWhere((c) => c.id == rightPorts[i].elementId);
+      final child = el.composite!.children
+          .firstWhere((c) => c.id == rightPorts[i].elementId);
       final color = _portColor(rightPorts[i], child.module?.type ?? '');
       final double centerY = (bodyH / (rightPorts.length + 1)) * (i + 1);
+      final center = rotatePortCenter(Offset(el.size.width, centerY));
       widgets.add(Positioned(
-        left: el.size.width - 6, top: centerY - 6,
-        width: 12, height: 12,
+        left: center.dx - 6,
+        top: center.dy - 6,
+        width: 12,
+        height: 12,
         child: Container(
           decoration: BoxDecoration(
-            color: color, shape: BoxShape.circle,
+            color: color,
+            shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 2),
             boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
           ),

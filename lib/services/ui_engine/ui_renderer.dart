@@ -14,6 +14,10 @@ import 'ui_models.dart';
 class UIRenderer {
   /// 将 UIElement 渲染为 Flutter Widget
   static Widget render(BuildContext context, UIElement element) {
+    final snapshot = UILinkerSnapshotScope.maybeOf(context);
+    if (snapshot != null) {
+      LinkerService.installSnapshot(snapshot);
+    }
     final bool isStudio = UISceneModeScope.of(context);
     final module = element.module;
     final controls = module == null
@@ -605,6 +609,10 @@ class UIRenderer {
 
     return StatefulBuilder(
       builder: (ctx, setSliderState) {
+        final snapshot = UILinkerSnapshotScope.maybeOf(ctx);
+        if (snapshot != null) {
+          LinkerService.installSnapshot(snapshot);
+        }
         final double min = (module.properties['min'] ?? 0).toDouble();
         final double max = (module.properties['max'] ?? 100).toDouble();
         double current = (module.properties['current'] ?? min).toDouble();
@@ -635,6 +643,10 @@ class UIRenderer {
               _snapSliderValue(rawCurrent, actualMin, actualMax, step);
 
           module.properties['current'] = newCurrent;
+          final snapshot = UILinkerSnapshotScope.peekOf(ctx);
+          if (snapshot != null) {
+            LinkerService.installSnapshot(snapshot);
+          }
           LinkerEventBus().emit(element.id, 'slider_change', newCurrent);
           setSliderState(() {});
         }
@@ -642,6 +654,10 @@ class UIRenderer {
         void commitValue() {
           final value = (module.properties['current'] as num?)?.toDouble() ?? current;
           module.properties['committedValue'] = value;
+          final snapshot = UILinkerSnapshotScope.peekOf(ctx);
+          if (snapshot != null) {
+            LinkerService.installSnapshot(snapshot);
+          }
           LinkerEventBus().emit(element.id, 'slider_commit', value);
         }
 
@@ -982,6 +998,10 @@ class UIRenderer {
 
     return StatefulBuilder(
       builder: (ctx, setState) {
+        final snapshot = UILinkerSnapshotScope.maybeOf(ctx);
+        if (snapshot != null) {
+          LinkerService.installSnapshot(snapshot);
+        }
         final linkedValue = LinkerService.resolveTargetValue(module);
         final bool isExternallyControlled = linkedValue is bool;
         final bool currentVal = isExternallyControlled
@@ -994,6 +1014,10 @@ class UIRenderer {
               : () {
                   final bool nextVal = !currentVal;
                   module.properties['value'] = nextVal;
+                  final snapshot = UILinkerSnapshotScope.peekOf(ctx);
+                  if (snapshot != null) {
+                    LinkerService.installSnapshot(snapshot);
+                  }
                   LinkerEventBus().emit(element.id, 'switch_change', nextVal);
                   setState(() {});
                 },
@@ -1325,6 +1349,10 @@ class UIRenderer {
 
     return StatefulBuilder(
       builder: (ctx, setState) {
+        final snapshot = UILinkerSnapshotScope.maybeOf(ctx);
+        if (snapshot != null) {
+          LinkerService.installSnapshot(snapshot);
+        }
         // current 保存稳定 value；展示时转换为用户可见 label。
         final linkedSelection = LinkerService.resolveTargetValue(module);
         final currentValue = linkedSelection?.toString() ??
@@ -1448,7 +1476,15 @@ class UIRenderer {
                           onTap: () {
                             props['current'] = option.value;
                             props['is_expanded_preview'] = false;
-                            LinkerEventBus().emit(element.id, 'select_change', option.value);
+                            final snapshot = UILinkerSnapshotScope.peekOf(ctx);
+                            if (snapshot != null) {
+                              LinkerService.installSnapshot(snapshot);
+                            }
+                            LinkerEventBus().emit(
+                              element.id,
+                              'select_change',
+                              option.value,
+                            );
                             setState(() {});
                           },
                           child: Container(
@@ -1578,6 +1614,13 @@ class _ButtonGestureWidgetState extends State<_ButtonGestureWidget> {
   bool _longPressFired = false;
   bool _waitingForSecondTap = false;
 
+  void _installLocalSnapshot() {
+    final snapshot = UILinkerSnapshotScope.peekOf(context);
+    if (snapshot != null) {
+      LinkerService.installSnapshot(snapshot);
+    }
+  }
+
   int get _doubleTapIntervalMs =>
       ((widget.module.properties['doubleTapIntervalMs'] as num?)?.toInt() ?? 300)
           .clamp(100, 1000)
@@ -1596,6 +1639,7 @@ class _ButtonGestureWidgetState extends State<_ButtonGestureWidget> {
     _longPressFired = false;
 
     // 视觉脉冲不等待双击判定：LinkerService 仅允许其驱动 Surface 动画。
+    _installLocalSnapshot();
     LinkerEventBus().emit(widget.elementId, 'tap_down');
     _longPressTimer = Timer(
       Duration(milliseconds: _longPressThresholdMs),
@@ -1605,6 +1649,7 @@ class _ButtonGestureWidgetState extends State<_ButtonGestureWidget> {
         _doubleTapTimer?.cancel();
         _doubleTapTimer = null;
         _waitingForSecondTap = false;
+        _installLocalSnapshot();
         LinkerEventBus().emit(widget.elementId, 'long_press');
       },
     );
@@ -1621,6 +1666,7 @@ class _ButtonGestureWidgetState extends State<_ButtonGestureWidget> {
       _doubleTapTimer?.cancel();
       _doubleTapTimer = null;
       _waitingForSecondTap = false;
+      _installLocalSnapshot();
       LinkerEventBus().emit(widget.elementId, 'double_tap');
       return;
     }
@@ -1630,6 +1676,7 @@ class _ButtonGestureWidgetState extends State<_ButtonGestureWidget> {
       if (!mounted || !_waitingForSecondTap) return;
       _waitingForSecondTap = false;
       _doubleTapTimer = null;
+      _installLocalSnapshot();
       LinkerEventBus().emit(widget.elementId, 'tap');
     });
   }
@@ -1690,6 +1737,13 @@ class _PreviewSelectWidgetState extends State<_PreviewSelectWidget> {
   OverlayEntry? _menuEntry;
   late String _selectedValue;
   double _anchorWidth = 0;
+
+  void _installLocalSnapshot() {
+    final snapshot = UILinkerSnapshotScope.peekOf(context);
+    if (snapshot != null) {
+      LinkerService.installSnapshot(snapshot);
+    }
+  }
 
   @override
   void initState() {
@@ -1799,6 +1853,7 @@ class _PreviewSelectWidgetState extends State<_PreviewSelectWidget> {
   void _selectOption(String value) {
     widget.module.properties['current'] = value;
     widget.module.properties['is_expanded_preview'] = false;
+    _installLocalSnapshot();
     LinkerEventBus().emit(widget.element.id, 'select_change', value);
     setState(() => _selectedValue = value);
     _closeMenu();
@@ -1914,6 +1969,10 @@ class _InputBlockWidgetState extends State<_InputBlockWidget> {
   }
 
   void _commitValue() {
+    final snapshot = UILinkerSnapshotScope.peekOf(context);
+    if (snapshot != null) {
+      LinkerService.installSnapshot(snapshot);
+    }
     final value = _controller.text;
     final shouldClear =
         LinkerService.shouldClearInputAfterCommit(widget.element.id);
@@ -2001,6 +2060,10 @@ class _InputBlockWidgetState extends State<_InputBlockWidget> {
         onChanged: (value) {
           module.properties['text'] = value;
           module.properties['value'] = value;
+          final snapshot = UILinkerSnapshotScope.peekOf(context);
+          if (snapshot != null) {
+            LinkerService.installSnapshot(snapshot);
+          }
           LinkerEventBus().emit(widget.element.id, 'input_change', value);
         },
       ),
@@ -2028,6 +2091,11 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
   @override
   void initState() {
     super.initState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     _checkTimerState();
   }
 
@@ -2069,6 +2137,10 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
         props['tickCount'] = _tickCount;
       });
 
+      final snapshot = UILinkerSnapshotScope.peekOf(context);
+      if (snapshot != null) {
+        LinkerService.installSnapshot(snapshot);
+      }
       LinkerEventBus().emit(
         widget.element.id,
         'timer_tick',
@@ -2086,6 +2158,10 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
   }
 
   void _checkTimerState() {
+    final snapshot = UILinkerSnapshotScope.peekOf(context);
+    if (snapshot != null) {
+      LinkerService.installSnapshot(snapshot);
+    }
     final props = widget.module.properties;
     final runMode = LinkerService.resolveTimerRunMode(widget.module);
     final systemRunning = LinkerService.resolveTimerSystemRunning(widget.module);
@@ -2156,6 +2232,10 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final snapshot = UILinkerSnapshotScope.maybeOf(context);
+    if (snapshot != null) {
+      LinkerService.installSnapshot(snapshot);
+    }
     if (!widget.isStudio) {
       return const SizedBox.shrink();
     }

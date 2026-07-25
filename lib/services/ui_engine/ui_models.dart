@@ -17,6 +17,65 @@ class UISceneModeScope extends InheritedWidget {
   bool updateShouldNotify(UISceneModeScope old) => old.isStudioCreationMode != isStudioCreationMode || old.selectedElementId != selectedElementId;
 }
 
+class LinkerSnapshot {
+  final Map<String, UIModule> elementModules;
+  final Map<String, String?> elementSurfaceParents;
+
+  const LinkerSnapshot({
+    required this.elementModules,
+    required this.elementSurfaceParents,
+  });
+
+  factory LinkerSnapshot.fromElements(List<UIElement> elements) {
+    final modules = <String, UIModule>{};
+    final parents = <String, String?>{};
+
+    void register(List<UIElement> nodes) {
+      for (final node in nodes) {
+        if (!node.isComposite && node.module != null) {
+          modules[node.id] = node.module!;
+          parents[node.id] = node.parentSurfaceId;
+        }
+        if (node.isComposite && node.composite != null) {
+          register(node.composite!.children);
+        }
+      }
+    }
+
+    register(elements);
+    return LinkerSnapshot(
+      elementModules: Map<String, UIModule>.unmodifiable(modules),
+      elementSurfaceParents: Map<String, String?>.unmodifiable(parents),
+    );
+  }
+}
+
+class UILinkerSnapshotScope extends InheritedWidget {
+  final LinkerSnapshot snapshot;
+
+  const UILinkerSnapshotScope({
+    super.key,
+    required this.snapshot,
+    required super.child,
+  });
+
+  static LinkerSnapshot? maybeOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<UILinkerSnapshotScope>()
+        ?.snapshot;
+  }
+
+  static LinkerSnapshot? peekOf(BuildContext context) {
+    final scope = context.getElementForInheritedWidgetOfExactType<
+        UILinkerSnapshotScope>()?.widget as UILinkerSnapshotScope?;
+    return scope?.snapshot;
+  }
+
+  @override
+  bool updateShouldNotify(UILinkerSnapshotScope oldWidget) =>
+      oldWidget.snapshot != snapshot;
+}
+
 /// UI 模块的材质类型
 enum UIModuleMaterial {
   glass,      // 毛玻璃
