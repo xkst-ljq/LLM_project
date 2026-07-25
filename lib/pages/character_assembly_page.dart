@@ -56,7 +56,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        Navigator.pop(context, _exportAssemblyInfoJson());
+        _handleBackNavigation();
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFE8E8EC),
@@ -95,6 +95,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                 decoration: BoxDecoration(
                                   color: _pcbColor,
                                   borderRadius: BorderRadius.circular(_pcbRounded ? 20 : 0),
+                                  border: Border.all(
+                                    color: _hasIllegalPcbElements
+                                        ? const Color(0xFFE53935)
+                                        : Colors.black.withValues(alpha: 0.08),
+                                    width: _hasIllegalPcbElements ? 2.0 : 1.0,
+                                  ),
                                   boxShadow: const [
                                     BoxShadow(
                                       color: Color(0x18000000),
@@ -102,6 +108,52 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                       offset: Offset(0, 2),
                                     ),
                                   ],
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: _canvasOffset.dx + _pcbOffset.dx +
+                                  _pcbSize.width / 2 - 22,
+                              top: _canvasOffset.dy + _pcbOffset.dy +
+                                  _pcbSize.height - 12,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onPanStart: (details) {
+                                  _pcbResizeStartHeight = _pcbSize.height;
+                                  _pcbResizeStartGlobalDy =
+                                      details.globalPosition.dy;
+                                },
+                                onPanUpdate: (details) {
+                                  final nextHeight = _clampPcbHeight(
+                                    _pcbResizeStartHeight +
+                                        (details.globalPosition.dy -
+                                            _pcbResizeStartGlobalDy),
+                                  );
+                                  setState(() {
+                                    _pcbSize = Size(_pcbSize.width, nextHeight);
+                                  });
+                                },
+                                onPanEnd: (_) => _persistAssemblyElements(),
+                                child: Container(
+                                  width: 44,
+                                  height: 24,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF111116)
+                                        .withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.black.withValues(alpha: 0.08),
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Container(
+                                    width: 18,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF555562),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -141,7 +193,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                       children: [
                         _buildTopIconBtn(
                           Icons.arrow_back_ios_rounded,
-                          () => Navigator.pop(context, _exportAssemblyInfoJson()),
+                          _handleBackNavigation,
                         ),
                         const SizedBox(width: 2),
                         GestureDetector(
@@ -188,7 +240,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                         ),
                         _buildTopIconBtn(
                           Icons.save_rounded,
-                          () => Navigator.pop(context, _exportAssemblyInfoJson()),
+                          () {
+                            if (!_validateAssemblyBeforeExit()) return;
+                            Navigator.pop(context, _exportAssemblyInfoJson());
+                          },
                           color: const Color(0xFF00A86B),
                         ),
                       ],
@@ -253,14 +308,22 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          '0 连线',
-                          style: TextStyle(color: Colors.white54, fontSize: 9),
+                        Text(
+                          'PCB 360×${_pcbSize.height.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 9,
+                          ),
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          '0 变量',
-                          style: TextStyle(color: Colors.white54, fontSize: 9),
+                        Text(
+                          '越界 $_illegalPcbElementCount 项',
+                          style: TextStyle(
+                            color: _illegalPcbElementCount > 0
+                                ? const Color(0xFFFF8A80)
+                                : Colors.white54,
+                            fontSize: 9,
+                          ),
                         ),
                       ],
                     ),
@@ -311,6 +374,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
   // ========== 组件渲染 ==========
   Widget _buildElementWidget(UIElement el) {
+    final isInsidePcb = _isElementInsidePcb(el);
     if (el.isComposite && el.composite != null) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -320,7 +384,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           setState(() {
             final i = _elements.indexWhere((e) => e.id == el.id);
             if (i != -1) {
-              _elements[i] = el.copyWith(offset: _startTouchElemOffset + delta);
+              final desired = _startTouchElemOffset + delta;
+              _elements[i] = el.copyWith(
+                offset: _applyPlacementConstraints(el, desired),
+              );
             }
           });
         },
@@ -337,6 +404,21 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   child: Builder(builder: (ctx) => UIRenderer.render(ctx, el)),
                 ),
               ),
+              if (!isInsidePcb)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: const Color(0xFFE53935),
+                          width: 2,
+                        ),
+                        color: const Color(0xFFE53935)
+                            .withValues(alpha: 0.08),
+                      ),
+                    ),
+                  ),
+                ),
               if (el.composite!.exposedPorts != null)
                 ..._buildExposedPorts(el),
             ],

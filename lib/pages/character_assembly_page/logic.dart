@@ -11,11 +11,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   int _generatedElementIdSeed = 0;
 
   static const Size _defaultPcbSize = Size(360, 800);
+  static const double _pcbMinHeight = 64.0;
+  static const double _pcbMaxHeight = 2000.0;
   late Size _pcbSize;
   late Offset _pcbOffset;
-  final Color _pcbColor = Colors.white;
-  final bool _pcbRounded = true;
+  late Color _pcbColor;
+  late bool _pcbRounded;
   bool _didInitialViewportCenter = false;
+  double _pcbResizeStartHeight = _defaultPcbSize.height;
+  double _pcbResizeStartGlobalDy = 0.0;
 
   // 拖放状态
   _AssemblyDragPayload? _activePlacement;
@@ -24,7 +28,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   void _initFromInfo(UIAssemblyInfo info) {
     _info = info;
     _nameCtrl = TextEditingController(text: info.name);
-    _pcbSize = _defaultPcbSize;
+    _pcbSize = Size(
+      _defaultPcbSize.width,
+      info.pcbHeight.clamp(_pcbMinHeight, _pcbMaxHeight).toDouble(),
+    );
+    _pcbColor = Color(info.pcbColorValue);
+    _pcbRounded = info.pcbRounded;
     _pcbOffset = Offset.zero;
     _canvasOffset = Offset.zero;
     _restoreAssemblyElements();
@@ -80,6 +89,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _info.elementsJson = jsonEncode(
       _elements.map((element) => element.toJson()).toList(),
     );
+    _info.pcbHeight = _pcbSize.height;
+    _info.pcbColorValue = _pcbColor.toARGB32();
+    _info.pcbRounded = _pcbRounded;
   }
 
   String _exportAssemblyInfoJson() {
@@ -228,6 +240,124 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return (box.localToGlobal(Offset.zero) & box.size).contains(globalPosition);
   }
 
+  bool _requiresPcbContainment(UIElement element) => element.isComposite;
+
+  Rect get _pcbLocalRect => Rect.fromLTWH(
+    _pcbOffset.dx,
+    _pcbOffset.dy,
+    _pcbSize.width,
+    _pcbSize.height,
+  );
+
+  double _clampPcbHeight(double value) =>
+      value.clamp(_pcbMinHeight, _pcbMaxHeight).toDouble();
+
+  Offset _rotatePoint(Offset point, Offset center, double degrees) {
+    if (degrees == 0.0) return point;
+    final radians = degrees * math.pi / 180.0;
+    final dx = point.dx - center.dx;
+    final dy = point.dy - center.dy;
+    return Offset(
+      center.dx + dx * math.cos(radians) - dy * math.sin(radians),
+      center.dy + dx * math.sin(radians) + dy * math.cos(radians),
+    );
+  }
+
+  bool _isElementInsidePcb(UIElement element) {
+    if (!_requiresPcbContainment(element)) return true;
+    final pcbRect = _pcbLocalRect;
+    final center = Offset(
+      _pcbOffset.dx + element.offset.dx + element.size.width / 2,
+      _pcbOffset.dy + element.offset.dy + element.size.height / 2,
+    );
+    final corners = <Offset>[
+      Offset(_pcbOffset.dx + element.offset.dx, _pcbOffset.dy + element.offset.dy),
+      Offset(
+        _pcbOffset.dx + element.offset.dx + element.size.width,
+        _pcbOffset.dy + element.offset.dy,
+      ),
+      Offset(
+        _pcbOffset.dx + element.offset.dx + element.size.width,
+        _pcbOffset.dy + element.offset.dy + element.size.height,
+      ),
+      Offset(
+        _pcbOffset.dx + element.offset.dx,
+        _pcbOffset.dy + element.offset.dy + element.size.height,
+      ),
+    ].map((point) => _rotatePoint(point, center, element.rotation)).toList();
+    return corners.every(pcbRect.contains);
+  }
+
+  bool get _hasIllegalPcbElements =>
+      _elements.any((element) => !_isElementInsidePcb(element));
+
+  int get _illegalPcbElementCount =>
+      _elements.where((element) => !_isElementInsidePcb(element)).length;
+
+  Offset _clampCompositeOffsetInsidePcb(Offset desired, Size size) {
+    final minX = 0.0;
+    final minY = 0.0;
+    final maxX = math.max(0.0, _pcbSize.width - size.width);
+    final maxY = math.max(0.0, _pcbSize.height - size.height);
+    return Offset(
+      desired.dx.clamp(minX, maxX).toDouble(),
+      desired.dy.clamp(minY, maxY).toDouble(),
+    );
+  }
+
+  Offset _applyPlacementConstraints(UIElement prototype, Offset desired) {
+    if (!_requiresPcbContainment(prototype)) return desired;
+    return _clampCompositeOffsetInsidePcb(desired, prototype.size);
+  }
+
+  bool _validateAssemblyBeforeExit() {
+    if (!_hasIllegalPcbElements) return true;
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '当前有 $_illegalPcbElementCount 个复合组件超出 PCB 边界，请先移回可视区域后再保存。',
+        ),
+        backgroundColor: const Color(0xFF8B4B4B),
+      ),
+    );
+    return false;
+  }
+
+  Future<void> _handleBackNavigation() async {
+    if (_validateAssemblyBeforeExit()) {
+      if (mounted) Navigator.pop(context, _exportAssemblyInfoJson());
+      return;
+    }
+    if (!mounted) return;
+    final discard = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('存在未保存的非法布局'),
+            content: const Text(
+              '当前有复合组件超出 PCB 边界，无法保存。要放弃本次修改并返回吗？',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('继续编辑'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B4B4B),
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('放弃并返回'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (discard && mounted) {
+      Navigator.pop(context);
+    }
+  }
+
   void _startLibraryPlacement(_AssemblyDragPayload payload, Offset globalPosition, BuildContext context) {
     _activePlacement?.isLibraryDragging.value = false;
     payload.longPressOrigin = globalPosition;
@@ -278,17 +408,25 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final composite = payload.composite;
     if (composite == null) return;
     final size = _compositeDefaultSize(composite);
-    final local = box.globalToLocal(globalPosition) - _canvasOffset - _pcbOffset - Offset(size.width / 2, size.height / 2);
+    final local = box.globalToLocal(globalPosition) -
+        _canvasOffset -
+        _pcbOffset -
+        Offset(size.width / 2, size.height / 2);
     final id = _generateElementId();
+    final prototype = UIElement(
+      id: id,
+      isComposite: true,
+      composite: _instantiateComposite(composite),
+      offset: local,
+      size: size,
+      layerIndex: 0,
+    );
     setState(() {
-      _elements.add(UIElement(
-        id: id,
-        isComposite: true,
-        composite: _instantiateComposite(composite),
-        offset: local,
-        size: size,
-        layerIndex: 0,
-      ));
+      _elements.add(
+        prototype.copyWith(
+          offset: _applyPlacementConstraints(prototype, local),
+        ),
+      );
       payload.spawnedElementId = id;
     });
   }
@@ -301,8 +439,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final i = _elements.indexWhere((e) => e.id == id);
     if (i == -1) return;
     final sz = _elements[i].size;
-    final local = box.globalToLocal(globalPosition) - _canvasOffset - _pcbOffset - Offset(sz.width / 2, sz.height / 2);
-    setState(() => _elements[i] = _elements[i].copyWith(offset: local));
+    final local = box.globalToLocal(globalPosition) -
+        _canvasOffset -
+        _pcbOffset -
+        Offset(sz.width / 2, sz.height / 2);
+    final element = _elements[i];
+    setState(() {
+      _elements[i] = element.copyWith(
+        offset: _applyPlacementConstraints(element, local),
+      );
+    });
   }
 
   void _finishDragPlacement(_AssemblyDragPayload payload, Offset globalPosition, BuildContext context) {

@@ -7,6 +7,9 @@ class UIAssemblyInfo {
   String name;
   String mode; // 'opening', 'scene', 'extra'
   String elementsJson; // 存储的 UIElement 列表 JSON
+  double pcbHeight;
+  int pcbColorValue;
+  bool pcbRounded;
   DateTime createdAt;
 
   UIAssemblyInfo({
@@ -14,6 +17,9 @@ class UIAssemblyInfo {
     this.name = '未命名 UI',
     this.mode = 'extra',
     this.elementsJson = '[]',
+    this.pcbHeight = 800,
+    this.pcbColorValue = 0xFFFFFFFF,
+    this.pcbRounded = true,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -37,8 +43,14 @@ class UIAssemblyInfo {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id, 'name': name, 'mode': mode,
-    'elements': elementsJson, 'createdAt': createdAt.millisecondsSinceEpoch,
+    'id': id,
+    'name': name,
+    'mode': mode,
+    'elements': elementsJson,
+    'pcbHeight': pcbHeight,
+    'pcbColorValue': pcbColorValue,
+    'pcbRounded': pcbRounded,
+    'createdAt': createdAt.millisecondsSinceEpoch,
   };
 
   factory UIAssemblyInfo.fromJson(Map<String, dynamic> json) => UIAssemblyInfo(
@@ -46,6 +58,9 @@ class UIAssemblyInfo {
     name: json['name']?.toString() ?? '未命名 UI',
     mode: json['mode']?.toString() ?? 'extra',
     elementsJson: json['elements']?.toString() ?? '[]',
+    pcbHeight: (json['pcbHeight'] as num?)?.toDouble() ?? 800,
+    pcbColorValue: (json['pcbColorValue'] as num?)?.toInt() ?? 0xFFFFFFFF,
+    pcbRounded: json['pcbRounded'] != false,
     createdAt: DateTime.fromMillisecondsSinceEpoch(
       (json['createdAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
     ),
