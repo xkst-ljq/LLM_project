@@ -379,6 +379,20 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 
 ### 后续补项
 - 当前 A8 预览会跟随 `pcbColorValue / pcbRounded`，但 PCB 颜色与圆角编辑入口仍属 A2/A8 后补 UI。
+- 运行时交互组件覆盖测试：slider / switch / input / select / button / timer 等仍需逐项验证。
+- 复杂复合组件内部 linker 覆盖测试：button→switch、input→text、select→text、timer→progress、math_node→text 等组合需后续回归。
+- 超高 PCB 可读性提示：当运行时 scale 过小，应提示作者该 UI 在小屏上可能不可读 / 不易操作。
+- 模糊背景性能优化：复杂 UI 下重复渲染一份模糊背景可能有性能成本，后续可考虑背景图 / 低频截图 / 纯背景降级。
+
+### A8 回归测试方案
+1. 基础显示：text / progress / image / surface 在预览中位置、尺寸、颜色稳定。
+2. 基础交互：button / slider / switch / input / select 在预览中能响应，且状态刷新正确。
+3. 典型 linker：slider→progress、button→switch、input→text、select→text、timer→progress、math_node→text。
+4. 复合组件：无 linker、有内部 linker、有实例覆写、有 binding 槽位四类复合组件分别预览。
+5. 页面结构：base、overlay、overlay 的 overlay 均能预览，祖先灰化正常。
+6. 极端尺寸：普通高度、超高 PCB、窄屏、横屏下均保持等比缩小 / 居中 / 不拉伸。
+7. 背景层隔离：模糊背景不接收交互，不与前景运行时状态互相污染。
+8. 性能观察：复杂 UI 预览时记录是否出现明显掉帧、发热或操作延迟。
 
 ### 当前完成定义
 - 不同视口下 PCB 不发生非等比拉伸。

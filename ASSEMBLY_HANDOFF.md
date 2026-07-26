@@ -129,6 +129,8 @@
 - 预览内接入 LinkerEventBus，slider / linker / progress 等运行时交互可触发整体刷新
 - 模糊背景层使用运行时页面克隆副本渲染，不共享前景可变状态
 - 当前预览跟随 `pcbColorValue / pcbRounded`，但 PCB 颜色与圆角编辑入口仍属后补 UI
+- A8 后补风险：运行时交互组件、复杂复合组件内部 linker、超高 PCB 可读性、模糊背景性能仍需后续覆盖测试
+- A8 回归重点：slider→progress、button→switch、input→text、select→text、timer→progress、math_node→text；base / overlay / overlay 的 overlay；窄屏 / 横屏 / 超高 PCB
 
 ### 下一步建议
 - 先本地测试 A8 运行时预览
