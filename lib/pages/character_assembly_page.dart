@@ -278,6 +278,18 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                 ),
                               );
                             }),
+                            if (_activePage.isOverlay)
+                              Positioned(
+                                left: _canvasOffset.dx + _pcbOffset.dx,
+                                top: _canvasOffset.dy + _pcbOffset.dy,
+                                width: _pcbSize.width,
+                                height: _pcbSize.height,
+                                child: IgnorePointer(
+                                  child: Container(
+                                    color: const Color(0xFF000000).withValues(alpha: 0.28),
+                                  ),
+                                ),
+                              ),
                             ..._elements.map((el) {
                               return Positioned(
                                 left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,
@@ -729,20 +741,26 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               if (el.module?.properties['is_overlay_container'] == true)
                 Positioned(
                   left: 4,
-                  top: 4,
+                  top: -14,
                   child: IgnorePointer(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF37474F).withValues(alpha: 0.86),
-                        borderRadius: BorderRadius.circular(999),
+                        color: const Color(0xFFE65100),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.88),
+                          width: 0.7,
+                        ),
                       ),
                       child: const Text(
-                        '叠加容器面',
+                        '容器面',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 8,
+                          fontSize: 9,
+                          height: 1.0,
                           fontWeight: FontWeight.w800,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ),
