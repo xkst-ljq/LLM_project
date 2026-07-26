@@ -107,6 +107,51 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
   @override
   Widget build(BuildContext context) {
+    if (_runtimePreviewMode) {
+      final previewInfo = _runtimePreviewInfo ?? _info;
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          _exitRuntimePreview();
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFF202026),
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: UIAssemblyRuntimeView(
+                  assemblyInfo: previewInfo,
+                  activePageId: _runtimePreviewPageId,
+                  showBlurredBackdrop: true,
+                ),
+              ),
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 8,
+                right: 8,
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.36),
+                  borderRadius: BorderRadius.circular(999),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: _exitRuntimePreview,
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final ancestorPages = _ancestorPagesForActivePage();
     final renderedElements = <UIElement>[
       ...ancestorPages.expand((page) => page.elements),
@@ -332,7 +377,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                         const Spacer(),
                         _buildTopIconBtn(
                           Icons.visibility_rounded,
-                          _showRuntimePreview,
+                          _enterRuntimePreview,
                         ),
                         _buildTopIconBtn(
                           Icons.layers_outlined,
@@ -711,13 +756,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     final leftPorts = ports.where((p) => p.exposeInput).toList();
     final rightPorts = ports.where((p) => p.exposeOutput).toList();
 
-    if (leftPorts.isNotEmpty) {
-      widgets.add(_buildExposedPortRail(left: true, height: bodyH));
-    }
-    if (rightPorts.isNotEmpty) {
-      widgets.add(_buildExposedPortRail(left: false, height: bodyH));
-    }
-
     for (var i = 0; i < leftPorts.length; i++) {
       final child =
           el.composite!.children.firstWhere((c) => c.id == leftPorts[i].elementId);
@@ -725,13 +763,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       final double centerY = (bodyH / (leftPorts.length + 1)) * (i + 1);
       final center = rotatePortCenter(Offset(0, centerY));
       widgets.add(
-        _buildExposedPortHandle(
-          ownerElementId: el.id,
-          port: leftPorts[i],
-          child: child,
+        _buildSimpleExposedPort(
           center: center,
           color: color,
-          isInput: true,
+          tooltip: '输入端口 · ${child.module?.name ?? child.id}',
         ),
       );
     }
@@ -743,105 +778,36 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       final double centerY = (bodyH / (rightPorts.length + 1)) * (i + 1);
       final center = rotatePortCenter(Offset(el.size.width, centerY));
       widgets.add(
-        _buildExposedPortHandle(
-          ownerElementId: el.id,
-          port: rightPorts[i],
-          child: child,
+        _buildSimpleExposedPort(
           center: center,
           color: color,
-          isInput: false,
+          tooltip: '输出端口 · ${child.module?.name ?? child.id}',
         ),
       );
     }
     return widgets;
   }
 
-  Widget _buildExposedPortRail({
-    required bool left,
-    required double height,
-  }) {
-    return Positioned(
-      left: left ? -11 : null,
-      right: left ? null : -11,
-      top: 8,
-      width: 22,
-      height: math.max(0.0, height - 16),
-      child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF111116).withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.65),
-              width: 1,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExposedPortHandle({
-    required String ownerElementId,
-    required ExposedPort port,
-    required UIElement child,
+  Widget _buildSimpleExposedPort({
     required Offset center,
     required Color color,
-    required bool isInput,
+    required String tooltip,
   }) {
-    final key = '$ownerElementId:${isInput ? 'in' : 'out'}:${port.elementId}';
-    final active = _activeExposedPortKey == key;
     return Positioned(
-      left: center.dx - 14,
-      top: center.dy - 14,
-      width: 28,
-      height: 28,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => setState(() => _activeExposedPortKey = key),
-        onTapUp: (_) => setState(() => _activeExposedPortKey = null),
-        onTapCancel: () => setState(() => _activeExposedPortKey = null),
-        child: Tooltip(
-          message:
-              '${isInput ? '输入' : '输出'}端口 · ${child.module?.name ?? child.id}',
-          child: Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              curve: Curves.easeOutCubic,
-              width: active ? 24 : 20,
-              height: active ? 24 : 20,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: active ? 0.22 : 0.12),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: color.withValues(alpha: active ? 0.95 : 0.58),
-                  width: active ? 2 : 1.4,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: color.withValues(alpha: active ? 0.34 : 0.18),
-                    blurRadius: active ? 8 : 5,
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Transform.rotate(
-                  angle: math.pi / 4,
-                  child: Container(
-                    width: active ? 10 : 8,
-                    height: active ? 10 : 8,
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(2),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.92),
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+      left: center.dx - 6,
+      top: center.dy - 6,
+      width: 12,
+      height: 12,
+      child: Tooltip(
+        message: tooltip,
+        child: Container(
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 3),
+            ],
           ),
         ),
       ),
