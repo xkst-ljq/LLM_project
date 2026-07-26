@@ -145,7 +145,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
 
   Widget _buildRouteTransition(Widget child, Animation<double> animation) {
     if (_lastTransition == 'overlay_fade') {
-      return FadeTransition(opacity: animation, child: child);
+      // Overlay 专属动画需要容器面 / 遮罩 / 点击空白关闭语义。
+      // 当前只切换目标页，避免把 overlay 当成平级页整页替换动画。
+      return child;
     }
 
     Offset begin;
@@ -162,11 +164,17 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       default:
         begin = const Offset(1, 0);
     }
-    return SlideTransition(
-      position: Tween<Offset>(begin: begin, end: Offset.zero).animate(
-        CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(begin: begin, end: Offset.zero).animate(curved),
+        child: child,
       ),
-      child: child,
     );
   }
 

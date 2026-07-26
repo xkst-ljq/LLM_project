@@ -238,7 +238,7 @@
 - 最小开放资产：
   - 逻辑组件：页面路由器、联动器
   - 基础交互：按钮
-  - 基础显示：文本、进度条
+  - 基础显示：面板、文本、进度条
   - 复合组件：已暴露端口的复合资产
 - 非复合原子 / 逻辑节点可作为 `UIModule` 拖入 Assembly 页面
 
@@ -411,8 +411,8 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 - 同一页面同一方向只保留一个手势。
 - 手势触发路由时使用与 page_router 一致的 route 规则。
 - page_router route 数据补充默认 `transition / durationMs`。
-- 平级页默认动画：`base_slide`，默认 220ms。
-- 叠加页默认动画：`overlay_fade`，默认 180ms。
+- 平级页默认动画：`base_slide`，默认 220ms，表现为 slide + fade。
+- 叠加页 route 可打开 overlay，但 overlay 专属动画依赖面原子 / 容器面，当前不再复用平级页整页替换动画。
 - 后续再开放更多动画类型。
 
 ### 已完成
@@ -424,12 +424,22 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
   - 打开叠加页：当前页直接 overlay 子页。
 - 手势配置保存到 `AssemblyPage.gestures`。
 - 运行时预览中识别清晰 PCB 区域内的全页 swipe，并切换到目标页。
-- 运行时预览中支持 `base_slide / overlay_fade` 两种默认动画。
+- 运行时预览中平级页切换使用 `base_slide` 的 slide + fade 动画。
+- overlay route 暂只负责进入叠加页；overlay 容器动画待面原子 / 容器面语义补齐后实现。
+- 基础显示资产区开放“面板 / 面原子”，作为 overlay 容器基础。
 - opening 模式运行时暂不响应页面手势。
+
+### A9-1 修正结论
+- 平级页切换动画已修正为 slide + fade，避免只滑入不淡入/不淡出的冲突感。
+- overlay 动画不能复用平级页整页替换逻辑，当前不宣称 overlay 专属动画完成。
+- overlay 专属动画目标应是面原子 / 容器面及其遮罩层。
+- 空白点击返回父级也依赖 overlay 容器面 hit test，后续单独实现。
 
 ### 后续增强
 - 局部 `gesture_zone` 热区。
 - 手势与 slider / input / select 等交互组件的精确命中排除。
+- overlay 容器面识别、遮罩、空白点击返回父级。
+- overlay 专属动画：容器面淡入 / 上滑 / 缩放，遮罩淡入淡出。
 - 更多动画类型：无动画 / fade / slide / scale / overlay slide-up 等。
 - 手势返回上一页 / 关闭 overlay / opening 销毁等动作。
 

@@ -106,6 +106,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           color: const Color(0xFFFF4081),
           properties: {'min': 0, 'max': 100, 'current': 65},
         ),
+      'atom_surface_base' => UIModule(
+          id: id,
+          name: '面板',
+          type: 'surface',
+          color: const Color(0xFF651FFF),
+          material: UIModuleMaterial.solid,
+          shape: UIModuleShape.rounded,
+          borderRadius: 16,
+          properties: {},
+        ),
       _ => _pageRouterTemplate,
     };
   }
@@ -2413,6 +2423,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'button' => const Size(88, 32),
       'text' => const Size(96, 28),
       'progress' => const Size(120, 16),
+      'surface' => const Size(240, 160),
+      'base_box' => const Size(240, 160),
       'math_node' => const Size(120, 56),
       'timer' => const Size(112, 52),
       _ => const Size(96, 48),

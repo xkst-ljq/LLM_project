@@ -1350,6 +1350,13 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       case 'display':
         return [
           _AssemblyAssetItem.module(
+            title: '面板',
+            subtitle: '叠加容器',
+            icon: Icons.crop_square_rounded,
+            color: const Color(0xFF651FFF),
+            module: _assetModuleTemplate('atom_surface_base'),
+          ),
+          _AssemblyAssetItem.module(
             title: '文本',
             subtitle: '显示文字',
             icon: Icons.text_fields_rounded,
