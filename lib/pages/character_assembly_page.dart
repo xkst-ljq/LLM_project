@@ -1124,7 +1124,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 children: [
                   if (_showAssetDrawer)
                     SizedBox(
-                      height: 84,
+                      height: 82,
                       child: _buildAssetDrawerContent(_activeAssetCategory),
                     ),
                   if (_showAssetDrawer)
@@ -1133,7 +1133,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                       color: Colors.black.withValues(alpha: 0.06),
                     ),
                   SizedBox(
-                    height: _showAssetDrawer ? 39 : 40,
+                    height: _showAssetDrawer ? 39 : 38,
                     child: Padding(
                       padding: const EdgeInsets.all(3),
                       child: Row(
