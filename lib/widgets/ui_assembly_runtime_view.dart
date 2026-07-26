@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/linker_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
 
@@ -14,7 +15,7 @@ import '../services/ui_engine/ui_renderer.dart';
 /// stretches PCB non-uniformly and never upscales above 1:1: it uses a single
 /// scale-down contain scale, centers the PCB, and optionally fills letterbox
 /// space with a blurred cover-scaled copy.
-class UIAssemblyRuntimeView extends StatelessWidget {
+class UIAssemblyRuntimeView extends StatefulWidget {
   static const double designWidth = 360.0;
 
   final UIAssemblyInfo assemblyInfo;
@@ -33,12 +34,61 @@ class UIAssemblyRuntimeView extends StatelessWidget {
   });
 
   @override
+  State<UIAssemblyRuntimeView> createState() => _UIAssemblyRuntimeViewState();
+}
+
+class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
+  late List<AssemblyPage> _pages;
+  late String _activePageId;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreRuntimeState();
+    _setupRuntimeLinkers();
+  }
+
+  @override
+  void didUpdateWidget(covariant UIAssemblyRuntimeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.assemblyInfo.toJsonString() != widget.assemblyInfo.toJsonString() ||
+        oldWidget.activePageId != widget.activePageId) {
+      _restoreRuntimeState();
+      _setupRuntimeLinkers();
+    }
+  }
+
+  @override
+  void dispose() {
+    LinkerService.initEventBusListener(const <UIElement>[], () {});
+    super.dispose();
+  }
+
+  void _restoreRuntimeState() {
+    _pages = _clonePages(_restorePages(widget.assemblyInfo));
+    _activePageId = _resolveActivePage(_pages, widget.activePageId).id;
+  }
+
+  void _setupRuntimeLinkers() {
+    final activePage = _resolveActivePage(_pages, _activePageId);
+    LinkerService.initEventBusListener(activePage.elements, () {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final pages = _restorePages(assemblyInfo);
-    final activePage = _resolveActivePage(pages, activePageId);
-    final ancestors = _ancestorPagesFor(pages, activePage);
-    final designHeight = assemblyInfo.pcbHeight.clamp(64.0, 2000.0).toDouble();
-    final designSize = Size(designWidth, designHeight);
+    final activePage = _resolveActivePage(_pages, _activePageId);
+    final ancestors = _ancestorPagesFor(_pages, activePage);
+    final backgroundPages = _clonePages(_pages);
+    final backgroundActivePage = _resolveActivePage(backgroundPages, _activePageId);
+    final backgroundAncestors = _ancestorPagesFor(
+      backgroundPages,
+      backgroundActivePage,
+    );
+    final designHeight = widget.assemblyInfo.pcbHeight.clamp(64.0, 2000.0).toDouble();
+    final designSize = Size(UIAssemblyRuntimeView.designWidth, designHeight);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -62,14 +112,14 @@ class UIAssemblyRuntimeView extends StatelessWidget {
         return ClipRect(
           child: Stack(
             children: [
-              if (showBlurredBackdrop)
+              if (widget.showBlurredBackdrop)
                 Positioned.fill(
                   child: IgnorePointer(
                     child: _buildFittedDesignSurface(
                       context,
-                      pages: pages,
-                      activePage: activePage,
-                      ancestors: ancestors,
+                      pages: backgroundPages,
+                      activePage: backgroundActivePage,
+                      ancestors: backgroundAncestors,
                       designSize: designSize,
                       fit: BoxFit.cover,
                       blur: true,
@@ -88,7 +138,7 @@ class UIAssemblyRuntimeView extends StatelessWidget {
                   blur: false,
                 ),
               ),
-              if (showDebugInfo)
+              if (widget.showDebugInfo)
                 Positioned(
                   left: 8,
                   right: 8,
@@ -138,7 +188,10 @@ class UIAssemblyRuntimeView extends StatelessWidget {
 
     if (blur) {
       child = ImageFiltered(
-        imageFilter: ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+        imageFilter: ui.ImageFilter.blur(
+          sigmaX: widget.blurSigma,
+          sigmaY: widget.blurSigma,
+        ),
         child: Opacity(opacity: opacity, child: child),
       );
       child = Stack(
@@ -165,7 +218,7 @@ class UIAssemblyRuntimeView extends StatelessWidget {
       ...activePage.elements,
     ];
     final snapshot = LinkerSnapshot.fromElements(elementsForSnapshot);
-    final borderRadius = BorderRadius.circular(assemblyInfo.pcbRounded ? 20 : 0);
+    final borderRadius = BorderRadius.circular(widget.assemblyInfo.pcbRounded ? 20 : 0);
 
     return UILinkerSnapshotScope(
       snapshot: snapshot,
@@ -177,7 +230,7 @@ class UIAssemblyRuntimeView extends StatelessWidget {
             width: designSize.width,
             height: designSize.height,
             decoration: BoxDecoration(
-              color: Color(assemblyInfo.pcbColorValue),
+              color: Color(widget.assemblyInfo.pcbColorValue),
               borderRadius: borderRadius,
             ),
             child: Stack(
@@ -308,6 +361,10 @@ class UIAssemblyRuntimeView extends StatelessWidget {
         elements: legacyElements,
       ),
     ];
+  }
+
+  static List<AssemblyPage> _clonePages(List<AssemblyPage> pages) {
+    return pages.map((page) => AssemblyPage.fromJson(page.toJson())).toList();
   }
 
   static AssemblyPage _resolveActivePage(

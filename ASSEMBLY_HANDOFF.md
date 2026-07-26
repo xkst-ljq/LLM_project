@@ -125,6 +125,9 @@
 - 预览入口进入同页全屏预览态，不再使用悬浮弹窗
 - 预览时顶栏 / 参数栏 / 资产栏 / 图层面板隐藏
 - 返回键或右上角关闭按钮退出预览态
+- A8-1 状态宿主修复：`UIAssemblyRuntimeView` 改为 Stateful，内部持有运行时页面副本
+- 预览内接入 LinkerEventBus，slider / linker / progress 等运行时交互可触发整体刷新
+- 模糊背景层使用运行时页面克隆副本渲染，不共享前景可变状态
 - 当前预览跟随 `pcbColorValue / pcbRounded`，但 PCB 颜色与圆角编辑入口仍属后补 UI
 
 ### 下一步建议

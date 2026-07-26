@@ -373,6 +373,9 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 - Assembly 顶栏新增运行时预览入口。
 - 预览入口进入同页全屏预览态，而不是弹窗；预览时顶栏 / 参数栏 / 资产栏 / 图层面板隐藏。
 - 返回键或右上角关闭按钮退出预览态。
+- A8-1 状态宿主修复：`UIAssemblyRuntimeView` 改为 Stateful，内部持有运行时页面副本。
+- 预览内接入 LinkerEventBus，slider / linker / progress 等运行时交互可触发整体刷新。
+- 模糊背景层使用运行时页面克隆副本渲染，不共享前景可变状态。
 
 ### 后续补项
 - 当前 A8 预览会跟随 `pcbColorValue / pcbRounded`，但 PCB 颜色与圆角编辑入口仍属 A2/A8 后补 UI。
