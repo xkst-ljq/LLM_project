@@ -10,6 +10,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   final List<AssemblyPage> _pages = <AssemblyPage>[];
   String? _activePageId;
   String? _selectedCompositeId;
+  String? _activeExposedPortKey;
   Offset _canvasOffset = Offset.zero;
   bool _showLayerPanel = false;
   bool _showAssetDrawer = false;
