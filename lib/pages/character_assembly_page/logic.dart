@@ -2348,10 +2348,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   bool _activePageHasOverlayContainerSurface() {
     if (!_activePage.isOverlay) return true;
     return _elements.any(
-      (element) =>
-          !element.isComposite &&
-          _isSurfaceModule(element.module) &&
-          element.module?.properties['is_overlay_container'] == true,
+      (element) => !element.isComposite && _isSurfaceModule(element.module),
     );
   }
 

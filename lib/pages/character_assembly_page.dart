@@ -296,6 +296,36 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                   ),
                                 ),
                               ),
+                            if (_activePage.isOverlay &&
+                                !_activePageHasOverlayContainerSurface())
+                              Positioned(
+                                left: _canvasOffset.dx + _pcbOffset.dx + 12,
+                                top: _canvasOffset.dy + _pcbOffset.dy + 12,
+                                child: IgnorePointer(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFA000)
+                                          .withValues(alpha: 0.92),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(alpha: 0.86),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      '当前叠加层缺少容器面，请拖入“面板”作为弹层容器',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ..._elements.map((el) {
                               return Positioned(
                                 left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,

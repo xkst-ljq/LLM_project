@@ -429,6 +429,7 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 - 基础显示资产区开放“面板 / 面原子”，默认尺寸对齐创作工作室 `160×80`，作为 overlay 容器基础。
 - overlay 页中第一个生成的面原子会自动标记为容器面，并按创作工作室一致的橙黄色外侧标签显示“容器面”。
 - Assembly 编辑态与运行时预览中，active page 为 overlay 时，都会在祖先页与 overlay 内容之间显示灰色半透明 PCB 蒙版。
+- Assembly 编辑态中，overlay 页没有任何面原子时，会显示橙色警告提示作者拖入“面板”作为弹层容器。
 - opening 模式运行时暂不响应页面手势。
 
 ### A9-1 / A9-2 修正结论
