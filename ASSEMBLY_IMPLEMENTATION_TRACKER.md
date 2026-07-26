@@ -431,11 +431,12 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 - Assembly 编辑态与运行时预览中，active page 为 overlay 时，都会在祖先页与 overlay 内容之间显示灰色半透明 PCB 蒙版。
 - opening 模式运行时暂不响应页面手势。
 
-### A9-1 修正结论
+### A9-1 / A9-2 修正结论
 - 平级页切换动画已修正为 slide + fade，避免只滑入不淡入/不淡出的冲突感。
 - overlay 动画不能复用平级页整页替换逻辑，当前不宣称 overlay 专属动画完成。
 - overlay 专属动画目标应是面原子 / 容器面及其遮罩层。
-- 空白点击返回父级也依赖 overlay 容器面 hit test，后续单独实现。
+- 运行时预览中，当前页为 overlay 时，点击容器面外的 PCB 空白区域会返回父级页面。
+- 容器面 hit test 优先使用 `is_overlay_container == true` 的面原子，兜底当前 overlay 的第一个面原子。
 
 ### 后续增强
 - 局部 `gesture_zone` 热区。

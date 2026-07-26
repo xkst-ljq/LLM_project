@@ -98,7 +98,11 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     _swipeStart = position;
   }
 
-  void _handlePreviewPointerUp(Offset position) {
+  void _handlePreviewPointerUp(
+    Offset position,
+    Rect pcbRect,
+    double scale,
+  ) {
     if (widget.assemblyInfo.mode == 'opening') return;
     final start = _swipeStart;
     _swipeStart = null;
@@ -107,6 +111,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     final delta = position - start;
     final absDx = delta.dx.abs();
     final absDy = delta.dy.abs();
+    final activePage = _resolveActivePage(_pages, _activePageId);
+
+    if (activePage.isOverlay && absDx < 12 && absDy < 12) {
+      _handleOverlayTap(position, pcbRect, scale, activePage);
+      return;
+    }
+
     String? direction;
     if (absDx >= _swipeThreshold && absDx > absDy * _directionDominance) {
       direction = delta.dx < 0 ? 'swipe_left' : 'swipe_right';
@@ -115,7 +126,6 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     }
     if (direction == null) return;
 
-    final activePage = _resolveActivePage(_pages, _activePageId);
     AssemblyPageGesture? matched;
     for (final gesture in activePage.gestures) {
       if (gesture.direction == direction) {
@@ -141,6 +151,59 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       _activePageId = target.id;
     });
     _setupRuntimeLinkers();
+  }
+
+  void _handleOverlayTap(
+    Offset position,
+    Rect pcbRect,
+    double scale,
+    AssemblyPage activePage,
+  ) {
+    if (scale <= 0 || !pcbRect.contains(position)) return;
+    final designPoint = Offset(
+      (position.dx - pcbRect.left) / scale,
+      (position.dy - pcbRect.top) / scale,
+    );
+    final container = _overlayContainerOf(activePage);
+    if (container != null) {
+      final rect = container.offset & container.size;
+      if (rect.contains(designPoint)) return;
+    }
+
+    final parentId = activePage.parentPageId;
+    if (parentId == null || parentId.isEmpty) return;
+    final parent = _pageById(_pages, parentId);
+    if (parent == null) return;
+
+    setState(() {
+      _lastTransition = 'overlay_fade';
+      _lastDurationMs = _defaultDurationForAction('open_overlay');
+      _activePageId = parent.id;
+    });
+    _setupRuntimeLinkers();
+  }
+
+  UIElement? _overlayContainerOf(AssemblyPage page) {
+    for (final element in page.elements) {
+      if (!element.isComposite &&
+          element.module?.properties['is_overlay_container'] == true) {
+        return element;
+      }
+    }
+    for (final element in page.elements) {
+      if (!element.isComposite && _isSurfaceModule(element.module)) {
+        return element;
+      }
+    }
+    return null;
+  }
+
+  bool _isSurfaceModule(UIModule? module) {
+    final type = module?.type;
+    return type == 'surface' ||
+        type == 'surface_art' ||
+        type == 'primitive_art' ||
+        type == 'base_box';
   }
 
   Widget _buildRouteTransition(Widget child, Animation<double> animation) {
@@ -239,8 +302,11 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: (event) =>
                       _handlePreviewPointerDown(event.localPosition, pcbRect),
-                  onPointerUp: (event) =>
-                      _handlePreviewPointerUp(event.localPosition),
+                  onPointerUp: (event) => _handlePreviewPointerUp(
+                    event.localPosition,
+                    pcbRect,
+                    safeContainScale,
+                  ),
                   onPointerCancel: (_) => _swipeStart = null,
                   child: AnimatedSwitcher(
                     duration: Duration(milliseconds: _lastDurationMs),
