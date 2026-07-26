@@ -48,7 +48,7 @@
 | A7 | 页面路由器最小版 | 基础版完成，测试通过 | ✅ |
 | A7.5 / A5-0 | Assembly 资产区最小补全 | 基础版 + 体验收口完成，待本地测试 | ✅ |
 | A4 | 暴露端口体验增强 | 未开始 | ⏳ |
-| A5 | Assembly 内 linker 连线 | 未开始 | ⏳ |
+| A5 | Assembly 内 linker 连线 | 配置式 MVP 完成，待本地测试 | ✅ |
 | A8 | 运行时等比缩放与画布约束完善 | 未开始 | ⏳ |
 | A9 | 页面手势配置 + 轻量动画 | 未开始 | ⏳ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
@@ -280,16 +280,42 @@
 
 ---
 
-## A5：Assembly 内 linker 连线
+## A5：Assembly 内 linker 连线（配置式 MVP 完成，待本地测试）
 
 ### 最小目标
 - 基础连线可建
 - 目标页切换 route 可通过 linker 触发
 - 遵守同复合件不可自连、非法方案自动断开
 
+### 已完成
+- 双击 Assembly 内 `linker` 可打开专用配置弹窗
+- 可选择当前页面内的 `button` 作为来源
+- 可选择当前页面内的 `page_router` 作为目标
+- 保存为 `linker.properties['linker']`，包含：
+  - `sourceModuleId`
+  - `sourcePort: tap`
+  - `targetModuleId`
+  - `targetPort: trigger`
+  - `scheme: button_to_page_route`
+  - `enabled: true`
+  - `inputConnection / outputConnection`
+- 编辑态点击已连接 button，可经 linker 触发 page_router 跳页
+- linker 可清除连接并回到未配置状态
+
+### 当前完成定义
+- 不做完整端口拖拽线，只做配置式 MVP
+- 能打通 `button.tap → linker → page_router.trigger`
+- 配置可保存恢复
+
+### 后续增强
+- 可视化线段绘制
+- 端口拖拽接线
+- 接入完整 LinkerMatrixEngine 方案选择
+- 页面删除 / 复制时自动修复失效 route/linker 引用
+
 ---
 
-## A8：运行时等比缩放与约束完善
+## A8：运行时等比缩放与画布约束完善
 
 ### 最小目标
 - PCB 运行时按 360 设计宽度等比缩放
@@ -537,9 +563,7 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- **A5 Assembly 内 linker 连线**
-  - 打通 `button → linker → page_router` 链路
-  - 让页面切换 route 可通过事件触发
+- 先本地测试 A5 配置式 linker MVP
 
 ### 然后
 - A4 暴露端口体验增强

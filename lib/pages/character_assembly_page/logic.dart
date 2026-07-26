@@ -31,6 +31,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   _AssemblyDragPayload? _activePlacement;
   static const double _dragThreshold = 24.0;
   static const String _pageRouterType = 'page_router';
+  static const String _pageRouteLinkerScheme = 'button_to_page_route';
 
   UIModule get _pageRouterTemplate => UIModule(
         id: 'atom_logic_page_router',
@@ -1251,6 +1252,233 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       });
       _persistAssemblyElements();
     }
+  }
+
+  List<UIElement> _topLevelModulesOfType(String type) {
+    return _elements
+        .where((element) =>
+            !element.isComposite && element.module?.type == type)
+        .toList();
+  }
+
+  Map<String, dynamic> _linkerDataOf(UIModule module) {
+    final raw = module.properties['linker'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return <String, dynamic>{};
+  }
+
+  bool _isPageRouteLinker(UIModule module) {
+    if (module.type != 'linker') return false;
+    final data = _linkerDataOf(module);
+    return data['scheme']?.toString() == _pageRouteLinkerScheme &&
+        data['enabled'] == true;
+  }
+
+  String _moduleNodeLabel(UIElement element) {
+    final module = element.module;
+    if (module == null) return element.id;
+    return '${module.name} · ${element.id.split('_').last}';
+  }
+
+  Future<void> _showAssemblyLinkerConfigDialog(UIElement linkerElement) async {
+    final module = linkerElement.module;
+    if (module == null || module.type != 'linker') return;
+
+    final buttons = _topLevelModulesOfType('button');
+    final routers = _topLevelModulesOfType(_pageRouterType);
+    final existing = _linkerDataOf(module);
+    var sourceId = existing['sourceModuleId']?.toString() ?? '';
+    var targetId = existing['targetModuleId']?.toString() ?? '';
+    if (!buttons.any((element) => element.id == sourceId)) sourceId = '';
+    if (!routers.any((element) => element.id == targetId)) targetId = '';
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final canSave = buttons.isNotEmpty &&
+              routers.isNotEmpty &&
+              sourceId.isNotEmpty &&
+              targetId.isNotEmpty;
+          return AlertDialog(
+            title: const Text('配置 Assembly 联动器'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'A5 MVP：先打通 button.tap → linker → page_router.trigger。完整端口拖拽和通用矩阵后续再接。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (buttons.isEmpty)
+                    const Text(
+                      '当前页面还没有按钮，请先从“基础交互”拖入按钮。',
+                      style: TextStyle(fontSize: 11, color: Color(0xFFD32F2F)),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      initialValue: sourceId.isEmpty ? null : sourceId,
+                      decoration: const InputDecoration(labelText: '来源按钮'),
+                      items: buttons
+                          .map(
+                            (button) => DropdownMenuItem(
+                              value: button.id,
+                              child: Text(_moduleNodeLabel(button)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => sourceId = value);
+                      },
+                    ),
+                  const SizedBox(height: 12),
+                  if (routers.isEmpty)
+                    const Text(
+                      '当前页面还没有页面路由器，请先从“逻辑组件”拖入页面路由器并配置目标页。',
+                      style: TextStyle(fontSize: 11, color: Color(0xFFD32F2F)),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      initialValue: targetId.isEmpty ? null : targetId,
+                      decoration: const InputDecoration(labelText: '目标页面路由器'),
+                      items: routers
+                          .map(
+                            (router) => DropdownMenuItem(
+                              value: router.id,
+                              child: Text(_moduleNodeLabel(router)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => targetId = value);
+                      },
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () {
+                  sourceId = '';
+                  targetId = '';
+                  Navigator.pop(ctx, true);
+                },
+                child: const Text('清除连接'),
+              ),
+              FilledButton(
+                onPressed: canSave ? () => Navigator.pop(ctx, true) : null,
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (saved == true && mounted) {
+      final index = _elements.indexWhere((element) => element.id == linkerElement.id);
+      if (index == -1) return;
+      setState(() {
+        final current = _elements[index];
+        final currentModule = current.module;
+        if (currentModule == null) return;
+        final props = Map<String, dynamic>.from(
+          _deepCloneValue(currentModule.properties) as Map,
+        );
+        final linkerData = Map<String, dynamic>.from(
+          props['linker'] is Map ? props['linker'] as Map : const {},
+        );
+        if (sourceId.isEmpty || targetId.isEmpty) {
+          linkerData
+            ..remove('sourceModuleId')
+            ..remove('sourcePort')
+            ..remove('sourceType')
+            ..remove('targetModuleId')
+            ..remove('targetPort')
+            ..remove('targetType')
+            ..remove('inputConnection')
+            ..remove('outputConnection');
+          linkerData['scheme'] = '未配置';
+          linkerData['enabled'] = false;
+        } else {
+          linkerData['sourceModuleId'] = sourceId;
+          linkerData['sourcePort'] = 'tap';
+          linkerData['sourceType'] = 'pulse';
+          linkerData['targetModuleId'] = targetId;
+          linkerData['targetPort'] = 'trigger';
+          linkerData['targetType'] = 'route';
+          linkerData['scheme'] = _pageRouteLinkerScheme;
+          linkerData['enabled'] = true;
+          linkerData['priority'] ??= 5;
+          linkerData['cooldownMs'] ??= 0;
+          linkerData['maxTriggerCount'] ??= 0;
+          linkerData['inputConnection'] = {
+            'from': sourceId,
+            'fromPort': 'tap',
+            'to': current.id,
+            'toPort': 'input',
+          };
+          linkerData['outputConnection'] = {
+            'from': current.id,
+            'fromPort': 'output',
+            'to': targetId,
+            'toPort': 'trigger',
+          };
+        }
+        props['linker'] = linkerData;
+        _elements[index] = current.copyWith(
+          module: currentModule.copyWith(properties: props),
+        );
+      });
+      _setupEventBusListener();
+      _persistAssemblyElements();
+    }
+  }
+
+  void _triggerAssemblyButton(String buttonId) {
+    final matchedLinkers = _elements.where((element) {
+      final module = element.module;
+      if (module == null || !_isPageRouteLinker(module)) return false;
+      final data = _linkerDataOf(module);
+      return data['sourceModuleId']?.toString() == buttonId;
+    }).toList();
+
+    if (matchedLinkers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('该按钮尚未连接页面路由器')),
+      );
+      return;
+    }
+
+    for (final linker in matchedLinkers) {
+      final data = _linkerDataOf(linker.module!);
+      final targetId = data['targetModuleId']?.toString() ?? '';
+      final target = targetId.isEmpty ? null : _elements
+          .where((element) => element.id == targetId)
+          .cast<UIElement?>()
+          .firstWhere((element) => element != null, orElse: () => null);
+      if (target != null) {
+        _executePageRouter(target);
+        return;
+      }
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('联动器目标页面路由器已失效，请重新配置')),
+    );
   }
 
   void _createPage({required String type}) {

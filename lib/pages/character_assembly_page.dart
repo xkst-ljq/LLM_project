@@ -640,6 +640,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     if (el.module != null) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
+        onTap: el.module!.type == 'button'
+            ? () => _triggerAssemblyButton(el.id)
+            : null,
+        onDoubleTap: el.module!.type == 'linker'
+            ? () => _showAssemblyLinkerConfigDialog(el)
+            : null,
         onPanStart: (d) {
           _startTouchScreenPos = d.globalPosition;
           _startTouchElemOffset = el.offset;

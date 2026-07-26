@@ -94,9 +94,18 @@
 - 最小开放：页面路由器、联动器、按钮、文本、进度条、已暴露端口复合组件
 - 当前 linker 只完成拖入 / 移动 / 保存恢复；接线能力归 A5 实现
 
+### A5 Assembly 内 linker 连线：配置式 MVP 完成，待本地测试
+已做：
+- 双击 Assembly 内 `linker` 可打开配置弹窗
+- 可选择当前页面内 button 作为来源
+- 可选择当前页面内 page_router 作为目标
+- 保存为 `button.tap → linker → page_router.trigger`
+- 编辑态点击已连接 button 可触发 page_router 跳页
+- 可清除 linker 连接
+
 ### 下一步建议
-- 先本地测试 A7.5 / A5-0
-- 若通过，进入 A5 Assembly 内 linker 连线，打通 `button → linker → page_router`
+- 先本地测试 A5 配置式 linker MVP
+- 若通过，再进入 A4 暴露端口体验增强或 A8 运行时缩放
 
 ---
 
@@ -216,4 +225,4 @@
 
 可以在新对话一开始直接说：
 
-> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7 基础版已完成，A7.5/A5-0 Assembly 资产区最小补全与体验收口已完成待本地测试。通过后继续 A5 Assembly 内 linker 连线，打通 `button → linker → page_router`。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。
+> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0 已完成，A5 Assembly 内 linker 连线配置式 MVP 已完成待本地测试。通过后继续 A4 暴露端口体验增强或 A8 运行时缩放。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。
