@@ -10,6 +10,7 @@ import '../services/ui_engine/linker_service.dart';
 import '../services/ui_engine/ui_asset_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
+import '../widgets/ui_assembly_runtime_view.dart';
 
 part 'character_assembly_page/logic.dart';
 
@@ -329,6 +330,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                           ),
                         ),
                         const Spacer(),
+                        _buildTopIconBtn(
+                          Icons.visibility_rounded,
+                          _showRuntimePreview,
+                        ),
                         _buildTopIconBtn(
                           Icons.layers_outlined,
                           () => setState(

@@ -1741,6 +1741,77 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return _info.toJsonString();
   }
 
+  Future<void> _showRuntimePreview() async {
+    _persistAssemblyElements();
+    final previewInfo = UIAssemblyInfo.fromJsonString(_info.toJsonString());
+    final activePageId = _activePage.id;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final size = MediaQuery.sizeOf(ctx);
+        final dialogWidth = math.min(size.width - 32, 460.0);
+        final dialogHeight = math.min(size.height * 0.78, 720.0);
+        return Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: SizedBox(
+            width: dialogWidth,
+            height: dialogHeight,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '运行时缩放预览',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF111116),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF202026),
+                        ),
+                        child: UIAssemblyRuntimeView(
+                          assemblyInfo: previewInfo,
+                          activePageId: activePageId,
+                          showBlurredBackdrop: true,
+                          showDebugInfo: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   String _generateElementId() {
     _generatedElementIdSeed++;
     return 'elem_${DateTime.now().microsecondsSinceEpoch}_$_generatedElementIdSeed';

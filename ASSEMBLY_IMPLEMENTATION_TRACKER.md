@@ -49,7 +49,7 @@
 | A7.5 / A5-0 | Assembly 资产区最小补全 | 基础版 + 体验收口完成，待本地测试 | ✅ |
 | A4 | 暴露端口体验增强 | 基础版完成，待本地测试 | ✅ |
 | A5 | Assembly 内 linker 连线 | 配置式 MVP 完成，待本地测试 | ✅ |
-| A8 | 运行时等比缩放与画布约束完善 | 未开始 | ⏳ |
+| A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | 未开始 | ⏳ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
@@ -326,12 +326,58 @@
 
 ---
 
-## A8：运行时等比缩放与画布约束完善
+## A8：运行时等比缩放与画布约束完善（基础版完成，待本地测试）
+
+### 核心规则
+- PCB 运行时禁止非等比拉伸，只允许等比缩放。
+- 设计坐标固定为 `360 × pcbHeight`。
+- 缩放比例使用：
+
+```text
+scale = min(availableWidth / 360, availableHeight / pcbHeight)
+```
+
+- 缩放后 PCB 中心始终与运行视口中心重合：
+
+```text
+renderedWidth = 360 × scale
+renderedHeight = pcbHeight × scale
+left = (availableWidth - renderedWidth) / 2
+top = (availableHeight - renderedHeight) / 2
+```
+
+- 禁止为了填满屏幕而使用 `scaleX != scaleY`。
+- 当屏幕比例与 PCB 比例不一致时，空白区域由模糊背景层填充。
+- A8 MVP 的模糊背景层可先复用同一份 Assembly UI：
+
+```text
+backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
+```
+
+  背景层高斯模糊、降低透明度，并且必须 `IgnorePointer`。
 
 ### 最小目标
-- PCB 运行时按 360 设计宽度等比缩放
-- 宽高比保持稳定
-- 横屏 / 窄屏 / 高屏行为符合蓝图
+- 新增可复用运行时渲染组件，按上述规则渲染 `UIAssemblyInfo`。
+- 在 Assembly 编辑器内提供运行时预览入口。
+- 预览当前 active page，并保留 overlay 祖先灰化显示。
+- 保留 PCB 背景色、圆角与实例覆写。
+- 非 Studio 模式下隐藏后台逻辑节点，例如 `linker / page_router`。
+- 暂不接聊天页运行时，不做页面动画，不做 mode 差异完整收口。
+
+### 已完成
+- 新增 `UIAssemblyRuntimeView`，独立解析并渲染 `UIAssemblyInfo`。
+- 使用 `scale = min(width / 360, height / pcbHeight)` 只做等比缩放。
+- 缩放后的清晰 PCB 始终居中。
+- 空白区域使用同一份 Assembly UI 的 cover 缩放模糊背景填充。
+- 运行时预览层保留 PCB 颜色、圆角、页面元素、overlay 祖先灰化与实例覆写。
+- 背景模糊层使用 `IgnorePointer`，不接收交互。
+- Assembly 顶栏新增运行时预览入口。
+
+### 当前完成定义
+- 不同视口下 PCB 不发生非等比拉伸。
+- PCB 过高或过宽时会自动等比缩小完整显示。
+- PCB 中心与预览视口中心重合。
+- linker / page_router 等后台逻辑节点在运行时预览中隐藏。
 
 ---
 

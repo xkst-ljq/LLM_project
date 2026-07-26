@@ -113,9 +113,20 @@
 - 编辑态点击已连接 button 可触发 page_router 跳页
 - 可清除 linker 连接
 
+### A8 运行时等比缩放与画布约束完善：基础版完成，待本地测试
+已做：
+- 新增 `UIAssemblyRuntimeView` 运行时渲染组件
+- 运行时只允许等比缩放，禁止非等比拉伸
+- 缩放公式：`scale = min(width / 360, height / pcbHeight)`
+- 清晰 PCB 始终居中显示
+- 空白区域用同一份 Assembly UI 的 cover 缩放模糊背景填充
+- 保留 PCB 背景色、圆角、overlay 祖先灰化与实例覆写
+- 背景模糊层 `IgnorePointer`
+- Assembly 顶栏新增运行时预览入口
+
 ### 下一步建议
-- 先本地测试 A4 暴露端口体验增强与 A5 配置式 linker MVP
-- 若通过，再进入 A8 运行时缩放
+- 先本地测试 A8 运行时预览
+- 若通过，再进入 A9 页面手势配置 + 轻量动画
 
 ---
 
@@ -236,4 +247,4 @@
 
 可以在新对话一开始直接说：
 
-> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0 已完成，A4 暴露端口体验增强与 A5 Assembly 内 linker 连线配置式 MVP 已完成待本地测试。通过后继续 A8 运行时缩放。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。
+> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0/A4/A5 已完成，A8 运行时等比缩放预览基础版已完成待本地测试。通过后继续 A9 页面手势配置 + 轻量动画。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。
