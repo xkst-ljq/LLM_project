@@ -53,15 +53,8 @@ class UIAssemblyRuntimeView extends StatelessWidget {
           availableWidth / designSize.width,
           availableHeight / designSize.height,
         );
-        final coverScale = math.max(
-          availableWidth / designSize.width,
-          availableHeight / designSize.height,
-        );
         final safeContainScale = rawContainScale.isFinite && rawContainScale > 0
             ? math.min(1.0, rawContainScale)
-            : 1.0;
-        final safeCoverScale = coverScale.isFinite && coverScale > 0
-            ? coverScale
             : 1.0;
         final renderedWidth = designSize.width * safeContainScale;
         final renderedHeight = designSize.height * safeContainScale;
@@ -72,32 +65,27 @@ class UIAssemblyRuntimeView extends StatelessWidget {
               if (showBlurredBackdrop)
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: _buildScaledDesignSurface(
+                    child: _buildFittedDesignSurface(
                       context,
                       pages: pages,
                       activePage: activePage,
                       ancestors: ancestors,
                       designSize: designSize,
-                      scale: safeCoverScale,
+                      fit: BoxFit.cover,
                       blur: true,
                       opacity: 0.48,
                     ),
                   ),
                 ),
-              Align(
-                alignment: Alignment.center,
-                child: SizedBox(
-                  width: renderedWidth,
-                  height: renderedHeight,
-                  child: _buildScaledDesignSurface(
-                    context,
-                    pages: pages,
-                    activePage: activePage,
-                    ancestors: ancestors,
-                    designSize: designSize,
-                    scale: safeContainScale,
-                    blur: false,
-                  ),
+              Positioned.fill(
+                child: _buildFittedDesignSurface(
+                  context,
+                  pages: pages,
+                  activePage: activePage,
+                  ancestors: ancestors,
+                  designSize: designSize,
+                  fit: BoxFit.scaleDown,
+                  blur: false,
                 ),
               ),
               if (showDebugInfo)
@@ -119,35 +107,30 @@ class UIAssemblyRuntimeView extends StatelessWidget {
     );
   }
 
-  Widget _buildScaledDesignSurface(
+  Widget _buildFittedDesignSurface(
     BuildContext context, {
     required List<AssemblyPage> pages,
     required AssemblyPage activePage,
     required List<AssemblyPage> ancestors,
     required Size designSize,
-    required double scale,
+    required BoxFit fit,
     required bool blur,
     double opacity = 1.0,
   }) {
-    final scaledWidth = designSize.width * scale;
-    final scaledHeight = designSize.height * scale;
-    Widget child = SizedBox(
-      width: scaledWidth,
-      height: scaledHeight,
-      child: ClipRect(
-        child: Transform.scale(
-          scale: scale,
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: designSize.width,
-            height: designSize.height,
-            child: _buildDesignSurface(
-              context,
-              pages: pages,
-              activePage: activePage,
-              ancestors: ancestors,
-              designSize: designSize,
-            ),
+    Widget child = ClipRect(
+      child: FittedBox(
+        fit: fit,
+        alignment: Alignment.center,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: designSize.width,
+          height: designSize.height,
+          child: _buildDesignSurface(
+            context,
+            pages: pages,
+            activePage: activePage,
+            ancestors: ancestors,
+            designSize: designSize,
           ),
         ),
       ),
@@ -161,13 +144,13 @@ class UIAssemblyRuntimeView extends StatelessWidget {
       child = Stack(
         fit: StackFit.expand,
         children: [
-          Center(child: child),
+          child,
           Container(color: Colors.black.withValues(alpha: 0.12)),
         ],
       );
     }
 
-    return blur ? child : ClipRect(child: child);
+    return child;
   }
 
   Widget _buildDesignSurface(

@@ -366,7 +366,7 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 ### 已完成
 - 新增 `UIAssemblyRuntimeView`，独立解析并渲染 `UIAssemblyInfo`。
 - 使用 `scale = min(1.0, width / 360, height / pcbHeight)` 只做等比缩小，最多保持 1:1。
-- 缩放后的清晰 PCB 始终居中。
+- 缩放后的清晰 PCB 通过 `FittedBox(BoxFit.scaleDown, Alignment.center)` 在布局层居中，避免手动定位偏移。
 - 空白区域使用同一份 Assembly UI 的 cover 缩放模糊背景填充。
 - 运行时预览层保留 PCB 颜色、圆角、页面元素、overlay 祖先灰化与实例覆写。
 - 背景模糊层使用 `IgnorePointer`，不接收交互。
