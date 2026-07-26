@@ -13,6 +13,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   Offset _canvasOffset = Offset.zero;
   bool _showLayerPanel = false;
   bool _showAssetDrawer = false;
+  String _activeAssetCategory = 'logic';
   int _generatedElementIdSeed = 0;
 
   static const Size _defaultPcbSize = Size(360, 800);
@@ -43,6 +44,60 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           },
         },
       );
+
+  UIModule _assetModuleTemplate(String id) {
+    if (id == 'atom_logic_button_tap') {
+      return UIModule(
+        id: id,
+        name: '按钮',
+        type: 'button',
+        color: const Color(0xFFFFA000),
+        properties: {'text': '按钮', 'action': 'tap'},
+      );
+    }
+
+    final loaded = _assetService.getModule(id);
+    if (loaded != null) return loaded;
+
+    return switch (id) {
+      'atom_linker_basic' => UIModule(
+          id: id,
+          name: '联动器',
+          type: 'linker',
+          color: const Color(0xFF00ACC1),
+          properties: {
+            'linker': {
+              'sourceModuleId': '',
+              'sourcePort': '',
+              'sourceType': '',
+              'targetModuleId': '',
+              'targetPort': '',
+              'targetType': '',
+              'scheme': '未配置',
+              'enabled': false,
+              'priority': 5,
+              'cooldownMs': 0,
+              'maxTriggerCount': 0,
+            },
+          },
+        ),
+      'atom_text' => UIModule(
+          id: id,
+          name: '文本',
+          type: 'text',
+          color: const Color(0xFF111116),
+          properties: {'text': '文本'},
+        ),
+      'atom_data_bar' => UIModule(
+          id: id,
+          name: '进度条',
+          type: 'progress',
+          color: const Color(0xFFFF4081),
+          properties: {'min': 0, 'max': 100, 'current': 65},
+        ),
+      _ => _pageRouterTemplate,
+    };
+  }
 
   void _initFromInfo(UIAssemblyInfo info) {
     _info = info;
@@ -1747,8 +1802,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     if (payload.spawnedElementId == null) {
       final origin = payload.longPressOrigin;
       if (origin != null) {
-        final dx = (event.position.dx - origin.dx).abs();
-        if (dx < _dragThreshold) return;
+        if (payload.verticalDragToSpawn) {
+          final upwardDy = origin.dy - event.position.dy;
+          if (upwardDy < _dragThreshold) return;
+        } else {
+          final dx = (event.position.dx - origin.dx).abs();
+          if (dx < _dragThreshold) return;
+        }
       }
     }
 
@@ -1852,6 +1912,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return switch (module.type) {
       _pageRouterType => const Size(144, 72),
       'linker' => const Size(160, 80),
+      'button' => const Size(112, 44),
+      'text' => const Size(132, 44),
+      'progress' => const Size(150, 24),
       'math_node' => const Size(140, 72),
       'timer' => const Size(128, 64),
       _ => const Size(120, 64),
