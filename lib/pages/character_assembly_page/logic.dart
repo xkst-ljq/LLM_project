@@ -203,6 +203,48 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return override.overrides.isNotEmpty || override.binding != null;
   }
 
+  String _propertyOverrideStatusText(PropertyOverride override) {
+    final parts = <String>[];
+    if (override.overrides.isNotEmpty) parts.add('字段覆写');
+    if (override.binding != null) parts.add('已绑定');
+    if (parts.isEmpty) return '空槽位';
+    return parts.join(' + ');
+  }
+
+  String _bindingSummary(AssemblyBinding binding) {
+    final key = binding.statusKey?.trim();
+    final fieldType = _bindingFieldTypeLabel(binding.fieldType ?? 'string');
+    final direction = _bindingDirectionLabel(binding.direction);
+    if (key == null || key.isEmpty) {
+      return 'Binding：未指定状态键 · $fieldType · $direction';
+    }
+    return 'Binding：$key · $fieldType · $direction';
+  }
+
+  String _bindingFieldTypeLabel(String type) {
+    return switch (type) {
+      'number' => '数值',
+      'bool' => '布尔',
+      _ => '文本',
+    };
+  }
+
+  String _bindingDirectionLabel(String direction) {
+    return switch (direction) {
+      'bidirectional' => '双向',
+      'upload_only' => '仅写入',
+      _ => '未启用',
+    };
+  }
+
+  String _defaultBindingFieldType(UIElement child) {
+    return switch (child.module?.type) {
+      'progress' || 'slider' => 'number',
+      'switch' => 'bool',
+      _ => 'string',
+    };
+  }
+
   Future<void> _showCompositeOverrideEntryDialog(UIElement compositeElement) async {
     if (!compositeElement.isComposite || compositeElement.composite == null) return;
     final exposedChildren = _exposedChildrenOfComposite(compositeElement);
@@ -273,8 +315,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         final type = child.module?.type ?? 'unknown';
                         final overrides = overridesOf(child);
                         final hasSlot = overrides.isNotEmpty;
-                        final hasContent = overrides.any(_propertyOverrideHasContent);
                         final canEdit = _supportsBasicOverrideEditor(child);
+                        final statusText = hasSlot
+                            ? _propertyOverrideStatusText(overrides.first)
+                            : '未创建覆写槽位';
                         return Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -318,7 +362,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          '$type · ${hasSlot ? (hasContent ? '已有覆写内容' : '已创建覆写槽位') : '未创建覆写槽位'}',
+                                          '$type · $statusText',
                                           style: const TextStyle(
                                             fontSize: 10,
                                             color: Color(0xFF777783),
@@ -342,6 +386,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                         },
                                         child: const Text('编辑'),
                                       ),
+                                    TextButton(
+                                      onPressed: () async {
+                                        final override = overrides.first;
+                                        await _showCompositeOverrideBindingEditor(
+                                          child: child,
+                                          propertyOverride: override,
+                                        );
+                                        setDialogState(() {});
+                                      },
+                                      child: const Text('绑定'),
+                                    ),
                                     TextButton(
                                       onPressed: () {
                                         setState(() {
@@ -377,6 +432,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                     ),
                                 ],
                               ),
+                              if (hasSlot && overrides.first.binding != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    _bindingSummary(overrides.first.binding!),
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF5E35B1),
+                                    ),
+                                  ),
+                                ),
                               if (hasSlot && !canEdit)
                                 const Padding(
                                   padding: EdgeInsets.only(top: 8),
@@ -407,6 +473,128 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         },
       ),
     );
+  }
+
+  Future<void> _showCompositeOverrideBindingEditor({
+    required UIElement child,
+    required PropertyOverride propertyOverride,
+  }) async {
+    final existing = propertyOverride.binding;
+    final statusKeyController = TextEditingController(
+      text: existing?.statusKey ?? '',
+    );
+    var fieldType = existing?.fieldType ?? _defaultBindingFieldType(child);
+    if (!const {'string', 'number', 'bool'}.contains(fieldType)) {
+      fieldType = _defaultBindingFieldType(child);
+    }
+    var direction = existing?.direction ?? 'none';
+    if (!const {'none', 'upload_only', 'bidirectional'}.contains(direction)) {
+      direction = 'none';
+    }
+    var clearBinding = false;
+
+    Future<void> closeDialog(BuildContext ctx, bool? value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Binding 挂载位 · ${child.module?.name ?? child.id}'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'A3-4 先保存实例级 binding 配置；后续状态栏 / SSOT 接入后，将从这里读取状态键。',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF777783),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: statusKeyController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: '状态键',
+                    hintText: '例如 session.vars.affection',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: fieldType,
+                  decoration: const InputDecoration(labelText: '字段类型'),
+                  items: const [
+                    DropdownMenuItem(value: 'string', child: Text('文本 string')),
+                    DropdownMenuItem(value: 'number', child: Text('数值 number')),
+                    DropdownMenuItem(value: 'bool', child: Text('布尔 bool')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setDialogState(() => fieldType = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: direction,
+                  decoration: const InputDecoration(labelText: '同步方向'),
+                  items: const [
+                    DropdownMenuItem(value: 'none', child: Text('暂不启用')),
+                    DropdownMenuItem(value: 'upload_only', child: Text('仅写入状态')),
+                    DropdownMenuItem(value: 'bidirectional', child: Text('双向同步')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setDialogState(() => direction = value);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => closeDialog(ctx, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                clearBinding = true;
+                await closeDialog(ctx, true);
+              },
+              child: const Text('清除绑定'),
+            ),
+            FilledButton(
+              onPressed: () => closeDialog(ctx, true),
+              child: const Text('应用'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true && mounted) {
+      final statusKey = statusKeyController.text.trim();
+      final shouldClear = clearBinding || statusKey.isEmpty || direction == 'none';
+      final updated = shouldClear
+          ? propertyOverride.copyWith(clearBinding: true)
+          : propertyOverride.copyWith(
+              binding: AssemblyBinding(
+                statusKey: statusKey,
+                fieldType: fieldType,
+                direction: direction,
+              ),
+            );
+      setState(() => _upsertPropertyOverride(updated));
+    }
+    statusKeyController.dispose();
   }
 
   bool _supportsBasicOverrideEditor(UIElement child) {
