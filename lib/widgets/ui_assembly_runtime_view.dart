@@ -368,6 +368,14 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                     ),
                   );
                 }),
+                if (activePage.isOverlay)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        color: const Color(0xFF000000).withValues(alpha: 0.28),
+                      ),
+                    ),
+                  ),
                 ...activePage.elements.map(
                   (element) => _buildRuntimeElement(
                     context,

@@ -2340,6 +2340,33 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _activePlacement = null;
   }
 
+  bool _isSurfaceModule(UIModule? module) {
+    final type = module?.type;
+    return type == 'surface' || type == 'surface_art' || type == 'primitive_art' || type == 'base_box';
+  }
+
+  bool _activePageHasOverlayContainerSurface() {
+    if (!_activePage.isOverlay) return true;
+    return _elements.any(
+      (element) =>
+          !element.isComposite &&
+          _isSurfaceModule(element.module) &&
+          element.module?.properties['is_overlay_container'] == true,
+    );
+  }
+
+  UIModule _prepareModuleForAssemblyPlacement(UIModule template, String id) {
+    final module = _instantiateModule(template, id);
+    if (_activePage.isOverlay &&
+        _isSurfaceModule(module) &&
+        !_activePageHasOverlayContainerSurface()) {
+      final props = Map<String, dynamic>.from(_deepCloneValue(module.properties) as Map);
+      props['is_overlay_container'] = true;
+      return module.copyWith(properties: props);
+    }
+    return module;
+  }
+
   void _beginDragPlacement(_AssemblyDragPayload payload, Offset globalPosition, BuildContext context) {
     if (payload.spawnedElementId != null) return;
     final box = context.findRenderObject() as RenderBox?;
@@ -2367,7 +2394,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         : UIElement(
             id: id,
             isComposite: false,
-            module: _instantiateModule(module!, id),
+            module: _prepareModuleForAssemblyPlacement(module!, id),
             offset: local,
             size: size,
             layerIndex: 0,
@@ -2423,8 +2450,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'button' => const Size(88, 32),
       'text' => const Size(96, 28),
       'progress' => const Size(120, 16),
-      'surface' => const Size(240, 160),
-      'base_box' => const Size(240, 160),
+      'surface' => const Size(160, 80),
+      'base_box' => const Size(160, 80),
       'math_node' => const Size(120, 56),
       'timer' => const Size(112, 52),
       _ => const Size(96, 48),

@@ -713,13 +713,42 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         child: SizedBox(
           width: el.size.width,
           height: el.size.height,
-          child: IgnorePointer(
-            child: UISceneModeScope(
-              isStudioCreationMode: true,
-              child: Builder(
-                builder: (ctx) => UIRenderer.render(ctx, el),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: UISceneModeScope(
+                    isStudioCreationMode: true,
+                    child: Builder(
+                      builder: (ctx) => UIRenderer.render(ctx, el),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              if (el.module?.properties['is_overlay_container'] == true)
+                Positioned(
+                  left: 4,
+                  top: 4,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF37474F).withValues(alpha: 0.86),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        '叠加容器面',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       );

@@ -426,7 +426,9 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 - 运行时预览中识别清晰 PCB 区域内的全页 swipe，并切换到目标页。
 - 运行时预览中平级页切换使用 `base_slide` 的 slide + fade 动画。
 - overlay route 暂只负责进入叠加页；overlay 容器动画待面原子 / 容器面语义补齐后实现。
-- 基础显示资产区开放“面板 / 面原子”，作为 overlay 容器基础。
+- 基础显示资产区开放“面板 / 面原子”，默认尺寸对齐创作工作室 `160×80`，作为 overlay 容器基础。
+- overlay 页中第一个生成的面原子会自动标记为叠加容器面，并显示专属标签。
+- 运行时预览中 active page 为 overlay 时，会在祖先页与 overlay 内容之间显示灰色半透明 PCB 蒙版。
 - opening 模式运行时暂不响应页面手势。
 
 ### A9-1 修正结论
