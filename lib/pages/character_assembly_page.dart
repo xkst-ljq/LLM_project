@@ -1429,6 +1429,34 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             color: const Color(0xFF757575),
             module: _assetModuleTemplate('atom_logic_button_tap'),
           ),
+          _AssemblyAssetItem.module(
+            title: '输入框',
+            subtitle: '文本输入',
+            icon: Icons.input_rounded,
+            color: const Color(0xFF2979FF),
+            module: _assetModuleTemplate('atom_logic_input_text'),
+          ),
+          _AssemblyAssetItem.module(
+            title: '开关',
+            subtitle: '布尔状态',
+            icon: Icons.toggle_on_rounded,
+            color: const Color(0xFF00E676),
+            module: _assetModuleTemplate('atom_logic_switch_bool'),
+          ),
+          _AssemblyAssetItem.module(
+            title: '滑块',
+            subtitle: '数值输入',
+            icon: Icons.tune_rounded,
+            color: const Color(0xFF00ACC1),
+            module: _assetModuleTemplate('atom_slider_basic'),
+          ),
+          _AssemblyAssetItem.module(
+            title: '下拉',
+            subtitle: '选项选择',
+            icon: Icons.list_alt_rounded,
+            color: const Color(0xFF7E57C2),
+            module: _assetModuleTemplate('atom_select_basic'),
+          ),
         ];
       case 'display':
         return [
@@ -1452,6 +1480,27 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             icon: Icons.stacked_line_chart_rounded,
             color: const Color(0xFFFF4081),
             module: _assetModuleTemplate('atom_data_bar'),
+          ),
+          _AssemblyAssetItem.module(
+            title: '图片',
+            subtitle: '图片槽位',
+            icon: Icons.image_rounded,
+            color: const Color(0xFF2979FF),
+            module: _assetModuleTemplate('atom_image_holder'),
+          ),
+          _AssemblyAssetItem.module(
+            title: '状态点',
+            subtitle: '状态指示',
+            icon: Icons.circle_rounded,
+            color: const Color(0xFF4CAF50),
+            module: _assetModuleTemplate('atom_indicator_basic'),
+          ),
+          _AssemblyAssetItem.module(
+            title: '分割线',
+            subtitle: '线条分隔',
+            icon: Icons.horizontal_rule_rounded,
+            color: const Color(0xFFB0BEC5),
+            module: _assetModuleTemplate('atom_line_multi'),
           ),
         ];
       case 'composite':
