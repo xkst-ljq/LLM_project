@@ -285,8 +285,14 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                 width: _pcbSize.width,
                                 height: _pcbSize.height,
                                 child: IgnorePointer(
-                                  child: Container(
-                                    color: const Color(0xFF000000).withValues(alpha: 0.28),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(
+                                      _pcbRounded ? 20 : 0,
+                                    ),
+                                    child: Container(
+                                      color: const Color(0xFF000000)
+                                          .withValues(alpha: 0.28),
+                                    ),
                                   ),
                                 ),
                               ),
