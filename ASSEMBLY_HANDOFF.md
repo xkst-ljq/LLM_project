@@ -149,7 +149,7 @@
 - 运行时预览中点击 overlay 容器面外的 PCB 空白区域会返回父级页面
 - opening 模式运行时暂不响应页面手势
 
-### A9.5 通用模板基础版：A9.5-2 完成，待本地测试
+### A9.5 通用模板基础版：A9.5-2 完成，测试通过
 定位：A10 mode 差异化之前的前置阶段。先把所有模式共用的通用模板 / 通用运行时底座做稳，不急着分化 opening / scene / extra。
 
 A9.5-2 已开放基础原子入口：
@@ -182,9 +182,28 @@ A10 进入条件：
 - button/linker/page_router 与 gesture 路由稳定
 - 至少一轮通用模板回归测试通过
 
+### A9.6 SSOT / LLM 数据交互 MVP：A10 前置
+定位：打通 UIengine 与会话状态、Prompt、LLM 回复之间的数据通路。目标链路为：
+
+```text
+UI 输入 / 选择 / 滑动
+→ SessionState.vars 或 SessionState.statusValues
+→ Prompt 注入
+→ LLM 回复
+→ 状态更新解析
+→ UI 刷新
+```
+
+建议顺序：
+- A9.6-0：SSOT / LLM 数据交互设计文档
+- A9.6-1：Binding 名称解析 / 预绑定机制
+- A9.6-2：UI 写入 SessionState MVP
+- A9.6-3：SessionState 注入 Prompt MVP
+- A9.6-4：LLM 回复更新状态预留
+
 ### 下一步建议
-- 先本地测试 A9.5-2 基础原子入口
-- 若通过，进入 A9.5-3 通用模板测试样板
+- 进入 A9.5-3：通用模板测试样板文档
+- 然后进入 A9.6-0：SSOT / LLM 数据交互设计文档
 
 ---
 
@@ -315,4 +334,4 @@ A10 进入条件：
 
 可以在新对话一开始直接说：
 
-> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0/A4/A5/A8/A9 已完成，A9.5 通用模板基础版规划已完成，A9.5-2 基础原子入口已完成待本地测试。通过后进入 A9.5-3 通用模板测试样板。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。
+> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0/A4/A5/A8/A9 已完成，A9.5 通用模板基础版规划与 A9.5-2 基础原子入口已完成并通过。下一步进入 A9.5-3 通用模板测试样板文档，随后进入 A9.6-0 SSOT / LLM 数据交互设计文档。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。

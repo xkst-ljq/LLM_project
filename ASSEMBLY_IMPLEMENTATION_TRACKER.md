@@ -51,7 +51,8 @@
 | A5 | Assembly 内 linker 连线 | 配置式 MVP 完成，待本地测试 | ✅ |
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
-| A9.5 | 通用模板基础版 | A9.5-2 基础原子入口完成，待本地测试 | ✅ |
+| A9.5 | 通用模板基础版 | A9.5-2 基础原子入口完成，测试通过 | ✅ |
+| A9.6 | SSOT / LLM 数据交互 MVP | 规划中，A10 前置 | ⏳ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -582,6 +583,84 @@ A9.5-2 的最小目标不是完善每个原子的高级编辑器，而是先保�
 
 ---
 
+## A9.6：SSOT / LLM 数据交互 MVP（规划中，A10 前置）
+
+### 阶段定位
+A9.6 是 A10 mode 差异化之前的关键前置阶段。它负责打通 UIengine 与会话状态、Prompt、LLM 回复之间的数据通路。没有 A9.6，opening / scene / extra 的差异化只会是视觉壳，无法真正影响后续对话。
+
+目标链路：
+
+```text
+UI 输入 / 选择 / 滑动
+→ SessionState.vars 或 SessionState.statusValues
+→ Prompt 注入
+→ LLM 回复
+→ 状态更新解析
+→ UI 刷新
+```
+
+### 前置依赖
+- A9.5 通用模板基础版至少完成基础原子入口与通用样板测试方案。
+- Binding 名称解析与预绑定规则已在文档中确认。
+- `SessionState.vars` / `SessionState.statusValues` 已存在模型基础。
+
+### A9.6 分步建议
+#### A9.6-0：SSOT / LLM 数据交互设计文档
+- 明确哪些 UI 原子写入 `vars`，哪些写入 `statusValues`。
+- 明确 Prompt 注入格式。
+- 明确 LLM 状态更新的结构化输出格式。
+- 明确哪些行为本期只预留，不执行自动解析。
+
+#### A9.6-1：Binding 名称解析 / 预绑定机制
+- Binding 入口面向普通创作者输入“状态块名称 / 变量显示名”。
+- 匹配已有状态栏字段后保存内部 id。
+- 找不到时保存为 `pendingName`，显示未解析警告但不阻止。
+- 状态栏编辑页新建状态块时提示这些预绑定名称，并可回填绑定。
+
+#### A9.6-2：UI 写入 SessionState MVP
+优先支持：
+- input → `SessionState.vars`
+- select → `SessionState.vars`
+- switch → `SessionState.vars` 或 `statusValues`
+- slider → `statusValues`
+
+先保证 UI 运行时交互可以稳定写入会话副本。
+
+#### A9.6-3：SessionState 注入 Prompt MVP
+- 支持 `{{var.xxx}}` 与 `{{status.xxx}}`。
+- 或生成结构化 `[当前状态]` 段落注入 Prompt。
+- 本阶段先做最小可验证注入，不做复杂分频策略。
+
+#### A9.6-4：LLM 回复更新状态预留
+- 第一版不做复杂自然语言解析。
+- 预留结构化状态更新格式，例如：
+
+```json
+{
+  "status_updates": {
+    "affection": "+3",
+    "mood": "放松"
+  }
+}
+```
+
+- 数值字段仍应由引擎执行 delta + clamp，不能让 LLM 直接覆盖绝对值。
+
+### A9.6 不做
+- 不做完整自动状态解析器。
+- 不做复杂 Prompt 分频策略。
+- 不做聊天页所有 mode 接入。
+- 不做状态自动演化版本管理。
+
+### A10 进入补充条件
+除 A9.5 的通用模板条件外，进入 A10 前还应满足：
+1. UI 至少能把 input / select / switch / slider 写入 SessionState。
+2. SessionState 至少能以一种稳定格式进入 Prompt。
+3. Binding 名称解析不会强迫普通创作者手填内部 ID。
+4. LLM 状态更新格式已有预留方案。
+
+---
+
 ## A10：mode 差异逻辑收口
 
 ### 要收口的能力
@@ -808,11 +887,13 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先本地测试 A9.5-2 基础原子入口
+- **A9.5-3：通用模板测试样板文档**
 
 ### 然后
-- A9.5-3 通用模板测试样板
 - A9.5-4 通用运行时问题收口
+- A9.6-0 SSOT / LLM 数据交互设计文档
+- A9.6-1 Binding 名称解析 / 预绑定机制
+- A9.6-2 UI 写入 SessionState MVP
 - A10 mode 差异逻辑收口
 - 再视情况回补 A6 / HUD / 资产区视觉增强项
 
