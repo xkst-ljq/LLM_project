@@ -1910,14 +1910,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   Size _moduleDefaultSize(UIModule module) {
     return switch (module.type) {
-      _pageRouterType => const Size(144, 72),
-      'linker' => const Size(160, 80),
-      'button' => const Size(112, 44),
-      'text' => const Size(132, 44),
-      'progress' => const Size(150, 24),
-      'math_node' => const Size(140, 72),
-      'timer' => const Size(128, 64),
-      _ => const Size(120, 64),
+      _pageRouterType => const Size(124, 56),
+      'linker' => const Size(132, 60),
+      'button' => const Size(88, 32),
+      'text' => const Size(96, 28),
+      'progress' => const Size(120, 16),
+      'math_node' => const Size(120, 56),
+      'timer' => const Size(112, 52),
+      _ => const Size(96, 48),
     };
   }
 

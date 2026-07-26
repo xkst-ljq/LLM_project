@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -132,7 +133,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onPanUpdate: _showAssetDrawer || _showLayerPanel
+                    onPanUpdate: _showLayerPanel
                         ? null
                         : (details) => setState(() => _canvasOffset += details.delta),
                     onTap: () {
@@ -359,77 +360,11 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   child: _buildAssetDock(),
                 ),
 
-                // ===== 5. 右下角悬浮信息 =====
+                // ===== 5. 顶部下方轻量状态栏 =====
                 Positioned(
-                  right: 12,
-                  bottom: _showAssetDrawer ? 176 : 58,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF111116).withValues(alpha: 0.78),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _modeColor.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            _info.modeLabel,
-                            style: TextStyle(
-                              color: _modeColor,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          '${_elements.length} 部件',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 9,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'PCB 360×${_pcbSize.height.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 9,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '越界 $_illegalPcbElementCount 项',
-                          style: TextStyle(
-                            color: _illegalPcbElementCount > 0
-                                ? const Color(0xFFFF8A80)
-                                : Colors.white54,
-                            fontSize: 9,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '覆写 $_activePropertyOverrideCount 项',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 9,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  left: 8,
+                  top: 54,
+                  child: _buildCompactStatusHud(),
                 ),
               ],
             ),
@@ -441,6 +376,75 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
   void _handlePlacementPointerMove2(PointerMoveEvent e) => _handlePlacementPointerMove(e, context);
   void _finishPlacementPointer2(PointerEvent e) => _finishPlacementPointer(e, context);
+
+  Widget _buildCompactStatusHud() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width - 16,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.68),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.46)),
+            boxShadow: const [
+              BoxShadow(color: Color(0x14000000), blurRadius: 8),
+            ],
+          ),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildHudChip(_info.modeLabel, color: _modeColor),
+              _buildHudText('${_elements.length} 部件'),
+              _buildHudText('PCB 360×${_pcbSize.height.toStringAsFixed(0)}'),
+              _buildHudText(
+                '越界 $_illegalPcbElementCount',
+                color: _illegalPcbElementCount > 0
+                    ? const Color(0xFFD32F2F)
+                    : const Color(0xFF555562),
+              ),
+              _buildHudText('覆写 $_activePropertyOverrideCount'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHudChip(String text, {required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 8,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHudText(String text, {Color color = const Color(0xFF555562)}) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: color,
+        fontSize: 8,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
 
   Widget _buildTopIconBtn(IconData icon, VoidCallback onTap, {Color? color}) {
     return Material(
@@ -1103,37 +1107,50 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_showAssetDrawer)
-            Container(
-              height: 118,
-              margin: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x18000000), blurRadius: 12),
-                ],
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  height: 88,
+                  margin: const EdgeInsets.fromLTRB(8, 0, 8, 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.66),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.42)),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x14000000), blurRadius: 10),
+                    ],
+                  ),
+                  child: _buildAssetDrawerContent(_activeAssetCategory),
+                ),
               ),
-              child: _buildAssetDrawerContent(_activeAssetCategory),
             ),
-          Container(
-            height: 46,
-            margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF111116).withValues(alpha: 0.86),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: const [
-                BoxShadow(color: Color(0x22000000), blurRadius: 10),
-              ],
-            ),
-            child: Row(
-              children: [
-                _buildAssetCategoryTab('logic', Icons.account_tree_rounded, '逻辑组件'),
-                _buildAssetCategoryTab('interaction', Icons.touch_app_rounded, '基础交互'),
-                _buildAssetCategoryTab('display', Icons.text_fields_rounded, '基础显示'),
-                _buildAssetCategoryTab('composite', Icons.dashboard_customize_rounded, '复合组件'),
-              ],
+          ClipRRect(
+            borderRadius: BorderRadius.circular(13),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                height: 40,
+                margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111116).withValues(alpha: 0.58),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x1A000000), blurRadius: 10),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    _buildAssetCategoryTab('logic', Icons.account_tree_rounded, '逻辑组件'),
+                    _buildAssetCategoryTab('interaction', Icons.touch_app_rounded, '基础交互'),
+                    _buildAssetCategoryTab('display', Icons.text_fields_rounded, '基础显示'),
+                    _buildAssetCategoryTab('composite', Icons.dashboard_customize_rounded, '复合组件'),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -1171,17 +1188,17 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             children: [
               Icon(
                 icon,
-                size: 15,
+                size: 13,
                 color: selected ? Colors.white : Colors.white70,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: selected ? Colors.white : Colors.white70,
-                  fontSize: 9,
+                  fontSize: 8,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
@@ -1212,9 +1229,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
     return ListView.separated(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       itemCount: items.length,
-      separatorBuilder: (_, _) => const SizedBox(width: 8),
+      separatorBuilder: (_, _) => const SizedBox(width: 6),
       itemBuilder: (context, index) => _buildDraggableAsset(
         payload: items[index].payload,
         child: _buildDockAssetCard(items[index]),
@@ -1312,27 +1329,27 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
   Widget _buildDockAssetCard(_AssemblyAssetItem item) {
     return SizedBox(
-      width: 112,
+      width: 92,
       child: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(7),
         decoration: BoxDecoration(
-          color: item.color.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: item.color.withValues(alpha: 0.20)),
+          color: item.color.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: item.color.withValues(alpha: 0.18)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(item.icon, size: 18, color: item.color),
-            const SizedBox(height: 8),
+            Icon(item.icon, size: 16, color: item.color),
+            const SizedBox(height: 5),
             Text(
               item.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Color(0xFF111116),
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -1343,7 +1360,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Color(0xFF777783),
-                fontSize: 9,
+                fontSize: 8,
               ),
             ),
           ],
