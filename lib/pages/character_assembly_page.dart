@@ -573,7 +573,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     if (el.module != null && el.module!.type == _AssemblyLogic._pageRouterType) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _executePageRouter(el),
         onDoubleTap: () => _showPageRouterConfigDialog(el),
         onPanStart: (d) {
           _startTouchScreenPos = d.globalPosition;
@@ -889,9 +888,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     showMenuBadge: true,
                   ),
                   if (rootOverlays.isNotEmpty)
-                    _buildPageGroup(
-                      rootPage.id,
-                      1,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: _buildPageGroup(
+                        rootPage.id,
+                        1,
+                      ),
                     ),
                   if (siblingBasePages.isNotEmpty) ...[
                     const SizedBox(height: 6),
