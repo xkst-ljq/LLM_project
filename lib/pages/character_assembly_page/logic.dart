@@ -29,6 +29,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   // 拖放状态
   _AssemblyDragPayload? _activePlacement;
   static const double _dragThreshold = 24.0;
+  static const String _pageRouterType = 'page_router';
+
+  UIModule get _pageRouterTemplate => UIModule(
+        id: 'atom_logic_page_router',
+        name: '页面路由器',
+        type: _pageRouterType,
+        color: const Color(0xFF00897B),
+        properties: {
+          'route': {
+            'action': 'switch_base_page',
+            'targetPageId': '',
+          },
+        },
+      );
 
   void _initFromInfo(UIAssemblyInfo info) {
     _info = info;
@@ -957,6 +971,228 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     setState(() {});
   }
 
+  AssemblyPage? _pageById(String pageId) {
+    for (final page in _pages) {
+      if (page.id == pageId) return page;
+    }
+    return null;
+  }
+
+  AssemblyPage? _baseAncestorOf(AssemblyPage page) {
+    if (page.isBase) return page;
+    var parentId = page.parentPageId;
+    final visited = <String>{page.id};
+    while (parentId != null && parentId.isNotEmpty && visited.add(parentId)) {
+      final parent = _pageById(parentId);
+      if (parent == null) return null;
+      if (parent.isBase) return parent;
+      parentId = parent.parentPageId;
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _routeDataOf(UIModule module) {
+    final raw = module.properties['route'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return <String, dynamic>{};
+  }
+
+  String _routeActionOf(UIModule module) {
+    final action = _routeDataOf(module)['action']?.toString();
+    if (action == 'open_overlay') return 'open_overlay';
+    return 'switch_base_page';
+  }
+
+  String _routeTargetPageIdOf(UIModule module) {
+    return _routeDataOf(module)['targetPageId']?.toString() ?? '';
+  }
+
+  String _routeActionLabel(String action) {
+    return action == 'open_overlay' ? '打开叠加页' : '切换平级页';
+  }
+
+  List<AssemblyPage> _routeTargetCandidates(String action) {
+    if (action == 'open_overlay') {
+      return _directChildPages(_activePage.id)
+          .where((page) => page.isOverlay)
+          .toList();
+    }
+
+    final currentBase = _baseAncestorOf(_activePage) ?? _activePage;
+    return _pages
+        .where((page) => page.isBase && page.id != currentBase.id)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  }
+
+  UIModule _updatePageRouterModule(
+    UIModule module, {
+    required String action,
+    required String targetPageId,
+  }) {
+    final props = Map<String, dynamic>.from(_deepCloneValue(module.properties) as Map);
+    props['route'] = {
+      ..._routeDataOf(module),
+      'action': action,
+      'targetPageId': targetPageId,
+    };
+    return module.copyWith(properties: props);
+  }
+
+  String _pageRouterSubtitle(UIModule module) {
+    final action = _routeActionOf(module);
+    final targetId = _routeTargetPageIdOf(module);
+    final target = targetId.isEmpty ? null : _pageById(targetId);
+    if (target == null) return '${_routeActionLabel(action)} · 未配置';
+    return '${_routeActionLabel(action)} · ${_displayPageName(target)}';
+  }
+
+  void _executePageRouter(UIElement element) {
+    final module = element.module;
+    if (module == null || module.type != _pageRouterType) return;
+    final targetId = _routeTargetPageIdOf(module);
+    final target = targetId.isEmpty ? null : _pageById(targetId);
+    if (target == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('页面路由器尚未配置目标页')),
+      );
+      return;
+    }
+    _activatePage(target.id);
+  }
+
+  Future<void> _showPageRouterConfigDialog(UIElement element) async {
+    final module = element.module;
+    if (module == null || module.type != _pageRouterType) return;
+
+    var action = _routeActionOf(module);
+    var targetPageId = _routeTargetPageIdOf(module);
+
+    List<AssemblyPage> candidatesForCurrentAction() =>
+        _routeTargetCandidates(action);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final candidates = candidatesForCurrentAction();
+          final hasTarget = candidates.any((page) => page.id == targetPageId);
+          final selectedTargetId = hasTarget ? targetPageId : null;
+
+          return AlertDialog(
+            title: const Text('配置页面路由器'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'A7 最小版只保存路由配置，并支持编辑态点击测试跳转；动画和 linker 触发后续再接。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: action,
+                    decoration: const InputDecoration(labelText: '路由动作'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'switch_base_page',
+                        child: Text('切换平级页'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'open_overlay',
+                        child: Text('打开叠加页'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() {
+                        action = value;
+                        targetPageId = '';
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  if (candidates.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFFECB3)),
+                      ),
+                      child: Text(
+                        action == 'open_overlay'
+                            ? '当前页面没有直接叠加子页。请先在图层面板创建叠加页。'
+                            : '当前没有可切换的其他平级页。请先在图层面板创建平级页。',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF8D6E00),
+                          height: 1.35,
+                        ),
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedTargetId,
+                      decoration: const InputDecoration(labelText: '目标页'),
+                      items: candidates
+                          .map(
+                            (page) => DropdownMenuItem(
+                              value: page.id,
+                              child: Text(_displayPageName(page)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => targetPageId = value);
+                      },
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: candidates.isEmpty || targetPageId.isEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, true),
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (saved == true && mounted) {
+      final index = _elements.indexWhere((candidate) => candidate.id == element.id);
+      if (index == -1) return;
+      setState(() {
+        final current = _elements[index];
+        final currentModule = current.module;
+        if (currentModule == null) return;
+        _elements[index] = current.copyWith(
+          module: _updatePageRouterModule(
+            currentModule,
+            action: action,
+            targetPageId: targetPageId,
+          ),
+        );
+      });
+      _persistAssemblyElements();
+    }
+  }
+
   void _createPage({required String type}) {
     _syncCanvasStateIntoActivePage();
     final pageType = type == 'overlay' ? 'overlay' : 'base';
@@ -1541,21 +1777,33 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
     final composite = payload.composite;
-    if (composite == null) return;
-    final size = _compositeDefaultSize(composite);
+    final module = payload.module;
+    if (composite == null && module == null) return;
+    final size = composite != null
+        ? _compositeDefaultSize(composite)
+        : _moduleDefaultSize(module!);
     final local = box.globalToLocal(globalPosition) -
         _canvasOffset -
         _pcbOffset -
         Offset(size.width / 2, size.height / 2);
     final id = _generateElementId();
-    final prototype = UIElement(
-      id: id,
-      isComposite: true,
-      composite: _instantiateComposite(composite),
-      offset: local,
-      size: size,
-      layerIndex: 0,
-    );
+    final prototype = composite != null
+        ? UIElement(
+            id: id,
+            isComposite: true,
+            composite: _instantiateComposite(composite),
+            offset: local,
+            size: size,
+            layerIndex: 0,
+          )
+        : UIElement(
+            id: id,
+            isComposite: false,
+            module: _instantiateModule(module!, id),
+            offset: local,
+            size: size,
+            layerIndex: 0,
+          );
     setState(() {
       _elements.add(
         prototype.copyWith(
@@ -1589,6 +1837,25 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   void _finishDragPlacement(_AssemblyDragPayload payload, Offset globalPosition, BuildContext context) {
     _updateDragPlacement(payload, globalPosition, context);
     _persistAssemblyElements();
+  }
+
+  UIModule _instantiateModule(UIModule template, String id) {
+    return template.copyWith(
+      id: id,
+      properties: Map<String, dynamic>.from(
+        _deepCloneValue(template.properties) as Map,
+      ),
+    );
+  }
+
+  Size _moduleDefaultSize(UIModule module) {
+    return switch (module.type) {
+      _pageRouterType => const Size(144, 72),
+      'linker' => const Size(160, 80),
+      'math_node' => const Size(140, 72),
+      'timer' => const Size(128, 64),
+      _ => const Size(120, 64),
+    };
   }
 
   Size _compositeDefaultSize(UIComposite c) {

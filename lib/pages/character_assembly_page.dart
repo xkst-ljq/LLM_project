@@ -15,6 +15,7 @@ part 'character_assembly_page/logic.dart';
 /// 拖拽载荷
 class _AssemblyDragPayload {
   final UIComposite? composite;
+  final UIModule? module;
   Offset anchorFraction = const Offset(0.5, 0.5);
   String? spawnedElementId;
   int? pointerId;
@@ -22,7 +23,7 @@ class _AssemblyDragPayload {
   Offset? longPressOrigin;
   final ValueNotifier<bool> isLibraryDragging = ValueNotifier(false);
 
-  _AssemblyDragPayload({this.composite});
+  _AssemblyDragPayload({this.composite, this.module});
 }
 
 class CharacterAssemblyPage extends StatefulWidget {
@@ -536,6 +537,73 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         ),
       );
     }
+    if (el.module != null && el.module!.type == _pageRouterType) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _executePageRouter(el),
+        onDoubleTap: () => _showPageRouterConfigDialog(el),
+        onPanStart: (d) {
+          _startTouchScreenPos = d.globalPosition;
+          _startTouchElemOffset = el.offset;
+        },
+        onPanUpdate: (d) {
+          final delta = d.globalPosition - _startTouchScreenPos;
+          setState(() {
+            final i = _elements.indexWhere((e) => e.id == el.id);
+            if (i != -1) {
+              _elements[i] = el.copyWith(offset: _startTouchElemOffset + delta);
+            }
+          });
+        },
+        onPanEnd: (_) => _persistAssemblyElements(),
+        child: Container(
+          width: el.size.width,
+          height: el.size.height,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE0F2F1),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF00897B).withValues(alpha: 0.45)),
+            boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 4)],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.alt_route_rounded, size: 15, color: Color(0xFF00897B)),
+                  SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '页面路由器',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Color(0xFF00695C),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _pageRouterSubtitle(el.module!),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF33695F),
+                  fontSize: 9,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (el.module != null && const {'linker', 'math_node', 'timer'}.contains(el.module!.type)) {
       return Container(
         width: el.size.width, height: el.size.height,
@@ -974,66 +1042,186 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
   Widget _buildAssetDrawer() {
     final composites = _assetService.getAllComposites()
-        .where((c) => c.exposedPorts != null && c.exposedPorts!.isNotEmpty).toList();
+        .where((c) => c.exposedPorts != null && c.exposedPorts!.isNotEmpty)
+        .toList();
+    final routerPayload = _AssemblyDragPayload(module: _pageRouterTemplate);
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.96),
         border: Border(right: BorderSide(color: Colors.black.withValues(alpha: 0.06))),
         boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 8)],
       ),
-      child: Column(children: [
-        if (composites.isEmpty)
-          const Expanded(child: Center(child: Text('暂无可用资产\n请先在工作室制作\n并暴露端口',
-              textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF888896), fontSize: 10, height: 1.4))))
-        else
-          Expanded(child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            itemCount: composites.length,
-            itemBuilder: (ctx, i) {
-              final c = composites[i];
-              final payload = _AssemblyDragPayload(composite: c);
-              return Listener(
-                onPointerDown: (event) {
-                  payload.pointerId = event.pointer;
-                  payload.anchorFraction = const Offset(0.5, 0.5);
-                },
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onLongPressStart: (details) => _startLibraryPlacement(payload, details.globalPosition, context),
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: payload.isLibraryDragging,
-                    child: _buildAssetCard(c),
-                    builder: (context, isDragging, child) => AnimatedScale(
-                      scale: isDragging ? 0.96 : 1.0,
-                      duration: const Duration(milliseconds: 130),
-                      curve: Curves.easeOutCubic,
-                      child: AnimatedOpacity(
-                        opacity: isDragging ? 0.48 : 1.0,
-                        duration: const Duration(milliseconds: 100),
-                        child: child,
-                      ),
-                    ),
-                  ),
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(2, 2, 2, 6),
+            child: Text(
+              '逻辑组件',
+              style: TextStyle(
+                color: Color(0xFF777783),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          _buildDraggableAsset(
+            payload: routerPayload,
+            child: _buildLogicAssetCard(
+              icon: Icons.alt_route_rounded,
+              title: '页面路由器',
+              subtitle: '切平级页 / 打开叠加页',
+              color: const Color(0xFF00897B),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(2, 2, 2, 6),
+            child: Text(
+              '复合组件',
+              style: TextStyle(
+                color: Color(0xFF777783),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (composites.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                '暂无可用复合资产\n请先在工作室制作并暴露端口',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF888896),
+                  fontSize: 10,
+                  height: 1.4,
                 ),
+              ),
+            )
+          else
+            ...composites.map((c) {
+              final payload = _AssemblyDragPayload(composite: c);
+              return _buildDraggableAsset(
+                payload: payload,
+                child: _buildAssetCard(c),
               );
-            },
-          )),
-      ]),
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDraggableAsset({
+    required _AssemblyDragPayload payload,
+    required Widget child,
+  }) {
+    return Listener(
+      onPointerDown: (event) {
+        payload.pointerId = event.pointer;
+        payload.anchorFraction = const Offset(0.5, 0.5);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPressStart: (details) =>
+            _startLibraryPlacement(payload, details.globalPosition, context),
+        child: ValueListenableBuilder<bool>(
+          valueListenable: payload.isLibraryDragging,
+          child: child,
+          builder: (context, isDragging, child) => AnimatedScale(
+            scale: isDragging ? 0.96 : 1.0,
+            duration: const Duration(milliseconds: 130),
+            curve: Curves.easeOutCubic,
+            child: AnimatedOpacity(
+              opacity: isDragging ? 0.48 : 1.0,
+              duration: const Duration(milliseconds: 100),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogicAssetCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF111116),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF777783),
+                    fontSize: 9,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildAssetCard(UIComposite c) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(color: const Color(0xFFF2F2F5),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.black.withValues(alpha: 0.04))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(c.name, style: const TextStyle(color: Color(0xFF111116), fontSize: 11, fontWeight: FontWeight.w600),
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-        const SizedBox(height: 2),
-        Text('${c.exposedPorts!.length} 端口', style: const TextStyle(color: Color(0xFF888896), fontSize: 9)),
-      ]),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F2F5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            c.name,
+            style: const TextStyle(
+              color: Color(0xFF111116),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${c.exposedPorts!.length} 端口',
+            style: const TextStyle(color: Color(0xFF888896), fontSize: 9),
+          ),
+        ],
+      ),
     );
   }
 

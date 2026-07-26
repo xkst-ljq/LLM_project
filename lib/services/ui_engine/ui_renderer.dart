@@ -25,7 +25,7 @@ class UIRenderer {
         : LinkerService.resolveTargetControlState(module);
 
     // 非工作室（预览模式与运行时）：隐形后台纯逻辑节点。
-    if (!isStudio && ['linker', 'math_node'].contains(module?.type)) {
+    if (!isStudio && ['linker', 'math_node', 'page_router'].contains(module?.type)) {
       return const SizedBox.shrink();
     }
     if (!isStudio &&
@@ -152,6 +152,12 @@ class UIRenderer {
           width: size.width,
           height: size.height,
           child: _buildLinkerNode(module, size),
+        );
+      case 'page_router':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildPageRouterNode(module),
         );
       case 'math_node':
         return SizedBox(
@@ -1068,6 +1074,62 @@ class UIRenderer {
     if (scheme == '未配置' || scheme == '未连接') return scheme;
     final definition = LinkerMatrixEngine.getSchemeDefinition(scheme);
     return definition?.label.split(' (').first ?? '已配置通路';
+  }
+
+  static Widget _buildPageRouterNode(UIModule module) {
+    final routeData =
+        (module.properties['route'] as Map?)?.cast<String, dynamic>() ?? {};
+    final action = routeData['action']?.toString() == 'open_overlay'
+        ? '打开叠加页'
+        : '切换平级页';
+    final targetId = routeData['targetPageId']?.toString() ?? '';
+    final status = targetId.trim().isEmpty ? '未配置' : '已配置';
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE0F2F1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: const Color(0xFF00897B).withValues(alpha: 0.45),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.alt_route_rounded, size: 15, color: Color(0xFF00897B)),
+              SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  '页面路由器',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Color(0xFF00695C),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$action · $status',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF33695F),
+              fontSize: 9,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 联动器节点渲染（MVP）
