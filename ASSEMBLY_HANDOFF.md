@@ -149,8 +149,15 @@
 - 运行时预览中点击 overlay 容器面外的 PCB 空白区域会返回父级页面
 - opening 模式运行时暂不响应页面手势
 
-### A9.5 通用模板基础版：A9.5-2 完成，测试通过
+### A9.5 通用模板基础版：A9.5-3 文档完成，待按样板回归
 定位：A10 mode 差异化之前的前置阶段。先把所有模式共用的通用模板 / 通用运行时底座做稳，不急着分化 opening / scene / extra。
+
+统一架构规则：
+- 后续不为 opening / scene / extra_sticky / extra_companion 分别制作独立工作室。
+- 所有模式共用 `CharacterAssemblyPage`、`UIAssemblyInfo`、`AssemblyPage`、`UIElement`、route、gesture、binding、实例覆写等模板数据结构。
+- `mode` 是运行时外壳策略，不是不同工作室。
+- 后续差异化应做成 runtime shell：OpeningRuntimeShell / SceneRuntimeShell / ExtraStickyRuntimeShell / ExtraCompanionRuntimeShell。
+- 禁止把资产栏、PCB、多页面、route、gesture、binding 复制成多套 mode 专用代码。
 
 A9.5-2 已开放基础原子入口：
 - 基础交互：输入框、开关、滑块、下拉
@@ -174,11 +181,23 @@ A9.5-2 已开放基础原子入口：
 - binding 挂载位
 - 内部 linker
 
-A9.5-3 通用模板测试样板已写入 tracker，样板结构：
+A9.5-3 通用模板测试样板已写入 tracker。它是模板级集成测试，不是单点功能回归。重点验证多个已完成能力组合后是否稳定、不互相污染、不依赖临时入口。
+
+样板结构：
 - 主菜单 base
 - 状态面板 overlay
 - 设置面板 overlay
 - 第二 base 页
+
+专属测试要点：
+- 完整制作流程：从空白 Assembly 到完成样板，不手改 JSON。
+- route 与 gesture 共存：按钮路由与滑动手势指向同一目标时互不污染。
+- 多 overlay 独立性：状态面板与设置面板互不串页。
+- 页面重命名稳定性：route / gesture 绑定 page id，不受显示名变化影响。
+- 组件状态隔离：不同 overlay 的 slider/input/select/switch 不互相污染。
+- overlay 容器缺失修复流程：缺面警告、拖入面板后自动容器面、第二面不抢占。
+- 运行时缩放完整性：普通高度、超高 PCB、窄屏、横屏均稳定。
+- 无临时入口依赖：运行时只靠按钮、手势、空白点击操作，不依赖 page_router 本体点击。
 
 样板重点验证：
 - base 切换、overlay 打开、overlay 空白关闭
