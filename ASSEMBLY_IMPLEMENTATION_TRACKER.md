@@ -51,6 +51,7 @@
 | A5 | Assembly 内 linker 连线 | 配置式 MVP 完成，待本地测试 | ✅ |
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
+| A9.5 | 通用模板基础版 | 规划完成，下一步 | ⏳ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -449,6 +450,122 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 
 ---
 
+## A9.5：通用模板基础版（规划完成，下一步）
+
+### 阶段定位
+A9.5 是 A10 mode 差异化之前的前置阶段。它不做 `opening / scene / extra_sticky / extra_companion` 的差异化逻辑，而是先把所有模式共用的“通用模板 / 通用运行时底座”做稳。
+
+当前已经具备 PCB、多页面、overlay、page_router、button/linker、手势、运行时预览、面原子、容器面、蒙版等局部能力；A9.5 的目标是把这些能力整理为一套可复用、可测试、可作为 A10 分化基础的通用模板。
+
+### 通用运行时页面模型
+通用模板运行结构先按以下模型理解：
+
+```text
+RuntimeViewport
+├─ blurred backdrop
+├─ centered PCB
+│  ├─ base page
+│  ├─ overlay mask
+│  ├─ overlay page
+│  └─ interactive elements
+└─ preview-only controls / debug info
+```
+
+通用规则：
+- base 页是基础页面层。
+- overlay 压在父页面上显示，父页面保留但被蒙版压暗。
+- overlay 必须有容器面，容器面由面原子提供。
+- 点击 overlay 容器面外的 PCB 空白区域返回父级。
+- route 可由 `button → linker → page_router` 或页面手势触发。
+- 通用运行时必须先稳定，才能进入 mode 差异。
+
+### 通用模板样板建议
+A9.5 至少要能搭出一个用于回归的通用样板：
+
+```text
+主菜单 base
+状态面板 overlay
+设置面板 overlay
+第二个 base 页
+```
+
+该样板用于验证：
+- base 页切换
+- overlay 打开
+- overlay 空白关闭
+- button → linker → page_router
+- 页面手势切换
+- 面原子作为容器面
+- 运行时等比缩放
+- 复合组件实例覆写
+- binding 挂载位
+- 内部 linker
+
+### 通用资产区补齐计划
+当前最小开放资产：
+- 页面路由器
+- 联动器
+- 按钮
+- 面板
+- 文本
+- 进度条
+- 已暴露端口复合组件
+
+A9.5 建议补齐已有基础原子入口：
+- 图片
+- 输入框
+- 开关
+- 滑块
+- 下拉
+- 状态点
+- 分割线
+
+A9.5-2 的最小目标不是完善每个原子的高级编辑器，而是先保证：
+
+```text
+能拖入 → 能移动 → 能保存 → 能预览
+```
+
+### A9.5 分步建议
+#### A9.5-1：通用模板规则文档（当前）
+- 定义通用模板与 mode 差异的边界。
+- 定义通用页面运行模型。
+- 定义通用模板测试样板。
+- 定义 A10 的进入条件。
+
+#### A9.5-2：资产区补齐基础原子
+- 开放图片、输入框、开关、滑块、下拉、状态点、分割线。
+- 保持与 Studio 原子默认尺寸 / 视觉尽量一致。
+- 暂不做复杂编辑器，只保证基本落地和预览。
+
+#### A9.5-3：通用模板测试样板
+- 搭建或人工定义一套“主菜单 + overlay + 第二 base 页”的测试样板。
+- 用样板覆盖通用运行时链路。
+
+#### A9.5-4：通用运行时问题收口
+- 根据样板测试修复运行时预览与联动问题。
+- 覆盖 slider/progress、button/switch、input/text、select/text、timer/progress、math_node/text 等典型链路。
+
+### A10 进入条件
+进入 A10 前，应满足：
+1. 通用运行时预览稳定。
+2. 通用模板样板可以完整跑通。
+3. 常用基础原子可拖入 / 保存 / 预览。
+4. overlay 容器面、蒙版、空白关闭稳定。
+5. button/linker/page_router 与 gesture 路由稳定。
+6. 至少一轮通用模板回归测试通过。
+
+### A9.5 不做
+- 不做 opening 确认后销毁。
+- 不做 scene 完全接管聊天页。
+- 不做 extra_sticky 悬浮球。
+- 不做 extra_companion 消息下挂。
+- 不接聊天页真实运行时。
+- 不做 Prompt / SSOT 状态注入。
+- 不做高级动画系统。
+
+---
+
 ## A10：mode 差异逻辑收口
 
 ### 要收口的能力
@@ -675,9 +792,18 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先本地测试 A9 页面手势配置 + 轻量动画 MVP
+- **A9.5-2：资产区补齐基础原子**
+  - 图片
+  - 输入框
+  - 开关
+  - 滑块
+  - 下拉
+  - 状态点
+  - 分割线
 
 ### 然后
+- A9.5-3 通用模板测试样板
+- A9.5-4 通用运行时问题收口
 - A10 mode 差异逻辑收口
 - 再视情况回补 A6 / HUD / 资产区视觉增强项
 
