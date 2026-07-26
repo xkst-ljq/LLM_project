@@ -130,7 +130,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
               Positioned.fill(
                 child: _buildFittedDesignSurface(
                   context,
-                  pages: pages,
+                  pages: _pages,
                   activePage: activePage,
                   ancestors: ancestors,
                   designSize: designSize,
