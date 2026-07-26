@@ -53,9 +53,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         type: 'button',
         color: const Color(0xFF757575),
         properties: {
-          'text': '按钮',
+          'text': '',
           'action': 'tap',
-          'showTextOnRuntime': true,
+          'doubleTapIntervalMs': 300,
+          'longPressThresholdMs': 500,
         },
       );
     }

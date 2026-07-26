@@ -1101,59 +1101,56 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   }
 
   Widget _buildAssetDock() {
+    final panelHeight = _showAssetDrawer ? 124.0 : 40.0;
     return SafeArea(
       top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_showAssetDrawer)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  height: 88,
-                  margin: const EdgeInsets.fromLTRB(8, 0, 8, 5),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.66),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.42)),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x14000000), blurRadius: 10),
-                    ],
-                  ),
-                  child: _buildAssetDrawerContent(_activeAssetCategory),
-                ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              height: panelHeight,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.62),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.46)),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x16000000), blurRadius: 12),
+                ],
               ),
-            ),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(13),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                height: 40,
-                margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111116).withValues(alpha: 0.58),
-                  borderRadius: BorderRadius.circular(13),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x1A000000), blurRadius: 10),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    _buildAssetCategoryTab('logic', Icons.account_tree_rounded, '逻辑组件'),
-                    _buildAssetCategoryTab('interaction', Icons.touch_app_rounded, '基础交互'),
-                    _buildAssetCategoryTab('display', Icons.text_fields_rounded, '基础显示'),
-                    _buildAssetCategoryTab('composite', Icons.dashboard_customize_rounded, '复合组件'),
-                  ],
-                ),
+              child: Column(
+                children: [
+                  if (_showAssetDrawer)
+                    SizedBox(
+                      height: 84,
+                      child: _buildAssetDrawerContent(_activeAssetCategory),
+                    ),
+                  if (_showAssetDrawer)
+                    Divider(
+                      height: 1,
+                      color: Colors.black.withValues(alpha: 0.06),
+                    ),
+                  SizedBox(
+                    height: _showAssetDrawer ? 39 : 40,
+                    child: Padding(
+                      padding: const EdgeInsets.all(3),
+                      child: Row(
+                        children: [
+                          _buildAssetCategoryTab('logic', Icons.account_tree_rounded, '逻辑组件'),
+                          _buildAssetCategoryTab('interaction', Icons.touch_app_rounded, '基础交互'),
+                          _buildAssetCategoryTab('display', Icons.text_fields_rounded, '基础显示'),
+                          _buildAssetCategoryTab('composite', Icons.dashboard_customize_rounded, '复合组件'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1178,7 +1175,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           height: double.infinity,
           decoration: BoxDecoration(
             color: selected
-                ? Colors.white.withValues(alpha: 0.16)
+                ? _modeColor.withValues(alpha: 0.12)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
@@ -1189,7 +1186,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               Icon(
                 icon,
                 size: 13,
-                color: selected ? Colors.white : Colors.white70,
+                color: selected ? _modeColor : const Color(0xFF555562),
               ),
               const SizedBox(height: 1),
               Text(
@@ -1197,7 +1194,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected ? Colors.white : Colors.white70,
+                  color: selected ? _modeColor : const Color(0xFF555562),
                   fontSize: 8,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 ),
