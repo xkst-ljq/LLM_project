@@ -472,6 +472,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final type = child.module?.type;
     if (!_supportsBasicOverrideEditor(child)) return;
 
+    Future<void> closeDialog(BuildContext ctx, bool? value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
+
     if (type == 'text') {
       final controller = TextEditingController(
         text: propertyOverride.overrides['text']?.toString() ??
@@ -492,7 +499,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => closeDialog(ctx, false),
               child: const Text('取消'),
             ),
             TextButton(
@@ -502,7 +509,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               child: const Text('恢复默认'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: () => closeDialog(ctx, true),
               child: const Text('应用'),
             ),
           ],
@@ -540,11 +547,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
+                onPressed: () => closeDialog(ctx, false),
                 child: const Text('取消'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
+                onPressed: () => closeDialog(ctx, true),
                 child: const Text('应用'),
               ),
             ],
@@ -613,11 +620,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
+                onPressed: () => closeDialog(ctx, false),
                 child: const Text('取消'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
+                onPressed: () => closeDialog(ctx, true),
                 child: const Text('应用'),
               ),
             ],
