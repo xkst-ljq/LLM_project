@@ -215,7 +215,7 @@ A10 进入条件：
 - button/linker/page_router 与 gesture 路由稳定
 - 至少一轮通用模板回归测试通过
 
-### A9.6 SSOT / LLM 数据交互 MVP：A10 前置
+### A9.6 SSOT / LLM 数据交互 MVP：A9.6-0 设计文档完成，待确认
 定位：打通 UIengine 与会话状态、Prompt、LLM 回复之间的数据通路。目标链路为：
 
 ```text
@@ -227,17 +227,17 @@ UI 输入 / 选择 / 滑动
 → UI 刷新
 ```
 
-建议顺序：
-- A9.6-0：SSOT / LLM 数据交互设计文档
-- A9.6-1：Binding 名称解析 / 预绑定机制
-- A9.6-2：UI 写入 SessionState MVP
-- A9.6-3：SessionState 注入 Prompt MVP
-- A9.6-4：LLM 回复更新状态预留
+A9.6-0 已写入设计：
+- SSOT 边界：`CharacterMeta.statusBarFields` 负责字段定义，`SessionState.vars/statusValues` 负责会话当前值。
+- Binding 目标类型：`status_field / session_var`，并支持 `targetId / pendingName / displayNameSnapshot`。
+- UI 原子写入 MVP：input/select 写 vars，switch 写 vars 或 statusValues，slider 写 statusValues。
+- Prompt 注入：支持 `{{var.xxx}} / {{status.xxx}}` 或结构化 `[当前状态]` 段落。
+- LLM 状态更新：预留 `status_updates / vars_updates` 结构化格式。
+- 安全规则：UI 主动操作可直接写入；LLM 自动更新优先作为待确认建议。
 
 ### 下一步建议
-- 先按 A9.5-3 样板做一轮通用模板回归
-- 将问题并入 A9.5-4 通用运行时问题收口
-- 然后进入 A9.6-0：SSOT / LLM 数据交互设计文档
+- 用户先审阅 A9.6-0 设计。
+- 若确认，进入 A9.6-1：Binding 名称解析 / 预绑定机制。
 
 ---
 
@@ -368,4 +368,4 @@ UI 输入 / 选择 / 滑动
 
 可以在新对话一开始直接说：
 
-> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0/A4/A5/A8/A9 已完成，A9.5 通用模板基础版规划、A9.5-2 基础原子入口、A9.5-3 通用模板测试样板文档已完成。下一步按样板做通用模板回归并进入 A9.5-4 通用运行时问题收口，随后进入 A9.6-0 SSOT / LLM 数据交互设计文档。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。
+> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0/A4/A5/A8/A9 已完成，A9.5 通用模板基础版规划、A9.5-2 基础原子入口、A9.5-3 通用模板测试样板文档已完成，A9.6-0 SSOT / LLM 数据交互设计文档已完成待用户确认。确认后进入 A9.6-1 Binding 名称解析 / 预绑定机制。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。

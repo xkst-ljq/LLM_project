@@ -52,7 +52,7 @@
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
 | A9.5 | 通用模板基础版 | A9.5-3 测试样板文档完成 | ✅ |
-| A9.6 | SSOT / LLM 数据交互 MVP | 规划中，A10 前置 | ⏳ |
+| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-0 设计文档完成，待确认 | ⏳ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -812,11 +812,171 @@ UI 输入 / 选择 / 滑动
 - `SessionState.vars` / `SessionState.statusValues` 已存在模型基础。
 
 ### A9.6 分步建议
-#### A9.6-0：SSOT / LLM 数据交互设计文档
-- 明确哪些 UI 原子写入 `vars`，哪些写入 `statusValues`。
-- 明确 Prompt 注入格式。
-- 明确 LLM 状态更新的结构化输出格式。
-- 明确哪些行为本期只预留，不执行自动解析。
+#### A9.6-0：SSOT / LLM 数据交互设计文档（当前设计）
+
+##### 设计目标
+A9.6-0 先定义数据通路，不急着写业务代码。核心目标是让 UIengine 不再只是可视界面，而是能成为会话副本 Prompt 的可控输入层。
+
+最终闭环：
+```text
+UI 原子交互
+→ AssemblyBinding / Route / Gesture
+→ SessionState.vars 或 SessionState.statusValues
+→ Prompt 渲染 / 状态段注入
+→ LLM 回复
+→ 结构化状态更新建议
+→ 用户确认 / 引擎校验
+→ SessionState 更新
+→ UI 刷新
+```
+
+##### SSOT 边界
+A9.6 的单一事实源分两层：
+
+1. `CharacterMeta.statusBarFields`
+   - 存放状态栏字段定义。
+   - 包括 id、name、type、initialValue、min/max、排序等。
+   - 属于角色卡母版的一部分，随卡导入导出。
+
+2. `SessionState`
+   - `vars`：普通会话变量，例如主角名、已选择技能、opening 选项。
+   - `statusValues`：状态栏字段当前值，key 使用 `StatusBarField.id`。
+   - `overrides`：后续动态设定演化的结构化覆盖层，本期预留。
+
+规则：
+- UI 不直接改角色卡母版。
+- UI 写入会话副本 `SessionState`。
+- 清空聊天记录后，会话状态可以重置，回到母版初始值。
+- Prompt 每轮从母版 + SessionState 重新组装。
+
+##### Binding 目标类型
+现有 `AssemblyBinding.statusKey` 只是 A3-4 MVP 挂载位。A9.6 后续建议升级为明确目标结构：
+
+```text
+targetKind: status_field | session_var
+targetId: 已解析的状态栏字段 id / 会话变量 key
+pendingName: 未解析时用户输入的预绑定名称
+displayNameSnapshot: 绑定时的显示名快照
+fieldType: string | number | bool
+direction: none | upload_only | bidirectional
+```
+
+解释：
+- `status_field`：绑定角色状态栏字段，运行时写入 `SessionState.statusValues[targetId]`。
+- `session_var`：绑定普通会话变量，运行时写入 `SessionState.vars[targetId]`。
+- `pendingName`：允许 UI 先设计，状态块后创建。
+- `displayNameSnapshot`：字段删除 / 失效时用于提示用户原绑定对象。
+
+##### 普通创作者体验
+Binding 入口不应要求用户手填内部 id。
+
+普通模式：
+- 输入 / 搜索“状态块名称”或“变量显示名”。
+- 若匹配已有状态栏字段，系统保存内部 id。
+- 若重名，弹出候选让用户选择。
+- 若找不到，保存为 pendingName，并显示“尚未创建该状态块”的提示。
+
+高级模式：
+- 可折叠显示内部 id / key。
+- 仅供调试和高级作者使用。
+
+##### UI 原子写入 SessionState 的 MVP 映射
+优先支持四类输入原子：
+
+```text
+input  → SessionState.vars
+select → SessionState.vars
+switch → SessionState.vars 或 SessionState.statusValues
+slider → SessionState.statusValues
+```
+
+建议规则：
+- input 默认适合写 `vars`，如 `protagonist_name`。
+- select 默认适合写 `vars`，如 `selected_skill`。
+- switch 可写 bool 型 `vars`，也可写 bool/status 型状态字段。
+- slider 默认适合写 number 型 `statusValues`，如 `affection`。
+- progress 默认作为显示状态，不优先作为用户输入源，但可显示 `statusValues`。
+
+A9.6-2 只要求 UI → SessionState 单向写入稳定；双向同步可后续扩展。
+
+##### Prompt 注入格式
+A9.6-3 建议同时支持两种最小注入方式。
+
+1. 模板占位符：
+```text
+{{var.protagonist_name}}
+{{status.affection}}
+{{status.mood}}
+```
+
+2. 结构化状态段：
+```text
+[当前会话变量]
+主角姓名：林
+已选技能：剑术
+
+[当前状态]
+好感度：45
+心情：放松
+地点：教室
+```
+
+MVP 先实现一种稳定格式即可。推荐优先实现结构化状态段，因为它更容易调试，也不要求用户在每条设定里手动写占位符。
+
+##### LLM 回复更新状态的预留格式
+第一版不做自然语言自由解析，避免误判和不可控写入。建议让 LLM 可选择输出一个结构化状态更新块：
+
+```json
+{
+  "status_updates": {
+    "affection": "+3",
+    "mood": "放松",
+    "location": "教室"
+  },
+  "vars_updates": {
+    "selected_skill": "剑术"
+  }
+}
+```
+
+规则：
+- number 状态字段推荐使用 delta，例如 `+3` / `-2`。
+- 引擎执行 `旧值 + delta`，再按 min/max clamp。
+- LLM 不应直接覆盖数值字段绝对值，除非用户明确开启高级模式。
+- text 状态字段可直接替换。
+- bool 状态字段只能接受 true/false 或明确映射值。
+
+##### 用户确认与安全规则
+LLM 状态更新不应静默覆盖重要状态。
+
+MVP 建议：
+- UI → SessionState 的用户主动操作可直接生效。
+- LLM → SessionState 的自动更新先进入“待确认建议”。
+- 用户确认后写入 SessionState。
+- 被拒绝的建议不写入。
+- 所有自动状态更新应可在日志 / 调试报告中追溯。
+
+后续可分级：
+- 低风险状态，如 mood/location，可自动应用。
+- 高风险状态，如 affection/relationship/stage，默认需要确认。
+
+##### 与 mode 的关系
+A9.6 是 A10 的前置：
+- opening 需要把用户输入 / 选择写入 SessionState，确认后影响后续 Prompt。
+- scene 需要把状态面板 UI 与 SessionState / Prompt 持续同步。
+- extra_sticky 需要显示并更新常驻状态。
+- extra_companion 需要读取上下文并随消息流显示。
+
+因此 mode 差异化不应在数据通路之前完成，否则只是视觉壳。
+
+##### A9.6-0 不做
+- 不实现 UI 写入 SessionState 的业务代码。
+- 不实现 Prompt 拼装代码。
+- 不实现 LLM 回复解析器。
+- 不接聊天页真实运行时。
+- 不做状态版本管理。
+
+A9.6-0 只确认设计、边界和后续实现顺序。
 
 #### A9.6-1：Binding 名称解析 / 预绑定机制
 - Binding 入口面向普通创作者输入“状态块名称 / 变量显示名”。
@@ -1094,15 +1254,14 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 按 A9.5-3 样板做通用模板回归
-- **A9.5-4：通用运行时问题收口**
+- 先由用户审阅 A9.6-0 SSOT / LLM 数据交互设计
+- 若设计确认，进入 **A9.6-1：Binding 名称解析 / 预绑定机制**
 
 ### 然后
-- A9.6-0 SSOT / LLM 数据交互设计文档
-- A9.6-1 Binding 名称解析 / 预绑定机制
 - A9.6-2 UI 写入 SessionState MVP
+- A9.6-3 SessionState 注入 Prompt MVP
 - A10 mode 差异逻辑收口
-- 再视情况回补 A6 / HUD / 资产区视觉增强项
+- 再视情况回补 A9.5-4 / A6 / HUD / 资产区视觉增强项
 
 ---
 
