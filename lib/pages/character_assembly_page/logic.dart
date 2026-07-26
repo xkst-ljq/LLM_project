@@ -51,8 +51,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         id: id,
         name: '按钮',
         type: 'button',
-        color: const Color(0xFFFFA000),
-        properties: {'text': '按钮', 'action': 'tap'},
+        color: const Color(0xFF757575),
+        properties: {
+          'text': '按钮',
+          'action': 'tap',
+          'showTextOnRuntime': true,
+        },
       );
     }
 
@@ -1911,7 +1915,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   Size _moduleDefaultSize(UIModule module) {
     return switch (module.type) {
       _pageRouterType => const Size(124, 56),
-      'linker' => const Size(132, 60),
+      'linker' => const Size(132, 44),
       'button' => const Size(88, 32),
       'text' => const Size(96, 28),
       'progress' => const Size(120, 16),

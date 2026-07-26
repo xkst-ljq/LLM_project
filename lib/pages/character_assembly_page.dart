@@ -1264,7 +1264,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             title: '按钮',
             subtitle: '点击事件源',
             icon: Icons.smart_button_rounded,
-            color: const Color(0xFFFFA000),
+            color: const Color(0xFF757575),
             module: _assetModuleTemplate('atom_logic_button_tap'),
           ),
         ];
