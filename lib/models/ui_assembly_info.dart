@@ -152,24 +152,32 @@ class AssemblyPageGesture {
   final String direction;
   final String action;
   final String targetPageId;
+  final String transition;
+  final int durationMs;
 
   const AssemblyPageGesture({
     required this.direction,
     required this.action,
     required this.targetPageId,
+    this.transition = '',
+    this.durationMs = 0,
   });
 
   Map<String, dynamic> toJson() => {
     'direction': direction,
     'action': action,
     'targetPageId': targetPageId,
+    'transition': transition,
+    'durationMs': durationMs,
   };
 
   factory AssemblyPageGesture.fromJson(Map<String, dynamic> json) =>
       AssemblyPageGesture(
         direction: json['direction']?.toString() ?? 'swipe_left',
-        action: json['action']?.toString() ?? 'switch_page',
+        action: json['action']?.toString() ?? 'switch_base_page',
         targetPageId: json['targetPageId']?.toString() ?? '',
+        transition: json['transition']?.toString() ?? '',
+        durationMs: (json['durationMs'] as num?)?.toInt() ?? 0,
       );
 }
 

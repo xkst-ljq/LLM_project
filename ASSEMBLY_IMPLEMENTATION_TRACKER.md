@@ -50,7 +50,7 @@
 | A4 | 暴露端口体验增强 | 基础回归完成，测试通过 | ✅ |
 | A5 | Assembly 内 linker 连线 | 配置式 MVP 完成，待本地测试 | ✅ |
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
-| A9 | 页面手势配置 + 轻量动画 | 未开始 | ⏳ |
+| A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -402,16 +402,36 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 
 ---
 
-## A9：页面手势配置 + 轻量动画
+## A9：页面手势配置 + 轻量动画（MVP 完成，待本地测试）
 
-### 最小目标
-- 页面可配置 swipe 手势
-- opening 禁用手势翻页
-- scene / extra 可用
-- 动画先支持：
-  - slide
-  - fade
-  - scale
+### MVP 规则
+- 页面手势默认作用于整个 PCB。
+- 局部 `gesture_zone` 热区后置。
+- 手势只在运行时预览中生效，不影响 Assembly 编辑态拖动 / 拖组件。
+- 同一页面同一方向只保留一个手势。
+- 手势触发路由时使用与 page_router 一致的 route 规则。
+- page_router route 数据补充默认 `transition / durationMs`。
+- 平级页默认动画：`base_slide`，默认 220ms。
+- 叠加页默认动画：`overlay_fade`，默认 180ms。
+- 后续再开放更多动画类型。
+
+### 已完成
+- 图层面板页面条目新增手势配置入口。
+- 支持方向：左滑 / 右滑 / 上滑 / 下滑。
+- 支持动作：切换平级页 / 打开叠加页。
+- 目标页候选按层级过滤：
+  - 切换平级页：其他 base 页。
+  - 打开叠加页：当前页直接 overlay 子页。
+- 手势配置保存到 `AssemblyPage.gestures`。
+- 运行时预览中识别清晰 PCB 区域内的全页 swipe，并切换到目标页。
+- 运行时预览中支持 `base_slide / overlay_fade` 两种默认动画。
+- opening 模式运行时暂不响应页面手势。
+
+### 后续增强
+- 局部 `gesture_zone` 热区。
+- 手势与 slider / input / select 等交互组件的精确命中排除。
+- 更多动画类型：无动画 / fade / slide / scale / overlay slide-up 等。
+- 手势返回上一页 / 关闭 overlay / opening 销毁等动作。
 
 ---
 
@@ -641,10 +661,10 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先本地测试 A4 暴露端口体验增强与 A5 配置式 linker MVP
+- 先本地测试 A9 页面手势配置 + 轻量动画 MVP
 
 ### 然后
-- A8 运行时等比缩放与画布约束完善
+- A10 mode 差异逻辑收口
 - 再视情况回补 A6 / HUD / 资产区视觉增强项
 
 ---

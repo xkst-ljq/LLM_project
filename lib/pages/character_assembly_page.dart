@@ -1120,6 +1120,18 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            InkWell(
+              onTap: () => _showPageGestureDialog(page),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.swipe_rounded,
+                  size: 14,
+                  color: selected ? Colors.white : const Color(0xFF555562),
+                ),
+              ),
+            ),
             if (!_isRootBasePage(page))
               InkWell(
                 onTap: () => _renamePage(page),

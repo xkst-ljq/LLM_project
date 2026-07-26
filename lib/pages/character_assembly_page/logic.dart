@@ -45,6 +45,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           'route': {
             'action': 'switch_base_page',
             'targetPageId': '',
+            'transition': 'base_slide',
+            'durationMs': 220,
           },
         },
       );
@@ -1089,16 +1091,27 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   }
 
+  String _defaultRouteTransition(String action) {
+    return action == 'open_overlay' ? 'overlay_fade' : 'base_slide';
+  }
+
+  int _defaultRouteDurationMs(String action) {
+    return action == 'open_overlay' ? 180 : 220;
+  }
+
   UIModule _updatePageRouterModule(
     UIModule module, {
     required String action,
     required String targetPageId,
   }) {
     final props = Map<String, dynamic>.from(_deepCloneValue(module.properties) as Map);
+    final existingRoute = _routeDataOf(module);
     props['route'] = {
-      ..._routeDataOf(module),
+      ...existingRoute,
       'action': action,
       'targetPageId': targetPageId,
+      'transition': _defaultRouteTransition(action),
+      'durationMs': _defaultRouteDurationMs(action),
     };
     return module.copyWith(properties: props);
   }
@@ -1482,6 +1495,234 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('联动器目标页面路由器已失效，请重新配置')),
     );
+  }
+
+  String _gestureDirectionLabel(String direction) {
+    return switch (direction) {
+      'swipe_right' => '右滑',
+      'swipe_up' => '上滑',
+      'swipe_down' => '下滑',
+      _ => '左滑',
+    };
+  }
+
+  List<AssemblyPage> _gestureTargetCandidates(
+    AssemblyPage page,
+    String action,
+  ) {
+    if (action == 'open_overlay') {
+      return _directChildPages(page.id).where((candidate) => candidate.isOverlay).toList();
+    }
+
+    final currentBase = _baseAncestorOf(page) ?? page;
+    return _pages
+        .where((candidate) => candidate.isBase && candidate.id != currentBase.id)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  }
+
+  AssemblyPageGesture? _gestureForDirection(
+    List<AssemblyPageGesture> gestures,
+    String direction,
+  ) {
+    for (final gesture in gestures) {
+      if (gesture.direction == direction) return gesture;
+    }
+    return null;
+  }
+
+  Future<void> _showPageGestureDialog(AssemblyPage page) async {
+    const directions = ['swipe_left', 'swipe_right', 'swipe_up', 'swipe_down'];
+    var localGestures = page.gestures
+        .map(
+          (gesture) => AssemblyPageGesture(
+            direction: gesture.direction,
+            action: gesture.action,
+            targetPageId: gesture.targetPageId,
+            transition: gesture.transition,
+            durationMs: gesture.durationMs,
+          ),
+        )
+        .toList();
+    var direction = directions.first;
+    var existing = _gestureForDirection(localGestures, direction);
+    var action = existing?.action == 'open_overlay' ? 'open_overlay' : 'switch_base_page';
+    var targetPageId = existing?.targetPageId ?? '';
+
+    void loadDirection(String nextDirection) {
+      direction = nextDirection;
+      existing = _gestureForDirection(localGestures, direction);
+      action = existing?.action == 'open_overlay' ? 'open_overlay' : 'switch_base_page';
+      targetPageId = existing?.targetPageId ?? '';
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final candidates = _gestureTargetCandidates(page, action);
+          final selectedTarget = candidates.any((candidate) => candidate.id == targetPageId)
+              ? targetPageId
+              : null;
+          final canSave = candidates.isNotEmpty && selectedTarget != null;
+          return AlertDialog(
+            title: Text('页面手势 · ${_displayPageName(page)}'),
+            content: SizedBox(
+              width: 380,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'A9 MVP：手势作用于当前页面整块 PCB。局部手势热区与更多动画后续再做。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('gesture_direction_$direction'),
+                    initialValue: direction,
+                    decoration: const InputDecoration(labelText: '手势方向'),
+                    items: directions
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(_gestureDirectionLabel(value)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() => loadDirection(value));
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('gesture_action_${direction}_$action'),
+                    initialValue: action,
+                    decoration: const InputDecoration(labelText: '动作'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'switch_base_page',
+                        child: Text('切换平级页'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'open_overlay',
+                        child: Text('打开叠加页'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() {
+                        action = value;
+                        targetPageId = '';
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  if (candidates.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFFECB3)),
+                      ),
+                      child: Text(
+                        action == 'open_overlay'
+                            ? '当前页面没有直接叠加子页。'
+                            : '当前没有可切换的其他平级页。',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF8D6E00),
+                        ),
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('gesture_target_${direction}_${action}_${selectedTarget ?? 'none'}'),
+                      initialValue: selectedTarget,
+                      decoration: const InputDecoration(labelText: '目标页'),
+                      items: candidates
+                          .map(
+                            (candidate) => DropdownMenuItem(
+                              value: candidate.id,
+                              child: Text(_displayPageName(candidate)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => targetPageId = value);
+                      },
+                    ),
+                  if (localGestures.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: localGestures
+                          .map(
+                            (gesture) => Chip(
+                              label: Text(
+                                '${_gestureDirectionLabel(gesture.direction)} → ${_displayPageName(_pageById(gesture.targetPageId) ?? page)}',
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('关闭'),
+              ),
+              TextButton(
+                onPressed: () {
+                  localGestures.removeWhere((gesture) => gesture.direction == direction);
+                  Navigator.pop(ctx, true);
+                },
+                child: const Text('删除此方向'),
+              ),
+              FilledButton(
+                onPressed: canSave
+                    ? () {
+                        localGestures.removeWhere((gesture) => gesture.direction == direction);
+                        localGestures.add(
+                          AssemblyPageGesture(
+                            direction: direction,
+                            action: action,
+                            targetPageId: targetPageId,
+                            transition: _defaultRouteTransition(action),
+                            durationMs: _defaultRouteDurationMs(action),
+                          ),
+                        );
+                        Navigator.pop(ctx, true);
+                      }
+                    : null,
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (saved == true && mounted) {
+      final index = _pages.indexWhere((candidate) => candidate.id == page.id);
+      if (index == -1) return;
+      setState(() {
+        _pages[index].gestures = localGestures;
+      });
+      _persistAssemblyElements();
+    }
   }
 
   void _createPage({required String type}) {

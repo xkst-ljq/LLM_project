@@ -38,8 +38,15 @@ class UIAssemblyRuntimeView extends StatefulWidget {
 }
 
 class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
+  static const double _swipeThreshold = 72.0;
+  static const double _directionDominance = 1.3;
+
   late List<AssemblyPage> _pages;
   late String _activePageId;
+  Offset? _swipeStart;
+  String _lastTransition = 'base_slide';
+  String _lastSwipeDirection = 'swipe_left';
+  int _lastDurationMs = 220;
 
   @override
   void initState() {
@@ -77,6 +84,92 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     });
   }
 
+  String _defaultTransitionForAction(String action) {
+    return action == 'open_overlay' ? 'overlay_fade' : 'base_slide';
+  }
+
+  int _defaultDurationForAction(String action) {
+    return action == 'open_overlay' ? 180 : 220;
+  }
+
+  void _handlePreviewPointerDown(Offset position, Rect pcbRect) {
+    if (widget.assemblyInfo.mode == 'opening') return;
+    if (!pcbRect.contains(position)) return;
+    _swipeStart = position;
+  }
+
+  void _handlePreviewPointerUp(Offset position) {
+    if (widget.assemblyInfo.mode == 'opening') return;
+    final start = _swipeStart;
+    _swipeStart = null;
+    if (start == null) return;
+
+    final delta = position - start;
+    final absDx = delta.dx.abs();
+    final absDy = delta.dy.abs();
+    String? direction;
+    if (absDx >= _swipeThreshold && absDx > absDy * _directionDominance) {
+      direction = delta.dx < 0 ? 'swipe_left' : 'swipe_right';
+    } else if (absDy >= _swipeThreshold && absDy > absDx * _directionDominance) {
+      direction = delta.dy < 0 ? 'swipe_up' : 'swipe_down';
+    }
+    if (direction == null) return;
+
+    final activePage = _resolveActivePage(_pages, _activePageId);
+    AssemblyPageGesture? matched;
+    for (final gesture in activePage.gestures) {
+      if (gesture.direction == direction) {
+        matched = gesture;
+        break;
+      }
+    }
+    if (matched == null || matched.targetPageId.isEmpty) return;
+    final gesture = matched;
+    final swipeDirection = direction;
+
+    final target = _pageById(_pages, gesture.targetPageId);
+    if (target == null) return;
+
+    setState(() {
+      _lastSwipeDirection = swipeDirection;
+      _lastTransition = gesture.transition.isNotEmpty
+          ? gesture.transition
+          : _defaultTransitionForAction(gesture.action);
+      _lastDurationMs = gesture.durationMs > 0
+          ? gesture.durationMs
+          : _defaultDurationForAction(gesture.action);
+      _activePageId = target.id;
+    });
+    _setupRuntimeLinkers();
+  }
+
+  Widget _buildRouteTransition(Widget child, Animation<double> animation) {
+    if (_lastTransition == 'overlay_fade') {
+      return FadeTransition(opacity: animation, child: child);
+    }
+
+    Offset begin;
+    switch (_lastSwipeDirection) {
+      case 'swipe_right':
+        begin = const Offset(-1, 0);
+        break;
+      case 'swipe_up':
+        begin = const Offset(0, 1);
+        break;
+      case 'swipe_down':
+        begin = const Offset(0, -1);
+        break;
+      default:
+        begin = const Offset(1, 0);
+    }
+    return SlideTransition(
+      position: Tween<Offset>(begin: begin, end: Offset.zero).animate(
+        CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+      ),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final activePage = _resolveActivePage(_pages, _activePageId);
@@ -108,6 +201,12 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
             : 1.0;
         final renderedWidth = designSize.width * safeContainScale;
         final renderedHeight = designSize.height * safeContainScale;
+        final pcbRect = Rect.fromLTWH(
+          (availableWidth - renderedWidth) / 2,
+          (availableHeight - renderedHeight) / 2,
+          renderedWidth,
+          renderedHeight,
+        );
 
         return ClipRect(
           child: Stack(
@@ -128,14 +227,29 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                   ),
                 ),
               Positioned.fill(
-                child: _buildFittedDesignSurface(
-                  context,
-                  pages: _pages,
-                  activePage: activePage,
-                  ancestors: ancestors,
-                  designSize: designSize,
-                  fit: BoxFit.scaleDown,
-                  blur: false,
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: (event) =>
+                      _handlePreviewPointerDown(event.localPosition, pcbRect),
+                  onPointerUp: (event) =>
+                      _handlePreviewPointerUp(event.localPosition),
+                  onPointerCancel: (_) => _swipeStart = null,
+                  child: AnimatedSwitcher(
+                    duration: Duration(milliseconds: _lastDurationMs),
+                    transitionBuilder: _buildRouteTransition,
+                    child: KeyedSubtree(
+                      key: ValueKey(_activePageId),
+                      child: _buildFittedDesignSurface(
+                        context,
+                        pages: _pages,
+                        activePage: activePage,
+                        ancestors: ancestors,
+                        designSize: designSize,
+                        fit: BoxFit.scaleDown,
+                        blur: false,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               if (widget.showDebugInfo)
@@ -365,6 +479,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
 
   static List<AssemblyPage> _clonePages(List<AssemblyPage> pages) {
     return pages.map((page) => AssemblyPage.fromJson(page.toJson())).toList();
+  }
+
+  static AssemblyPage? _pageById(List<AssemblyPage> pages, String pageId) {
+    for (final page in pages) {
+      if (page.id == pageId) return page;
+    }
+    return null;
   }
 
   static AssemblyPage _resolveActivePage(
