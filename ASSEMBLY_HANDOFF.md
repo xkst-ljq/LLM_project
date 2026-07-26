@@ -116,7 +116,7 @@
 已做：
 - 新增 `UIAssemblyRuntimeView` 运行时渲染组件
 - 运行时只允许等比缩放，禁止非等比拉伸
-- 缩放公式：`scale = min(width / 360, height / pcbHeight)`
+- 缩放公式：`scale = min(1.0, width / 360, height / pcbHeight)`，最多保持 1:1，不放大
 - 清晰 PCB 始终居中显示
 - 空白区域用同一份 Assembly UI 的 cover 缩放模糊背景填充
 - 保留 PCB 背景色、圆角、overlay 祖先灰化与实例覆写

@@ -333,7 +333,7 @@
 - 缩放比例使用：
 
 ```text
-scale = min(availableWidth / 360, availableHeight / pcbHeight)
+scale = min(1.0, availableWidth / 360, availableHeight / pcbHeight)
 ```
 
 - 缩放后 PCB 中心始终与运行视口中心重合：
@@ -365,7 +365,7 @@ backgroundScale = max(availableWidth / 360, availableHeight / pcbHeight)
 
 ### 已完成
 - 新增 `UIAssemblyRuntimeView`，独立解析并渲染 `UIAssemblyInfo`。
-- 使用 `scale = min(width / 360, height / pcbHeight)` 只做等比缩放。
+- 使用 `scale = min(1.0, width / 360, height / pcbHeight)` 只做等比缩小，最多保持 1:1。
 - 缩放后的清晰 PCB 始终居中。
 - 空白区域使用同一份 Assembly UI 的 cover 缩放模糊背景填充。
 - 运行时预览层保留 PCB 颜色、圆角、页面元素、overlay 祖先灰化与实例覆写。

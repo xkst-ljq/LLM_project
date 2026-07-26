@@ -11,8 +11,9 @@ import '../services/ui_engine/ui_renderer.dart';
 /// Runtime-style renderer for an Assembly UI.
 ///
 /// Design coordinates are always 360 × pcbHeight. The runtime viewport never
-/// stretches PCB non-uniformly: it uses a single contain scale, centers the PCB,
-/// and optionally fills letterbox space with a blurred cover-scaled copy.
+/// stretches PCB non-uniformly and never upscales above 1:1: it uses a single
+/// scale-down contain scale, centers the PCB, and optionally fills letterbox
+/// space with a blurred cover-scaled copy.
 class UIAssemblyRuntimeView extends StatelessWidget {
   static const double designWidth = 360.0;
 
@@ -48,7 +49,7 @@ class UIAssemblyRuntimeView extends StatelessWidget {
             ? constraints.maxHeight
             : designSize.height;
 
-        final containScale = math.min(
+        final rawContainScale = math.min(
           availableWidth / designSize.width,
           availableHeight / designSize.height,
         );
@@ -56,16 +57,14 @@ class UIAssemblyRuntimeView extends StatelessWidget {
           availableWidth / designSize.width,
           availableHeight / designSize.height,
         );
-        final safeContainScale = containScale.isFinite && containScale > 0
-            ? containScale
+        final safeContainScale = rawContainScale.isFinite && rawContainScale > 0
+            ? math.min(1.0, rawContainScale)
             : 1.0;
         final safeCoverScale = coverScale.isFinite && coverScale > 0
             ? coverScale
             : 1.0;
         final renderedWidth = designSize.width * safeContainScale;
         final renderedHeight = designSize.height * safeContainScale;
-        final left = (availableWidth - renderedWidth) / 2;
-        final top = (availableHeight - renderedHeight) / 2;
 
         return ClipRect(
           child: Stack(
@@ -85,19 +84,20 @@ class UIAssemblyRuntimeView extends StatelessWidget {
                     ),
                   ),
                 ),
-              Positioned(
-                left: left,
-                top: top,
-                width: renderedWidth,
-                height: renderedHeight,
-                child: _buildScaledDesignSurface(
-                  context,
-                  pages: pages,
-                  activePage: activePage,
-                  ancestors: ancestors,
-                  designSize: designSize,
-                  scale: safeContainScale,
-                  blur: false,
+              Align(
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: renderedWidth,
+                  height: renderedHeight,
+                  child: _buildScaledDesignSurface(
+                    context,
+                    pages: pages,
+                    activePage: activePage,
+                    ancestors: ancestors,
+                    designSize: designSize,
+                    scale: safeContainScale,
+                    blur: false,
+                  ),
                 ),
               ),
               if (showDebugInfo)
