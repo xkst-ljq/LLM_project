@@ -199,10 +199,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     setState(() => _selectedCompositeId = null);
   }
 
-  bool _propertyOverrideHasContent(PropertyOverride override) {
-    return override.overrides.isNotEmpty || override.binding != null;
-  }
-
   String _propertyOverrideStatusText(PropertyOverride override) {
     final parts = <String>[];
     if (override.overrides.isNotEmpty) parts.add('字段覆写');
@@ -530,7 +526,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: fieldType,
+                  initialValue: fieldType,
                   decoration: const InputDecoration(labelText: '字段类型'),
                   items: const [
                     DropdownMenuItem(value: 'string', child: Text('文本 string')),
@@ -544,7 +540,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: direction,
+                  initialValue: direction,
                   decoration: const InputDecoration(labelText: '同步方向'),
                   items: const [
                     DropdownMenuItem(value: 'none', child: Text('暂不启用')),
