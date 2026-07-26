@@ -189,13 +189,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         .toList();
   }
 
-  UIElement? _findCompositeElementById(String id) {
-    final index = _elements.indexWhere(
-      (element) => element.id == id && element.isComposite,
-    );
-    return index == -1 ? null : _elements[index];
-  }
-
   void _selectComposite(String id) {
     if (_selectedCompositeId == id) return;
     setState(() => _selectedCompositeId = id);
