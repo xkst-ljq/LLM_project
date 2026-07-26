@@ -361,11 +361,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 ),
 
                 // ===== 5. 顶部下方轻量状态栏 =====
-                Positioned(
-                  left: 8,
-                  top: 54,
-                  child: _buildCompactStatusHud(),
-                ),
+                if (!_showLayerPanel)
+                  Positioned(
+                    left: 8,
+                    top: 54,
+                    child: _buildCompactStatusHud(),
+                  ),
               ],
             ),
           ),
