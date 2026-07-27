@@ -743,7 +743,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             : null,
         onDoubleTap: el.module!.type == 'linker'
             ? () => _showAssemblyLinkerConfigDialog(el)
-            : () => _showDataChannelDialog(el),
+            : () => _showAtomInstanceEditorDialog(el),
         onPanStart: (d) {
           _startTouchScreenPos = d.globalPosition;
           _startTouchElemOffset = el.offset;

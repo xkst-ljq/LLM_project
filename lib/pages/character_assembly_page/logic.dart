@@ -1735,6 +1735,347 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
   }
 
+  bool _supportsAtomInstanceEditor(String type) {
+    return const {
+      'text',
+      'surface',
+      'base_box',
+      'progress',
+      'button',
+      'line',
+    }.contains(type);
+  }
+
+  Future<void> _showAtomInstanceEditorDialog(UIElement element) async {
+    final module = element.module;
+    if (module == null) return;
+    if (const {'linker', 'page_router', 'math_node', 'timer'}.contains(module.type)) {
+      return;
+    }
+
+    final nameController = TextEditingController(text: module.name);
+    final widthController = TextEditingController(
+      text: element.size.width.toStringAsFixed(0),
+    );
+    final heightController = TextEditingController(
+      text: element.size.height.toStringAsFixed(0),
+    );
+    final textController = TextEditingController(
+      text: module.properties['text']?.toString() ?? '',
+    );
+    final fontSizeController = TextEditingController(
+      text: ((module.properties['fontSize'] as num?)?.toDouble() ?? 14.0)
+          .toStringAsFixed(0),
+    );
+    final radiusController = TextEditingController(
+      text: module.borderRadius.toStringAsFixed(0),
+    );
+    final opacityController = TextEditingController(
+      text: module.opacity.toStringAsFixed(2),
+    );
+    final minController = TextEditingController(
+      text: ((module.properties['min'] as num?)?.toDouble() ?? 0.0)
+          .toStringAsFixed(0),
+    );
+    final maxController = TextEditingController(
+      text: ((module.properties['max'] as num?)?.toDouble() ?? 100.0)
+          .toStringAsFixed(0),
+    );
+    final currentController = TextEditingController(
+      text: ((module.properties['current'] as num?)?.toDouble() ?? 0.0)
+          .toStringAsFixed(0),
+    );
+    final thicknessController = TextEditingController(
+      text: ((module.properties['thickness'] as num?)?.toDouble() ?? 2.0)
+          .toStringAsFixed(0),
+    );
+    var lineAxis = module.properties['axis']?.toString() == 'vertical'
+        ? 'vertical'
+        : 'horizontal';
+    var lineStyle = module.properties['lineStyle']?.toString() == 'dashed'
+        ? 'dashed'
+        : 'solid';
+    var openDataChannel = false;
+
+    double readDouble(TextEditingController controller, double fallback) {
+      return double.tryParse(controller.text.trim()) ?? fallback;
+    }
+
+    Widget numberField(
+      TextEditingController controller,
+      String label, {
+      String? suffix,
+    }) {
+      return TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(labelText: label, suffixText: suffix),
+      );
+    }
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final type = module.type;
+          return AlertDialog(
+            title: Text('编辑实例 · ${module.name}'),
+            content: SizedBox(
+              width: 400,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '类型：$type · 仅修改当前 Assembly 实例',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF777783),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(labelText: '实例名称'),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: numberField(widthController, '宽度')),
+                        const SizedBox(width: 10),
+                        Expanded(child: numberField(heightController, '高度')),
+                      ],
+                    ),
+                    if (!_supportsAtomInstanceEditor(type)) ...[
+                      const SizedBox(height: 12),
+                      const Text(
+                        '该原子专属编辑器将在后续批次开放；当前可编辑名称、尺寸与数据通道。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFE65100),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    if (type == 'text') ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: textController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(labelText: '文本内容'),
+                      ),
+                      const SizedBox(height: 12),
+                      numberField(fontSizeController, '字号'),
+                    ],
+                    if (type == 'surface' || type == 'base_box') ...[
+                      const SizedBox(height: 12),
+                      numberField(radiusController, '圆角'),
+                      const SizedBox(height: 12),
+                      numberField(opacityController, '透明度', suffix: '0~1'),
+                    ],
+                    if (type == 'progress') ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: numberField(minController, '最小值')),
+                          const SizedBox(width: 10),
+                          Expanded(child: numberField(maxController, '最大值')),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      numberField(currentController, '当前值'),
+                    ],
+                    if (type == 'button') ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: textController,
+                        decoration: const InputDecoration(
+                          labelText: '按钮文字（可留空）',
+                        ),
+                      ),
+                    ],
+                    if (type == 'line') ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: lineAxis,
+                        decoration: const InputDecoration(labelText: '方向'),
+                        items: const [
+                          DropdownMenuItem(value: 'horizontal', child: Text('横向')),
+                          DropdownMenuItem(value: 'vertical', child: Text('纵向')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => lineAxis = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: lineStyle,
+                        decoration: const InputDecoration(labelText: '线型'),
+                        items: const [
+                          DropdownMenuItem(value: 'solid', child: Text('实线')),
+                          DropdownMenuItem(value: 'dashed', child: Text('虚线')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => lineStyle = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      numberField(thicknessController, '粗细'),
+                    ],
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF6F6F9),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _dataChannelOf(module) == null
+                                  ? '数据通道：未配置'
+                                  : '数据通道：${_dataChannelSummary(_dataChannelOf(module)!)}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF555562),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              openDataChannel = true;
+                              Navigator.pop(ctx, 'data');
+                            },
+                            child: const Text('数据通道'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'cancel'),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, 'save'),
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (!mounted) {
+      _disposeAtomEditorControllers([
+        nameController,
+        widthController,
+        heightController,
+        textController,
+        fontSizeController,
+        radiusController,
+        opacityController,
+        minController,
+        maxController,
+        currentController,
+        thicknessController,
+      ]);
+      return;
+    }
+
+    if (result == 'save') {
+      final index = _elements.indexWhere((candidate) => candidate.id == element.id);
+      if (index != -1) {
+        setState(() {
+          final current = _elements[index];
+          final currentModule = current.module;
+          if (currentModule == null) return;
+          final props = Map<String, dynamic>.from(
+            _deepCloneValue(currentModule.properties) as Map,
+          );
+          final type = currentModule.type;
+          if (type == 'text') {
+            props['text'] = textController.text;
+            props['fontSize'] = readDouble(fontSizeController, 14.0);
+          } else if (type == 'progress') {
+            props['min'] = readDouble(minController, 0.0);
+            props['max'] = readDouble(maxController, 100.0);
+            props['current'] = readDouble(currentController, 0.0);
+          } else if (type == 'button') {
+            props['text'] = textController.text;
+            props['showTextOnRuntime'] = textController.text.trim().isNotEmpty;
+          } else if (type == 'line') {
+            props['axis'] = lineAxis;
+            props['lineStyle'] = lineStyle;
+            props['thickness'] = readDouble(thicknessController, 2.0);
+          }
+
+          final nextWidth = readDouble(widthController, current.size.width)
+              .clamp(8.0, 2000.0)
+              .toDouble();
+          final nextHeight = readDouble(heightController, current.size.height)
+              .clamp(8.0, 2000.0)
+              .toDouble();
+          final nextRadius = readDouble(radiusController, currentModule.borderRadius)
+              .clamp(0.0, 999.0)
+              .toDouble();
+          final nextOpacity = readDouble(opacityController, currentModule.opacity)
+              .clamp(0.0, 1.0)
+              .toDouble();
+
+          _elements[index] = current.copyWith(
+            size: Size(nextWidth, nextHeight),
+            module: currentModule.copyWith(
+              name: nameController.text.trim().isEmpty
+                  ? currentModule.name
+                  : nameController.text.trim(),
+              properties: props,
+              borderRadius: nextRadius,
+              opacity: nextOpacity,
+            ),
+          );
+        });
+        _persistAssemblyElements();
+      }
+    } else if (openDataChannel) {
+      final latest = _elements.firstWhere(
+        (candidate) => candidate.id == element.id,
+        orElse: () => element,
+      );
+      await _showDataChannelDialog(latest);
+    }
+
+    _disposeAtomEditorControllers([
+      nameController,
+      widthController,
+      heightController,
+      textController,
+      fontSizeController,
+      radiusController,
+      opacityController,
+      minController,
+      maxController,
+      currentController,
+      thicknessController,
+    ]);
+  }
+
+  void _disposeAtomEditorControllers(List<TextEditingController> controllers) {
+    for (final controller in controllers) {
+      controller.dispose();
+    }
+  }
+
   Map<String, dynamic>? _dataChannelOf(UIModule? module) {
     final raw = module?.properties['dataChannel'];
     if (raw is Map) return Map<String, dynamic>.from(raw);
