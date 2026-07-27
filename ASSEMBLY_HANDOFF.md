@@ -215,6 +215,27 @@ A10 进入条件：
 - button/linker/page_router 与 gesture 路由稳定
 - 至少一轮通用模板回归测试通过
 
+### A9.5-5 Assembly 组件实例编辑器基础迁移：规划完成，下一步
+目标：统一 Assembly 双击编辑语义，为后续数据通道内嵌做前置准备。
+
+核心规则：
+- 双击组件 = 编辑当前实例。
+- 原子组件打开原子实例编辑器。
+- 复合组件打开复合组件实例编辑器。
+- Studio 编辑模板，Assembly 编辑实例，Assembly 默认不得回写资产库模板。
+- 当前普通原子双击直接打开数据通道只是 A9.6-1 MVP 临时入口，后续应迁移到组件实例编辑器内。
+
+迁移参考：
+- Studio 已有画布内复合组件实例编辑器 `_showCompactCompositeEditorDialog`。
+- 位置：`lib/pages/ui_studio_page/dialogs/compact_editors_dialogs.dart`。
+- 该编辑器只修改当前画布实例快照，不污染资产库模板，适合作为 Assembly 复合实例编辑器参考。
+
+分步建议：
+- A9.5-5-1：原子实例编辑器第一批：text / surface / progress / button / line。
+- A9.5-5-2：复合组件实例编辑器迁移：包装现有覆写入口，增加实例信息区，预留数据通道区。
+- A9.5-5-3：原子实例编辑器第二批：input / switch / slider / select / indicator / image。
+- A9.5-5-4：数据通道内嵌，移除普通原子双击直接打开数据通道的临时入口。
+
 ### A9.6 SSOT / LLM 数据交互 MVP：A9.6-1 数据通道卡片 MVP 完成，待本地测试
 定位：打通 UIengine 与会话状态、Prompt、LLM 回复之间的数据通路。目标链路为：
 
@@ -250,8 +271,9 @@ A9.6-1 已完成 MVP：
 - 当前不写 SessionState、不注入 Prompt、不做状态栏反向创建。
 
 ### 下一步建议
-- 先本地测试 A9.6-1 数据通道卡片 MVP。
-- 若通过，进入 A9.6-1 增强：状态字段名称匹配、pendingName 预绑定与状态栏编辑页联动。
+- 进入 A9.5-5-1：原子实例编辑器第一批。
+- 第一批范围：text / surface / progress / button / line。
+- 暂时保留 A9.6-1 数据通道独立弹窗作为过渡入口，后续 A9.5-5-4 再内嵌进组件实例编辑器。
 
 ---
 
@@ -382,4 +404,4 @@ A9.6-1 已完成 MVP：
 
 可以在新对话一开始直接说：
 
-> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0/A4/A5/A8/A9 已完成，A9.5 通用模板基础版规划、A9.5-2 基础原子入口、A9.5-3 通用模板测试样板文档已完成，A9.6-0 SSOT / LLM 数据交互设计文档已完成，A9.6-1 数据通道卡片 MVP 已完成待本地测试。通过后继续状态字段名称匹配、pendingName 预绑定与状态栏编辑页联动。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。
+> 继续 `ASSEMBLY_HANDOFF.md` 的上下文，当前分支是 `arena/019f9cee-llm-project`，A2/A6/A3-1/A3-2/A3-3/A3-4/A7/A7.5/A5-0/A4/A5/A8/A9 已完成，A9.5 通用模板基础版规划、A9.5-2 基础原子入口、A9.5-3 通用模板测试样板文档已完成，A9.6-0 SSOT / LLM 数据交互设计文档与 A9.6-1 数据通道卡片 MVP 已完成。下一步进入 A9.5-5-1：原子实例编辑器第一批（text / surface / progress / button / line），后续再迁移复合组件实例编辑器并把数据通道内嵌进去。请遵守每一步完成后 commit/push、非阻塞问题并入下一步处理的节奏。

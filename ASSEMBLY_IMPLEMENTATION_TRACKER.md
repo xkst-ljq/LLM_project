@@ -51,7 +51,7 @@
 | A5 | Assembly 内 linker 连线 | 配置式 MVP 完成，待本地测试 | ✅ |
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
-| A9.5 | 通用模板基础版 | A9.5-3 测试样板文档完成 | ✅ |
+| A9.5 | 通用模板基础版 | A9.5-5 组件实例编辑器规划完成，下一步 | ⏳ |
 | A9.6 | SSOT / LLM 数据交互 MVP | A9.6-1 数据通道卡片 MVP 完成，待本地测试 | ✅ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
@@ -770,6 +770,112 @@ A9.5-3 不是重新测试“按钮能不能拖入”“overlay 能不能打开�
 - 根据样板测试修复运行时预览与联动问题。
 - 覆盖 slider/progress、button/switch、input/text、select/text、timer/progress、math_node/text 等典型链路。
 
+#### A9.5-5：Assembly 组件实例编辑器基础迁移（新增规划）
+A9.5-5 用于统一 Assembly 内组件双击编辑语义，并为数据通道卡片正式内嵌做前置准备。
+
+##### 核心原则
+- 双击组件 = 编辑当前实例。
+- 原子组件打开“原子实例编辑器”。
+- 复合组件打开“复合组件实例编辑器”。
+- Studio 编辑模板，Assembly 编辑实例，二者不能混淆。
+- Assembly 默认不得回写资产库模板。
+- 当前数据通道独立弹窗只是 MVP 过渡入口，后续应内嵌到组件实例编辑器。
+
+##### Studio 迁移参考
+Studio 中已经存在画布内复合组件实例编辑器：
+
+```text
+lib/pages/ui_studio_page/dialogs.dart
+  if (el.isComposite) _showCompactCompositeEditorDialog(el)
+
+lib/pages/ui_studio_page/dialogs/compact_editors_dialogs.dart
+  _showCompactCompositeEditorDialog
+```
+
+该编辑器明确只修改当前画布实例快照，不修改资产库模板。因此它是 Assembly 复合组件实例编辑器的重要参考。
+
+需要区分：
+- Studio / 资产库卡片点击：编辑复合组件模板。
+- Studio / 画布复合组件双击：编辑复合组件实例。
+- Assembly / 画布复合组件双击：也应编辑当前角色 UI 中的复合组件实例。
+
+##### 复合组件实例编辑器目标结构
+```text
+复合组件实例编辑器
+├─ 实例信息
+│  ├─ 模板名
+│  ├─ 实例 ID
+│  ├─ 当前页面
+│  └─ 尺寸 / 位置
+├─ 实例规格
+│  ├─ 尺寸
+│  ├─ 旋转
+│  ├─ 布局锁定
+│  └─ 后续：拆解为原子
+├─ 暴露项覆写
+│  ├─ text
+│  ├─ progress
+│  ├─ switch
+│  └─ 后续 input / slider / select / image / indicator
+├─ 数据通道
+│  ├─ 暴露项数据通道
+│  └─ AI 读写策略
+├─ Binding
+│  └─ A3-4 既有 binding 挂载位
+└─ 高级
+   ├─ 重置覆写
+   ├─ 查看模板来源
+   └─ 后续：另存为新模板
+```
+
+当前 Assembly 的“实例覆写入口”不删除，而是升级为复合组件实例编辑器中的“暴露项覆写 / Binding”区块。
+
+##### 原子实例编辑器目标结构
+```text
+原子实例编辑器
+├─ 基础属性
+├─ 原子专属属性
+├─ 数据通道
+└─ 高级
+```
+
+##### 分步建议
+###### A9.5-5-1：原子实例编辑器第一批
+优先迁移简单原子：
+- text
+- surface / 面板
+- progress
+- button
+- line
+
+目标：
+- 双击原子打开实例编辑器。
+- 可编辑基础属性。
+- 预留数据通道区。
+- 编辑结果只作用于当前 Assembly 实例。
+
+###### A9.5-5-2：复合组件实例编辑器迁移
+- 参考 Studio `_showCompactCompositeEditorDialog`。
+- 将当前 Assembly 覆写入口包装为“复合组件实例编辑器”。
+- 增加实例信息区。
+- 保留现有覆写和 binding 逻辑。
+- 为数据通道内嵌预留位置。
+- 不修改模板本体。
+
+###### A9.5-5-3：原子实例编辑器第二批
+继续迁移复杂原子：
+- input
+- switch
+- slider
+- select
+- indicator
+- image
+
+###### A9.5-5-4：数据通道内嵌
+- 原子实例编辑器中增加数据通道区。
+- 复合组件实例编辑器中为暴露项增加数据通道区。
+- 移除“普通原子双击直接打开数据通道”的 MVP 临时入口。
+
 ### A10 进入条件
 进入 A10 前，应满足：
 1. 通用运行时预览稳定。
@@ -1403,14 +1509,20 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先由用户审阅 A9.6-0 SSOT / LLM 数据交互设计
-- 若设计确认，进入 **A9.6-1：Binding 名称解析 / 预绑定机制**
+- **A9.5-5-1：原子实例编辑器第一批**
+  - text
+  - surface / 面板
+  - progress
+  - button
+  - line
 
 ### 然后
+- A9.5-5-2 复合组件实例编辑器迁移
+- A9.5-5-3 原子实例编辑器第二批
+- A9.5-5-4 数据通道内嵌
+- A9.6-1 增强：状态字段名称匹配、pendingName 预绑定与状态栏编辑页联动
 - A9.6-2 UI 写入 SessionState MVP
-- A9.6-3 SessionState 注入 Prompt MVP
 - A10 mode 差异逻辑收口
-- 再视情况回补 A9.5-4 / A6 / HUD / 资产区视觉增强项
 
 ---
 
