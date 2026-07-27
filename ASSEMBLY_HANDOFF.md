@@ -305,7 +305,7 @@ A9.6-1 已完成 MVP：
 - 进入 Assembly 时 `_reconcileStatusChannelBindings()` 双向对齐（后建字段自动补绑，字段删除回退待创建）。
 - 待创建状态在画布 chip 与暴露项摘要中显示「状态待建」，橙色标识。
 
-### A9.6-2：UI 写入 SessionState MVP（已完成，待本地测试）
+### A9.6-2：UI 写入 SessionState MVP（已完成，测试通过）
 - 新增 `lib/services/ui_engine/data_channel_service.dart`，负责 UI → SessionState 单向写入。
 - 可写原子：input / select / switch / slider（progress 只做显示，不作输入源）。
 - `local_ui_state` 永不进会话副本；`status_field` 未匹配（pendingName）时跳过；数值字段按卡片 min/max clamp。
@@ -313,9 +313,17 @@ A9.6-1 已完成 MVP：
 - Assembly 预览用本地临时副本 + 顶部调试浮层，可验证但不落盘。
 - 单测：`test/data_channel_service_test.dart`。
 
+### A9.6-3：SessionState 注入 Prompt MVP（已完成，待本地测试）
+- 新增 `lib/services/ui_engine/data_channel_prompt_builder.dart`，在 `chat_page._buildFinalSystemPrompt()` 接线。
+- 结构化注入 `[界面数据]` / `[可建议更新的隐藏状态]` / `[界面数据更新格式]`。
+- 新增占位符 `{{ui.语义名}}`，受 `llmReadPolicy` 约束，不可读一律替换为空串。
+- 安全红线：不注入裸值、local_ui_state 永不注入、pendingName 跳过、可写不可读只注入规则。
+- 更新标签 `界面状态变化`，与状态栏 `状态变化` 区分。
+- 单测：`test/data_channel_prompt_builder_test.dart`。
+
 ### 下一步建议
-- 先本地测试 A9.6-2。
-- 若通过，进入 A9.6-3 SessionState 注入 Prompt MVP。
+- 先本地测试 A9.6-3（重点用 Prompt 预览页核对注入文本）。
+- 若通过，进入 A9.6-4 LLM 回复更新界面状态。
 - 仍不要进入 A10 mode 差异。
 
 ---

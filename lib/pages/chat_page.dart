@@ -26,6 +26,7 @@ import '../services/background_service.dart';
 import '../services/database_service.dart';
 import '../services/prompt_settings_service.dart';
 import '../services/status_bar_engine.dart';
+import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
 import '../widgets/page_guide_overlay.dart';
@@ -234,7 +235,30 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       },
     );
 
+    // A9.6-3：UI 数据通道占位符 {{ui.语义名}}。
+    // 受 llmReadPolicy 约束：不可读的通道替换为空串，绝不泄漏受保护的值。
+    rendered = DataChannelPromptBuilder.renderPlaceholders(
+      rendered,
+      _collectUIChannelPromptItems(),
+    );
+
     return rendered;
+  }
+
+  /// 收集当前角色 UI 方案里参与 Prompt 的数据通道。
+  ///
+  /// 每轮构建 Prompt 时重新解析，保证作者在 Assembly 里改完通道后
+  /// 不需要重启会话即可生效。
+  List<DataChannelPromptItem> _collectUIChannelPromptItems() {
+    final character = _currentCharacter;
+    if (character == null) return const <DataChannelPromptItem>[];
+    final assemblies = character.meta.uiAssemblies;
+    if (assemblies.isEmpty) return const <DataChannelPromptItem>[];
+    return DataChannelPromptBuilder.collectItems(
+      uiAssemblyJsons: assemblies,
+      session: _sessionState,
+      statusFields: character.meta.statusBarFields,
+    );
   }
 
   /// 读取当前角色的会话状态（进入聊天 / 切换角色时调用）。
@@ -1886,6 +1910,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         if (injection.isNotEmpty) {
           systemPrompt += '\n\n$injection';
         }
+      }
+    }
+
+    // A9.6-3：UI 数据通道注入。
+    // 只注入显式配置了 llmReadPolicy / llmWritePolicy 的通道，
+    // 且每个值都带语义名；UI 内部状态与未匹配的状态字段不会出现在这里。
+    final uiChannelItems = _collectUIChannelPromptItems();
+    if (uiChannelItems.isNotEmpty) {
+      final injection = DataChannelPromptBuilder.buildInjection(uiChannelItems);
+      if (injection.isNotEmpty) {
+        systemPrompt += '\n\n$injection';
       }
     }
 

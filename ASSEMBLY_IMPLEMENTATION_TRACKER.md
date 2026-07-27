@@ -52,7 +52,7 @@
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
 | A9.5 | 通用模板基础版 | A9.5-5 全部子步骤完成，测试通过 | ✅ |
-| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-2 UI 写入 SessionState MVP 完成，待本地测试 | ✅ |
+| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-3 SessionState 注入 Prompt MVP 完成，待本地测试 | ✅ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -1277,7 +1277,7 @@ A9.6-0 只确认设计、边界和后续实现顺序。
     - 原因同上：`ListView` 不支持 intrinsic 尺寸，放进 `AlertDialog.content` 会在 paint 阶段抛 `hasSize` 断言。
   - 覆写槽位的「编辑 / 绑定 / 通道 / 移除」从名称同一行移到独立 `Wrap` 行，可自动换行；未创建槽位时「创建」仍留在名称行。
 
-#### A9.6-2：UI 写入 SessionState MVP（已完成，待本地测试）
+#### A9.6-2：UI 写入 SessionState MVP（已完成，测试通过）
 新增 `lib/services/ui_engine/data_channel_service.dart`。
 
 可写类型（progress 为显示型，不作为输入源）：
@@ -1308,10 +1308,49 @@ A9.6-0 只确认设计、边界和后续实现顺序。
 
 仍不注入 Prompt（留给 A9.6-3）。
 
-#### A9.6-3：SessionState 注入 Prompt MVP
-- 支持 `{{var.xxx}}` 与 `{{status.xxx}}`。
-- 或生成结构化 `[当前状态]` 段落注入 Prompt。
-- 本阶段先做最小可验证注入，不做复杂分频策略。
+#### A9.6-3：SessionState 注入 Prompt MVP（已完成，待本地测试）
+新增 `lib/services/ui_engine/data_channel_prompt_builder.dart`，在 `chat_page._buildFinalSystemPrompt()` 里接线。
+
+采用结构化状态段（更易调试，作者不必手写占位符），同时保留占位符方式。
+
+注入结构：
+```text
+[界面数据]
+以下是界面当前数据（由玩家操作界面产生）：
+- 好感度：45（范围 0~100）
+- 主角姓名：林
+
+[可建议更新的隐藏状态]
+以下数据当前值对你隐藏，你只能根据剧情建议其变化：
+- 敌方警觉度：只可输出 +N/-N，不要在正文中提及当前值。
+
+[界面数据更新格式]
+<界面状态变化>
+好感度:+N 或 好感度:-N（只给变化量）
+心情=新内容（直接给变化后的内容）
+</界面状态变化>
+```
+
+安全红线（均有单测覆盖）：
+- LLM 绝不接收裸值，每行都带 semanticLabel。
+- 只有 `llmReadPolicy != none` 才注入当前值。
+- 只有 `llmWritePolicy != none` 才进入可更新清单。
+- `local_ui_state` 通道永不注入。
+- 状态字段仍是 pendingName（未匹配）时跳过，没有可靠取值来源。
+- 支持「可写不可读」：只注入更新规则，当前值绝不出现在 Prompt 里。
+- 同一目标重复配置去重。
+
+占位符：
+- 新增 `{{ui.语义名}}`，在 `_renderPromptTemplate` 中渲染。
+- 受 `llmReadPolicy` 约束：不可读或不存在的占位符一律替换为空串，不残留原文、不泄漏受保护值。
+- 原有 `{{var.xxx}}` 行为不变。
+
+其他：
+- 每轮构建 Prompt 时重新解析通道，作者改完 Assembly 无需重启会话即可生效。
+- 更新标签用 `界面状态变化`，与状态栏引擎的 `状态变化` 区分，避免解析串台。
+- 本步只做注入，不解析 LLM 回复（留给 A9.6-4）。
+
+测试：`test/data_channel_prompt_builder_test.dart`。
 
 #### A9.6-4：LLM 回复更新状态预留
 - 第一版不做复杂自然语言解析。
@@ -1569,10 +1608,10 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先本地测试 A9.6-2 UI 写入 SessionState MVP
+- 先本地测试 A9.6-3 SessionState 注入 Prompt MVP
 
 ### 然后
-- A9.6-3 SessionState 注入 Prompt MVP
+- A9.6-4 LLM 回复更新界面状态
 - A10 mode 差异逻辑收口
 
 ---
