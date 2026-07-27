@@ -171,10 +171,27 @@ void main() {
       expect(out, contains('不要再把历史消息里出现过的变化量加到它们上面'));
     });
 
-    test('要求以注入值为准而非自己的计算结果', () {
+    test('推算与系统值冲突时以系统值为准', () {
       final out =
           StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
-      expect(out, contains('一定是你算错了或重复计算了'));
+      expect(out, contains('上面的数字是唯一事实'));
+      expect(out, contains('不要为了自圆其说而修改它或编造推导过程'));
+    });
+
+    test('允许承认推不出来，而不是编造原因', () {
+      final out =
+          StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
+      // 历史被撤回/编辑后，数值本就无法从对话记录推导出来，
+      // 逼模型解释只会得到脑补。
+      expect(out, contains('历史消息可能被用户撤回或编辑过'));
+      expect(out, contains('不要猜测原因'));
+    });
+
+    test('保留提出质疑的空间，让分歧成为排查信号', () {
+      final out =
+          StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
+      expect(out, contains('怀疑系统数据有误'));
+      expect(out, contains('仍要以系统数字为准'));
     });
 
     test('明确要求以此为准，覆盖历史里说过的旧数字', () {
