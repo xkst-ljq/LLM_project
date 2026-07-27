@@ -76,6 +76,51 @@ void main() {
     });
   });
 
+  group('applyFromReply - commit 开关', () {
+    test('commit=false 时只算账不写入，供确认弹窗预览', () {
+      final values = {'f_aff': '45'};
+      final changes = StatusBarEngine.applyFromReply(
+        '正文\n<状态变化>\n好感度:+3\n</状态变化>',
+        _fields,
+        values,
+        commit: false,
+      );
+
+      expect(changes.length, 1);
+      expect(changes.single.oldValue, '45');
+      expect(changes.single.newValue, '48');
+      // 关键：用户尚未确认，会话副本不能被改动。
+      expect(values['f_aff'], '45');
+    });
+
+    test('commit=true 时正常写入', () {
+      final values = {'f_aff': '45'};
+      StatusBarEngine.applyFromReply(
+        '正文\n<状态变化>\n好感度:+3\n</状态变化>',
+        _fields,
+        values,
+      );
+      expect(values['f_aff'], '48');
+    });
+
+    test('commit=false 下文本字段同样不写入', () {
+      final fields = [
+        StatusBarField(id: 'f_mood', name: '心情', type: 'text',
+            initialValue: '平静'),
+      ];
+      final values = {'f_mood': '平静'};
+      final changes = StatusBarEngine.applyFromReply(
+        '正文\n<状态变化>\n心情=放松\n</状态变化>',
+        fields,
+        values,
+        commit: false,
+      );
+
+      expect(changes.single.newValue, '放松');
+      expect(values['f_mood'], '平静');
+    });
+  });
+
   group('applyFromReply - 尊重写策略', () {
     test('不可写字段即使 LLM 输出也不生效', () {
       final values = {'f_aff': '45'};

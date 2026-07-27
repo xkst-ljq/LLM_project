@@ -309,19 +309,123 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final fields = _currentCharacter!.meta.statusBarFields;
     if (fields.isEmpty) return reply;
 
-    final changes = StatusBarEngine.applyFromReply(
-      reply,
-      fields,
-      _sessionState.statusValues,
-      // 被数据通道标记为不可写的字段，即使 LLM 输出了也不应生效。
-      policies: DataChannelPromptBuilder.collectStatusFieldPolicies(
-        _collectUIChannelPromptItems(),
-      ),
+    // 被数据通道标记为不可写的字段，即使 LLM 输出了也不应生效。
+    final policies = DataChannelPromptBuilder.collectStatusFieldPolicies(
+      _collectUIChannelPromptItems(),
     );
-    if (changes.isNotEmpty) {
+
+    // 按应用策略把字段分成两批：
+    //   - confirm         → 先算不写，弹卡片让用户逐条确认
+    //   - auto_low_risk   → 直接写入（未被数据通道引用的字段默认走这里，
+    //                       保持状态栏原有行为不变）
+    // never 已在 canWrite 层被排除，不会走到这里。
+    final confirmFields = <StatusBarField>[];
+    final autoFields = <StatusBarField>[];
+    for (final f in fields) {
+      final policy = policies[f.id];
+      if (policy != null && policy.applyPolicy == 'confirm') {
+        confirmFields.add(f);
+      } else {
+        autoFields.add(f);
+      }
+    }
+
+    var changed = false;
+
+    if (autoFields.isNotEmpty) {
+      final applied = StatusBarEngine.applyFromReply(
+        reply,
+        autoFields,
+        _sessionState.statusValues,
+        policies: policies,
+      );
+      if (applied.isNotEmpty) changed = true;
+    }
+
+    if (confirmFields.isNotEmpty) {
+      // commit: false —— 只算账不写入，等用户确认。
+      final pending = StatusBarEngine.applyFromReply(
+        reply,
+        confirmFields,
+        _sessionState.statusValues,
+        policies: policies,
+        commit: false,
+      );
+      if (pending.isNotEmpty && mounted) {
+        final accepted = await _confirmStatusChanges(pending);
+        for (final change in accepted) {
+          _sessionState.statusValues[change.fieldId] = change.newValue;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
       await _saveSessionState();
+      if (mounted) setState(() {});
     }
     return StatusBarEngine.stripFromReply(reply);
+  }
+
+  /// 状态更新确认卡片：用户可逐条勾选后应用。
+  ///
+  /// 默认全部勾选，但必须点「应用所选」才生效；取消或关闭视为全部拒绝。
+  Future<List<StatusChange>> _confirmStatusChanges(
+    List<StatusChange> changes,
+  ) async {
+    final selected = {for (final change in changes) change: true};
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('状态更新'),
+          content: SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'AI 根据剧情建议了以下状态变化，确认后才会生效：',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF777783)),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final change in changes)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      value: selected[change] ?? false,
+                      title: Text(
+                        '${change.fieldName}：'
+                        '${change.oldValue} → ${change.newValue}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      onChanged: (value) => setDialogState(
+                        () => selected[change] = value ?? false,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('全部忽略'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('应用所选'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return const <StatusChange>[];
+    return changes.where((change) => selected[change] == true).toList();
   }
 
   /// A9.6-4：处理 LLM 回复中的 `<界面状态变化>` 块。

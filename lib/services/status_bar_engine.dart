@@ -146,11 +146,16 @@ class StatusBarEngine {
 
   /// 解析 LLM 回复中的 `<状态变化>` 块，对 values 应用变更（原地修改 values）。
   /// 返回变更记录列表（无变化 / 无块时为空）。
+  /// 解析并算账。
+  ///
+  /// [commit] 为 false 时只计算不写入 [values]，用于「需要用户确认」的字段：
+  /// 先把结果拿出来给用户看，确认后再由调用方写回。
   static List<StatusChange> applyFromReply(
     String reply,
     List<StatusBarField> fields,
     Map<String, String> values, {
     Map<String, StatusFieldPolicy> policies = const {},
+    bool commit = true,
   }) {
     final changes = <StatusChange>[];
     final block = TaggedBlock.extract(reply, tag);
@@ -205,14 +210,14 @@ class StatusBarEngine {
         if (f.maxValue != null && next > f.maxValue!) next = f.maxValue!;
         final nextStr = _num(next);
         if (nextStr != old) {
-          values[f.id] = nextStr;
+          if (commit) values[f.id] = nextStr;
           changes.add(StatusChange(f.id, f.name, old, nextStr));
         }
       } else {
         // 文本字段（或对数值字段误用了 = 赋值，也按替换处理但仅文本字段允许）。
         if (!f.isNumber) {
           if (rawValue != old) {
-            values[f.id] = rawValue;
+            if (commit) values[f.id] = rawValue;
             changes.add(StatusChange(f.id, f.name, old, rawValue));
           }
         }

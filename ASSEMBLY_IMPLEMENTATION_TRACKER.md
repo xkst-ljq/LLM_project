@@ -1470,6 +1470,26 @@ LLM 回复
 - 测试：新增 `test/status_bar_engine_policy_test.dart`，
   覆盖值不泄漏、不可写不生效、全禁用不注入等红线。
 
+修复：状态字段移交状态栏后确认弹窗消失（本次改动引入的回归）
+- 现象：好感度配的是「用户确认」，但 AI 更新时不再弹卡片，值被直接改掉。
+- 根因：把状态字段移交 `StatusBarEngine` 时只传了读写策略，
+  **漏传了 `llmUpdateApplyPolicy`**。状态栏原本的行为是解析即写入，
+  没有确认环节，于是 confirm 策略被静默降级成了自动应用。
+  A9.6-4 的确认卡片只在 `DataChannelUpdateEngine` 里，而状态字段已不走那条路径。
+- 处理：
+  - `StatusBarEngine.applyFromReply` 新增 `commit` 参数，
+    为 false 时只算账不写入 `values`，供确认弹窗预览。
+  - `_processStatusBarReply` 按 `applyPolicy` 把字段分两批：
+    confirm 批走 `commit: false` + 确认卡片，用户勾选后再写回；
+    其余走原有的直接写入。
+  - 未被数据通道引用的字段（如纯状态栏的「心情」）默认进自动批，
+    状态栏原有行为完全不变，向后兼容。
+  - 新增 `_confirmStatusChanges()` 卡片，逐条显示 `好感度：45 → 48`，
+    默认全选，必须点「应用所选」才生效。
+- 经验：把一个字段的职责从 A 模块移交给 B 模块时，
+  必须核对 A 模块支持的**全部**策略维度在 B 模块都有对应实现，
+  只迁移一部分会造成静默降级——这类回归比崩溃更难发现。
+
 修复：进入聊天页 LateInitializationError（既有隐患，非本次引入）
 - 现象：`Field '_currentCharacter' has not been initialized`，
   栈顶为 `_loadPromptSettings` ← `initState`。
