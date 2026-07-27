@@ -331,17 +331,54 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     };
   }
 
+  Widget _buildCompositeEditorSectionTitle(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF111116),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompositeInfoLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 10,
+                color: Color(0xFF777783),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 10,
+                color: Color(0xFF33333A),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showCompositeOverrideEntryDialog(UIElement compositeElement) async {
     if (!compositeElement.isComposite || compositeElement.composite == null) return;
     final exposedChildren = _exposedChildrenOfComposite(compositeElement);
-    if (exposedChildren.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('该复合组件模板当前没有暴露端口，暂时无法创建实例覆写。')),
-        );
-      }
-      return;
-    }
 
     await showDialog<void>(
       context: context,
@@ -356,34 +393,33 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           final hasEditableChildren = exposedChildren.any(_supportsBasicOverrideEditor);
 
           return AlertDialog(
-            title: const Text('实例覆写入口'),
+            title: const Text('复合组件实例编辑器'),
             content: SizedBox(
-              width: 380,
+              width: 430,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '页面：${_displayPageName(_activePage)}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF777783),
-                    ),
+                  _buildCompositeEditorSectionTitle('实例信息'),
+                  _buildCompositeInfoLine(
+                    '模板名',
+                    compositeElement.composite?.name ?? '未命名复合组件',
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '实例：${compositeElement.composite?.name ?? compositeElement.id}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF111116),
-                    ),
+                  _buildCompositeInfoLine('实例 ID', compositeElement.id),
+                  _buildCompositeInfoLine('所在页面', _displayPageName(_activePage)),
+                  _buildCompositeInfoLine(
+                    '尺寸 / 位置',
+                    '${compositeElement.size.width.toStringAsFixed(0)}×${compositeElement.size.height.toStringAsFixed(0)} · '
+                    '(${compositeElement.offset.dx.toStringAsFixed(0)}, ${compositeElement.offset.dy.toStringAsFixed(0)})',
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
+                  _buildCompositeEditorSectionTitle('暴露项覆写 / Binding'),
                   Text(
-                    hasEditableChildren
-                        ? '这里管理当前页面内这个复合组件实例的覆写槽位，只影响当前实例。A3-3 已支持 text / progress / switch 的基础字段覆写。'
-                        : '这里管理当前页面内这个复合组件实例的覆写槽位，只影响当前实例。当前暴露端口尚无 A3-3 已支持的字段类型。',
+                    exposedChildren.isEmpty
+                        ? '该复合组件实例当前没有暴露项。可在 Studio / 资产库模板端编辑暴露端口；Assembly 里不会回写模板。'
+                        : hasEditableChildren
+                            ? '这里管理当前页面内这个复合组件实例的覆写槽位，只影响当前实例。已支持 text / progress / switch 的基础字段覆写。'
+                            : '这里管理当前页面内这个复合组件实例的覆写槽位，只影响当前实例。当前暴露项尚无已支持的字段类型。',
                     style: const TextStyle(
                       fontSize: 11,
                       color: Color(0xFF777783),
@@ -391,7 +427,25 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Flexible(
+                  if (exposedChildren.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFFECB3)),
+                      ),
+                      child: const Text(
+                        '没有可覆写的暴露项。当前实例仍可移动、缩放和参与页面布局。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF8D6E00),
+                          height: 1.35,
+                        ),
+                      ),
+                    )
+                  else
+                    Flexible(
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: exposedChildren.length,
@@ -544,6 +598,44 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           ),
                         );
                       },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCompositeEditorSectionTitle('数据通道'),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF6F6F9),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                    ),
+                    child: const Text(
+                      '后续将在这里为暴露项配置数据通道与 AI 读写策略。当前请继续使用暴露项 Binding 作为过渡。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF777783),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCompositeEditorSectionTitle('高级'),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFFFECB3)),
+                    ),
+                    child: const Text(
+                      '重置覆写、查看模板来源、另存为新模板等高级操作后续开放。本编辑器默认只修改当前实例，不回写资产库模板。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF8D6E00),
+                        height: 1.35,
+                      ),
                     ),
                   ),
                 ],
