@@ -50,17 +50,14 @@ void main() {
       expect(out, contains('好感度：45'));
     });
 
-    test('不可写的字段不出现在可更新清单里', () {
+    test('格式约束不再出现在 system 注入里，已移交 PHI', () {
       final out = StatusBarEngine.buildInjection(
         _fields,
         {'f_aff': '45', 'f_alert': '80'},
-        policies: {
-          'f_aff': const StatusFieldPolicy(canRead: true, canWrite: false),
-        },
       );
       expect(out, contains('好感度：45'));
-      expect(out, contains('可更新的项：敌方警觉度'));
-      expect(out, isNot(contains('可更新的项：好感度')));
+      // 放在 system 开头会被长对话淡忘，因此移到 PHI。
+      expect(out, isNot(contains('<状态变化>')));
     });
 
     test('全部字段既不可读也不可写时不产生注入', () {
@@ -70,6 +67,73 @@ void main() {
         policies: {
           'f_aff': const StatusFieldPolicy(canRead: false, canWrite: false),
           'f_alert': const StatusFieldPolicy(canRead: false, canWrite: false),
+        },
+      );
+      expect(out, isEmpty);
+    });
+  });
+
+  group('buildUpdateFormatInstruction - 状态栏 PHI', () {
+    test('明确告知只有标签块才生效，防止口头声称已修改', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      // 模型最常见的失败模式：正文说「已修改」但不输出标签块。
+      expect(out, contains('仅在正文里说'));
+      expect(out, contains('无效'));
+    });
+
+    test('要求每回合输出，无变化也输出空标签', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      expect(out, contains('每回合'));
+      expect(out, contains('空标签'));
+    });
+
+    test('要求每项单独一行，避免同行多项解析问题', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      expect(out, contains('不要把多项写在同一行'));
+    });
+
+    test('示例用空块，避免模型照抄具体数值', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      expect(out, isNot(contains('好感度:+2')));
+      expect(out, contains('默认输出'));
+    });
+
+    test('不可写字段不进入可结算项', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(
+        _fields,
+        policies: {
+          'f_aff': const StatusFieldPolicy(canRead: true, canWrite: false),
+        },
+      );
+      expect(out, contains('敌方警觉度'));
+      expect(out, isNot(contains('`好感度:+N`')));
+    });
+
+    test('全部不可写时不产生约束', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(
+        _fields,
+        policies: {
+          'f_aff': const StatusFieldPolicy(canWrite: false),
+          'f_alert': const StatusFieldPolicy(canWrite: false),
+        },
+      );
+      expect(out, isEmpty);
+    });
+  });
+
+  group('buildTurnReminder - 状态栏', () {
+    test('有可写字段时生成简短提醒', () {
+      final out = StatusBarEngine.buildTurnReminder(_fields);
+      expect(out, contains('状态变化'));
+      expect(out.length, lessThan(150));
+    });
+
+    test('全部不可写时不打扰模型', () {
+      final out = StatusBarEngine.buildTurnReminder(
+        _fields,
+        policies: {
+          'f_aff': const StatusFieldPolicy(canWrite: false),
+          'f_alert': const StatusFieldPolicy(canWrite: false),
         },
       );
       expect(out, isEmpty);

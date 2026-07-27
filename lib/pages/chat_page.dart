@@ -2004,29 +2004,51 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       out.add({'role': 'system', 'content': phi});
     }
 
-    // A9.6-4：界面数据的更新格式约束放在对话历史之后。
-    // 放在 system prompt 开头时，长对话中模型经常忽略它而不输出标签块；
-    // 与 PHI 同理，末尾强约束的遵从度显著更高。
+    // 更新格式约束放在对话历史之后。
+    // 放在 system prompt 开头时，长对话中模型经常忽略它，
+    // 表现为「正文里说已修改，但不输出标签块」，状态实际纹丝不动。
     final uiItems = _collectUIChannelPromptItems();
+    final reminders = <String>[];
+
+    // 状态栏字段（好感度 / 心情等）。这是最常用的一条路径。
+    final statusFields = _currentCharacter?.meta.statusBarFields ?? const [];
+    if (statusFields.isNotEmpty) {
+      final policies =
+          DataChannelPromptBuilder.collectStatusFieldPolicies(uiItems);
+      final statusFormat = StatusBarEngine.buildUpdateFormatInstruction(
+        statusFields,
+        policies: policies,
+      );
+      if (statusFormat.isNotEmpty) {
+        out.add({'role': 'system', 'content': statusFormat});
+        final reminder = StatusBarEngine.buildTurnReminder(
+          statusFields,
+          policies: policies,
+        );
+        if (reminder.isNotEmpty) reminders.add(reminder);
+      }
+    }
+
+    // 会话变量类数据通道。
     final uiFormat =
         DataChannelPromptBuilder.buildUpdateFormatInstruction(uiItems);
     if (uiFormat.isNotEmpty) {
       out.add({'role': 'system', 'content': uiFormat});
-
-      // 再在最后一条用户消息尾部贴一行极短提醒。
-      // 部分模型在沉浸式扮演时会忽略系统层要求，紧贴用户消息的提醒
-      // 是成本最低的补强；足够短，不影响正文质量。
       final reminder = DataChannelPromptBuilder.buildTurnReminder(uiItems);
-      if (reminder.isNotEmpty) {
-        final lastUserIndex =
-            out.lastIndexWhere((msg) => msg['role'] == 'user');
-        if (lastUserIndex != -1) {
-          final original = out[lastUserIndex]['content'] ?? '';
-          out[lastUserIndex] = {
-            'role': 'user',
-            'content': '$original\n\n$reminder',
-          };
-        }
+      if (reminder.isNotEmpty) reminders.add(reminder);
+    }
+
+    // 在最后一条用户消息尾部贴极短提醒。
+    // 部分模型在沉浸式扮演时会忽略系统层要求，紧贴用户消息的提醒
+    // 是成本最低的补强；足够短，不影响正文质量。
+    if (reminders.isNotEmpty) {
+      final lastUserIndex = out.lastIndexWhere((msg) => msg['role'] == 'user');
+      if (lastUserIndex != -1) {
+        final original = out[lastUserIndex]['content'] ?? '';
+        out[lastUserIndex] = {
+          'role': 'user',
+          'content': '$original\n\n${reminders.join('\n')}',
+        };
       }
     }
 

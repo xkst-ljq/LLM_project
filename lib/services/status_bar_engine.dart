@@ -93,6 +93,7 @@ class StatusBarEngine {
     }
 
     if (readable.isEmpty && writable.isEmpty) return '';
+    // writable 仅用于判断是否有可注入内容；格式约束由 PHI 负责。
 
     final lines = <String>[];
 
@@ -120,19 +121,81 @@ class StatusBarEngine {
       }
     }
 
-    if (writable.isNotEmpty) {
-      lines.add('');
-      lines.add('回复正文之后，另起一段输出状态变化（仅在确有变化时输出对应行）：');
-      lines.add('<$tag>');
-      lines.add('数值项格式：名称:+N 或 名称:-N（只给变化量，不要给最终值）');
-      lines.add('文本项格式：名称=新内容（直接给变化后的内容）');
-      lines.add('</$tag>');
-      lines.add('可更新的项：${writable.map((f) => f.name).join('、')}');
-      lines.add('注意：变化量需与剧情合理对应；没有变化的项不要输出。'
-          '不要输出上面未列出的项。该标记不会展示给用户。');
+    // 更新格式约束已移到 buildUpdateFormatInstruction()，由 PHI 在
+    // 对话历史之后注入——放在这里（system 开头）会被长对话淡忘。
+    return lines.join('\n');
+  }
+
+  /// 状态更新格式约束，供历史后注入（PHI）使用。
+  ///
+  /// 与 `buildInjection` 的分工：那个负责「当前值是多少」，放在 system 开头即可；
+  /// 这个负责「你必须怎么回报变化」，必须放到对话历史之后。
+  /// 格式约束放在 system 开头时，长对话中模型会忽略它而只在正文里口头声称
+  /// 「已修改」，实际不输出标签块，导致状态纹丝不动。
+  static String buildUpdateFormatInstruction(
+    List<StatusBarField> fields, {
+    Map<String, StatusFieldPolicy> policies = const {},
+  }) {
+    final writable = <StatusBarField>[];
+    for (final f in fields) {
+      if (f.name.trim().isEmpty) continue;
+      final policy = policies[f.id] ?? const StatusFieldPolicy();
+      if (policy.canWrite) writable.add(f);
     }
+    if (writable.isEmpty) return '';
+
+    final lines = <String>[];
+    lines.add('[状态结算 · 每回合必须输出结算块]');
+    lines.add('你每一条回复的最后，都必须附上状态结算块。这是系统协议，'
+        '不是可选项。');
+    lines.add('');
+    // 最关键的一条：模型最常见的失败模式不是格式错，
+    // 而是在正文里说「已修改」却不输出标签块，导致状态实际没变。
+    lines.add('特别注意：只有输出下面的标签块才会真正改变状态。'
+        '仅在正文里说「已修改」「已上升」是无效的，状态不会有任何变化。'
+        '如果用户要求你修改某项状态，你必须在标签块里写出对应的变化量。');
+    lines.add('');
+    lines.add('可结算项：');
+    for (final f in writable) {
+      if (f.isNumber) {
+        final range = _rangeHint(f);
+        lines.add('- ${f.name}：格式 `${f.name}:+N` 或 `${f.name}:-N`，'
+            '只给变化量，不要给最终值${range.isEmpty ? '' : '（$range）'}');
+      } else {
+        lines.add('- ${f.name}：格式 `${f.name}=新内容`，直接给变化后的内容');
+      }
+    }
+    lines.add('');
+    // 示例一律用空块：写具体数值会被模型当成标准答案照抄。
+    lines.add('默认输出（本回合无事发生时，也是最常见的情况）：');
+    lines.add('<$tag>');
+    lines.add('</$tag>');
+    lines.add('');
+    lines.add('执行规则：');
+    lines.add('- 每回合都要输出 <$tag>...</$tag> 这一对标签，'
+        '即使没有任何变化，也要输出一对空标签。');
+    lines.add('- 每项单独占一行，不要把多项写在同一行。');
+    lines.add('- 标签内只写确有变化的项；没有变化的项不写，也不要写未列出的项。');
+    lines.add('- 日常对话、寒暄、单纯的信息交流一律不产生变化；拿不准时不写。');
+    lines.add('- 用户明确要求修改某项时，必须在标签块里如实写出。');
+    lines.add('- 直接输出标签本身，不要用代码块或引号包裹。');
+    lines.add('- 该标记不会展示给用户，正文中不要重复或提及它的内容。');
 
     return lines.join('\n');
+  }
+
+  /// 每回合贴在最后一条用户消息尾部的极短提醒。
+  static String buildTurnReminder(
+    List<StatusBarField> fields, {
+    Map<String, StatusFieldPolicy> policies = const {},
+  }) {
+    final hasWritable = fields.any((f) {
+      if (f.name.trim().isEmpty) return false;
+      return (policies[f.id] ?? const StatusFieldPolicy()).canWrite;
+    });
+    if (!hasWritable) return '';
+    return '（系统提醒：本回合回复结束后，附上 <$tag>...</$tag> 结算块；'
+        '只有写进标签块的变化才会生效，无对应事件则输出空标签。）';
   }
 
   static String _rangeHint(StatusBarField f) {
