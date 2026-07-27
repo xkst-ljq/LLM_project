@@ -134,6 +134,8 @@ void main() {
       // 只写否定句会被模型泛化成「我无权读取状态」而拒绝回答。
       expect(out, contains('你可以看到'));
       expect(out, contains('直接读出'));
+      // 同时要说明这是结算后的最新值，否则会被当成起点重复累加。
+      expect(out, contains('已包含此前所有回合的结算结果'));
     });
 
     test('PHI 以肯定句说明可读，并解释结算时序', () {
@@ -156,8 +158,23 @@ void main() {
       final out =
           StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
       // system 开头的 [状态栏] 距离太远，模型更容易采信近处历史里的旧数字。
-      expect(out, contains('当前状态值'));
+      expect(out, contains('最新状态值'));
       expect(out, contains('好感度：4'));
+    });
+
+    test('明确注入值已含历史结算，防止重复累加', () {
+      final out =
+          StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
+      // 只说「当前值」时模型会当成起点，把历史里的请求量再加一遍
+      // （实测 50 被报成 75）。必须点明它已经是结算后的结果。
+      expect(out, contains('已包含此前所有回合的结算结果'));
+      expect(out, contains('不要再把历史消息里出现过的变化量加到它们上面'));
+    });
+
+    test('要求以注入值为准而非自己的计算结果', () {
+      final out =
+          StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
+      expect(out, contains('一定是你算错了或重复计算了'));
     });
 
     test('明确要求以此为准，覆盖历史里说过的旧数字', () {
