@@ -1271,8 +1271,10 @@ A9.6-0 只确认设计、边界和后续实现顺序。
 修复：复合组件实例编辑器布局溢出
 - 现象：暴露项较多或按钮增至四个时，弹窗内 `Column` 底部溢出（RenderFlex overflowed）。
 - 处理：
-  - 弹窗内容改为 `ConstrainedBox(maxWidth 430, maxHeight 屏高 70%) + SingleChildScrollView`，整体可滚动。
-  - 暴露项列表去掉 `Flexible`，改为 `shrinkWrap + NeverScrollableScrollPhysics`，由外层统一滚动，避免嵌套滚动冲突。
+  - 弹窗内容改为 `SizedBox(width 430) + ConstrainedBox(maxHeight 屏高 70%) + SingleChildScrollView`，整体可滚动。
+    - 注意：`AlertDialog` 内部用 `IntrinsicWidth` 测量内容，`content` 必须给确定宽度，只用 `ConstrainedBox(maxWidth:)` 会导致 `RenderBox was not laid out` / `hasSize` 断言。
+  - 暴露项列表由 `ListView.separated` 改为 `Column + Builder` 逐项构建，间距用 `margin` 处理。
+    - 原因同上：`ListView` 不支持 intrinsic 尺寸，放进 `AlertDialog.content` 会在 paint 阶段抛 `hasSize` 断言。
   - 覆写槽位的「编辑 / 绑定 / 通道 / 移除」从名称同一行移到独立 `Wrap` 行，可自动换行；未创建槽位时「创建」仍留在名称行。
 
 #### A9.6-2：UI 写入 SessionState MVP

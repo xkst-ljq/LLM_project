@@ -468,12 +468,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
           return AlertDialog(
             title: const Text('复合组件实例编辑器'),
-            content: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 430,
-                maxHeight: MediaQuery.of(ctx).size.height * 0.7,
-              ),
-              child: SingleChildScrollView(
+            content: SizedBox(
+              width: 430,
+              // AlertDialog 内部使用 IntrinsicWidth 测量内容，
+              // 因此这里必须给定确定宽度；高度只限制上限，超出由外层滚动。
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+                ),
+                child: SingleChildScrollView(
                 child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -523,12 +526,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       ),
                     )
                   else
-                    ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: exposedChildren.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
+                    // 用 Column 而非 ListView：AlertDialog 会对内容做 intrinsic 测量，
+                    // 而 ListView 不支持 intrinsic 尺寸，会触发 hasSize 断言。
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      for (var index = 0; index < exposedChildren.length; index++)
+                        Builder(builder: (context) {
                         final child = exposedChildren[index];
                         final type = child.module?.type ?? 'unknown';
                         final overrides = overridesOf(child);
@@ -538,6 +542,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                             ? _propertyOverrideStatusText(overrides.first)
                             : '未创建覆写槽位';
                         return Container(
+                          margin: EdgeInsets.only(
+                            bottom:
+                                index == exposedChildren.length - 1 ? 0 : 8,
+                          ),
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: hasSlot
@@ -708,7 +716,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                             ],
                           ),
                         );
-                      },
+                        }),
+                      ],
                     ),
                   const SizedBox(height: 12),
                   _buildCompositeEditorSectionTitle('数据通道'),
@@ -749,6 +758,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     ),
                   ),
                 ],
+                ),
                 ),
               ),
             ),
