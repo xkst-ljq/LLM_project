@@ -743,7 +743,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             : null,
         onDoubleTap: el.module!.type == 'linker'
             ? () => _showAssemblyLinkerConfigDialog(el)
-            : null,
+            : () => _showDataChannelDialog(el),
         onPanStart: (d) {
           _startTouchScreenPos = d.globalPosition;
           _startTouchElemOffset = el.offset;
@@ -774,6 +774,14 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   ),
                 ),
               ),
+              if (_dataChannelOf(el.module) != null)
+                Positioned(
+                  right: 2,
+                  top: -14,
+                  child: IgnorePointer(
+                    child: _buildDataChannelChip(_dataChannelOf(el.module)!),
+                  ),
+                ),
               if (el.module?.properties['is_overlay_container'] == true)
                 Positioned(
                   left: 4,
@@ -1582,6 +1590,31 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDataChannelChip(Map<String, dynamic> channel) {
+    final summary = _dataChannelSummary(channel);
+    final color = _dataChannelChipColor(channel);
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 118),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.86), width: 0.7),
+      ),
+      child: Text(
+        summary,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 8,
+          height: 1.0,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

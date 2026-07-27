@@ -1735,6 +1735,319 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
   }
 
+  Map<String, dynamic>? _dataChannelOf(UIModule? module) {
+    final raw = module?.properties['dataChannel'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return null;
+  }
+
+  String _sourcePortForModule(UIModule module) {
+    return switch (module.type) {
+      'input' => 'text',
+      'select' => 'current',
+      'switch' => 'value',
+      'slider' => 'current',
+      'progress' => 'current',
+      'text' => 'text',
+      _ => 'value',
+    };
+  }
+
+  String _fieldTypeForModule(UIModule module) {
+    return switch (module.type) {
+      'slider' || 'progress' => 'number',
+      'switch' => 'bool',
+      _ => 'string',
+    };
+  }
+
+  String _dataChannelSummary(Map<String, dynamic> channel) {
+    final name = channel['semanticLabel']?.toString().trim();
+    final label = name == null || name.isEmpty ? '未命名' : name;
+    final read = channel['llmReadPolicy']?.toString() != 'none';
+    final write = channel['llmWritePolicy']?.toString() != 'none';
+    final targetKind = channel['targetKind']?.toString();
+    final prefix = switch (targetKind) {
+      'status_field' => '状态',
+      'session_var' => '变量',
+      _ => 'UI',
+    };
+    final ai = read && write
+        ? 'AI↕'
+        : read
+            ? 'AI↑'
+            : write
+                ? 'AI↓'
+                : '';
+    return ai.isEmpty ? '$prefix · $label' : '$prefix · $label · $ai';
+  }
+
+  Color _dataChannelChipColor(Map<String, dynamic> channel) {
+    final read = channel['llmReadPolicy']?.toString() != 'none';
+    final write = channel['llmWritePolicy']?.toString() != 'none';
+    if (read && write) return const Color(0xFF7E57C2);
+    if (read) return const Color(0xFF00897B);
+    if (write) return const Color(0xFFE65100);
+    return const Color(0xFF546E7A);
+  }
+
+  List<UIElement> _textLabelCandidates() {
+    return _elements
+        .where((element) =>
+            !element.isComposite && element.module?.type == 'text')
+        .toList();
+  }
+
+  String _textValueOf(UIElement textElement) {
+    return textElement.module?.properties['text']?.toString().trim() ??
+        textElement.module?.name ??
+        textElement.id;
+  }
+
+  Future<void> _showDataChannelDialog(UIElement element) async {
+    final module = element.module;
+    if (module == null || const {'linker', 'page_router', 'math_node', 'timer'}.contains(module.type)) {
+      return;
+    }
+
+    final existing = _dataChannelOf(module) ?? const <String, dynamic>{};
+    final labels = _textLabelCandidates();
+    var targetKind = existing['targetKind']?.toString() ?? 'local_ui_state';
+    var visibility = existing['visibility']?.toString() ?? 'ui_only';
+    var llmReadPolicy = existing['llmReadPolicy']?.toString() ?? 'none';
+    var llmWritePolicy = existing['llmWritePolicy']?.toString() ?? 'none';
+    var applyPolicy = existing['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
+    var semanticSource = existing['semanticSource']?.toString() ?? 'manual';
+    var labelElementId = existing['labelElementId']?.toString() ?? '';
+    var clearChannel = false;
+    final nameController = TextEditingController(
+      text: existing['semanticLabel']?.toString() ?? module.name,
+    );
+
+    String effectiveName() {
+      if (semanticSource == 'text_label' && labelElementId.isNotEmpty) {
+        final matched = labels.where((candidate) => candidate.id == labelElementId);
+        if (matched.isNotEmpty) return _textValueOf(matched.first);
+      }
+      if (semanticSource == 'component_name') return module.name;
+      return nameController.text.trim();
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final hasLabels = labels.isNotEmpty;
+          if (semanticSource == 'text_label' && hasLabels) {
+            final hasSelectedLabel = labels.any(
+              (candidate) => candidate.id == labelElementId,
+            );
+            if (!hasSelectedLabel) labelElementId = labels.first.id;
+          }
+          return AlertDialog(
+            title: Text('数据通道 · ${module.name}'),
+            content: SizedBox(
+              width: 400,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'MVP：先保存数据通道卡片，不写入 SessionState、不注入 Prompt。',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF777783)),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: semanticSource,
+                      decoration: const InputDecoration(labelText: '数据名称来源'),
+                      items: const [
+                        DropdownMenuItem(value: 'manual', child: Text('手动填写')),
+                        DropdownMenuItem(value: 'text_label', child: Text('使用文本标签')),
+                        DropdownMenuItem(value: 'component_name', child: Text('使用组件名称')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => semanticSource = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    if (semanticSource == 'manual')
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: '数据名称'),
+                      )
+                    else if (semanticSource == 'text_label')
+                      hasLabels
+                          ? DropdownButtonFormField<String>(
+                              initialValue: labelElementId,
+                              decoration: const InputDecoration(labelText: '标签文本'),
+                              items: labels
+                                  .map(
+                                    (label) => DropdownMenuItem(
+                                      value: label.id,
+                                      child: Text(_textValueOf(label)),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value == null) return;
+                                setDialogState(() => labelElementId = value);
+                              },
+                            )
+                          : const Text(
+                              '当前页面没有可用文本标签，请先放置 Text 或改为手动填写。',
+                              style: TextStyle(fontSize: 11, color: Color(0xFFD32F2F)),
+                            )
+                    else
+                      Text(
+                        '将使用组件名称：${module.name}',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF555562)),
+                      ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: targetKind,
+                      decoration: const InputDecoration(labelText: '保存到'),
+                      items: const [
+                        DropdownMenuItem(value: 'local_ui_state', child: Text('UI 内部状态')),
+                        DropdownMenuItem(value: 'session_var', child: Text('会话变量')),
+                        DropdownMenuItem(value: 'status_field', child: Text('状态字段')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => targetKind = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: visibility,
+                      decoration: const InputDecoration(labelText: '玩家可见性'),
+                      items: const [
+                        DropdownMenuItem(value: 'ui_only', child: Text('只控制界面')),
+                        DropdownMenuItem(value: 'player_visible', child: Text('玩家可见')),
+                        DropdownMenuItem(value: 'system_hidden', child: Text('系统隐藏')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => visibility = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: llmReadPolicy,
+                      decoration: const InputDecoration(labelText: '发送当前值给 AI'),
+                      items: const [
+                        DropdownMenuItem(value: 'none', child: Text('不发送')),
+                        DropdownMenuItem(value: 'prompt', child: Text('发送到 Prompt')),
+                        DropdownMenuItem(value: 'hidden_context', child: Text('隐藏上下文')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => llmReadPolicy = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: llmWritePolicy,
+                      decoration: const InputDecoration(labelText: '允许 AI 更新'),
+                      items: const [
+                        DropdownMenuItem(value: 'none', child: Text('不允许')),
+                        DropdownMenuItem(value: 'suggest_delta', child: Text('建议增量 +N/-N')),
+                        DropdownMenuItem(value: 'suggest_replace', child: Text('建议替换新值')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => llmWritePolicy = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: applyPolicy,
+                      decoration: const InputDecoration(labelText: 'AI 更新应用方式'),
+                      items: const [
+                        DropdownMenuItem(value: 'confirm', child: Text('用户确认后应用')),
+                        DropdownMenuItem(value: 'auto_low_risk', child: Text('低风险自动应用')),
+                        DropdownMenuItem(value: 'never', child: Text('永不应用')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => applyPolicy = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '最终语义：${effectiveName().isEmpty ? '未命名' : effectiveName()}',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF00897B), fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () {
+                  clearChannel = true;
+                  Navigator.pop(ctx, true);
+                },
+                child: const Text('清除通道'),
+              ),
+              FilledButton(
+                onPressed: effectiveName().trim().isEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, true),
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (saved == true && mounted) {
+      final index = _elements.indexWhere((candidate) => candidate.id == element.id);
+      if (index == -1) return;
+      setState(() {
+        final current = _elements[index];
+        final currentModule = current.module;
+        if (currentModule == null) return;
+        final props = Map<String, dynamic>.from(
+          _deepCloneValue(currentModule.properties) as Map,
+        );
+        final name = effectiveName().trim();
+        if (clearChannel || name.isEmpty) {
+          props.remove('dataChannel');
+        } else {
+          props['dataChannel'] = {
+            'semanticLabel': name,
+            'semanticPath': name,
+            'semanticSource': semanticSource,
+            'labelElementId': semanticSource == 'text_label' ? labelElementId : '',
+            'sourceComponentId': current.id,
+            'sourcePort': _sourcePortForModule(currentModule),
+            'targetKind': targetKind,
+            'targetId': '',
+            'pendingName': name,
+            'displayNameSnapshot': name,
+            'visibility': visibility,
+            'llmReadPolicy': llmReadPolicy,
+            'llmWritePolicy': llmWritePolicy,
+            'llmUpdateApplyPolicy': applyPolicy,
+            'fieldType': _fieldTypeForModule(currentModule),
+          };
+        }
+        _elements[index] = current.copyWith(
+          module: currentModule.copyWith(properties: props),
+        );
+      });
+      _persistAssemblyElements();
+    }
+    nameController.dispose();
+  }
+
   void _createPage({required String type}) {
     _syncCanvasStateIntoActivePage();
     final pageType = type == 'overlay' ? 'overlay' : 'base';
