@@ -132,6 +132,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _pcbOffset = Offset.zero;
     _canvasOffset = Offset.zero;
     _restoreAssemblyPages();
+    _reconcileStatusChannelBindings();
     _setupEventBusListener();
     _scheduleInitialViewportCenter();
     _assetService.ensureLoaded().then((_) {
@@ -188,6 +189,75 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _pages.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     _activePageId = _pages.first.id;
     _loadActivePageState();
+  }
+
+  /// 打开 Assembly 时重新对齐状态字段通道。
+  ///
+  /// 场景：用户先在数据通道里写了状态字段名（记为 pendingName），
+  /// 之后才去角色卡状态栏编辑页创建同名字段。这里在进入页面时补绑 targetId；
+  /// 反之字段被删除时，回退为 pendingName 待创建状态。
+  void _reconcileStatusChannelBindings() {
+    var changed = false;
+
+    Map<String, dynamic>? reconcile(Map<String, dynamic> channel) {
+      if (channel['targetKind']?.toString() != 'status_field') return null;
+      final name = (channel['semanticLabel']?.toString() ??
+              channel['pendingName']?.toString() ??
+              '')
+          .trim();
+      if (name.isEmpty) return null;
+      final resolved = _resolveStatusTarget(name);
+      final nextTargetId = resolved.targetId;
+      final nextPending = resolved.pending ? name : '';
+      final nextFieldType = resolved.fieldType ?? channel['fieldType'];
+      if (channel['targetId']?.toString() == nextTargetId &&
+          channel['pendingName']?.toString() == nextPending &&
+          channel['fieldType'] == nextFieldType) {
+        return null;
+      }
+      return Map<String, dynamic>.from(channel)
+        ..['targetId'] = nextTargetId
+        ..['pendingName'] = nextPending
+        ..['fieldType'] = nextFieldType;
+    }
+
+    void visitElements(List<UIElement> nodes) {
+      for (final node in nodes) {
+        final module = node.module;
+        if (module != null) {
+          final raw = module.properties['dataChannel'];
+          if (raw is Map) {
+            final next = reconcile(Map<String, dynamic>.from(raw));
+            if (next != null) {
+              module.properties['dataChannel'] = next;
+              changed = true;
+            }
+          }
+        }
+        if (node.isComposite && node.composite != null) {
+          visitElements(node.composite!.children);
+        }
+      }
+    }
+
+    for (final page in _pages) {
+      visitElements(page.elements);
+      for (final override in page.propertyOverrides) {
+        final raw = override.overrides['dataChannel'];
+        if (raw is Map) {
+          final next = reconcile(Map<String, dynamic>.from(raw));
+          if (next != null) {
+            override.overrides['dataChannel'] = next;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      _loadActivePageState();
+      _persistAssemblyElements();
+    }
   }
 
   AssemblyPage get _activePage {
@@ -798,6 +868,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       onApplyPolicy: (value) =>
                           setDialogState(() => applyPolicy = value),
                       onNormalizeLabelId: (value) => labelElementId = value,
+                      onNameChanged: () => setDialogState(() {}),
                     ),
                   ],
                 ],
@@ -2476,6 +2547,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                   () => channelApplyPolicy = value),
                               onNormalizeLabelId: (value) =>
                                   channelLabelId = value,
+                              onNameChanged: () => setDialogState(() {}),
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -2730,8 +2802,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final read = channel['llmReadPolicy']?.toString() != 'none';
     final write = channel['llmWritePolicy']?.toString() != 'none';
     final targetKind = channel['targetKind']?.toString();
+    final pending = targetKind == 'status_field' &&
+        (channel['targetId']?.toString().trim().isEmpty ?? true);
     final prefix = switch (targetKind) {
-      'status_field' => '状态',
+      'status_field' => pending ? '状态待建' : '状态',
       'session_var' => '变量',
       _ => 'UI',
     };
@@ -2746,6 +2820,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   Color _dataChannelChipColor(Map<String, dynamic> channel) {
+    final pendingStatus = channel['targetKind']?.toString() == 'status_field' &&
+        (channel['targetId']?.toString().trim().isEmpty ?? true);
+    if (pendingStatus) return const Color(0xFFE65100);
     final read = channel['llmReadPolicy']?.toString() != 'none';
     final write = channel['llmWritePolicy']?.toString() != 'none';
     if (read && write) return const Color(0xFF7E57C2);
@@ -2783,6 +2860,33 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return manualName.trim();
   }
 
+  List<StatusBarField> get _statusFields => widget.statusFields;
+
+  /// 按名称在角色卡状态栏字段里查找匹配项（忽略大小写与首尾空白）。
+  StatusBarField? _matchStatusFieldByName(String name) {
+    final key = name.trim().toLowerCase();
+    if (key.isEmpty) return null;
+    for (final field in _statusFields) {
+      if (field.name.trim().toLowerCase() == key) return field;
+    }
+    return null;
+  }
+
+  /// 状态字段解析结果：命中则返回 targetId 与字段类型，未命中则记 pendingName。
+  ({String targetId, String? fieldType, bool pending}) _resolveStatusTarget(
+    String name,
+  ) {
+    final matched = _matchStatusFieldByName(name);
+    if (matched == null) {
+      return (targetId: '', fieldType: null, pending: true);
+    }
+    return (
+      targetId: matched.id,
+      fieldType: matched.isNumber ? 'number' : 'string',
+      pending: false,
+    );
+  }
+
   Map<String, dynamic> _buildDataChannelPayload({
     required String name,
     required String semanticSource,
@@ -2795,6 +2899,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String llmWritePolicy,
     required String applyPolicy,
   }) {
+    final isStatus = targetKind == 'status_field';
+    final resolved = isStatus
+        ? _resolveStatusTarget(name)
+        : (targetId: '', fieldType: null, pending: false);
     return {
       'semanticLabel': name,
       'semanticPath': name,
@@ -2803,15 +2911,55 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'sourceComponentId': sourceComponentId,
       'sourcePort': _sourcePortForModule(module),
       'targetKind': targetKind,
-      'targetId': '',
-      'pendingName': name,
+      // 状态字段命中角色卡定义时预绑定内部 id；未命中保持空并靠 pendingName 等待创建。
+      'targetId': resolved.targetId,
+      'pendingName': isStatus && !resolved.pending ? '' : name,
       'displayNameSnapshot': name,
       'visibility': visibility,
       'llmReadPolicy': llmReadPolicy,
       'llmWritePolicy': llmWritePolicy,
       'llmUpdateApplyPolicy': applyPolicy,
-      'fieldType': _fieldTypeForModule(module),
+      // 命中状态字段时以卡片端字段类型为准，避免 UI 组件类型与状态字段类型冲突。
+      'fieldType': resolved.fieldType ?? _fieldTypeForModule(module),
     };
+  }
+
+  /// 状态字段匹配提示：命中显示已绑定的字段 id 与类型，未命中提示将记为待创建。
+  Widget _buildStatusFieldMatchHint(String name) {
+    final trimmed = name.trim();
+    final matched = _matchStatusFieldByName(trimmed);
+    final hasFields = _statusFields.isNotEmpty;
+    final String text;
+    final Color color;
+    if (trimmed.isEmpty) {
+      text = '请先填写数据名称，再匹配角色卡状态字段。';
+      color = const Color(0xFF777783);
+    } else if (matched != null) {
+      text = '已匹配状态字段：${matched.name} · id=${matched.id} · '
+          '${matched.isNumber ? '数值' : '文本'}';
+      color = const Color(0xFF00897B);
+    } else if (!hasFields) {
+      text = '角色卡当前没有状态栏字段。保存后记为待创建字段「$trimmed」，'
+          '需在角色卡状态栏编辑页手动创建同名字段后才会自动绑定。';
+      color = const Color(0xFFE65100);
+    } else {
+      text = '未匹配到同名状态字段。保存后记为待创建字段「$trimmed」，'
+          '可用名称：${_statusFields.map((field) => field.name).join(' / ')}';
+      color = const Color(0xFFE65100);
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 10.5, color: color, height: 1.35),
+      ),
+    );
   }
 
   /// 数据通道表单字段，供原子实例编辑器与复合暴露项实例编辑器共用。
@@ -2834,6 +2982,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required ValueChanged<String> onWritePolicy,
     required ValueChanged<String> onApplyPolicy,
     required ValueChanged<String> onNormalizeLabelId,
+    VoidCallback? onNameChanged,
   }) {
     final hasLabels = labels.isNotEmpty;
     var effectiveLabelId = labelElementId;
@@ -2880,6 +3029,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         TextField(
           controller: nameController,
           decoration: const InputDecoration(labelText: '数据名称', isDense: true),
+          onChanged: (_) => onNameChanged?.call(),
         )
       else if (semanticSource == 'text_label')
         hasLabels
@@ -2919,6 +3069,18 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         ],
         onTargetKind,
       ),
+      if (targetKind == 'status_field') ...[
+        const SizedBox(height: 8),
+        _buildStatusFieldMatchHint(
+          _resolveDataChannelName(
+            semanticSource: semanticSource,
+            manualName: nameController.text,
+            labelElementId: effectiveLabelId,
+            labels: labels,
+            fallbackName: fallbackName,
+          ),
+        ),
+      ],
       const SizedBox(height: 10),
       dropdown(
         visibility,

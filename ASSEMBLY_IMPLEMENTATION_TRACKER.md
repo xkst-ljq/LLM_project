@@ -51,8 +51,8 @@
 | A5 | Assembly 内 linker 连线 | 配置式 MVP 完成，待本地测试 | ✅ |
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
-| A9.5 | 通用模板基础版 | A9.5-5-4 数据通道内嵌完成，待本地测试 | ✅ |
-| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-1 数据通道卡片 MVP 完成，测试通过；入口已在 A9.5-5-4 内嵌 | ✅ |
+| A9.5 | 通用模板基础版 | A9.5-5 全部子步骤完成，测试通过 | ✅ |
+| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-1 增强（状态字段匹配 / pendingName 预绑定）完成，待本地测试 | ✅ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -879,7 +879,7 @@ lib/pages/ui_studio_page/dialogs/compact_editors_dialogs.dart
 
 约束不变：只写当前 Assembly 实例的 `module.properties`，不回写资产库模板。
 
-###### A9.5-5-4：数据通道内嵌（已完成，待本地测试）
+###### A9.5-5-4：数据通道内嵌（已完成，测试通过）
 - 原子实例编辑器内嵌完整数据通道区：启用开关 + 名称来源 / 名称 / 保存到 / 玩家可见性 / LLM 读策略 / LLM 写策略 / AI 更新应用方式 + 最终语义预览。
   - 通道随“保存”一起写入 `module.properties['dataChannel']`。
   - 关闭开关或最终语义为空时，保存会清除该组件的 `dataChannel`。
@@ -1252,7 +1252,21 @@ A9.6-0 只确认设计、边界和后续实现顺序。
 - 支持 AI 更新应用方式：用户确认、低风险自动应用、永不应用。
 - 当前保存到组件 `module.properties['dataChannel']`，并在画布上显示数据通道 chip。
 - 当前只保存数据通道元数据，不写入 SessionState、不注入 Prompt。
-- 状态字段内部 id 匹配、pendingName 反向创建、状态栏编辑页联动属于后续 A9.6-1 增强。
+#### A9.6-1 增强：状态字段名称匹配与 pendingName 预绑定（已完成，待本地测试）
+- `CharacterAssemblyPage` 新增只读入参 `statusFields`，由 `UIAssemblyListPage` 从 `meta.statusBarFields` 传入。Assembly 不修改角色卡字段本体。
+- 数据通道「保存到」选择状态字段时，表单实时显示匹配提示：
+  - 命中：显示字段名、内部 id、数值 / 文本类型。
+  - 未命中：橙色提示将记为待创建字段，并列出角色卡当前可用字段名。
+  - 角色卡无任何状态字段时给出单独提示。
+- 保存逻辑：
+  - 命中则写入 `targetId`，`pendingName` 清空，`fieldType` 以角色卡字段类型为准。
+  - 未命中则 `targetId` 为空，`pendingName` 记录名称，等待字段创建。
+- 进入 Assembly 时执行 `_reconcileStatusChannelBindings()` 重新对齐：
+  - 先写通道、后建同名字段 → 自动补绑 `targetId`。
+  - 字段被删除 → 回退为 pendingName 待创建状态。
+  - 覆盖顶层原子、复合子元素与 `PropertyOverride.overrides['dataChannel']`。
+- 画布 chip 与暴露项摘要对待创建状态显示「状态待建」，chip 用橙色区分。
+- 仍不写 SessionState、不注入 Prompt（留给 A9.6-2 / A9.6-3）。
 
 #### A9.6-2：UI 写入 SessionState MVP
 优先支持：
@@ -1524,10 +1538,9 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先本地测试 A9.5-5-4 数据通道内嵌
+- 先本地测试 A9.6-1 增强：状态字段名称匹配与 pendingName 预绑定
 
 ### 然后
-- A9.6-1 增强：状态字段名称匹配、pendingName 预绑定与状态栏编辑页联动
 - A9.6-2 UI 写入 SessionState MVP
 - A10 mode 差异逻辑收口
 

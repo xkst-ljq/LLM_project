@@ -215,7 +215,7 @@ A10 进入条件：
 - button/linker/page_router 与 gesture 路由稳定
 - 至少一轮通用模板回归测试通过
 
-### A9.5-5 Assembly 组件实例编辑器基础迁移：A9.5-5-4 完成，待本地测试
+### A9.5-5 Assembly 组件实例编辑器基础迁移：A9.5-5-1 ~ A9.5-5-4 全部完成，测试通过
 目标：统一 Assembly 双击编辑语义，为后续数据通道内嵌做前置准备。
 
 核心规则：
@@ -259,7 +259,7 @@ A9.5-5-3 已完成（测试通过）：
 - indicator：状态点直径、默认发光。
 - image：网络地址、本地/内部资产路径、填充方式、圆角。
 
-A9.5-5-4 已完成，待本地测试：
+A9.5-5-4 已完成（测试通过）：
 - 原子实例编辑器内嵌数据通道区（启用开关 + 全部策略字段 + 最终语义预览），随“保存”一起提交。
 - 复合组件暴露项新增“通道”按钮，通道写入 `PropertyOverride.overrides['dataChannel']`。
 - 已删除独立的 `_showDataChannelDialog` 临时入口。
@@ -299,9 +299,15 @@ A9.6-1 已完成 MVP：
 - 保存到 `module.properties['dataChannel']`，并在画布上显示 chip。
 - 当前不写 SessionState、不注入 Prompt、不做状态栏反向创建。
 
+### A9.6-1 增强：状态字段名称匹配与 pendingName 预绑定（已完成，待本地测试）
+- `CharacterAssemblyPage(statusFields: ...)` 只读接收角色卡 `meta.statusBarFields`。
+- 数据通道选择「状态字段」时实时提示匹配结果；命中写 `targetId` + 卡片字段类型，未命中记 `pendingName`。
+- 进入 Assembly 时 `_reconcileStatusChannelBindings()` 双向对齐（后建字段自动补绑，字段删除回退待创建）。
+- 待创建状态在画布 chip 与暴露项摘要中显示「状态待建」，橙色标识。
+
 ### 下一步建议
-- 先本地测试 A9.5-5-4 数据通道内嵌。
-- 若通过，进入 A9.6-1 增强（状态字段名称匹配、pendingName 预绑定）或 A9.6-2 UI 写入 SessionState MVP。
+- 先本地测试 A9.6-1 增强。
+- 若通过，进入 A9.6-2 UI 写入 SessionState MVP。
 - 仍不要进入 A10 mode 差异。
 
 ---

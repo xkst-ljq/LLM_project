@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/linker_service.dart';
 import '../services/ui_engine/select_option.dart';
@@ -84,7 +85,18 @@ class _AssemblyAssetItem {
 
 class CharacterAssemblyPage extends StatefulWidget {
   final UIAssemblyInfo assemblyInfo;
-  const CharacterAssemblyPage({super.key, required this.assemblyInfo});
+
+  /// 角色卡当前的状态栏字段定义（只读参考）。
+  ///
+  /// 数据通道选择「状态字段」时用于名称匹配与目标 id 预绑定；
+  /// Assembly 不修改角色卡字段本体，未匹配到的名称记为 pendingName。
+  final List<StatusBarField> statusFields;
+
+  const CharacterAssemblyPage({
+    super.key,
+    required this.assemblyInfo,
+    this.statusFields = const <StatusBarField>[],
+  });
   @override
   State<CharacterAssemblyPage> createState() => _CharacterAssemblyPageState();
 }

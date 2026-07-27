@@ -123,7 +123,10 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
     final result = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => CharacterAssemblyPage(assemblyInfo: info),
+        builder: (_) => CharacterAssemblyPage(
+          assemblyInfo: info,
+          statusFields: widget.meta.statusBarFields,
+        ),
       ),
     );
     if (result != null && result.isNotEmpty) {
