@@ -121,6 +121,24 @@ void main() {
     });
   });
 
+  group('防止模型脑补数值', () {
+    test('注入值被声明为唯一权威来源', () {
+      final out = StatusBarEngine.buildInjection(
+        _fields,
+        {'f_aff': '16', 'f_alert': '0'},
+      );
+      expect(out, contains('唯一权威来源'));
+      expect(out, contains('不要根据对话历史自行推算'));
+    });
+
+    test('PHI 禁止自行累加并说明结算时序', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      // 模型拿不到本轮结算后的值，自行推算必然与状态栏对不上。
+      expect(out, contains('不要根据对话历史自行累加'));
+      expect(out, contains('回复之后才结算'));
+    });
+  });
+
   group('buildTurnReminder - 状态栏', () {
     test('有可写字段时生成简短提醒', () {
       final out = StatusBarEngine.buildTurnReminder(_fields);

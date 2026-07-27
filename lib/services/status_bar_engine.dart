@@ -100,6 +100,8 @@ class StatusBarEngine {
     if (readable.isNotEmpty) {
       lines.add('[状态栏]');
       lines.add('以下是当前状态值（请结合剧情判断本回合各项应如何变化）：');
+      lines.add('这些数值是唯一权威来源。用户询问某项当前值时，'
+          '直接照抄下面的数字，不要根据对话历史自行推算或累加。');
       for (final f in readable) {
         final v = values[f.id] ?? f.initialValue;
         if (f.isNumber) {
@@ -180,6 +182,14 @@ class StatusBarEngine {
     lines.add('- 用户明确要求修改某项时，必须在标签块里如实写出。');
     lines.add('- 直接输出标签本身，不要用代码块或引号包裹。');
     lines.add('- 该标记不会展示给用户，正文中不要重复或提及它的内容。');
+    lines.add('');
+    lines.add('关于在正文里提到数值：');
+    // 模型拿不到「本轮结算后」的值——注入的是本轮开始时的快照，
+    // 而结算发生在回复之后。它一旦自行累加就必然与状态栏对不上。
+    lines.add('- [状态栏] 里的数值是唯一权威来源，需要提及时请直接照抄。');
+    lines.add('- 不要根据对话历史自行累加或推算数值，你的推算结果通常是错的。');
+    lines.add('- 本回合的变化在你回复之后才结算，'
+        '因此不要在正文里声称变化后的新数值。');
 
     return lines.join('\n');
   }
