@@ -1,14 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:llm_project/models/session_state.dart';
-import 'package:llm_project/models/status_bar_field.dart';
 import 'package:llm_project/services/ui_engine/data_channel_prompt_builder.dart';
 import 'package:llm_project/services/ui_engine/data_channel_update_engine.dart';
 
 DataChannelPromptItem _item({
   required String label,
-  String targetKind = 'status_field',
-  String targetId = 'f_aff',
+  // 状态字段已交由 StatusBarEngine 解析 <状态变化>，
+  // 本引擎只负责会话变量，因此默认用 session_var。
+  String targetKind = 'session_var',
+  String targetId = '',
   String read = 'prompt',
   String write = 'suggest_delta',
   String apply = 'confirm',
@@ -31,14 +32,6 @@ String _reply(String body) {
   return '剧情正文。\n\n<$tag>\n$body\n</$tag>';
 }
 
-final _affField = StatusBarField(
-  id: 'f_aff',
-  name: '好感度',
-  type: 'number',
-  initialValue: '45',
-  minValue: 0,
-  maxValue: 100,
-);
 
 void main() {
   group('parse - 权限校验', () {
@@ -46,8 +39,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+3'),
         items: [_item(label: '好感度', write: 'none')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.isEmpty, isTrue);
@@ -58,8 +50,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+3'),
         items: [_item(label: '好感度', apply: 'never')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.isEmpty, isTrue);
@@ -70,8 +61,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('并不存在的字段:+99'),
         items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.isEmpty, isTrue);
@@ -82,8 +72,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度=100'),
         items: [_item(label: '好感度', write: 'suggest_delta')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.isEmpty, isTrue);
@@ -96,8 +85,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+3'),
         items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.needsConfirm.length, 1);
@@ -107,26 +95,16 @@ void main() {
       expect(update.rawSuggestion, '+3');
     });
 
-    test('增量结果按角色卡范围 clamp', () {
+    test('状态字段交由状态栏解析，本引擎不重复算账', () {
       final result = DataChannelUpdateEngine.parse(
-        reply: _reply('好感度:+999'),
-        items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        reply: _reply('好感度:+3'),
+        items: [
+          _item(label: '好感度', targetKind: 'status_field', targetId: 'f_aff'),
+        ],
+        session: SessionState(vars: {'好感度': '45'}),
       );
-
-      expect(result.needsConfirm.single.newValue, '100');
-    });
-
-    test('负增量同样 clamp 到下限', () {
-      final result = DataChannelUpdateEngine.parse(
-        reply: _reply('好感度:-999'),
-        items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
-      );
-
-      expect(result.needsConfirm.single.newValue, '0');
+      // 同一字段被两套引擎解析会导致重复算账。
+      expect(result.isEmpty, isTrue);
     });
 
     test('suggest_replace 直接替换文本型会话变量', () {
@@ -150,8 +128,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+0'),
         items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.isEmpty, isTrue);
@@ -161,8 +138,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+3\n好感度:+5'),
         items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.needsConfirm.length, 1);
@@ -175,8 +151,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+3'),
         items: [_item(label: '好感度', apply: 'auto_low_risk')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.autoApply.length, 1);
@@ -187,8 +162,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+3'),
         items: [_item(label: '好感度', apply: 'confirm')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.autoApply, isEmpty);
@@ -240,8 +214,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: reply,
         items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.needsConfirm.single.newValue, '48');
@@ -253,8 +226,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: reply,
         items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.needsConfirm.single.newValue, '48');
@@ -266,8 +238,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: reply,
         items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
 
       expect(result.needsConfirm.single.newValue, '48');
@@ -308,8 +279,7 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: '正文。\n<$tag>\n</$tag>',
         items: [_item(label: '好感度')],
-        session: SessionState(statusValues: {'f_aff': '45'}),
-        statusFields: [_affField],
+        session: SessionState(vars: {'好感度': '45'}),
       );
       expect(result.isEmpty, isTrue);
       expect(result.rejectedCount, 0);

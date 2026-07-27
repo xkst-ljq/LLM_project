@@ -313,6 +313,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       reply,
       fields,
       _sessionState.statusValues,
+      // 被数据通道标记为不可写的字段，即使 LLM 输出了也不应生效。
+      policies: DataChannelPromptBuilder.collectStatusFieldPolicies(
+        _collectUIChannelPromptItems(),
+      ),
     );
     if (changes.isNotEmpty) {
       await _saveSessionState();
@@ -2034,12 +2038,20 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
 
     // 状态栏：注入当前状态值 + 变化回报格式约定（LLM 只给变化量，引擎算账）。
+    //
+    // 状态字段是 SSOT：它可能同时被状态栏和 UI 数据通道引用，
+    // 但只能有一套注入与解析，否则模型会看到两个标签、两套格式而无所适从。
+    // 因此这类字段统一由状态栏负责，通道里配置的读写策略传进去约束它。
+    final uiChannelItems = _collectUIChannelPromptItems();
     if (_currentCharacter != null) {
       final fields = _currentCharacter!.meta.statusBarFields;
       if (fields.isNotEmpty) {
         final injection = StatusBarEngine.buildInjection(
           fields,
           _sessionState.statusValues,
+          policies: DataChannelPromptBuilder.collectStatusFieldPolicies(
+            uiChannelItems,
+          ),
         );
         if (injection.isNotEmpty) {
           systemPrompt += '\n\n$injection';
@@ -2047,10 +2059,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       }
     }
 
-    // A9.6-3：UI 数据通道注入。
-    // 只注入显式配置了 llmReadPolicy / llmWritePolicy 的通道，
-    // 且每个值都带语义名；UI 内部状态与未匹配的状态字段不会出现在这里。
-    final uiChannelItems = _collectUIChannelPromptItems();
+    // A9.6-3：UI 数据通道注入（仅会话变量部分，状态字段已由上面接管）。
     if (uiChannelItems.isNotEmpty) {
       final injection = DataChannelPromptBuilder.buildInjection(uiChannelItems);
       if (injection.isNotEmpty) {

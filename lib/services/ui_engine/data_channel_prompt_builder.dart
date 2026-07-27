@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../models/session_state.dart';
 import '../../models/status_bar_field.dart';
 import '../../models/ui_assembly_info.dart';
+import '../status_bar_engine.dart';
 import 'ui_models.dart';
 
 /// 一条参与 Prompt 的数据通道描述。
@@ -142,6 +143,32 @@ class DataChannelPromptBuilder {
     return items;
   }
 
+  /// 提取「被 UI 数据通道引用的状态字段」的读写策略。
+  ///
+  /// 状态字段是 SSOT：它同时被状态栏和 UI 视图引用，但只能有一套注入与解析。
+  /// 因此这类字段统一交给 `StatusBarEngine` 处理，而作者在数据通道里配置的
+  /// 读写策略必须传递过去约束它，否则「可写不可读」会被状态栏绕过。
+  static Map<String, StatusFieldPolicy> collectStatusFieldPolicies(
+    List<DataChannelPromptItem> items,
+  ) {
+    final out = <String, StatusFieldPolicy>{};
+    for (final item in items) {
+      if (item.targetKind != 'status_field') continue;
+      final id = item.targetId.trim();
+      if (id.isEmpty) continue;
+
+      final existing = out[id];
+      // 同一状态字段被多个通道引用时取并集：
+      // 任一通道允许读/写，该字段就允许读/写。
+      out[id] = StatusFieldPolicy(
+        canRead: (existing?.canRead ?? false) || item.canRead,
+        canWrite: (existing?.canWrite ?? false) || item.canWrite,
+        applyPolicy: existing?.applyPolicy ?? item.applyPolicy,
+      );
+    }
+    return out;
+  }
+
   /// 生成注入片段。无可注入内容时返回空串。
   ///
   /// 产出结构（结构化状态段，便于调试，也不要求作者手写占位符）：
@@ -159,8 +186,12 @@ class DataChannelPromptBuilder {
   static String buildInjection(List<DataChannelPromptItem> items) {
     if (items.isEmpty) return '';
 
-    final readable = items.where((item) => item.canRead).toList();
-    final writeOnly = items.where((item) => item.isWriteOnly).toList();
+    // 状态字段由状态栏统一注入，这里只处理会话变量，避免同一字段被注入两次、
+    // 让模型面对两套标签与两套格式而无所适从。
+    final scoped =
+        items.where((item) => item.targetKind != 'status_field').toList();
+    final readable = scoped.where((item) => item.canRead).toList();
+    final writeOnly = scoped.where((item) => item.isWriteOnly).toList();
 
     final lines = <String>[];
 
@@ -197,7 +228,10 @@ class DataChannelPromptBuilder {
   static String buildUpdateFormatInstruction(
     List<DataChannelPromptItem> items,
   ) {
-    final writable = items.where((item) => item.canWrite).toList();
+    // 同上：状态字段走 <状态变化>，这里只约束会话变量的结算格式。
+    final writable = items
+        .where((item) => item.targetKind != 'status_field' && item.canWrite)
+        .toList();
     if (writable.isEmpty) return '';
 
     final lines = <String>[];
@@ -249,7 +283,9 @@ class DataChannelPromptBuilder {
   /// 仍会忽略系统层的格式要求。紧贴用户消息的一行短提醒是成本最低的补强，
   /// 且因为足够短，不会干扰正文的角色扮演质量。
   static String buildTurnReminder(List<DataChannelPromptItem> items) {
-    final writable = items.where((item) => item.canWrite).toList();
+    final writable = items
+        .where((item) => item.targetKind != 'status_field' && item.canWrite)
+        .toList();
     if (writable.isEmpty) return '';
     return '（系统提醒：本回合回复结束后，附上 '
         '<$updateTag>...</$updateTag> 结算块；本回合无对应事件就输出空标签。）';

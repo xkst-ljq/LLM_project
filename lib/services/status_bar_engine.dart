@@ -33,6 +33,29 @@ class StatusChange {
   StatusChange(this.fieldId, this.fieldName, this.oldValue, this.newValue);
 }
 
+/// 状态字段的 LLM 访问策略。
+///
+/// 来源是 UI 数据通道（`module.properties['dataChannel']`）。
+/// 状态栏字段本身不带策略，但当某个字段被 UI 数据通道引用时，
+/// 作者在通道里配置的读写策略必须同样约束状态栏的注入与解析——
+/// 否则「可写不可读」这类配置会被状态栏从侧面绕过。
+class StatusFieldPolicy {
+  /// 当前值可以出现在 Prompt 里。
+  final bool canRead;
+
+  /// LLM 可以建议更新该字段。
+  final bool canWrite;
+
+  /// 'confirm' | 'auto_low_risk' | 'never'
+  final String applyPolicy;
+
+  const StatusFieldPolicy({
+    this.canRead = true,
+    this.canWrite = true,
+    this.applyPolicy = 'auto_low_risk',
+  });
+}
+
 /// 状态栏增量引擎。
 ///
 /// 核心理念（用户定）：**LLM 只当裁判出"变化量"，引擎确定性地算账**。
@@ -49,32 +72,65 @@ class StatusBarEngine {
   /// 让 LLM 知道现状，并约束它如何回报变化。无字段时返回空串。
   static String buildInjection(
     List<StatusBarField> fields,
-    Map<String, String> values,
-  ) {
+    Map<String, String> values, {
+    Map<String, StatusFieldPolicy> policies = const {},
+  }) {
     if (fields.isEmpty) return '';
 
     final sorted = [...fields]..sort((a, b) => a.order.compareTo(b.order));
 
-    final lines = <String>[];
-    lines.add('[状态栏]');
-    lines.add('以下是当前状态值（请结合剧情判断本回合各项应如何变化）：');
+    // 按策略分三类：可读、只可写不可读、完全不参与。
+    final readable = <StatusBarField>[];
+    final writeOnly = <StatusBarField>[];
+    final writable = <StatusBarField>[];
     for (final f in sorted) {
-      final v = values[f.id] ?? f.initialValue;
-      if (f.isNumber) {
-        final range = _rangeHint(f);
-        lines.add('- ${f.name}：$v${range.isNotEmpty ? '（$range）' : ''}');
-      } else {
-        lines.add('- ${f.name}：$v');
+      final policy = policies[f.id] ?? const StatusFieldPolicy();
+      if (policy.canRead) readable.add(f);
+      if (policy.canWrite) {
+        writable.add(f);
+        if (!policy.canRead) writeOnly.add(f);
       }
     }
 
-    lines.add('');
-    lines.add('回复正文之后，另起一段输出状态变化（仅在确有变化时输出对应行）：');
-    lines.add('<$tag>');
-    lines.add('数值项格式：名称:+N 或 名称:-N（只给变化量，不要给最终值）');
-    lines.add('文本项格式：名称=新内容（直接给变化后的内容）');
-    lines.add('</$tag>');
-    lines.add('注意：变化量需与剧情合理对应；没有变化的项不要输出。该标记不会展示给用户。');
+    if (readable.isEmpty && writable.isEmpty) return '';
+
+    final lines = <String>[];
+
+    if (readable.isNotEmpty) {
+      lines.add('[状态栏]');
+      lines.add('以下是当前状态值（请结合剧情判断本回合各项应如何变化）：');
+      for (final f in readable) {
+        final v = values[f.id] ?? f.initialValue;
+        if (f.isNumber) {
+          final range = _rangeHint(f);
+          lines.add('- ${f.name}：$v${range.isNotEmpty ? '（$range）' : ''}');
+        } else {
+          lines.add('- ${f.name}：$v');
+        }
+      }
+    }
+
+    // 可写不可读：只告诉 LLM 可以建议变化，绝不暴露当前值。
+    if (writeOnly.isNotEmpty) {
+      if (lines.isNotEmpty) lines.add('');
+      lines.add('[可建议更新的隐藏状态]');
+      lines.add('以下状态的当前值对你隐藏，你只能根据剧情建议其变化：');
+      for (final f in writeOnly) {
+        lines.add('- ${f.name}：只可输出 +N/-N，不要在正文中提及当前值。');
+      }
+    }
+
+    if (writable.isNotEmpty) {
+      lines.add('');
+      lines.add('回复正文之后，另起一段输出状态变化（仅在确有变化时输出对应行）：');
+      lines.add('<$tag>');
+      lines.add('数值项格式：名称:+N 或 名称:-N（只给变化量，不要给最终值）');
+      lines.add('文本项格式：名称=新内容（直接给变化后的内容）');
+      lines.add('</$tag>');
+      lines.add('可更新的项：${writable.map((f) => f.name).join('、')}');
+      lines.add('注意：变化量需与剧情合理对应；没有变化的项不要输出。'
+          '不要输出上面未列出的项。该标记不会展示给用户。');
+    }
 
     return lines.join('\n');
   }
@@ -93,16 +149,21 @@ class StatusBarEngine {
   static List<StatusChange> applyFromReply(
     String reply,
     List<StatusBarField> fields,
-    Map<String, String> values,
-  ) {
+    Map<String, String> values, {
+    Map<String, StatusFieldPolicy> policies = const {},
+  }) {
     final changes = <StatusChange>[];
     final block = TaggedBlock.extract(reply, tag);
     if (block == null || block.isEmpty) return changes;
 
     // 名称 -> 字段（按显示名匹配，LLM 用的是 name）。
+    // 被数据通道标记为不可写的字段直接排除，哪怕 LLM 输出了也不生效。
     final byName = <String, StatusBarField>{};
     for (final f in fields) {
-      if (f.name.trim().isNotEmpty) byName[f.name.trim()] = f;
+      if (f.name.trim().isEmpty) continue;
+      final policy = policies[f.id] ?? const StatusFieldPolicy();
+      if (!policy.canWrite) continue;
+      byName[f.name.trim()] = f;
     }
 
     for (final rawLine in block.split('\n')) {

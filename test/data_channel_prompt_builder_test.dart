@@ -175,26 +175,59 @@ void main() {
     test('可读通道注入带语义名的当前值，不出现裸值', () {
       final injection = DataChannelPromptBuilder.buildInjection([
         const DataChannelPromptItem(
-          semanticLabel: '好感度',
-          targetKind: 'status_field',
-          targetId: 'f_aff',
+          semanticLabel: '主角姓名',
+          targetKind: 'session_var',
+          targetId: '',
           llmReadPolicy: 'prompt',
           llmWritePolicy: 'none',
-          value: '45',
-          rangeHint: '范围 0~100',
+          value: '林',
+          rangeHint: '',
         ),
       ]);
 
       expect(injection, contains('[界面数据]'));
-      expect(injection, contains('- 好感度：45（范围 0~100）'));
+      expect(injection, contains('- 主角姓名：林'));
+    });
+
+    test('状态字段交给状态栏，不在界面数据里重复注入', () {
+      final injection = DataChannelPromptBuilder.buildInjection([
+        const DataChannelPromptItem(
+          semanticLabel: '好感度',
+          targetKind: 'status_field',
+          targetId: 'f_aff',
+          llmReadPolicy: 'prompt',
+          llmWritePolicy: 'suggest_delta',
+          value: '45',
+          rangeHint: '范围 0~100',
+        ),
+      ]);
+      // 同一字段被两套机制注入会让模型面对两个标签、两套格式。
+      expect(injection, isEmpty);
+    });
+
+    test('collectStatusFieldPolicies 传递读写策略给状态栏', () {
+      final policies = DataChannelPromptBuilder.collectStatusFieldPolicies([
+        const DataChannelPromptItem(
+          semanticLabel: '敌方警觉度',
+          targetKind: 'status_field',
+          targetId: 'f_alert',
+          llmReadPolicy: 'none',
+          llmWritePolicy: 'suggest_delta',
+          value: '80',
+          rangeHint: '',
+        ),
+      ]);
+
+      expect(policies['f_alert']!.canRead, isFalse);
+      expect(policies['f_alert']!.canWrite, isTrue);
     });
 
     test('可写不可读只注入更新规则，不暴露当前值', () {
       final injection = DataChannelPromptBuilder.buildInjection([
         const DataChannelPromptItem(
           semanticLabel: '敌方警觉度',
-          targetKind: 'status_field',
-          targetId: 'f_alert',
+          targetKind: 'session_var',
+          targetId: '',
           llmReadPolicy: 'none',
           llmWritePolicy: 'suggest_delta',
           value: '80',
@@ -213,8 +246,8 @@ void main() {
           DataChannelPromptBuilder.buildUpdateFormatInstruction([
         const DataChannelPromptItem(
           semanticLabel: '好感度',
-          targetKind: 'status_field',
-          targetId: 'f_aff',
+          targetKind: 'session_var',
+          targetId: '',
           llmReadPolicy: 'prompt',
           llmWritePolicy: 'suggest_delta',
           value: '45',
@@ -242,9 +275,9 @@ void main() {
 
   group('buildUpdateFormatInstruction - 遵从度强化', () {
     const deltaItem = DataChannelPromptItem(
-      semanticLabel: '好感度',
-      targetKind: 'status_field',
-      targetId: 'f_aff',
+      semanticLabel: '心情',
+      targetKind: 'session_var',
+      targetId: '',
       llmReadPolicy: 'prompt',
       llmWritePolicy: 'suggest_delta',
       value: '45',
@@ -265,7 +298,7 @@ void main() {
           DataChannelPromptBuilder.buildUpdateFormatInstruction([deltaItem]);
       // 示例里出现具体变化量会被模型当成标准答案每回合照抄，
       // 造成数值漂移，因此示例必须是空块。
-      expect(out, isNot(contains('好感度:+2')));
+      expect(out, isNot(contains('心情:+2')));
       expect(out, contains('默认输出'));
     });
 
@@ -297,9 +330,9 @@ void main() {
     test('有可写通道时生成简短提醒', () {
       final out = DataChannelPromptBuilder.buildTurnReminder([
         const DataChannelPromptItem(
-          semanticLabel: '好感度',
-          targetKind: 'status_field',
-          targetId: 'f_aff',
+          semanticLabel: '心情',
+          targetKind: 'session_var',
+          targetId: '',
           llmReadPolicy: 'prompt',
           llmWritePolicy: 'suggest_delta',
           value: '45',

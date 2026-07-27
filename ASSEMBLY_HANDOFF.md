@@ -329,6 +329,17 @@ A9.6-1 已完成 MVP：
 - 重新生成 / 续写路径只剥离标记、不重复算账。
 - 单测：`test/data_channel_update_engine_test.dart`。
 
+#### SSOT 归属规则（架构约束，不要违反）
+状态字段可能同时被状态栏和 UI 数据通道引用，但**同一字段只能由一套机制注入与解析**：
+- `targetKind == 'status_field'` → 一律由 `StatusBarEngine` 负责，用 `<状态变化>` 标签。
+- `targetKind == 'session_var'` → 由 `DataChannelPromptBuilder` / `DataChannelUpdateEngine`
+  负责，用 `<界面状态变化>` 标签。
+- 数据通道里配的读写策略通过 `collectStatusFieldPolicies()` 传给状态栏执行，
+  否则「可写不可读」会被状态栏的注入从侧面绕过。
+
+违反这条会导致：同一字段注入两次、模型面对两个标签两套格式而不执行，
+以及隐藏值泄漏。这个坑已经踩过一次，见 TRACKER 对应章节。
+
 #### 遵从度调优记录（重要经验）
 `<界面状态变化>` 这类结构化输出，格式约束的措辞直接决定成败：
 - 不要写「无变化则不输出该块」——模型会每回合判定无变化，永远不输出。

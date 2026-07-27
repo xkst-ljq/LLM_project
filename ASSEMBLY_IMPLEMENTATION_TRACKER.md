@@ -1446,6 +1446,30 @@ LLM 回复
 - 设计取向：宁可漏报也不误报。漏报只是少一次状态更新，
   误报会让数值失控漂移，且用户每次都要处理确认弹窗，体验更差。
 
+修复：状态字段被两套机制重复注入（架构级）
+- 现象：好感度配了「建议增量」但正常对话不触发；直接说「好感加3」却能触发。
+- 根因（不是遵从度问题）：状态字段是 SSOT，会同时被两套机制注入——
+  - `StatusBarEngine` 注入 `[状态栏]` + `<状态变化>` 标签
+  - `DataChannelPromptBuilder` 注入 `[界面数据]` + `<界面状态变化>` 标签
+  同一个「好感度」出现两次，两个标签、两套格式，模型面对矛盾指令时
+  往往只执行先出现的那套或干脆都不做。用户直接下命令时才被迫响应。
+- 附带的安全问题：`[可建议更新的隐藏状态]` 声明敌方警觉度当前值对 LLM 隐藏，
+  但 `[状态栏]` 仍把 `敌方警觉度：0` 原样印出，A9.6-3 的读策略红线被状态栏绕过。
+- 处理（确立 SSOT 归属，同一字段只由一套机制负责）：
+  - **状态字段统一由 `StatusBarEngine` 注入与解析**，沿用既有 `<状态变化>` 标签。
+  - `DataChannelPromptBuilder.buildInjection` / `buildUpdateFormatInstruction` /
+    `buildTurnReminder` 全部跳过 `targetKind == 'status_field'`，只处理会话变量。
+  - `DataChannelUpdateEngine.parse` 同样跳过状态字段，避免两套引擎重复算账。
+  - 新增 `StatusFieldPolicy` 与 `collectStatusFieldPolicies()`：
+    把数据通道里配置的读写策略传给状态栏，由状态栏统一执行。
+  - `StatusBarEngine.buildInjection` 按策略分组：
+    可读的进 `[状态栏]`，可写不可读的进 `[可建议更新的隐藏状态]`（不含当前值），
+    并在末尾显式列出「可更新的项」，避免模型输出未授权字段。
+  - `StatusBarEngine.applyFromReply` 排除不可写字段，LLM 输出了也不生效。
+  - 同一状态字段被多个通道引用时，读写权限取并集。
+- 测试：新增 `test/status_bar_engine_policy_test.dart`，
+  覆盖值不泄漏、不可写不生效、全禁用不注入等红线。
+
 ### A9.6 不做
 - 不做完整自动状态解析器。
 - 不做复杂 Prompt 分频策略。

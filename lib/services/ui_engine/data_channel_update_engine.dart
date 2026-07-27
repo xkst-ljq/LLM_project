@@ -133,8 +133,11 @@ class DataChannelUpdateEngine {
     }
 
     // 语义名 -> 通道。LLM 只认识语义名。
+    // 状态字段由 StatusBarEngine 解析 <状态变化>，这里只处理会话变量，
+    // 保证同一字段不会被两套引擎重复算账。
     final byLabel = <String, DataChannelPromptItem>{};
     for (final item in items) {
+      if (item.targetKind == 'status_field') continue;
       byLabel[item.semanticLabel.trim()] = item;
     }
 
