@@ -201,9 +201,15 @@ class DataChannelPromptBuilder {
     if (writable.isEmpty) return '';
 
     final lines = <String>[];
-    lines.add('[界面数据更新 · 每回合必须执行]');
+    lines.add('[界面数据结算 · 每回合必须输出结算块]');
     lines.add('你每一条回复的最后，都必须附上界面数据结算块。这是系统协议，'
         '不是可选项，也不需要用户提出要求。');
+    lines.add('');
+    // 关键：先把「空结算」立为默认预期，再讲怎么填。
+    // 否则「每回合必须输出」会被模型理解成「每回合都得算出点什么」，
+    // 导致两三句闲聊就产生数值漂移。
+    lines.add('重要：绝大多数回合都应该是空结算块。数据只在剧情中真正发生了'
+        '对应事件时才变化，日常对话、寒暄、单纯的信息交流一律不产生变化。');
     lines.add('');
     lines.add('可结算项：');
     for (final item in writable) {
@@ -215,29 +221,26 @@ class DataChannelPromptBuilder {
       lines.add(format);
     }
     lines.add('');
-    lines.add('输出示例（正文结束后另起一行）：');
+    // 示例一律用空块。写具体数值会被模型当成标准答案照抄，
+    // 每回合都输出示例里的那个变化量。
+    lines.add('默认输出（本回合无事发生时，也是最常见的情况）：');
     lines.add('<$updateTag>');
-    lines.add(_exampleLine(writable.first));
     lines.add('</$updateTag>');
     lines.add('');
     lines.add('执行规则：');
-    // 关键：不给「无变化就整块省略」的台阶。
-    // 一旦允许省略，模型每回合都会判定为无变化，从而永远不输出标签块。
     lines.add('- 每回合都要输出 <$updateTag>...</$updateTag> 这一对标签，'
         '即使本回合没有任何变化，也要输出一对空标签。');
     lines.add('- 标签内只写确有变化的项；没有变化的项不写，也不要写未列出的项。');
-    lines.add('- 变化量需与本回合剧情合理对应，不要凭空夸大。');
+    lines.add('- 判断标准：只有本回合剧情中确实出现了足以改变该数据的具体事件时'
+        '才写入。拿不准时，一律不写。');
+    lines.add('- 变化幅度要克制：普通互动最多小幅变动，'
+        '大幅变化只保留给剧情中的重大转折。');
+    lines.add('- 不要为了让结算块「有内容」而制造变化，空结算块是完全正常的。');
+    lines.add('- 同一项在连续多个回合里反复变化是不正常的，除非剧情确实在持续推进。');
     lines.add('- 直接输出标签本身，不要用代码块或引号包裹。');
     lines.add('- 该标记不会展示给用户，正文中不要重复或提及它的内容。');
 
     return lines.join('\n');
-  }
-
-  /// 为格式说明生成一行示例，降低模型的格式歧义。
-  static String _exampleLine(DataChannelPromptItem item) {
-    return item.llmWritePolicy == 'suggest_delta'
-        ? '${item.semanticLabel}:+2'
-        : '${item.semanticLabel}=示例内容';
   }
 
   /// 每回合贴在最后一条用户消息尾部的极短提醒。
@@ -248,8 +251,8 @@ class DataChannelPromptBuilder {
   static String buildTurnReminder(List<DataChannelPromptItem> items) {
     final writable = items.where((item) => item.canWrite).toList();
     if (writable.isEmpty) return '';
-    return '（系统提醒：本回合回复结束后，记得附上 '
-        '<$updateTag>...</$updateTag> 结算块，无变化则输出空标签。）';
+    return '（系统提醒：本回合回复结束后，附上 '
+        '<$updateTag>...</$updateTag> 结算块；本回合无对应事件就输出空标签。）';
   }
 
   /// 渲染 `{{ui.xxx}}` 占位符。

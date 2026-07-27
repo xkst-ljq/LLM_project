@@ -295,8 +295,9 @@ void main() {
       final out = DataChannelPromptBuilder.buildUpdateFormatInstruction([
         _item(label: '好感度', write: 'suggest_delta'),
       ]);
-      expect(out, contains('必须执行'));
+      expect(out, contains('每回合必须输出结算块'));
       expect(out, contains('<${DataChannelUpdateEngine.tag}>'));
+      // 这是格式占位符而非示例值，保留是为了让模型知道怎么写。
       expect(out, contains('好感度:+N'));
     });
   });

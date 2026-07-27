@@ -260,10 +260,21 @@ void main() {
       expect(out, contains('空标签'));
     });
 
-    test('包含具体示例，降低格式歧义', () {
+    test('示例用空标签块，避免模型照抄具体数值', () {
       final out =
           DataChannelPromptBuilder.buildUpdateFormatInstruction([deltaItem]);
-      expect(out, contains('好感度:+2'));
+      // 示例里出现具体变化量会被模型当成标准答案每回合照抄，
+      // 造成数值漂移，因此示例必须是空块。
+      expect(out, isNot(contains('好感度:+2')));
+      expect(out, contains('默认输出'));
+    });
+
+    test('明确空结算是常态，抑制过度触发', () {
+      final out =
+          DataChannelPromptBuilder.buildUpdateFormatInstruction([deltaItem]);
+      expect(out, contains('绝大多数回合都应该是空结算块'));
+      expect(out, contains('拿不准时，一律不写'));
+      expect(out, contains('不要为了让结算块'));
     });
 
     test('无可写通道时不产生任何约束', () {
