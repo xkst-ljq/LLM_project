@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -68,6 +69,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   late String _activePageId;
   late SessionState _session;
   List<String> _lastChannelDebug = const <String>[];
+  Timer? _channelPollTimer;
   Offset? _swipeStart;
   String _lastTransition = 'base_slide';
   String _lastSwipeDirection = 'swipe_left';
@@ -78,6 +80,34 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     super.initState();
     _restoreRuntimeState();
     _setupRuntimeLinkers();
+    _startChannelPolling();
+  }
+
+  /// 组件内部（滑块拖动 / 输入 / 开关）直接改写 `module.properties`，
+  /// 并不一定发出 LinkerEventBus 事件，因此仅靠事件回调会漏掉这些变化。
+  /// 这里用低频轮询兜底，保证会话副本与调试浮层能跟随交互实时更新。
+  void _startChannelPolling() {
+    _channelPollTimer?.cancel();
+    if (widget.sessionState == null && !widget.showDataChannelDebug) return;
+    _channelPollTimer = Timer.periodic(
+      const Duration(milliseconds: 300),
+      (_) {
+        if (!mounted) return;
+        final before = _lastChannelDebug;
+        _syncDataChannels();
+        if (!_sameDebug(before, _lastChannelDebug)) {
+          setState(() {});
+        }
+      },
+    );
+  }
+
+  bool _sameDebug(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   @override
@@ -87,11 +117,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         oldWidget.activePageId != widget.activePageId) {
       _restoreRuntimeState();
       _setupRuntimeLinkers();
+      _startChannelPolling();
     }
   }
 
   @override
   void dispose() {
+    _channelPollTimer?.cancel();
     LinkerService.initEventBusListener(const <UIElement>[], () {});
     super.dispose();
   }
@@ -362,11 +394,20 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: (event) =>
                       _handlePreviewPointerDown(event.localPosition, pcbRect),
-                  onPointerUp: (event) => _handlePreviewPointerUp(
-                    event.localPosition,
-                    pcbRect,
-                    safeContainScale,
-                  ),
+                  onPointerUp: (event) {
+                    _handlePreviewPointerUp(
+                      event.localPosition,
+                      pcbRect,
+                      safeContainScale,
+                    );
+                    // 抬手即同步一次，避免等到下一个轮询周期才更新。
+                    if (!mounted) return;
+                    final before = _lastChannelDebug;
+                    _syncDataChannels();
+                    if (!_sameDebug(before, _lastChannelDebug)) {
+                      setState(() {});
+                    }
+                  },
                   onPointerCancel: (_) => _swipeStart = null,
                   child: AnimatedSwitcher(
                     duration: Duration(milliseconds: _lastDurationMs),

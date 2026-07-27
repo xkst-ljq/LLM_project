@@ -1222,12 +1222,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
 
     if (type == 'progress') {
-      final min = (child.module?.properties['min'] as num?)?.toDouble() ?? 0.0;
-      final max = (child.module?.properties['max'] as num?)?.toDouble() ?? 100.0;
+      final childProps = child.module?.properties ?? const <String, dynamic>{};
+      final min = _numProp(childProps, 'min') ?? 0.0;
+      final max = _numProp(childProps, 'max') ?? 100.0;
       final actualMin = math.min(min, max);
       final actualMax = math.max(min, max);
-      double current = (propertyOverride.overrides['current'] as num?)?.toDouble() ??
-          (child.module?.properties['current'] as num?)?.toDouble() ??
+      double current = _numProp(propertyOverride.overrides, 'current') ??
+          _numProp(childProps, 'current') ??
           actualMin;
       current = current.clamp(actualMin, actualMax).toDouble();
       final controller = TextEditingController(text: current.toStringAsFixed(0));
@@ -2119,6 +2120,22 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
   }
 
+  /// 宽容读取数值属性。
+  ///
+  /// 组件属性里同一个键在不同类型下语义不同：例如 select 的 `current`
+  /// 存的是选项 value（String），而 progress / slider 的 `current` 是数值。
+  /// 直接 `as num?` 会在 select 上抛 type cast 异常，因此统一走这里。
+  double? _numProp(Map<String, dynamic> props, String key) {
+    final raw = props[key];
+    if (raw is num) return raw.toDouble();
+    if (raw is String) return double.tryParse(raw.trim());
+    return null;
+  }
+
+  int? _intProp(Map<String, dynamic> props, String key) {
+    return _numProp(props, key)?.toInt();
+  }
+
   bool _supportsAtomInstanceEditor(String type) {
     return const {
       'text',
@@ -2154,12 +2171,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       text: module.properties['text']?.toString() ?? '',
     );
     final fontSizeController = TextEditingController(
-      text: ((module.properties['fontSize'] as num?)?.toDouble() ?? 14.0)
+      text: (_numProp(module.properties, 'fontSize') ?? 14.0)
           .toStringAsFixed(0),
     );
     final radiusController = TextEditingController(
       text: (module.type == 'image'
-              ? ((module.properties['borderRadius'] as num?)?.toDouble() ??
+              ? (_numProp(module.properties, 'borderRadius') ??
                   module.borderRadius)
               : module.borderRadius)
           .toStringAsFixed(0),
@@ -2168,30 +2185,29 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       text: module.opacity.toStringAsFixed(2),
     );
     final minController = TextEditingController(
-      text: ((module.properties['min'] as num?)?.toDouble() ?? 0.0)
-          .toStringAsFixed(0),
+      text: (_numProp(module.properties, 'min') ?? 0.0).toStringAsFixed(0),
     );
     final maxController = TextEditingController(
-      text: ((module.properties['max'] as num?)?.toDouble() ?? 100.0)
-          .toStringAsFixed(0),
+      text: (_numProp(module.properties, 'max') ?? 100.0).toStringAsFixed(0),
     );
     final currentController = TextEditingController(
-      text: ((module.properties['current'] as num?)?.toDouble() ?? 0.0)
+      // select 的 current 是选项 value（字符串），这里解析失败会回落 0，
+      // 且 select 分支实际使用 selectDefaultController，不受影响。
+      text: (_numProp(module.properties, 'current') ?? 0.0)
           .toStringAsFixed(0),
     );
     final thicknessController = TextEditingController(
-      text: ((module.properties['thickness'] as num?)?.toDouble() ?? 2.0)
+      text: (_numProp(module.properties, 'thickness') ?? 2.0)
           .toStringAsFixed(0),
     );
     final placeholderController = TextEditingController(
       text: module.properties['placeholder']?.toString() ?? '',
     );
     final maxLengthController = TextEditingController(
-      text: (module.properties['maxLength'] as num?)?.toInt().toString() ?? '',
+      text: _intProp(module.properties, 'maxLength')?.toString() ?? '',
     );
     final stepController = TextEditingController(
-      text: ((module.properties['step'] as num?)?.toDouble() ?? 1.0)
-          .toStringAsFixed(2),
+      text: (_numProp(module.properties, 'step') ?? 1.0).toStringAsFixed(2),
     );
     final optionsController = TextEditingController(
       text: SelectOption.parseList(module.properties['options'])
@@ -2201,7 +2217,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           .join('\n'),
     );
     final dotSizeController = TextEditingController(
-      text: ((module.properties['dotSize'] as num?)?.toDouble() ?? 14.0)
+      text: (_numProp(module.properties, 'dotSize') ?? 14.0)
           .toStringAsFixed(0),
     );
     final imageUrlController = TextEditingController(

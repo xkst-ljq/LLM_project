@@ -1390,6 +1390,16 @@ LLM 回复
 
 测试：`test/data_channel_update_engine_test.dart`。
 
+修复：数值属性读取与预览实时刷新
+- `select` 的 `current` 存的是选项 value（String），旧代码统一 `as num?` 强转，
+  导致双击下拉单选打开实例编辑器时抛 `type 'String' is not a subtype of type 'num?'`。
+  改为宽容读取 `_numProp` / `_intProp`：num 直取、String 尝试解析、其余回落默认值。
+  同一问题在复合覆写编辑器的 min / max / current 上一并修掉。
+- 运行时预览的数据通道调试浮层只在 LinkerEventBus 事件后刷新，
+  而滑块拖动 / 输入 / 开关是直接改写 `module.properties`，不一定发事件，
+  因此浮层不跟随操作更新。改为 300ms 低频轮询兜底 + 抬手即同步一次，
+  仅在摘要实际变化时 setState，避免无谓重建。
+
 ### A9.6 不做
 - 不做完整自动状态解析器。
 - 不做复杂 Prompt 分频策略。
