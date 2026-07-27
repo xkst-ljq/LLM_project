@@ -374,6 +374,10 @@ UI 交互 → SessionState → Prompt → LLM → 解析算账 → 确认 → �
 - 触发点：`initState`（首帧显示真实状态）与 `didUpdateWidget`
   （外部 sessionState 被替换时刷新）。
 - `local_ui_state` 与未匹配的状态字段不回填。
+- **当前只在 Assembly 编辑器预览里生效**：`UIAssemblyRuntimeView` 全项目仅此一处调用，
+  聊天页还没有渲染 Assembly UI（只读取数据通道配置注入 Prompt）。
+  聊天页挂载属于 A10 范围；A10 做完后传入 `sessionState` /
+  `onSessionStateChanged` 即可让反向同步在真实会话里生效。
 
 ### 下一步建议
 - 「根据剧情自动判断状态变化」的效果验证：
