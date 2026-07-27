@@ -1813,6 +1813,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       );
     }
 
+    Future<void> closeAtomDialog(BuildContext ctx, String value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
+
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1948,9 +1955,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                             ),
                           ),
                           TextButton(
-                            onPressed: () {
+                            onPressed: () async {
                               openDataChannel = true;
-                              Navigator.pop(ctx, 'data');
+                              await closeAtomDialog(ctx, 'data');
                             },
                             child: const Text('数据通道'),
                           ),
@@ -1963,11 +1970,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, 'cancel'),
+                onPressed: () => closeAtomDialog(ctx, 'cancel'),
                 child: const Text('取消'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(ctx, 'save'),
+                onPressed: () => closeAtomDialog(ctx, 'save'),
                 child: const Text('保存'),
               ),
             ],
@@ -2174,6 +2181,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       return nameController.text.trim();
     }
 
+    Future<void> closeDataChannelDialog(BuildContext ctx, bool value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
+
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -2326,20 +2340,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
+                onPressed: () => closeDataChannelDialog(ctx, false),
                 child: const Text('取消'),
               ),
               TextButton(
-                onPressed: () {
+                onPressed: () async {
                   clearChannel = true;
-                  Navigator.pop(ctx, true);
+                  await closeDataChannelDialog(ctx, true);
                 },
                 child: const Text('清除通道'),
               ),
               FilledButton(
                 onPressed: effectiveName().trim().isEmpty
                     ? null
-                    : () => Navigator.pop(ctx, true),
+                    : () => closeDataChannelDialog(ctx, true),
                 child: const Text('保存'),
               ),
             ],
