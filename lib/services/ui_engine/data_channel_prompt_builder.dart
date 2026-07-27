@@ -201,24 +201,55 @@ class DataChannelPromptBuilder {
     if (writable.isEmpty) return '';
 
     final lines = <String>[];
-    lines.add('[界面数据更新格式 · 必须遵守]');
-    lines.add('本回合回复正文结束后，如果以下数据确有变化，'
-        '必须另起一行输出变化块（没有变化则完全不输出该块）：');
-    lines.add('<$updateTag>');
+    lines.add('[界面数据更新 · 每回合必须执行]');
+    lines.add('你每一条回复的最后，都必须附上界面数据结算块。这是系统协议，'
+        '不是可选项，也不需要用户提出要求。');
+    lines.add('');
+    lines.add('可结算项：');
     for (final item in writable) {
       final format = item.llmWritePolicy == 'suggest_delta'
-          ? '${item.semanticLabel}:+N 或 ${item.semanticLabel}:-N（只给变化量，不要给最终值）'
-          : '${item.semanticLabel}=新内容（直接给变化后的内容）';
+          ? '- ${item.semanticLabel}：格式 `${item.semanticLabel}:+N` 或 '
+              '`${item.semanticLabel}:-N`，只给变化量，不要给最终值'
+          : '- ${item.semanticLabel}：格式 `${item.semanticLabel}=新内容`，'
+              '直接给变化后的内容';
       lines.add(format);
     }
+    lines.add('');
+    lines.add('输出示例（正文结束后另起一行）：');
+    lines.add('<$updateTag>');
+    lines.add(_exampleLine(writable.first));
     lines.add('</$updateTag>');
-    lines.add('规则：');
-    lines.add('- 变化量需与本回合剧情合理对应。');
-    lines.add('- 没有变化的项不要输出，不要输出未列出的项。');
-    lines.add('- 该标记块不会展示给用户，请勿在正文中重复其内容。');
-    lines.add('- 不要用代码块包裹该标记，直接输出标签本身。');
+    lines.add('');
+    lines.add('执行规则：');
+    // 关键：不给「无变化就整块省略」的台阶。
+    // 一旦允许省略，模型每回合都会判定为无变化，从而永远不输出标签块。
+    lines.add('- 每回合都要输出 <$updateTag>...</$updateTag> 这一对标签，'
+        '即使本回合没有任何变化，也要输出一对空标签。');
+    lines.add('- 标签内只写确有变化的项；没有变化的项不写，也不要写未列出的项。');
+    lines.add('- 变化量需与本回合剧情合理对应，不要凭空夸大。');
+    lines.add('- 直接输出标签本身，不要用代码块或引号包裹。');
+    lines.add('- 该标记不会展示给用户，正文中不要重复或提及它的内容。');
 
     return lines.join('\n');
+  }
+
+  /// 为格式说明生成一行示例，降低模型的格式歧义。
+  static String _exampleLine(DataChannelPromptItem item) {
+    return item.llmWritePolicy == 'suggest_delta'
+        ? '${item.semanticLabel}:+2'
+        : '${item.semanticLabel}=示例内容';
+  }
+
+  /// 每回合贴在最后一条用户消息尾部的极短提醒。
+  ///
+  /// PHI 解决的是「指令离得太远被淡忘」，但部分模型在沉浸式角色扮演时
+  /// 仍会忽略系统层的格式要求。紧贴用户消息的一行短提醒是成本最低的补强，
+  /// 且因为足够短，不会干扰正文的角色扮演质量。
+  static String buildTurnReminder(List<DataChannelPromptItem> items) {
+    final writable = items.where((item) => item.canWrite).toList();
+    if (writable.isEmpty) return '';
+    return '（系统提醒：本回合回复结束后，记得附上 '
+        '<$updateTag>...</$updateTag> 结算块，无变化则输出空标签。）';
   }
 
   /// 渲染 `{{ui.xxx}}` 占位符。

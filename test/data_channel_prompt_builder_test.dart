@@ -240,6 +240,82 @@ void main() {
     });
   });
 
+  group('buildUpdateFormatInstruction - 遵从度强化', () {
+    const deltaItem = DataChannelPromptItem(
+      semanticLabel: '好感度',
+      targetKind: 'status_field',
+      targetId: 'f_aff',
+      llmReadPolicy: 'prompt',
+      llmWritePolicy: 'suggest_delta',
+      value: '45',
+      rangeHint: '',
+    );
+
+    test('要求每回合都输出标签，无变化也要输出空标签', () {
+      final out =
+          DataChannelPromptBuilder.buildUpdateFormatInstruction([deltaItem]);
+      // 关键：不能给模型「无变化就整块省略」的台阶，
+      // 否则它每回合都判定无变化，永远不输出标签块。
+      expect(out, contains('每回合'));
+      expect(out, contains('空标签'));
+    });
+
+    test('包含具体示例，降低格式歧义', () {
+      final out =
+          DataChannelPromptBuilder.buildUpdateFormatInstruction([deltaItem]);
+      expect(out, contains('好感度:+2'));
+    });
+
+    test('无可写通道时不产生任何约束', () {
+      final out = DataChannelPromptBuilder.buildUpdateFormatInstruction([
+        const DataChannelPromptItem(
+          semanticLabel: '主角姓名',
+          targetKind: 'session_var',
+          targetId: '',
+          llmReadPolicy: 'prompt',
+          llmWritePolicy: 'none',
+          value: '林',
+          rangeHint: '',
+        ),
+      ]);
+      expect(out, isEmpty);
+    });
+  });
+
+  group('buildTurnReminder', () {
+    test('有可写通道时生成简短提醒', () {
+      final out = DataChannelPromptBuilder.buildTurnReminder([
+        const DataChannelPromptItem(
+          semanticLabel: '好感度',
+          targetKind: 'status_field',
+          targetId: 'f_aff',
+          llmReadPolicy: 'prompt',
+          llmWritePolicy: 'suggest_delta',
+          value: '45',
+          rangeHint: '',
+        ),
+      ]);
+      expect(out, contains(DataChannelPromptBuilder.updateTag));
+      // 提醒必须足够短，避免干扰正文角色扮演质量。
+      expect(out.length, lessThan(120));
+    });
+
+    test('无可写通道时不打扰模型', () {
+      final out = DataChannelPromptBuilder.buildTurnReminder([
+        const DataChannelPromptItem(
+          semanticLabel: '主角姓名',
+          targetKind: 'session_var',
+          targetId: '',
+          llmReadPolicy: 'prompt',
+          llmWritePolicy: 'none',
+          value: '林',
+          rangeHint: '',
+        ),
+      ]);
+      expect(out, isEmpty);
+    });
+  });
+
   group('renderPlaceholders', () {
     const items = [
       DataChannelPromptItem(

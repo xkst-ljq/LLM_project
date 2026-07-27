@@ -295,9 +295,30 @@ void main() {
       final out = DataChannelPromptBuilder.buildUpdateFormatInstruction([
         _item(label: '好感度', write: 'suggest_delta'),
       ]);
-      expect(out, contains('必须遵守'));
+      expect(out, contains('必须执行'));
       expect(out, contains('<${DataChannelUpdateEngine.tag}>'));
       expect(out, contains('好感度:+N'));
+    });
+  });
+
+  group('空标签块', () {
+    test('模型输出空标签时安全返回，不产生更新也不报错', () {
+      final tag = DataChannelUpdateEngine.tag;
+      final result = DataChannelUpdateEngine.parse(
+        reply: '正文。\n<$tag>\n</$tag>',
+        items: [_item(label: '好感度')],
+        session: SessionState(statusValues: {'f_aff': '45'}),
+        statusFields: [_affField],
+      );
+      expect(result.isEmpty, isTrue);
+      expect(result.rejectedCount, 0);
+    });
+
+    test('空标签同样从展示文本剥离干净', () {
+      final tag = DataChannelUpdateEngine.tag;
+      final stripped =
+          DataChannelUpdateEngine.stripFromReply('正文。\n<$tag>\n</$tag>');
+      expect(stripped, '正文。');
     });
   });
 
