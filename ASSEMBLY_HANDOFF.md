@@ -229,7 +229,13 @@ UI 输入 / 选择 / 滑动
 
 A9.6-0 已写入设计：
 - SSOT 边界：`CharacterMeta.statusBarFields` 负责字段定义，`SessionState.vars/statusValues` 负责会话当前值。
-- Binding 目标类型：`status_field / session_var`，并支持 `targetId / pendingName / displayNameSnapshot`。
+- 默认交互采用“数据通道卡片”，不同时维护 LLM 节点、端口标记、绑定面板三套主入口。
+- 数据通道卡片负责配置：数据名称、语义来源、保存位置、玩家可见性、LLM 读权限、LLM 写权限、更新应用策略。
+- LLM 不接收裸值，必须通过 `semanticLabel / semanticPath` 注入，例如 `角色状态 / 好感度：45`。
+- 语义来源优先级：手动名称 > 显式 Text 标签 > 父级容器标题递归 > 组件 name > 组件类型兜底。
+- Binding 目标类型：`local_ui_state / session_var / status_field`，并支持 `targetId / pendingName / displayNameSnapshot`。
+- 数据存在、玩家可见、LLM 可见、LLM 可修改互相独立，默认不发送给 LLM，也不允许 LLM 修改。
+- 支持“LLM 不读取当前值，但允许给出增量建议”的隐藏状态场景。
 - UI 原子写入 MVP：input/select 写 vars，switch 写 vars 或 statusValues，slider 写 statusValues。
 - Prompt 注入：支持 `{{var.xxx}} / {{status.xxx}}` 或结构化 `[当前状态]` 段落。
 - LLM 状态更新：预留 `status_updates / vars_updates` 结构化格式。

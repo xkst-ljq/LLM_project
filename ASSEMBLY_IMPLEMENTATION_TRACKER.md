@@ -849,6 +849,105 @@ A9.6 的单一事实源分两层：
 - 清空聊天记录后，会话状态可以重置，回到母版初始值。
 - Prompt 每轮从母版 + SessionState 重新组装。
 
+##### 默认交互：数据通道卡片
+A9.6 统一采用“数据通道卡片”作为默认操作模型，不同时维护三套入口。LLM 数据节点与端口级 LLM 标记可作为后续高级可视化，但不作为 MVP 主交互。
+
+创作者操作流程：
+```text
+选中组件
+→ 打开“数据通道”
+→ 添加 / 编辑一张数据通道卡片
+→ 填写数据名称与语义来源
+→ 选择保存位置
+→ 选择玩家可见 / LLM 可读 / LLM 可写 / 应用策略
+→ 保存
+```
+
+数据通道卡片需要在一个界面内表达：
+- 这个组件代表什么数据。
+- 数据值来自组件哪个端口，例如 `text / current / value / selected`。
+- 语义标签是什么。
+- 所属语义路径是什么。
+- 保存到 `local_ui_state / session_var / status_field` 中哪一类。
+- 玩家是否可见。
+- 是否发送当前值给 LLM。
+- 是否允许 LLM 建议修改。
+- LLM 修改方式是增量还是替换。
+- 更新是否需要用户确认。
+
+画布上可用小 chip 显示数据通道摘要，例如：
+```text
+好感度 · AI↕
+主角姓名 · AI↑
+当前 tab · UI
+```
+
+##### 数据通道语义：LLM 不接收裸值
+LLM 不应该收到无语义裸值，例如：
+```text
+45
+true
+精灵森林
+```
+
+LLM 应收到带语义路径的数据，例如：
+```text
+角色状态 / 好感度：45
+场景控制 / 当前地点：精灵森林
+战斗面板 / 狂暴状态：开启
+```
+
+因此每个会进入 LLM 的数据通道必须能解析出：
+```text
+semanticLabel: 数据自身名称，例如“好感度”
+semanticPath: 所属路径，例如“角色状态 / 好感度”
+```
+
+##### 语义来源优先级
+数据通道的语义来源按以下优先级解析：
+1. 数据通道卡片中手动填写的名称。
+2. 显式选择的 Text 标签，例如 `Text("好感度")`。
+3. 父级容器 / 面板标题递归，例如 `角色状态 / 好感度`。
+4. 组件自身 name。
+5. 组件类型兜底，例如“未命名数值”。
+
+系统可以自动建议，但不能自动强绑定。例如系统可提示：
+```text
+检测到附近文本“好感度”，是否作为数据名称？
+```
+但绑定目标、是否给 LLM 看、是否允许 LLM 修改，必须由创作者确认。
+
+##### Label Text 与父级连接递归
+创作者通常会在 UI 中放置文字标题解释数据条含义。因此 A9.6 允许 Text 组件作为数据通道的语义标签来源。
+
+MVP 交互：
+- 在数据通道卡片中选择“名称来源：文本标签”。
+- 从同页面 / 同容器内选择一个 Text 组件作为标签。
+- 系统读取该 Text 的文案作为 `semanticLabel`。
+
+后续高级可视化：
+- 可在画布上显示淡语义线，例如 `Text("好感度") --label--> Progress`。
+- 父级容器标题可以递归参与 `semanticPath`。
+
+父级递归示例：
+```text
+Text("角色状态") labels Surface Panel
+Text("好感度") labels Progress(45)
+```
+
+Prompt 中生成：
+```text
+[角色状态]
+好感度：45
+```
+或：
+```text
+角色状态 / 好感度：45
+```
+
+##### 组件 name 的定位
+组件 name 只是语义兜底，不是首选来源。若 UI 上已有可见 Text 标签，应优先使用 Text 标签，避免创作者重复输入同一语义。
+
 ##### Binding 目标类型
 现有 `AssemblyBinding.statusKey` 只是 A3-4 MVP 挂载位。A9.6 后续建议升级为明确目标结构：
 
@@ -879,6 +978,49 @@ Binding 入口不应要求用户手填内部 id。
 高级模式：
 - 可折叠显示内部 id / key。
 - 仅供调试和高级作者使用。
+
+##### 数据存在、玩家可见、LLM 可见、LLM 可修改互相独立
+系统不得根据字段名称、控件类型或状态栏归属自动判断是否发送给 LLM 或是否允许 LLM 修改。以下配置相互独立：
+
+```text
+targetKind: local_ui_state | session_var | status_field
+visibility: ui_only | player_visible | system_hidden
+llmReadPolicy: none | prompt | hidden_context
+llmWritePolicy: none | suggest_delta | suggest_replace | suggest_any
+llmUpdateApplyPolicy: never | confirm | auto_low_risk
+```
+
+默认值必须安全：
+```text
+visibility = ui_only
+llmReadPolicy = none
+llmWritePolicy = none
+llmUpdateApplyPolicy = confirm
+```
+
+常见组合：
+- 主角姓名：玩家可见，发送给 LLM，只读，不允许 LLM 修改。
+- 好感度：玩家可见，发送给 LLM，允许 LLM 建议增量，用户确认后应用。
+- 敌方警觉度：系统隐藏，不发送当前值给 LLM，但允许 LLM 根据剧情建议增量。
+- 当前 tab：UI 内部，不发送给 LLM，不允许 LLM 修改。
+
+Prompt 注入只读取 `llmReadPolicy != none` 的数据。LLM 更新建议只允许出现在 `llmWritePolicy != none` 的数据通道中。
+
+##### LLM 可写但不可读的场景
+允许存在“不发送当前值给 LLM，但允许 LLM 提供变化/增量”的数据通道。
+
+示例：
+```text
+敌方警觉度：当前值隐藏，不注入 Prompt。
+LLM 只知道“可根据剧情建议敌方警觉度 +N/-N”。
+App 本地根据当前隐藏值执行 delta + clamp。
+```
+
+这类数据的 Prompt 可只注入写入规则，而不注入当前值：
+```text
+[可建议更新的隐藏状态]
+敌方警觉度：只可输出 +N/-N，不要在正文中提及当前值。
+```
 
 ##### UI 原子写入 SessionState 的 MVP 映射
 优先支持四类输入原子：
