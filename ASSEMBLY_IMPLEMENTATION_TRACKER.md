@@ -1948,6 +1948,26 @@ slider / progress 等组件不会跟着变（状态栏是独立渲染的，所�
 反向同步的能力已就绪且有单测，A10 挂载完成后接上 `sessionState`
 与 `onSessionStateChanged` 即可直接生效。
 
+修复：状态栏编辑页改了上限却存不进去
+- 现象：新建字段时把初始值设成大于 100 的数，即使同时调高最大值，
+  保存后再进编辑页仍是旧值。
+- 根因（与「100」无关，是编辑丢失）：`_buildFieldCard(i)` 在 build 时捕获了
+  `final f = _fields[i]`，而各输入框的 onChanged 走了两条不同路径——
+  - 初始值 / 名称：`_fields[i] = f.copyWith(...)` → 生成**新对象**
+  - 最小值 / 最大值：`_fields[i].minValue = ...` → 直接改**旧对象** `f`
+  一旦先改了初始值，`_fields[i]` 已换成新对象，此后对 `f` 的写入全部丢失。
+  新建字段默认 max 恰好是 100，所以只有需要调高上限时才暴露。
+- 处理：
+  - 四处 onChanged 统一改为基于 `_fields[i]` 的最新对象做 `copyWith`，
+    不再使用闭包捕获的 `f`，也不再直接改字段。
+  - `StatusBarField.copyWith` 增加 `clearMinValue` / `clearMaxValue`：
+    仅靠 `minValue: null` 无法与「不修改」区分，清空上下限需要显式标记。
+  - `ListView.builder` 的 item 补 `ValueKey(field.id)`：
+    此前没有 key，增删字段会让 `TextFormField` 的 State 错位复用，
+    输入内容可能串到别的字段上。
+- 测试：`test/status_bar_field_test.dart` 覆盖链式编辑不互相覆盖、
+  上限可改到远大于默认值、以及 clear 标记的清空语义。
+
 ### 下一步候选
 - A10 mode 差异逻辑收口（其中包含聊天页挂载 Assembly UI，
   完成后反向同步可立即接上，见 A9.6-5 的「当前生效范围」）

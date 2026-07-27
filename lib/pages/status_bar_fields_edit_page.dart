@@ -70,7 +70,12 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _fields.length,
-              itemBuilder: (ctx, i) => _buildFieldCard(i),
+              itemBuilder: (ctx, i) => KeyedSubtree(
+                // 没有 key 时，增删字段会让 TextFormField 的 State 错位复用，
+                // 输入内容可能串到别的字段上。
+                key: ValueKey(_fields[i].id),
+                child: _buildFieldCard(i),
+              ),
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addField,
@@ -121,7 +126,9 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
                       hintText: '如：生命、好感、地点',
                       isDense: true,
                     ),
-                    onChanged: (v) => _fields[i] = f.copyWith(name: v),
+                    // 一律基于 _fields[i] 的最新对象改写，不要用闭包捕获的 f：
+                    // f 是本次 build 时的旧引用，其他输入框改过之后就过期了。
+                    onChanged: (v) => _fields[i] = _fields[i].copyWith(name: v),
                   ),
                 ),
                 IconButton(
@@ -161,7 +168,8 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
                 hintText: isNumber ? '如：80' : '如：监控室',
                 isDense: true,
               ),
-              onChanged: (v) => _fields[i] = f.copyWith(initialValue: v),
+              onChanged: (v) =>
+                  _fields[i] = _fields[i].copyWith(initialValue: v),
             ),
             if (isNumber) ...[
               const SizedBox(height: 8),
@@ -176,8 +184,10 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
                         labelText: '最小值（可空）',
                         isDense: true,
                       ),
-                      onChanged: (v) =>
-                          _fields[i].minValue = double.tryParse(v.trim()),
+                      onChanged: (v) => _fields[i] = _fields[i].copyWith(
+                            minValue: double.tryParse(v.trim()),
+                            clearMinValue: v.trim().isEmpty,
+                          ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -190,8 +200,10 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
                         labelText: '最大值（可空）',
                         isDense: true,
                       ),
-                      onChanged: (v) =>
-                          _fields[i].maxValue = double.tryParse(v.trim()),
+                      onChanged: (v) => _fields[i] = _fields[i].copyWith(
+                            maxValue: double.tryParse(v.trim()),
+                            clearMaxValue: v.trim().isEmpty,
+                          ),
                     ),
                   ),
                 ],

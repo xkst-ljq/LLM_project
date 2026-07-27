@@ -78,6 +78,8 @@ class StatusBarField {
     };
   }
 
+  /// [clearMinValue] / [clearMaxValue] 用于把上下限显式改回「不限制」。
+  /// 仅靠 `minValue: null` 无法表达清空——那与「不修改」无法区分。
   StatusBarField copyWith({
     String? id,
     String? name,
@@ -87,14 +89,16 @@ class StatusBarField {
     double? maxValue,
     String? pinSide,
     int? order,
+    bool clearMinValue = false,
+    bool clearMaxValue = false,
   }) {
     return StatusBarField(
       id: id ?? this.id,
       name: name ?? this.name,
       type: type ?? this.type,
       initialValue: initialValue ?? this.initialValue,
-      minValue: minValue ?? this.minValue,
-      maxValue: maxValue ?? this.maxValue,
+      minValue: clearMinValue ? null : (minValue ?? this.minValue),
+      maxValue: clearMaxValue ? null : (maxValue ?? this.maxValue),
       pinSide: pinSide ?? this.pinSide,
       order: order ?? this.order,
     );
