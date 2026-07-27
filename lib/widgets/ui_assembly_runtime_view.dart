@@ -79,6 +79,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   void initState() {
     super.initState();
     _restoreRuntimeState();
+    // 先用会话副本填充组件，再建立联动与轮询，
+    // 保证首帧显示的就是真实状态而不是模板默认值。
+    _applySessionToUI();
     _setupRuntimeLinkers();
     _startChannelPolling();
   }
@@ -116,8 +119,18 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     if (oldWidget.assemblyInfo.toJsonString() != widget.assemblyInfo.toJsonString() ||
         oldWidget.activePageId != widget.activePageId) {
       _restoreRuntimeState();
+      _applySessionToUI();
       _setupRuntimeLinkers();
       _startChannelPolling();
+      return;
+    }
+
+    // 外部会话副本被替换（如 LLM 更新状态、撤回回滚）时刷新界面显示。
+    // 这是反向同步的主要触发点：状态变了，UI 要跟着变。
+    final incoming = widget.sessionState;
+    if (incoming != null && !identical(incoming, _session)) {
+      _session = incoming;
+      if (_applySessionToUI() && mounted) setState(() {});
     }
   }
 
@@ -146,19 +159,24 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     _syncDataChannels();
   }
 
-  /// A9.6-2：把当前页配置了数据通道的输入原子的值同步进会话副本。
-  ///
-  /// 每次联动器事件后调用；仅单向 UI → SessionState，不做反向回填。
-  void _syncDataChannels() {
-    final activePage = _resolveActivePage(_pages, _activePageId);
-    final overrideChannels = <String, Map<String, dynamic>>{};
-    for (final override in activePage.propertyOverrides) {
+  /// 收集当前页的暴露项通道覆写（复合组件用）。
+  Map<String, Map<String, dynamic>> _overrideChannelsOf(AssemblyPage page) {
+    final out = <String, Map<String, dynamic>>{};
+    for (final override in page.propertyOverrides) {
       final raw = override.overrides['dataChannel'];
       if (raw is Map) {
-        overrideChannels[override.componentId] =
-            Map<String, dynamic>.from(raw);
+        out[override.componentId] = Map<String, dynamic>.from(raw);
       }
     }
+    return out;
+  }
+
+  /// A9.6-2：把当前页配置了数据通道的输入原子的值同步进会话副本。
+  ///
+  /// 单向 UI → SessionState。反向回填见 [_applySessionToUI]。
+  void _syncDataChannels() {
+    final activePage = _resolveActivePage(_pages, _activePageId);
+    final overrideChannels = _overrideChannelsOf(activePage);
 
     final writes = DataChannelService.collectWrites(
       activePage.elements,
@@ -174,6 +192,19 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     if (changed) {
       widget.onSessionStateChanged?.call(_session);
     }
+  }
+
+  /// 反向同步：SessionState → UI 组件。
+  ///
+  /// 用于 LLM 更新状态、或状态被外部改动后刷新界面显示。
+  /// 返回 true 表示有组件被更新。
+  bool _applySessionToUI() {
+    final activePage = _resolveActivePage(_pages, _activePageId);
+    return DataChannelService.applySessionToElements(
+      activePage.elements,
+      _session,
+      overrideChannels: _overrideChannelsOf(activePage),
+    );
   }
 
   String _defaultTransitionForAction(String action) {

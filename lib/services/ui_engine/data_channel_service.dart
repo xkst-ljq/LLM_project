@@ -99,6 +99,129 @@ class DataChannelService {
     return value.toString();
   }
 
+  /// 可以显示会话副本数值的原子类型。
+  ///
+  /// 比 [writableTypes] 多了 progress、text——它们不作为输入源，
+  /// 但很适合展示状态（如好感度进度条、状态文本）。
+  static const Set<String> readableTypes = {
+    'input',
+    'select',
+    'switch',
+    'slider',
+    'progress',
+    'text',
+  };
+
+  /// 把会话副本的值写回组件属性。
+  ///
+  /// 与 [readModuleValue] 互为逆操作，取值口径必须保持一致，
+  /// 否则会出现「写进去的和读出来的不是同一个字段」。
+  ///
+  /// 返回 true 表示该组件的属性确实被改动了。
+  static bool applyValueToModule(UIModule module, String value) {
+    final props = module.properties;
+
+    bool setIfChanged(String key, dynamic next) {
+      if (props[key] == next) return false;
+      props[key] = next;
+      return true;
+    }
+
+    switch (module.type) {
+      case 'input':
+        var changed = setIfChanged('text', value);
+        changed = setIfChanged('value', value) || changed;
+        changed = setIfChanged('committedValue', value) || changed;
+        return changed;
+      case 'select':
+        return setIfChanged('current', value);
+      case 'switch':
+        final on = value == 'true' || value == '1' || value == '开启';
+        return setIfChanged('value', on);
+      case 'slider':
+      case 'progress':
+        final parsed = double.tryParse(value.trim());
+        if (parsed == null) return false;
+        // 尊重组件自身的量程，避免把滑块推到轨道外。
+        final min = (props['min'] as num?)?.toDouble() ?? 0.0;
+        final max = (props['max'] as num?)?.toDouble() ?? 100.0;
+        final clamped = parsed.clamp(min, max).toDouble();
+        var changed = setIfChanged('current', clamped);
+        if (module.type == 'slider') {
+          changed = setIfChanged('committedValue', clamped) || changed;
+        }
+        return changed;
+      case 'text':
+        return setIfChanged('text', value);
+      default:
+        return false;
+    }
+  }
+
+  /// 反向同步：把会话副本的值回填到配置了数据通道的组件上。
+  ///
+  /// 只回填 `session_var` / `status_field` 通道——`local_ui_state`
+  /// 本就只活在 UI 内部，没有外部数据源。
+  ///
+  /// 返回 true 表示至少有一个组件被更新，调用方据此决定是否重建。
+  static bool applySessionToElements(
+    List<UIElement> elements,
+    SessionState session, {
+    Map<String, Map<String, dynamic>> overrideChannels =
+        const <String, Map<String, dynamic>>{},
+  }) {
+    var changed = false;
+
+    void visit(List<UIElement> nodes) {
+      for (final node in nodes) {
+        final module = node.module;
+        if (module != null && readableTypes.contains(module.type)) {
+          final raw = overrideChannels[node.id] ??
+              (module.properties['dataChannel'] is Map
+                  ? Map<String, dynamic>.from(
+                      module.properties['dataChannel'] as Map,
+                    )
+                  : null);
+          if (raw != null) {
+            final value = _resolveSessionValue(raw, session);
+            if (value != null && applyValueToModule(module, value)) {
+              changed = true;
+            }
+          }
+        }
+        if (node.isComposite && node.composite != null) {
+          visit(node.composite!.children);
+        }
+      }
+    }
+
+    visit(elements);
+    return changed;
+  }
+
+  /// 从会话副本里取出该通道对应的值；无对应数据时返回 null。
+  static String? _resolveSessionValue(
+    Map<String, dynamic> channel,
+    SessionState session,
+  ) {
+    final targetKind = channel['targetKind']?.toString() ?? 'local_ui_state';
+
+    if (targetKind == 'status_field') {
+      final targetId = channel['targetId']?.toString() ?? '';
+      // 未匹配到角色卡字段（pendingName）时没有可靠数据源。
+      if (targetId.trim().isEmpty) return null;
+      return session.statusValues[targetId];
+    }
+
+    if (targetKind == 'session_var') {
+      final label = channel['semanticLabel']?.toString().trim() ?? '';
+      if (label.isEmpty) return null;
+      return session.vars[label];
+    }
+
+    return null;
+  }
+
   /// 从元素树里收集所有可写数据通道（含复合组件内部子元素）。
   ///
   /// [overrideChannels] 用于复合组件暴露项：

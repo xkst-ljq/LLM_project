@@ -1911,8 +1911,32 @@ direction: none | upload_only | bidirectional
   因此同一轮内既要求修改又要求报数时，报的是修改前的值。
 - 撤回升级前（DB v4 之前）产生的消息不会回滚，因其无状态快照。
 
+#### A9.6-5：反向同步 SessionState → UI（已完成，待本地测试）
+此前只有 UI → SessionState 单向，LLM 更新状态后 Assembly 里的
+slider / progress 等组件不会跟着变（状态栏是独立渲染的，所以看起来在动）。
+
+新增能力：
+- `DataChannelService.readableTypes`：可显示会话数值的类型，
+  比可写类型多了 `progress` 与 `text`——它们不作输入源但适合展示状态。
+- `applyValueToModule()`：把值写回组件属性，与 `readModuleValue()` 互为逆操作。
+  - slider / progress 按组件自身 `min`/`max` clamp，不会推出轨道。
+  - switch 识别 `true` / `1` / `开启` 多种真值写法。
+  - 非数值写入数值组件时忽略，不破坏原值。
+  - 值未变化时返回 false，避免无谓重建。
+- `applySessionToElements()`：遍历元素树（含复合子元素与暴露项覆写通道）回填。
+  - 只回填 `session_var` / `status_field`；`local_ui_state` 无外部数据源，跳过。
+  - 状态字段仍是 pendingName（未匹配）时跳过。
+  - 会话里没有该键时保持组件原值，不清空成空串。
+
+触发时机（`UIAssemblyRuntimeView`）：
+- `initState`：先回填再建联动，保证首帧显示真实状态而非模板默认值。
+- `didUpdateWidget`：外部 `sessionState` 被替换时（LLM 更新、撤回回滚）刷新界面。
+
+测试：`applyValueToModule` 与 `readModuleValue` 的**往返一致性**有专门用例覆盖
+（六种类型逐一验证写进去的和读出来的是同一个值），
+避免两个方向取值口径不一致导致静默丢值。
+
 ### 下一步候选
-- A9.6-2 反向同步：SessionState → UI 组件（当前仅 UI → SessionState 单向）
 - 「根据剧情自动判断状态变化」的效果验证与阈值调优
 - A10 mode 差异逻辑收口
 

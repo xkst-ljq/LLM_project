@@ -367,9 +367,15 @@ A9.6-1 已完成 MVP：
 UI 交互 → SessionState → Prompt → LLM → 解析算账 → 确认 → 状态栏刷新，
 以及撤回消息时的状态回滚，均已实测通过。
 
+### A9.6-5 反向同步（已完成，待本地测试）
+- `DataChannelService.applySessionToElements()` 把会话副本回填到组件。
+- 与 `readModuleValue()` 严格互逆，往返一致性有单测守——
+  两个方向取值口径不一致会造成静默丢值，改动任一侧都要同步另一侧。
+- 触发点：`initState`（首帧显示真实状态）与 `didUpdateWidget`
+  （外部 sessionState 被替换时刷新）。
+- `local_ui_state` 与未匹配的状态字段不回填。
+
 ### 下一步建议
-- A9.6-2 反向同步：目前只有 UI → SessionState 单向，
-  SessionState 变化尚未回流刷新 UI 组件（状态栏是独立渲染的）。
 - 「根据剧情自动判断状态变化」的效果验证：
   当前只验证了「用户明确要求修改」，自动判断的准确度与触发频率还没系统性测过。
   测之前建议先固定一组剧情样本，否则结果不可复现。
