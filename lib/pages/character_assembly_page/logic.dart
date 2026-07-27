@@ -468,9 +468,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
           return AlertDialog(
             title: const Text('复合组件实例编辑器'),
-            content: SizedBox(
-              width: 430,
-              child: Column(
+            content: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 430,
+                maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -519,9 +523,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       ),
                     )
                   else
-                    Flexible(
-                    child: ListView.separated(
+                    ListView.separated(
                       shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
                       itemCount: exposedChildren.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, index) {
@@ -586,7 +590,39 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  if (hasSlot) ...[
+                                  if (!hasSlot)
+                                    FilledButton.tonal(
+                                      onPressed: () async {
+                                        final created = _ensurePropertyOverride(
+                                          componentId: child.id,
+                                          sourceElementId: compositeElement.id,
+                                          sourceCompositeId:
+                                              compositeElement.composite?.id,
+                                        );
+                                        setState(() {
+                                          _persistAssemblyElements();
+                                        });
+                                        setDialogState(() {});
+                                        if (canEdit) {
+                                          await _showCompositeOverrideValueEditor(
+                                            compositeElement: compositeElement,
+                                            child: child,
+                                            propertyOverride: created,
+                                          );
+                                          setDialogState(() {});
+                                        }
+                                      },
+                                      child: const Text('创建'),
+                                    ),
+                                ],
+                              ),
+                              // 覆写槽位的操作按钮独占一行并允许换行，
+                              // 避免与名称同行时在窄弹窗里挤压导致溢出。
+                              if (hasSlot)
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: -8,
+                                  children: [
                                     if (canEdit)
                                       TextButton(
                                         onPressed: () async {
@@ -632,32 +668,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                       },
                                       child: const Text('移除'),
                                     ),
-                                  ] else
-                                    FilledButton.tonal(
-                                      onPressed: () async {
-                                        final created = _ensurePropertyOverride(
-                                          componentId: child.id,
-                                          sourceElementId: compositeElement.id,
-                                          sourceCompositeId:
-                                              compositeElement.composite?.id,
-                                        );
-                                        setState(() {
-                                          _persistAssemblyElements();
-                                        });
-                                        setDialogState(() {});
-                                        if (canEdit) {
-                                          await _showCompositeOverrideValueEditor(
-                                            compositeElement: compositeElement,
-                                            child: child,
-                                            propertyOverride: created,
-                                          );
-                                          setDialogState(() {});
-                                        }
-                                      },
-                                      child: const Text('创建'),
-                                    ),
-                                ],
-                              ),
+                                  ],
+                                ),
                               if (hasSlot &&
                                   overrides.first.overrides['dataChannel']
                                       is Map)
@@ -698,7 +710,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         );
                       },
                     ),
-                  ),
                   const SizedBox(height: 12),
                   _buildCompositeEditorSectionTitle('数据通道'),
                   Container(
@@ -738,6 +749,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     ),
                   ),
                 ],
+                ),
               ),
             ),
             actions: [

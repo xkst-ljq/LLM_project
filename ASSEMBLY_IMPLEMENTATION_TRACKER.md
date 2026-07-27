@@ -1268,6 +1268,13 @@ A9.6-0 只确认设计、边界和后续实现顺序。
 - 画布 chip 与暴露项摘要对待创建状态显示「状态待建」，chip 用橙色区分。
 - 仍不写 SessionState、不注入 Prompt（留给 A9.6-2 / A9.6-3）。
 
+修复：复合组件实例编辑器布局溢出
+- 现象：暴露项较多或按钮增至四个时，弹窗内 `Column` 底部溢出（RenderFlex overflowed）。
+- 处理：
+  - 弹窗内容改为 `ConstrainedBox(maxWidth 430, maxHeight 屏高 70%) + SingleChildScrollView`，整体可滚动。
+  - 暴露项列表去掉 `Flexible`，改为 `shrinkWrap + NeverScrollableScrollPhysics`，由外层统一滚动，避免嵌套滚动冲突。
+  - 覆写槽位的「编辑 / 绑定 / 通道 / 移除」从名称同一行移到独立 `Wrap` 行，可自动换行；未创建槽位时「创建」仍留在名称行。
+
 #### A9.6-2：UI 写入 SessionState MVP
 优先支持：
 - input → `SessionState.vars`
