@@ -146,11 +146,16 @@ class DataChannelUpdateEngine {
     var rejected = 0;
     final handled = <String>{};
 
+    // 同 StatusBarEngine：模型可能把多项写在同一行，
+    // 文本项的取值会把后面的数值项一起吞掉，必须先按已知语义名切分。
+    final segments = <String>[];
     for (final rawLine in block.split('\n')) {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
-      final body = line.replaceFirst(RegExp(r'^[-*•]\s*'), '');
+      segments.addAll(StatusBarEngine.splitSegments(line, byLabel.keys));
+    }
 
+    for (final body in segments) {
       final parsed = _splitNameAndValue(body);
       if (parsed == null) continue;
       final (name, rawValue, isAssign) = parsed;

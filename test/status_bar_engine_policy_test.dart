@@ -76,6 +76,70 @@ void main() {
     });
   });
 
+  group('splitSegments - 同行多项', () {
+    const names = ['心情', '好感度'];
+
+    test('同行多项按字段名正确切分', () {
+      expect(
+        StatusBarEngine.splitSegments('心情=平静，好感度:+3', names),
+        ['心情=平静', '好感度:+3'],
+      );
+    });
+
+    test('文本值里的逗号不会被误切', () {
+      expect(
+        StatusBarEngine.splitSegments('心情=有点复杂，说不清', names),
+        ['心情=有点复杂，说不清'],
+      );
+    });
+
+    test('单项原样返回并去掉列表符号', () {
+      expect(
+        StatusBarEngine.splitSegments('- 好感度:+3', names),
+        ['好感度:+3'],
+      );
+    });
+
+    test('字段名出现在文本值中但后面没有分隔符时不切分', () {
+      expect(
+        StatusBarEngine.splitSegments('心情=我在想好感度这件事', names),
+        ['心情=我在想好感度这件事'],
+      );
+    });
+  });
+
+  group('applyFromReply - 同行多项回归', () {
+    test('好感度增量不会被心情的文本值吞掉', () {
+      final fields = [
+        StatusBarField(
+          id: 'f_mood',
+          name: '心情',
+          type: 'text',
+          initialValue: '平静',
+        ),
+        StatusBarField(
+          id: 'f_aff',
+          name: '好感度',
+          type: 'number',
+          initialValue: '0',
+          minValue: 0,
+          maxValue: 100,
+        ),
+      ];
+      final values = {'f_mood': '平静', 'f_aff': '5'};
+
+      StatusBarEngine.applyFromReply(
+        '正文\n<状态变化>\n心情=开心，好感度:+3\n</状态变化>',
+        fields,
+        values,
+      );
+
+      // 修复前：心情会变成 "开心，好感度:+3"，而好感度纹丝不动。
+      expect(values['f_mood'], '开心');
+      expect(values['f_aff'], '8');
+    });
+  });
+
   group('applyFromReply - commit 开关', () {
     test('commit=false 时只算账不写入，供确认弹窗预览', () {
       final values = {'f_aff': '45'};

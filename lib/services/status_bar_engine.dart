@@ -171,11 +171,17 @@ class StatusBarEngine {
       byName[f.name.trim()] = f;
     }
 
+    // 模型有时会把多项写在同一行（如 `心情=平静，好感度:+3`）。
+    // 文本字段的取值是「等号后的全部内容」，会把后面的数值项一起吞掉，
+    // 导致好感度的增量跑进心情里。这里先按已知字段名把每行切成多个片段。
+    final segments = <String>[];
     for (final rawLine in block.split('\n')) {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
-      // 去掉可能的列表符号 "- "。
-      final body = line.replaceFirst(RegExp(r'^[-*•]\s*'), '');
+      segments.addAll(splitSegments(line, byName.keys));
+    }
+
+    for (final body in segments) {
 
       // 文本字段：名称=新值
       final eq = body.indexOf('=');
@@ -224,6 +230,56 @@ class StatusBarEngine {
       }
     }
     return changes;
+  }
+
+  /// 把一行拆成若干「字段名 + 值」片段。
+  ///
+  /// 只在**已知字段名**出现的位置切分，避免误伤文本值里的正常标点。
+  /// 例如已知字段为 心情 / 好感度 时：
+  ///   `心情=平静，好感度:+3` → [`心情=平静`, `好感度:+3`]
+  ///   `心情=有点复杂，说不清` → 整行保留（逗号后不是字段名）
+  static List<String> splitSegments(
+    String line,
+    Iterable<String> fieldNames,
+  ) {
+    // 去掉可能的列表符号 "- "。
+    final body = line.replaceFirst(RegExp(r'^[-*•]\s*'), '');
+    if (body.isEmpty) return const [];
+
+    // 收集所有「字段名紧跟分隔符」的起始位置。
+    final cuts = <int>[];
+    for (final name in fieldNames) {
+      if (name.isEmpty) continue;
+      var from = 0;
+      while (true) {
+        final at = body.indexOf(name, from);
+        if (at == -1) break;
+        from = at + name.length;
+        // 字段名后面必须紧跟 = 或 :（允许空格），否则只是正文里的普通词。
+        final rest = body.substring(from).trimLeft();
+        if (rest.startsWith('=') ||
+            rest.startsWith(':') ||
+            rest.startsWith('：')) {
+          cuts.add(at);
+        }
+      }
+    }
+
+    if (cuts.length <= 1) return [body];
+
+    cuts.sort();
+    final out = <String>[];
+    for (var i = 0; i < cuts.length; i++) {
+      final start = cuts[i];
+      final end = i + 1 < cuts.length ? cuts[i + 1] : body.length;
+      // 切出的片段可能以分隔标点结尾（如 `心情=平静，`），一并清掉。
+      final seg = body
+          .substring(start, end)
+          .trim()
+          .replaceFirst(RegExp(r'[，,、;；]+$'), '');
+      if (seg.isNotEmpty) out.add(seg);
+    }
+    return out;
   }
 
   /// 从展示文本剥离 `<状态变化>` 块（用户看到的回复里不含技术标记）。
