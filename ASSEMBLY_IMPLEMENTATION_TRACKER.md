@@ -51,8 +51,8 @@
 | A5 | Assembly 内 linker 连线 | 配置式 MVP 完成，待本地测试 | ✅ |
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
-| A9.5 | 通用模板基础版 | A9.5-5-3 原子实例编辑器第二批完成，待本地测试 | ✅ |
-| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-1 数据通道卡片 MVP 完成，待本地测试 | ✅ |
+| A9.5 | 通用模板基础版 | A9.5-5-4 数据通道内嵌完成，待本地测试 | ✅ |
+| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-1 数据通道卡片 MVP 完成，测试通过；入口已在 A9.5-5-4 内嵌 | ✅ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -840,7 +840,7 @@ lib/pages/ui_studio_page/dialogs/compact_editors_dialogs.dart
 ```
 
 ##### 分步建议
-###### A9.5-5-1：原子实例编辑器第一批（已完成，待本地测试）
+###### A9.5-5-1：原子实例编辑器第一批（已完成，测试通过）
 优先迁移简单原子：
 - text
 - surface / 面板
@@ -859,7 +859,7 @@ lib/pages/ui_studio_page/dialogs/compact_editors_dialogs.dart
 - 编辑结果只作用于当前 Assembly 实例。
 - 编辑器内保留“数据通道”入口作为过渡；后续 A9.5-5-4 再正式内嵌。
 
-###### A9.5-5-2：复合组件实例编辑器迁移（已完成，待本地测试）
+###### A9.5-5-2：复合组件实例编辑器迁移（已完成，测试通过）
 - 参考 Studio `_showCompactCompositeEditorDialog`。
 - 已将当前 Assembly 覆写入口包装为“复合组件实例编辑器”。
 - 已增加实例信息区：模板名、实例 ID、所在页面、尺寸 / 位置。
@@ -868,7 +868,7 @@ lib/pages/ui_studio_page/dialogs/compact_editors_dialogs.dart
 - 已增加高级占位区，说明重置覆写、查看模板来源、另存为模板等后续开放。
 - 不修改模板本体。
 
-###### A9.5-5-3：原子实例编辑器第二批（已完成，待本地测试）
+###### A9.5-5-3：原子实例编辑器第二批（已完成，测试通过）
 继续迁移复杂原子，全部已接入 `_showAtomInstanceEditorDialog`：
 - input：占位提示、默认文本、最大字数（留空不限制）
 - switch：默认开启
@@ -879,10 +879,17 @@ lib/pages/ui_studio_page/dialogs/compact_editors_dialogs.dart
 
 约束不变：只写当前 Assembly 实例的 `module.properties`，不回写资产库模板。
 
-###### A9.5-5-4：数据通道内嵌
-- 原子实例编辑器中增加数据通道区。
-- 复合组件实例编辑器中为暴露项增加数据通道区。
-- 移除“普通原子双击直接打开数据通道”的 MVP 临时入口。
+###### A9.5-5-4：数据通道内嵌（已完成，待本地测试）
+- 原子实例编辑器内嵌完整数据通道区：启用开关 + 名称来源 / 名称 / 保存到 / 玩家可见性 / LLM 读策略 / LLM 写策略 / AI 更新应用方式 + 最终语义预览。
+  - 通道随“保存”一起写入 `module.properties['dataChannel']`。
+  - 关闭开关或最终语义为空时，保存会清除该组件的 `dataChannel`。
+- 复合组件实例编辑器中，每个已创建覆写槽位的暴露项新增“通道”按钮。
+  - 暴露项通道写入 `PropertyOverride.overrides['dataChannel']`，属于实例覆写，不回写资产库模板。
+  - 卡片内显示通道摘要，槽位状态文本新增“已配通道”。
+  - 渲染时 `dataChannel` 键不会被当作字段覆写下发给子组件属性。
+- 已移除“普通原子双击直接打开独立数据通道弹窗”的 A9.6-1 临时入口，`_showDataChannelDialog` 已删除。
+- 表单逻辑抽为共用方法：`_buildDataChannelFormFields` / `_resolveDataChannelName` / `_buildDataChannelPayload`。
+- 行为不变：仍然只保存元数据，不写 SessionState、不注入 Prompt。
 
 ### A10 进入条件
 进入 A10 前，应满足：
@@ -1517,10 +1524,9 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先本地测试 A9.5-5-2 复合组件实例编辑器迁移与 A9.5-5-3 原子实例编辑器第二批
+- 先本地测试 A9.5-5-4 数据通道内嵌
 
 ### 然后
-- A9.5-5-4 数据通道内嵌
 - A9.6-1 增强：状态字段名称匹配、pendingName 预绑定与状态栏编辑页联动
 - A9.6-2 UI 写入 SessionState MVP
 - A10 mode 差异逻辑收口
