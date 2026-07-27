@@ -84,8 +84,39 @@ class DataChannelUpdateEngine {
   static String get tag => DataChannelPromptBuilder.updateTag;
 
   /// 从回复中剥离技术标记，供展示使用。
+  ///
+  /// 先做一次容错归一化，保证被代码块包裹或全角括号写法的标签同样能剥干净，
+  /// 否则用户会在气泡里看到残留的技术标记。
   static String stripFromReply(String reply) =>
-      TaggedBlock.strip(reply, tag);
+      TaggedBlock.strip(_normalize(reply), tag);
+
+  /// 容错归一化模型输出。
+  ///
+  /// 实测模型常见偏差（都不改变语义，只是格式走样）：
+  ///   - 用 ```或 ```text 代码块包裹标签块
+  ///   - 用全角尖括号 `＜界面状态变化＞`
+  ///   - 标签内外多余空格，如 `< 界面状态变化 >`
+  /// 这些情况下语义完全正确，没理由因为格式挑剔而丢弃更新。
+  static String _normalize(String reply) {
+    var out = reply;
+
+    // 全角尖括号 → 半角。
+    out = out.replaceAll('＜', '<').replaceAll('＞', '>');
+
+    // 去掉标签内部的多余空格：`< 界面状态变化 >` → `<界面状态变化>`。
+    out = out.replaceAllMapped(
+      RegExp('<\\s*(/?)\\s*$tag\\s*>'),
+      (m) => '<${m.group(1)}$tag>',
+    );
+
+    // 剥掉包裹标签块的代码围栏。
+    out = out.replaceAllMapped(
+      RegExp('```[a-zA-Z]*\\s*(<$tag>.*?</$tag>)\\s*```', dotAll: true),
+      (m) => m.group(1)!,
+    );
+
+    return out;
+  }
 
   /// 解析回复，返回按应用策略分组的更新建议。
   ///
@@ -96,7 +127,7 @@ class DataChannelUpdateEngine {
     required SessionState session,
     List<StatusBarField> statusFields = const <StatusBarField>[],
   }) {
-    final block = TaggedBlock.extract(reply, tag);
+    final block = TaggedBlock.extract(_normalize(reply), tag);
     if (block == null || block.isEmpty) {
       return const DataChannelUpdateResult();
     }

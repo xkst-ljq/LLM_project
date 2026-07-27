@@ -156,6 +156,22 @@ void main() {
       expect(injection, isEmpty);
     });
 
+    test('更新格式已移到 PHI，不再出现在 system 注入里', () {
+      final injection = DataChannelPromptBuilder.buildInjection([
+        const DataChannelPromptItem(
+          semanticLabel: '好感度',
+          targetKind: 'status_field',
+          targetId: 'f_aff',
+          llmReadPolicy: 'prompt',
+          llmWritePolicy: 'suggest_delta',
+          value: '45',
+          rangeHint: '',
+        ),
+      ]);
+      expect(injection, contains('[界面数据]'));
+      expect(injection, isNot(contains('[界面数据更新格式')));
+    });
+
     test('可读通道注入带语义名的当前值，不出现裸值', () {
       final injection = DataChannelPromptBuilder.buildInjection([
         const DataChannelPromptItem(
@@ -171,7 +187,6 @@ void main() {
 
       expect(injection, contains('[界面数据]'));
       expect(injection, contains('- 好感度：45（范围 0~100）'));
-      expect(injection, isNot(contains('[界面数据更新格式]')));
     });
 
     test('可写不可读只注入更新规则，不暴露当前值', () {
@@ -191,11 +206,11 @@ void main() {
       expect(injection, contains('敌方警觉度'));
       // 关键：当前值 80 绝不能出现。
       expect(injection, isNot(contains('80')));
-      expect(injection, contains('[界面数据更新格式]'));
     });
 
-    test('可写通道给出对应格式约定', () {
-      final injection = DataChannelPromptBuilder.buildInjection([
+    test('可写通道在 PHI 里给出对应格式约定', () {
+      final instruction =
+          DataChannelPromptBuilder.buildUpdateFormatInstruction([
         const DataChannelPromptItem(
           semanticLabel: '好感度',
           targetKind: 'status_field',
@@ -216,10 +231,10 @@ void main() {
         ),
       ]);
 
-      expect(injection, contains('好感度:+N'));
-      expect(injection, contains('心情=新内容'));
+      expect(instruction, contains('好感度:+N'));
+      expect(instruction, contains('心情=新内容'));
       expect(
-        injection,
+        instruction,
         contains('<${DataChannelPromptBuilder.updateTag}>'),
       );
     });

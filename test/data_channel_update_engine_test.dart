@@ -233,6 +233,74 @@ void main() {
     });
   });
 
+  group('parse - 模型格式容错', () {
+    test('标签块被代码围栏包裹时仍能解析', () {
+      final tag = DataChannelUpdateEngine.tag;
+      final reply = '正文。\n\n```\n<$tag>\n好感度:+3\n</$tag>\n```';
+      final result = DataChannelUpdateEngine.parse(
+        reply: reply,
+        items: [_item(label: '好感度')],
+        session: SessionState(statusValues: {'f_aff': '45'}),
+        statusFields: [_affField],
+      );
+
+      expect(result.needsConfirm.single.newValue, '48');
+    });
+
+    test('全角尖括号仍能解析', () {
+      final tag = DataChannelUpdateEngine.tag;
+      final reply = '正文。\n＜$tag＞\n好感度:+3\n＜/$tag＞';
+      final result = DataChannelUpdateEngine.parse(
+        reply: reply,
+        items: [_item(label: '好感度')],
+        session: SessionState(statusValues: {'f_aff': '45'}),
+        statusFields: [_affField],
+      );
+
+      expect(result.needsConfirm.single.newValue, '48');
+    });
+
+    test('标签内多余空格仍能解析', () {
+      final tag = DataChannelUpdateEngine.tag;
+      final reply = '正文。\n< $tag >\n好感度:+3\n</ $tag >';
+      final result = DataChannelUpdateEngine.parse(
+        reply: reply,
+        items: [_item(label: '好感度')],
+        session: SessionState(statusValues: {'f_aff': '45'}),
+        statusFields: [_affField],
+      );
+
+      expect(result.needsConfirm.single.newValue, '48');
+    });
+
+    test('容错格式的标记同样能从展示文本剥离', () {
+      final tag = DataChannelUpdateEngine.tag;
+      final stripped = DataChannelUpdateEngine.stripFromReply(
+        '正文。\n\n```\n<$tag>\n好感度:+3\n</$tag>\n```',
+      );
+      expect(stripped, isNot(contains(tag)));
+      expect(stripped, contains('正文。'));
+    });
+  });
+
+  group('buildUpdateFormatInstruction', () {
+    test('无可写通道时不产生 PHI 约束', () {
+      final out = DataChannelPromptBuilder.buildUpdateFormatInstruction([
+        _item(label: '好感度', write: 'none'),
+      ]);
+      expect(out, isEmpty);
+    });
+
+    test('可写通道生成末尾强约束，含标签与格式', () {
+      final out = DataChannelPromptBuilder.buildUpdateFormatInstruction([
+        _item(label: '好感度', write: 'suggest_delta'),
+      ]);
+      expect(out, contains('必须遵守'));
+      expect(out, contains('<${DataChannelUpdateEngine.tag}>'));
+      expect(out, contains('好感度:+N'));
+    });
+  });
+
   group('stripFromReply', () {
     test('展示文本不含技术标记', () {
       final stripped =

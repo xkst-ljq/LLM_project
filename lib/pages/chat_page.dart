@@ -1886,12 +1886,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   List<Map<String, String>> _withPostHistoryInstructions(
     List<Map<String, String>> messages,
   ) {
+    final out = [...messages];
+
     final phi = _buildPostHistoryInstructions();
-    if (phi.isEmpty) return messages;
-    return [
-      ...messages,
-      {'role': 'system', 'content': phi},
-    ];
+    if (phi.isNotEmpty) {
+      out.add({'role': 'system', 'content': phi});
+    }
+
+    // A9.6-4：界面数据的更新格式约束放在对话历史之后。
+    // 放在 system prompt 开头时，长对话中模型经常忽略它而不输出标签块；
+    // 与 PHI 同理，末尾强约束的遵从度显著更高。
+    final uiFormat = DataChannelPromptBuilder.buildUpdateFormatInstruction(
+      _collectUIChannelPromptItems(),
+    );
+    if (uiFormat.isNotEmpty) {
+      out.add({'role': 'system', 'content': uiFormat});
+    }
+
+    return out;
   }
 
   Future<String> _buildFinalSystemPrompt() async {

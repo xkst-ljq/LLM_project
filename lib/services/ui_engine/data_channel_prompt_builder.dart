@@ -161,9 +161,6 @@ class DataChannelPromptBuilder {
 
     final readable = items.where((item) => item.canRead).toList();
     final writeOnly = items.where((item) => item.isWriteOnly).toList();
-    final writable = items.where((item) => item.canWrite).toList();
-
-    if (readable.isEmpty && writable.isEmpty) return '';
 
     final lines = <String>[];
 
@@ -189,20 +186,37 @@ class DataChannelPromptBuilder {
       }
     }
 
-    if (writable.isNotEmpty) {
-      if (lines.isNotEmpty) lines.add('');
-      lines.add('[界面数据更新格式]');
-      lines.add('回复正文之后，另起一段输出界面数据变化（仅在确有变化时输出对应行）：');
-      lines.add('<$updateTag>');
-      for (final item in writable) {
-        final format = item.llmWritePolicy == 'suggest_delta'
-            ? '${item.semanticLabel}:+N 或 ${item.semanticLabel}:-N（只给变化量）'
-            : '${item.semanticLabel}=新内容（直接给变化后的内容）';
-        lines.add(format);
-      }
-      lines.add('</$updateTag>');
-      lines.add('注意：没有变化的项不要输出。该标记不会展示给用户。');
+    return lines.join('\n');
+  }
+
+  /// 更新格式约束，供历史后注入（PHI）使用。
+  ///
+  /// 单独拆出来的原因：格式约束放在 system prompt 开头时，
+  /// 长对话中模型经常忽略它而不输出标签块。与酒馆 PHI 的思路一致，
+  /// 把这类强约束放到对话历史「之后」显著提升遵从度。
+  static String buildUpdateFormatInstruction(
+    List<DataChannelPromptItem> items,
+  ) {
+    final writable = items.where((item) => item.canWrite).toList();
+    if (writable.isEmpty) return '';
+
+    final lines = <String>[];
+    lines.add('[界面数据更新格式 · 必须遵守]');
+    lines.add('本回合回复正文结束后，如果以下数据确有变化，'
+        '必须另起一行输出变化块（没有变化则完全不输出该块）：');
+    lines.add('<$updateTag>');
+    for (final item in writable) {
+      final format = item.llmWritePolicy == 'suggest_delta'
+          ? '${item.semanticLabel}:+N 或 ${item.semanticLabel}:-N（只给变化量，不要给最终值）'
+          : '${item.semanticLabel}=新内容（直接给变化后的内容）';
+      lines.add(format);
     }
+    lines.add('</$updateTag>');
+    lines.add('规则：');
+    lines.add('- 变化量需与本回合剧情合理对应。');
+    lines.add('- 没有变化的项不要输出，不要输出未列出的项。');
+    lines.add('- 该标记块不会展示给用户，请勿在正文中重复其内容。');
+    lines.add('- 不要用代码块包裹该标记，直接输出标签本身。');
 
     return lines.join('\n');
   }
