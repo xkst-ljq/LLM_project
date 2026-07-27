@@ -25,7 +25,19 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
       ..sort((a, b) => a.order.compareTo(b.order));
   }
 
-  String _newId() => 'sbf_${DateTime.now().microsecondsSinceEpoch}';
+  /// 自增序号：仅靠时间戳时，连续快速添加会落在同一微秒导致 id 重复，
+  /// 而列表用 ValueKey(id) 做 key，重复 key 会让 Flutter 报错或 State 错乱，
+  /// 表现为「加不进去字段」。
+  int _idSeed = 0;
+
+  String _newId() {
+    final existing = _fields.map((f) => f.id).toSet();
+    String candidate;
+    do {
+      candidate = 'sbf_${DateTime.now().microsecondsSinceEpoch}_${_idSeed++}';
+    } while (existing.contains(candidate));
+    return candidate;
+  }
 
   void _addField() {
     setState(() {
@@ -46,7 +58,43 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
     setState(() => _fields.removeAt(i));
   }
 
-  void _save() {
+  /// 是否存在「填了内容但没填名称」的字段。
+  ///
+  /// 这类字段保存时会被丢弃。静默丢弃会让用户以为「存不上」，
+  /// 因此保存前要提示。
+  bool _hasNamelessFieldWithContent() {
+    for (final f in _fields) {
+      if (f.name.trim().isNotEmpty) continue;
+      if (f.initialValue.trim().isNotEmpty && f.initialValue.trim() != '0') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _save() async {
+    if (_hasNamelessFieldWithContent()) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('有字段未填名称'),
+          content: const Text('未填写名称的字段不会被保存。\n要继续保存并丢弃这些字段吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('返回填写'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('继续保存'),
+            ),
+          ],
+        ),
+      );
+      if (go != true) return;
+    }
+    if (!mounted) return;
+
     // 过滤掉没填名称的字段；重排 order。
     final cleaned = <StatusBarField>[];
     for (final f in _fields) {
@@ -56,9 +104,70 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
     Navigator.pop(context, cleaned);
   }
 
+  /// 编辑内容是否与进入时不同。
+  bool get _isDirty {
+    final original = widget.fields;
+    if (original.length != _fields.length) return true;
+    for (var i = 0; i < _fields.length; i++) {
+      final a = original[i];
+      final b = _fields[i];
+      if (a.id != b.id ||
+          a.name != b.name ||
+          a.type != b.type ||
+          a.initialValue != b.initialValue ||
+          a.minValue != b.minValue ||
+          a.maxValue != b.maxValue ||
+          a.pinSide != b.pinSide) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 返回键 / 返回箭头退出时的确认。
+  ///
+  /// 此前直接 pop 会返回 null，父页 `if (result != null)` 不成立，
+  /// 于是全部编辑被静默丢弃——这是「改了却没保存上」最常见的原因。
+  Future<bool> _confirmDiscard() async {
+    if (!_isDirty) return true;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('放弃修改？'),
+        content: const Text('你有未保存的修改，直接返回会丢失这些改动。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('继续编辑'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('放弃修改'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('去保存'),
+          ),
+        ],
+      ),
+    );
+    return discard == true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      // 拦截返回键 / 返回箭头：直接 pop 会返回 null，
+      // 父页据此判定「未修改」，导致全部编辑被静默丢弃。
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _confirmDiscard()) {
+          if (!mounted) return;
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('状态栏字段'),
         actions: [
@@ -81,6 +190,7 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
         onPressed: _addField,
         icon: const Icon(Icons.add),
         label: const Text('添加字段'),
+      ),
       ),
     );
   }
