@@ -1563,6 +1563,21 @@ LLM 回复
 - 经验：约束模型行为时，纯否定句容易被过度泛化成「这件事我不能做」。
   应当「先肯定能力边界，再约束具体做法」，并显式标出例外范围。
 
+修复：撤回消息后状态变化残留（数据一致性）
+- 现象：让 AI 加 5 点好感度后撤回该消息，对话没了但状态栏的 +5 仍在，
+  导致状态栏与对话历史长期不一致，越用偏得越多。
+- 根因：删除消息只删了 `messages` 表记录，完全没有回滚 `SessionState`。
+- 处理（消息级状态快照）：
+  - 数据库升级到 v4，`messages` 表新增 `state_snapshot` 列，
+    存该消息**结算之前**的 SessionState JSON。
+  - AI 回复入库时先取快照再结算，顺序不能颠倒。
+  - 新增 `DatabaseService.getStateSnapshots()` 批量读取快照。
+  - 新增 `_rollbackSessionStateFor()`：取被删消息中 id 最小（最早）那条的快照，
+    还原会话状态并落盘。其后的所有变化都由这批被删消息产生，因此还原到它即可。
+  - 两条删除路径（编辑用户消息重发、删除单轮对话）都接入回滚。
+  - 重新生成路径不接入：它本就不重复算账，状态以首次回复为准。
+  - 旧数据（升级前入库、无快照）找不到快照时保持现状，不猜值。
+
 修复：进入聊天页 LateInitializationError（既有隐患，非本次引入）
 - 现象：`Field '_currentCharacter' has not been initialized`，
   栈顶为 `_loadPromptSettings` ← `initState`。

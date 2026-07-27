@@ -329,6 +329,12 @@ A9.6-1 已完成 MVP：
 - 重新生成 / 续写路径只剥离标记、不重复算账。
 - 单测：`test/data_channel_update_engine_test.dart`。
 
+#### 状态回滚（数据一致性）
+- `messages.state_snapshot`（DB v4）存每条 AI 消息**结算前**的 SessionState 快照。
+- 入库时必须「先取快照、后结算」，顺序颠倒会存成结算后的值，回滚就失效了。
+- 删除消息时调 `_rollbackSessionStateFor()`，取最早那条的快照还原。
+- 新增任何删除消息的入口时，记得一并接入回滚，否则状态又会残留。
+
 #### SSOT 归属规则（架构约束，不要违反）
 状态字段可能同时被状态栏和 UI 数据通道引用，但**同一字段只能由一套机制注入与解析**：
 - `targetKind == 'status_field'` → 一律由 `StatusBarEngine` 负责，用 `<状态变化>` 标签。

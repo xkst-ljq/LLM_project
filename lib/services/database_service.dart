@@ -16,7 +16,7 @@ class DatabaseService {
     final path = p.join(dbPath, 'chat_history.db');
     return await openDatabase(
       path,
-      version: 3, // 升级版本号
+      version: 4, // 升级版本号
       onCreate: (db, version) async {
         // 消息表
         await db.execute('''
@@ -26,7 +26,11 @@ class DatabaseService {
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
-            version INTEGER NOT NULL DEFAULT 1
+            version INTEGER NOT NULL DEFAULT 1,
+            -- 该消息结算「之前」的会话状态快照（SessionState JSON）。
+            -- 删除 / 重新生成消息时据此把状态回滚到产生它之前，
+            -- 避免已撤回回合的状态变化永久残留。
+            state_snapshot TEXT DEFAULT ''
           )
         ''');
         await db.execute('''
@@ -166,6 +170,16 @@ class DatabaseService {
             "TEXT DEFAULT '{}'",
           );
         }
+
+        if (oldVersion < 4) {
+          // 消息级会话状态快照，用于撤回 / 重新生成时回滚状态变化。
+          await _safeAddColumn(
+            db,
+            'messages',
+            'state_snapshot',
+            "TEXT DEFAULT ''",
+          );
+        }
       },
     );
   }
@@ -252,6 +266,9 @@ class DatabaseService {
     required String role,
     required String content,
     int version = 1,
+    /// 该消息结算「之前」的会话状态快照（SessionState JSON）。
+    /// 传入后，删除 / 重新生成这条消息时可把状态回滚到产生它之前。
+    String stateSnapshot = '',
   }) async {
     final db = await database;
     return await db.insert('messages', {
@@ -260,7 +277,29 @@ class DatabaseService {
       'content': content,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
       'version': version,
+      'state_snapshot': stateSnapshot,
     });
+  }
+
+  /// 读取若干消息的状态快照，返回 id -> 快照 JSON（空快照会被跳过）。
+  static Future<Map<int, String>> getStateSnapshots(List<int> ids) async {
+    if (ids.isEmpty) return <int, String>{};
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final rows = await db.query(
+      'messages',
+      columns: ['id', 'state_snapshot'],
+      where: 'id IN ($placeholders)',
+      whereArgs: ids,
+    );
+    final out = <int, String>{};
+    for (final row in rows) {
+      final id = row['id'] as int?;
+      final snapshot = row['state_snapshot'] as String?;
+      if (id == null || snapshot == null || snapshot.isEmpty) continue;
+      out[id] = snapshot;
+    }
+    return out;
   }
 
   static Future<List<Map<String, dynamic>>> getMessages(

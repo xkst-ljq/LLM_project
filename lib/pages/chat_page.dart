@@ -292,6 +292,31 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
   }
 
+  /// 把会话状态回滚到「这批消息产生之前」。
+  ///
+  /// 每条 AI 消息在入库时都记录了结算前的状态快照。删除一段对话时，
+  /// 取其中 id 最小（即最早）的那条的快照即可还原——它之后的所有
+  /// 状态变化都由这批被删消息产生。
+  ///
+  /// 找不到任何快照时不做处理：可能是旧数据（升级前入库，无快照），
+  /// 此时保持现状比猜一个值更安全。
+  Future<void> _rollbackSessionStateFor(List<int> deletedIds) async {
+    if (_currentCharacter == null || deletedIds.isEmpty) return;
+
+    final snapshots = await DatabaseService.getStateSnapshots(deletedIds);
+    if (snapshots.isEmpty) return;
+
+    final earliestId =
+        snapshots.keys.reduce((a, b) => a < b ? a : b);
+    final raw = snapshots[earliestId];
+    if (raw == null || raw.isEmpty) return;
+
+    _sessionState = SessionState.fromJsonString(raw);
+    _ensureStatusValuesInitialized();
+    await _saveSessionState();
+    if (mounted) setState(() {});
+  }
+
   /// 持久化当前角色的会话状态。
   Future<void> _saveSessionState() async {
     if (_currentCharacter == null) return;
@@ -4615,6 +4640,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       }
     }
 
+    // 回滚状态：被删除的这批消息里，取最早那条的「结算前快照」，
+    // 把会话状态还原到它们产生之前，避免已撤回回合的状态变化残留。
+    await _rollbackSessionStateFor(idsToDelete);
+
     // 从数据库删除
     for (final id in idsToDelete) {
       await DatabaseService.deleteMessage(id);
@@ -4723,6 +4752,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         _aiReplySub = null;
 
         // 状态栏：解析变化量并算账，得到剥离技术标记后的展示文本。
+        // 必须在结算之前取快照：它代表「产生这条消息之前」的状态，
+        // 撤回该消息时据此回滚。
+        final stateBefore = _sessionState.toJsonString();
+
         var displayContent = await _processStatusBarReply(aiResponseContent);
         if (!mounted) return;
         // 界面数据通道：同样解析 → 算账 → 按应用策略分流。
@@ -4746,6 +4779,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             characterId: _currentCharacter!.id,
             role: 'assistant',
             content: displayContent,
+            stateSnapshot: stateBefore,
           );
         }
       },
@@ -4847,6 +4881,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         if (id != null) idsToDelete.add(id);
       }
     }
+
+    // 回滚这轮对话产生的状态变化，避免撤回后残留。
+    await _rollbackSessionStateFor(idsToDelete);
 
     // 从数据库删除
     for (final id in idsToDelete) {
