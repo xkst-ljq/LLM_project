@@ -52,7 +52,7 @@
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
 | A9.5 | 通用模板基础版 | A9.5-5 全部子步骤完成，测试通过 | ✅ |
-| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-3 SessionState 注入 Prompt MVP 完成，待本地测试 | ✅ |
+| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-4 LLM 回复更新界面状态完成，待本地测试 | ✅ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -1308,7 +1308,7 @@ A9.6-0 只确认设计、边界和后续实现顺序。
 
 仍不注入 Prompt（留给 A9.6-3）。
 
-#### A9.6-3：SessionState 注入 Prompt MVP（已完成，待本地测试）
+#### A9.6-3：SessionState 注入 Prompt MVP（已完成，测试通过）
 新增 `lib/services/ui_engine/data_channel_prompt_builder.dart`，在 `chat_page._buildFinalSystemPrompt()` 里接线。
 
 采用结构化状态段（更易调试，作者不必手写占位符），同时保留占位符方式。
@@ -1352,20 +1352,43 @@ A9.6-0 只确认设计、边界和后续实现顺序。
 
 测试：`test/data_channel_prompt_builder_test.dart`。
 
-#### A9.6-4：LLM 回复更新状态预留
-- 第一版不做复杂自然语言解析。
-- 预留结构化状态更新格式，例如：
+#### A9.6-4：LLM 回复更新界面状态（已完成，待本地测试）
+新增 `lib/services/ui_engine/data_channel_update_engine.dart`，在 `chat_page` 主回复链路接线。
 
-```json
-{
-  "status_updates": {
-    "affection": "+3",
-    "mood": "放松"
-  }
-}
+沿用「LLM 只当裁判给变化量，引擎确定性算账」的既定模式，并在其上加一层数据通道权限校验。
+
+解析流程：
+```text
+LLM 回复
+→ 提取 <界面状态变化> 块
+→ 语义名匹配数据通道
+→ 权限校验（写策略 / 应用策略）
+→ 引擎算账（delta + clamp）
+→ 按 llmUpdateApplyPolicy 分流
+   ├─ auto_low_risk → 直接写入 SessionState
+   ├─ confirm       → 弹确认卡片，用户逐条勾选
+   └─ never         → 丢弃
+→ 剥离技术标记后展示
 ```
 
-- 数值字段仍应由引擎执行 delta + clamp，不能让 LLM 直接覆盖绝对值。
+安全红线（均有单测覆盖）：
+- 通道 `llmWritePolicy == none` → 拒绝，哪怕 LLM 输出了该项。
+- 通道 `llmUpdateApplyPolicy == never` → 拒绝。
+- LLM 编造的未知语义名 → 丢弃。
+- `suggest_delta` 通道拒绝 `名称=绝对值` 赋值语法，只接受 +N/-N。
+- 数值更新一律由引擎执行 delta + clamp，LLM 不能直接覆盖绝对值。
+- 同一项重复输出只取第一条，避免叠加算账。
+- 值无实际变化时不产生更新记录。
+
+确认交互：
+- `confirm` 策略弹出「界面状态更新」卡片，逐条显示 `好感度：45 → 48（+3）`。
+- 默认全部勾选，但必须用户点「应用所选」才生效；「全部忽略」或关闭视为全部拒绝。
+
+标签与既有机制隔离：
+- 使用 `界面状态变化`，与状态栏引擎的 `状态变化` 完全分开，两套解析互不干扰。
+- 重新生成 / 续写路径只剥离标记、不重复算账（与状态栏既有策略一致）。
+
+测试：`test/data_channel_update_engine_test.dart`。
 
 ### A9.6 不做
 - 不做完整自动状态解析器。
@@ -1608,10 +1631,10 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先本地测试 A9.6-3 SessionState 注入 Prompt MVP
+- 先本地测试 A9.6-4 LLM 回复更新界面状态
 
 ### 然后
-- A9.6-4 LLM 回复更新界面状态
+- A9.6 全链路联调（UI 交互 → SessionState → Prompt → LLM → 更新 → UI 刷新）
 - A10 mode 差异逻辑收口
 
 ---

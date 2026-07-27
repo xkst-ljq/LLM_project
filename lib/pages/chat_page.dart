@@ -27,6 +27,7 @@ import '../services/database_service.dart';
 import '../services/prompt_settings_service.dart';
 import '../services/status_bar_engine.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
+import '../services/ui_engine/data_channel_update_engine.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
 import '../widgets/page_guide_overlay.dart';
@@ -317,6 +318,111 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       await _saveSessionState();
     }
     return StatusBarEngine.stripFromReply(reply);
+  }
+
+  /// A9.6-4：处理 LLM 回复中的 `<界面状态变化>` 块。
+  ///
+  /// 流程：解析 → 权限校验 → 引擎算账 → 按应用策略分流
+  ///   - auto_low_risk：直接写入会话副本
+  ///   - confirm：弹确认卡片，用户逐条决定
+  ///   - never / 不可写 / 未知语义名：静默丢弃
+  ///
+  /// 返回剥离技术标记后的展示文本；无数据通道时原样返回。
+  Future<String> _processUIChannelReply(String reply) async {
+    if (_currentCharacter == null) return reply;
+    final items = _collectUIChannelPromptItems();
+    if (items.isEmpty) return reply;
+
+    final result = DataChannelUpdateEngine.parse(
+      reply: reply,
+      items: items,
+      session: _sessionState,
+      statusFields: _currentCharacter!.meta.statusBarFields,
+    );
+
+    final stripped = DataChannelUpdateEngine.stripFromReply(reply);
+    if (result.isEmpty) return stripped;
+
+    var changed = false;
+    if (result.autoApply.isNotEmpty) {
+      changed = DataChannelUpdateEngine.apply(_sessionState, result.autoApply);
+    }
+
+    if (result.needsConfirm.isNotEmpty && mounted) {
+      final accepted = await _confirmUIChannelUpdates(result.needsConfirm);
+      if (accepted.isNotEmpty) {
+        final applied =
+            DataChannelUpdateEngine.apply(_sessionState, accepted);
+        changed = changed || applied;
+      }
+    }
+
+    if (changed) {
+      await _saveSessionState();
+      if (mounted) setState(() {});
+    }
+    return stripped;
+  }
+
+  /// 界面状态更新确认卡片：用户可逐条勾选后应用。
+  ///
+  /// 默认全部勾选，但必须由用户点「应用」才会生效；
+  /// 取消或关闭视为全部拒绝。
+  Future<List<DataChannelUpdate>> _confirmUIChannelUpdates(
+    List<DataChannelUpdate> updates,
+  ) async {
+    final selected = {for (final update in updates) update: true};
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('界面状态更新'),
+          content: SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'AI 根据剧情建议了以下界面数据变化，确认后才会生效：',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF777783)),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final update in updates)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      value: selected[update] ?? false,
+                      title: Text(
+                        update.summary,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      onChanged: (value) => setDialogState(
+                        () => selected[update] = value ?? false,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('全部忽略'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('应用所选'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return const <DataChannelUpdate>[];
+    return updates.where((update) => selected[update] == true).toList();
   }
 
   List<CharacterCard> _selectableCharacters = [];
@@ -4451,8 +4557,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         _aiReplySub = null;
 
         // 状态栏：解析变化量并算账，得到剥离技术标记后的展示文本。
-        final displayContent =
-            await _processStatusBarReply(aiResponseContent);
+        var displayContent = await _processStatusBarReply(aiResponseContent);
+        if (!mounted) return;
+        // 界面数据通道：同样解析 → 算账 → 按应用策略分流。
+        displayContent = await _processUIChannelReply(displayContent);
         if (!mounted) return;
 
         setState(() {
@@ -4635,8 +4743,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
         // 重新生成：仅剥离状态变化技术标记用于展示，不再次应用变化量，
         // 避免对同一回合重复算账（状态值以首次回复为准）。
-        final displayContent =
-            StatusBarEngine.stripFromReply(aiResponseContent);
+        final displayContent = DataChannelUpdateEngine.stripFromReply(
+          StatusBarEngine.stripFromReply(aiResponseContent),
+        );
 
         int? newMsgId;
         if (_currentCharacter != null) {
@@ -4714,8 +4823,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               return;
             }
             // 续写：剥离续写部分可能出现的状态变化标记（不重复算账）。
-            final appended =
-                StatusBarEngine.stripFromReply(aiResponseContent);
+            final appended = DataChannelUpdateEngine.stripFromReply(
+              StatusBarEngine.stripFromReply(aiResponseContent),
+            );
             final newFullContent = '$currentContent\n$appended';
             if (curId != null) {
               await DatabaseService.updateMessageContent(curId, newFullContent);

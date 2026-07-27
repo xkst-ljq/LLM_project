@@ -313,7 +313,7 @@ A9.6-1 已完成 MVP：
 - Assembly 预览用本地临时副本 + 顶部调试浮层，可验证但不落盘。
 - 单测：`test/data_channel_service_test.dart`。
 
-### A9.6-3：SessionState 注入 Prompt MVP（已完成，待本地测试）
+### A9.6-3：SessionState 注入 Prompt MVP（已完成，测试通过）
 - 新增 `lib/services/ui_engine/data_channel_prompt_builder.dart`，在 `chat_page._buildFinalSystemPrompt()` 接线。
 - 结构化注入 `[界面数据]` / `[可建议更新的隐藏状态]` / `[界面数据更新格式]`。
 - 新增占位符 `{{ui.语义名}}`，受 `llmReadPolicy` 约束，不可读一律替换为空串。
@@ -321,9 +321,17 @@ A9.6-1 已完成 MVP：
 - 更新标签 `界面状态变化`，与状态栏 `状态变化` 区分。
 - 单测：`test/data_channel_prompt_builder_test.dart`。
 
+### A9.6-4：LLM 回复更新界面状态（已完成，待本地测试）
+- 新增 `lib/services/ui_engine/data_channel_update_engine.dart`，`chat_page` 主回复链路接线。
+- 解析 `<界面状态变化>` 块 → 权限校验 → delta + clamp → 按 applyPolicy 分流。
+- `auto_low_risk` 直接应用；`confirm` 弹逐条勾选卡片；`never` / 不可写 / 未知名一律丢弃。
+- `suggest_delta` 拒绝绝对值赋值；同项重复只取第一条。
+- 重新生成 / 续写路径只剥离标记、不重复算账。
+- 单测：`test/data_channel_update_engine_test.dart`。
+
 ### 下一步建议
-- 先本地测试 A9.6-3（重点用 Prompt 预览页核对注入文本）。
-- 若通过，进入 A9.6-4 LLM 回复更新界面状态。
+- 先本地测试 A9.6-4（建议先用固定回复的 mock 或手动构造带标签的回复验证）。
+- 若通过，做 A9.6 全链路联调：UI 交互 → SessionState → Prompt → LLM → 更新 → UI 刷新。
 - 仍不要进入 A10 mode 差异。
 
 ---

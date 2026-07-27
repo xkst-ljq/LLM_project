@@ -25,6 +25,12 @@ class DataChannelPromptItem {
   /// 'none' | 'suggest_delta' | 'suggest_replace'
   final String llmWritePolicy;
 
+  /// 'confirm' | 'auto_low_risk' | 'never'
+  ///
+  /// Prompt 本身不需要这个字段，但 A9.6-4 解析 LLM 回复时要用它决定
+  /// 是自动应用还是弹确认，因此在收集阶段一并带出来。
+  final String applyPolicy;
+
   /// 当前值；仅在允许读取时才会被注入。
   final String value;
 
@@ -39,6 +45,7 @@ class DataChannelPromptItem {
     required this.llmWritePolicy,
     required this.value,
     required this.rangeHint,
+    this.applyPolicy = 'confirm',
   });
 
   /// 当前值可以出现在 Prompt 里。
@@ -102,6 +109,8 @@ class DataChannelPromptBuilder {
           targetId: targetId,
           llmReadPolicy: channel['llmReadPolicy']?.toString() ?? 'none',
           llmWritePolicy: channel['llmWritePolicy']?.toString() ?? 'none',
+          applyPolicy:
+              channel['llmUpdateApplyPolicy']?.toString() ?? 'confirm',
           value: value,
           rangeHint: field == null ? '' : _rangeHint(field),
         ),
