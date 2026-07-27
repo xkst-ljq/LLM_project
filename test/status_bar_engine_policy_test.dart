@@ -122,20 +122,28 @@ void main() {
   });
 
   group('防止模型脑补数值', () {
-    test('注入值被声明为唯一权威来源', () {
+    test('注入先肯定可读性，再要求照抄', () {
       final out = StatusBarEngine.buildInjection(
         _fields,
         {'f_aff': '16', 'f_alert': '0'},
       );
-      expect(out, contains('唯一权威来源'));
-      expect(out, contains('不要根据对话历史自行推算'));
+      // 只写否定句会被模型泛化成「我无权读取状态」而拒绝回答。
+      expect(out, contains('你可以看到'));
+      expect(out, contains('直接读出'));
     });
 
-    test('PHI 禁止自行累加并说明结算时序', () {
+    test('PHI 以肯定句说明可读，并解释结算时序', () {
       final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
-      // 模型拿不到本轮结算后的值，自行推算必然与状态栏对不上。
-      expect(out, contains('不要根据对话历史自行累加'));
-      expect(out, contains('回复之后才结算'));
+      expect(out, contains('你能够看到'));
+      expect(out, contains('如实回答'));
+      expect(out, contains('回复之后自动结算'));
+    });
+
+    test('PHI 区分可读字段与隐藏字段，避免规则被泛化', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      // 只有隐藏字段才该声称「无法得知」。
+      expect(out, contains('可建议更新的隐藏状态'));
+      expect(out, contains('这类项才需要说明'));
     });
   });
 
