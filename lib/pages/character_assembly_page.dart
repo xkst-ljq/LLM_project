@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/linker_service.dart';
+import '../services/ui_engine/select_option.dart';
 import '../services/ui_engine/ui_asset_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';

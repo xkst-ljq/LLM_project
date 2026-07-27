@@ -1835,6 +1835,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'progress',
       'button',
       'line',
+      'input',
+      'switch',
+      'slider',
+      'select',
+      'indicator',
+      'image',
     }.contains(type);
   }
 
@@ -1860,7 +1866,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           .toStringAsFixed(0),
     );
     final radiusController = TextEditingController(
-      text: module.borderRadius.toStringAsFixed(0),
+      text: (module.type == 'image'
+              ? ((module.properties['borderRadius'] as num?)?.toDouble() ??
+                  module.borderRadius)
+              : module.borderRadius)
+          .toStringAsFixed(0),
     );
     final opacityController = TextEditingController(
       text: module.opacity.toStringAsFixed(2),
@@ -1881,6 +1891,45 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       text: ((module.properties['thickness'] as num?)?.toDouble() ?? 2.0)
           .toStringAsFixed(0),
     );
+    final placeholderController = TextEditingController(
+      text: module.properties['placeholder']?.toString() ?? '',
+    );
+    final maxLengthController = TextEditingController(
+      text: (module.properties['maxLength'] as num?)?.toInt().toString() ?? '',
+    );
+    final stepController = TextEditingController(
+      text: ((module.properties['step'] as num?)?.toDouble() ?? 1.0)
+          .toStringAsFixed(2),
+    );
+    final optionsController = TextEditingController(
+      text: SelectOption.parseList(module.properties['options'])
+          .map((option) => option.label == option.value
+              ? option.label
+              : '${option.label}|${option.value}')
+          .join('\n'),
+    );
+    final dotSizeController = TextEditingController(
+      text: ((module.properties['dotSize'] as num?)?.toDouble() ?? 14.0)
+          .toStringAsFixed(0),
+    );
+    final imageUrlController = TextEditingController(
+      text: module.properties['url']?.toString() ?? '',
+    );
+    final imageAssetController = TextEditingController(
+      text: module.properties['assetPath']?.toString() ?? '',
+    );
+    final selectDefaultController = TextEditingController(
+      text: module.properties['current']?.toString() ??
+          module.properties['defaultValue']?.toString() ??
+          '',
+    );
+    var switchValue = module.properties['value'] != false;
+    var indicatorGlow = module.properties['defaultGlow'] == true;
+    var imageFit = switch (module.properties['fit']?.toString()) {
+      'contain' => 'contain',
+      'fill' => 'fill',
+      _ => 'cover',
+    };
     var lineAxis = module.properties['axis']?.toString() == 'vertical'
         ? 'vertical'
         : 'horizontal';
@@ -2024,6 +2073,109 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       const SizedBox(height: 12),
                       numberField(thicknessController, '粗细'),
                     ],
+                    if (type == 'input') ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: placeholderController,
+                        decoration: const InputDecoration(labelText: '占位提示'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: textController,
+                        decoration: const InputDecoration(labelText: '默认文本（可留空）'),
+                      ),
+                      const SizedBox(height: 12),
+                      numberField(maxLengthController, '最大字数（留空不限制）'),
+                    ],
+                    if (type == 'switch') ...[
+                      const SizedBox(height: 4),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('默认开启', style: TextStyle(fontSize: 13)),
+                        value: switchValue,
+                        onChanged: (value) =>
+                            setDialogState(() => switchValue = value),
+                      ),
+                    ],
+                    if (type == 'slider') ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: numberField(minController, '最小值')),
+                          const SizedBox(width: 10),
+                          Expanded(child: numberField(maxController, '最大值')),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: numberField(currentController, '当前值')),
+                          const SizedBox(width: 10),
+                          Expanded(child: numberField(stepController, '步长')),
+                        ],
+                      ),
+                    ],
+                    if (type == 'select') ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: optionsController,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: '选项列表',
+                          helperText: '每行一个：显示文本 或 显示文本|值',
+                          helperMaxLines: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: selectDefaultController,
+                        decoration: const InputDecoration(
+                          labelText: '默认选中值（留空取第一项）',
+                        ),
+                      ),
+                    ],
+                    if (type == 'indicator') ...[
+                      const SizedBox(height: 12),
+                      numberField(dotSizeController, '状态点直径', suffix: '8~28'),
+                      const SizedBox(height: 4),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('默认发光', style: TextStyle(fontSize: 13)),
+                        value: indicatorGlow,
+                        onChanged: (value) =>
+                            setDialogState(() => indicatorGlow = value),
+                      ),
+                    ],
+                    if (type == 'image') ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: imageUrlController,
+                        decoration: const InputDecoration(labelText: '网络图片地址（可留空）'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: imageAssetController,
+                        decoration: const InputDecoration(
+                          labelText: '本地/内部资产路径（可留空）',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: imageFit,
+                        decoration: const InputDecoration(labelText: '填充方式'),
+                        items: const [
+                          DropdownMenuItem(value: 'cover', child: Text('裁剪填满 cover')),
+                          DropdownMenuItem(value: 'contain', child: Text('完整显示 contain')),
+                          DropdownMenuItem(value: 'fill', child: Text('拉伸铺满 fill')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => imageFit = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      numberField(radiusController, '圆角'),
+                    ],
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(10),
@@ -2088,6 +2240,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         maxController,
         currentController,
         thicknessController,
+        placeholderController,
+        maxLengthController,
+        stepController,
+        optionsController,
+        selectDefaultController,
+        dotSizeController,
+        imageUrlController,
+        imageAssetController,
       ]);
       return;
     }
@@ -2117,6 +2277,59 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             props['axis'] = lineAxis;
             props['lineStyle'] = lineStyle;
             props['thickness'] = readDouble(thicknessController, 2.0);
+          } else if (type == 'input') {
+            props['placeholder'] = placeholderController.text.trim();
+            props['text'] = textController.text;
+            final maxLen = int.tryParse(maxLengthController.text.trim());
+            if (maxLen == null || maxLen <= 0) {
+              props.remove('maxLength');
+            } else {
+              props['maxLength'] = maxLen;
+            }
+          } else if (type == 'switch') {
+            props['value'] = switchValue;
+          } else if (type == 'slider') {
+            final minVal = readDouble(minController, 0.0);
+            var maxVal = readDouble(maxController, 100.0);
+            if (maxVal < minVal) maxVal = minVal;
+            props['min'] = minVal;
+            props['max'] = maxVal;
+            props['current'] = readDouble(currentController, minVal)
+                .clamp(minVal, maxVal)
+                .toDouble();
+            final step = readDouble(stepController, 1.0).abs();
+            props['step'] = step <= 0 ? 1.0 : step;
+          } else if (type == 'select') {
+            final parsed = <Map<String, dynamic>>[];
+            for (final rawLine in optionsController.text.split('\n')) {
+              final line = rawLine.trim();
+              if (line.isEmpty) continue;
+              final parts = line.split('|');
+              final label = parts.first.trim();
+              if (label.isEmpty) continue;
+              final value = parts.length > 1 && parts[1].trim().isNotEmpty
+                  ? parts[1].trim()
+                  : label;
+              parsed.add({'label': label, 'value': value});
+            }
+            if (parsed.isNotEmpty) {
+              props['options'] = parsed;
+            }
+            final options = SelectOption.parseList(props['options']);
+            final wanted = selectDefaultController.text.trim();
+            final valid = options.any((option) => option.value == wanted);
+            props['current'] = valid ? wanted : options.first.value;
+            props['defaultValue'] = props['current'];
+          } else if (type == 'indicator') {
+            props['dotSize'] =
+                readDouble(dotSizeController, 14.0).clamp(8.0, 28.0).toDouble();
+            props['defaultGlow'] = indicatorGlow;
+          } else if (type == 'image') {
+            props['url'] = imageUrlController.text.trim();
+            props['assetPath'] = imageAssetController.text.trim();
+            props['fit'] = imageFit;
+            props['borderRadius'] =
+                readDouble(radiusController, 8.0).clamp(0.0, 999.0).toDouble();
           }
 
           final nextWidth = readDouble(widthController, current.size.width)
@@ -2166,6 +2379,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       maxController,
       currentController,
       thicknessController,
+      placeholderController,
+      maxLengthController,
+      stepController,
+      optionsController,
+      selectDefaultController,
+      dotSizeController,
+      imageUrlController,
+      imageAssetController,
     ]);
   }
 
