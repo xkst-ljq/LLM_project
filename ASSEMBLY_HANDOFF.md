@@ -299,15 +299,23 @@ A9.6-1 已完成 MVP：
 - 保存到 `module.properties['dataChannel']`，并在画布上显示 chip。
 - 当前不写 SessionState、不注入 Prompt、不做状态栏反向创建。
 
-### A9.6-1 增强：状态字段名称匹配与 pendingName 预绑定（已完成，待本地测试）
+### A9.6-1 增强：状态字段名称匹配与 pendingName 预绑定（已完成，测试通过）
 - `CharacterAssemblyPage(statusFields: ...)` 只读接收角色卡 `meta.statusBarFields`。
 - 数据通道选择「状态字段」时实时提示匹配结果；命中写 `targetId` + 卡片字段类型，未命中记 `pendingName`。
 - 进入 Assembly 时 `_reconcileStatusChannelBindings()` 双向对齐（后建字段自动补绑，字段删除回退待创建）。
 - 待创建状态在画布 chip 与暴露项摘要中显示「状态待建」，橙色标识。
 
+### A9.6-2：UI 写入 SessionState MVP（已完成，待本地测试）
+- 新增 `lib/services/ui_engine/data_channel_service.dart`，负责 UI → SessionState 单向写入。
+- 可写原子：input / select / switch / slider（progress 只做显示，不作输入源）。
+- `local_ui_state` 永不进会话副本；`status_field` 未匹配（pendingName）时跳过；数值字段按卡片 min/max clamp。
+- `UIAssemblyRuntimeView` 新增 `sessionState` / `statusFields` / `onSessionStateChanged` / `showDataChannelDebug`。
+- Assembly 预览用本地临时副本 + 顶部调试浮层，可验证但不落盘。
+- 单测：`test/data_channel_service_test.dart`。
+
 ### 下一步建议
-- 先本地测试 A9.6-1 增强。
-- 若通过，进入 A9.6-2 UI 写入 SessionState MVP。
+- 先本地测试 A9.6-2。
+- 若通过，进入 A9.6-3 SessionState 注入 Prompt MVP。
 - 仍不要进入 A10 mode 差异。
 
 ---

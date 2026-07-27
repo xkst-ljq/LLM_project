@@ -52,7 +52,7 @@
 | A8 | 运行时等比缩放与画布约束完善 | 基础版完成，待本地测试 | ✅ |
 | A9 | 页面手势配置 + 轻量动画 | MVP 完成，待本地测试 | ✅ |
 | A9.5 | 通用模板基础版 | A9.5-5 全部子步骤完成，测试通过 | ✅ |
-| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-1 增强（状态字段匹配 / pendingName 预绑定）完成，待本地测试 | ✅ |
+| A9.6 | SSOT / LLM 数据交互 MVP | A9.6-2 UI 写入 SessionState MVP 完成，待本地测试 | ✅ |
 | A10 | mode 差异逻辑收口 | 未开始 | ⏳ |
 | A11 | 消息流窗口 | 未开始 | ⏳ |
 | A12 | 高级动画 | 未开始 | ⏳ |
@@ -1252,7 +1252,7 @@ A9.6-0 只确认设计、边界和后续实现顺序。
 - 支持 AI 更新应用方式：用户确认、低风险自动应用、永不应用。
 - 当前保存到组件 `module.properties['dataChannel']`，并在画布上显示数据通道 chip。
 - 当前只保存数据通道元数据，不写入 SessionState、不注入 Prompt。
-#### A9.6-1 增强：状态字段名称匹配与 pendingName 预绑定（已完成，待本地测试）
+#### A9.6-1 增强：状态字段名称匹配与 pendingName 预绑定（已完成，测试通过）
 - `CharacterAssemblyPage` 新增只读入参 `statusFields`，由 `UIAssemblyListPage` 从 `meta.statusBarFields` 传入。Assembly 不修改角色卡字段本体。
 - 数据通道「保存到」选择状态字段时，表单实时显示匹配提示：
   - 命中：显示字段名、内部 id、数值 / 文本类型。
@@ -1277,14 +1277,36 @@ A9.6-0 只确认设计、边界和后续实现顺序。
     - 原因同上：`ListView` 不支持 intrinsic 尺寸，放进 `AlertDialog.content` 会在 paint 阶段抛 `hasSize` 断言。
   - 覆写槽位的「编辑 / 绑定 / 通道 / 移除」从名称同一行移到独立 `Wrap` 行，可自动换行；未创建槽位时「创建」仍留在名称行。
 
-#### A9.6-2：UI 写入 SessionState MVP
-优先支持：
-- input → `SessionState.vars`
-- select → `SessionState.vars`
-- switch → `SessionState.vars` 或 `statusValues`
-- slider → `statusValues`
+#### A9.6-2：UI 写入 SessionState MVP（已完成，待本地测试）
+新增 `lib/services/ui_engine/data_channel_service.dart`。
 
-先保证 UI 运行时交互可以稳定写入会话副本。
+可写类型（progress 为显示型，不作为输入源）：
+- input / select / switch / slider
+
+取值口径：
+- input：`committedValue` > `text` > `value`
+- select：`current` > `defaultValue`
+- switch：`value != false`，输出 `'true'` / `'false'`
+- slider：`committedValue` > `current`，整数不带小数尾巴
+
+写入规则：
+- `session_var` → 以 semanticLabel 为键写 `SessionState.vars`
+- `status_field` 且已匹配 targetId → 写 `SessionState.statusValues[targetId]`
+- `status_field` 但仍是 pendingName → **跳过**，不凭空造字段
+- `local_ui_state` → **永不进入** SessionState
+- 数值状态字段按角色卡 `minValue` / `maxValue` 执行 clamp
+- 值未变化时不报告 changed，避免无谓落盘
+
+运行时接线：
+- `UIAssemblyRuntimeView` 新增 `sessionState` / `statusFields` / `onSessionStateChanged` / `showDataChannelDebug`。
+- 每次 LinkerEventBus 事件后调用 `_syncDataChannels()`，单向 UI → SessionState。
+- 未传 `sessionState` 时使用本地临时副本，Assembly 预览可验证但不落盘、不污染真实会话。
+- 复合组件暴露项的 `PropertyOverride.overrides['dataChannel']` 一并参与收集。
+- Assembly 运行时预览开启 `showDataChannelDebug`，顶部浮层实时显示写入的键值。
+
+测试：`test/data_channel_service_test.dart` 覆盖取值、收集、跳过规则、clamp 与幂等。
+
+仍不注入 Prompt（留给 A9.6-3）。
 
 #### A9.6-3：SessionState 注入 Prompt MVP
 - 支持 `{{var.xxx}}` 与 `{{status.xxx}}`。
@@ -1547,10 +1569,10 @@ direction: none | upload_only | bidirectional
 - A7.5 / A5-0 Assembly 资产区最小补全
 
 ### 下一步候选
-- 先本地测试 A9.6-1 增强：状态字段名称匹配与 pendingName 预绑定
+- 先本地测试 A9.6-2 UI 写入 SessionState MVP
 
 ### 然后
-- A9.6-2 UI 写入 SessionState MVP
+- A9.6-3 SessionState 注入 Prompt MVP
 - A10 mode 差异逻辑收口
 
 ---

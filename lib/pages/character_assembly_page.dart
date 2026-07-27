@@ -137,6 +137,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   assemblyInfo: previewInfo,
                   activePageId: _runtimePreviewPageId,
                   showBlurredBackdrop: true,
+                  // 预览用本地临时会话副本：可验证数据通道写入，
+                  // 但不落盘、不影响真实角色卡会话状态。
+                  statusFields: widget.statusFields,
+                  showDataChannelDebug: true,
                 ),
               ),
               Positioned(

@@ -4,7 +4,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../models/session_state.dart';
+import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/data_channel_service.dart';
 import '../services/ui_engine/linker_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
@@ -24,6 +27,22 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   final bool showDebugInfo;
   final double blurSigma;
 
+  /// A9.6-2：UI 交互写入的会话副本。
+  ///
+  /// 传入时，配置了数据通道的输入原子（input / select / switch / slider）
+  /// 会在每次交互后把当前值写进 `vars` / `statusValues`。
+  /// 不传则运行时完全不触碰会话状态（Assembly 预览默认使用本地临时副本）。
+  final SessionState? sessionState;
+
+  /// 角色卡状态栏字段定义，用于数值字段 clamp。
+  final List<StatusBarField> statusFields;
+
+  /// 会话副本发生变化时回调，供上层落盘。
+  final ValueChanged<SessionState>? onSessionStateChanged;
+
+  /// 显示数据通道写入的调试浮层（仅 Assembly 预览用）。
+  final bool showDataChannelDebug;
+
   const UIAssemblyRuntimeView({
     super.key,
     required this.assemblyInfo,
@@ -31,6 +50,10 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.showBlurredBackdrop = true,
     this.showDebugInfo = false,
     this.blurSigma = 16.0,
+    this.sessionState,
+    this.statusFields = const <StatusBarField>[],
+    this.onSessionStateChanged,
+    this.showDataChannelDebug = false,
   });
 
   @override
@@ -43,6 +66,8 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
 
   late List<AssemblyPage> _pages;
   late String _activePageId;
+  late SessionState _session;
+  List<String> _lastChannelDebug = const <String>[];
   Offset? _swipeStart;
   String _lastTransition = 'base_slide';
   String _lastSwipeDirection = 'swipe_left';
@@ -74,14 +99,49 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   void _restoreRuntimeState() {
     _pages = _clonePages(_restorePages(widget.assemblyInfo));
     _activePageId = _resolveActivePage(_pages, widget.activePageId).id;
+    // 未接入外部会话时使用本地临时副本，保证预览里通道逻辑同样可验证，
+    // 但不会污染真实角色卡会话状态。
+    _session = widget.sessionState ?? SessionState();
   }
 
   void _setupRuntimeLinkers() {
     final activePage = _resolveActivePage(_pages, _activePageId);
     LinkerService.initEventBusListener(activePage.elements, () {
       if (!mounted) return;
+      _syncDataChannels();
       setState(() {});
     });
+    _syncDataChannels();
+  }
+
+  /// A9.6-2：把当前页配置了数据通道的输入原子的值同步进会话副本。
+  ///
+  /// 每次联动器事件后调用；仅单向 UI → SessionState，不做反向回填。
+  void _syncDataChannels() {
+    final activePage = _resolveActivePage(_pages, _activePageId);
+    final overrideChannels = <String, Map<String, dynamic>>{};
+    for (final override in activePage.propertyOverrides) {
+      final raw = override.overrides['dataChannel'];
+      if (raw is Map) {
+        overrideChannels[override.componentId] =
+            Map<String, dynamic>.from(raw);
+      }
+    }
+
+    final writes = DataChannelService.collectWrites(
+      activePage.elements,
+      overrideChannels: overrideChannels,
+    );
+    _lastChannelDebug = DataChannelService.describeWrites(writes);
+
+    final changed = DataChannelService.applyWrites(
+      _session,
+      writes,
+      statusFields: widget.statusFields,
+    );
+    if (changed) {
+      widget.onSessionStateChanged?.call(_session);
+    }
   }
 
   String _defaultTransitionForAction(String action) {
@@ -326,6 +386,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                   ),
                 ),
               ),
+              if (widget.showDataChannelDebug && _lastChannelDebug.isNotEmpty)
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  top: 8,
+                  child: _buildDataChannelDebug(),
+                ),
               if (widget.showDebugInfo)
                 Positioned(
                   left: 8,
@@ -474,6 +541,47 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       width: element.size.width,
       height: element.size.height,
       child: child,
+    );
+  }
+
+  /// 数据通道写入调试浮层：列出本轮实际同步进会话副本的键值。
+  Widget _buildDataChannelDebug() {
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.56),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '数据通道写入',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                for (final line in _lastChannelDebug)
+                  Text(
+                    line,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      height: 1.4,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
