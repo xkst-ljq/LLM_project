@@ -1517,7 +1517,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   late Animation<Offset> _fanPanelSlideAnim;
   late AnimationController _inputAnimController;
   late Animation<double> _inputExpandAnimation;
-  late CharacterCard? _currentCharacter;
+  // 不能用 late：initState 中 _loadPromptSettings() 会先于赋值读取它，
+  // 触发 LateInitializationError。直接初始化为 null 更安全，
+  // 且全项目已按可空类型使用该字段。
+  CharacterCard? _currentCharacter;
   final ScrollController _scrollController = ScrollController();
   bool _inputExpanded = false;
   int _editingIndex = -1;

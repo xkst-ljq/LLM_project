@@ -1470,6 +1470,18 @@ LLM 回复
 - 测试：新增 `test/status_bar_engine_policy_test.dart`，
   覆盖值不泄漏、不可写不生效、全禁用不注入等红线。
 
+修复：进入聊天页 LateInitializationError（既有隐患，非本次引入）
+- 现象：`Field '_currentCharacter' has not been initialized`，
+  栈顶为 `_loadPromptSettings` ← `initState`。
+- 根因：`_currentCharacter` 声明为 `late CharacterCard?`，
+  但 `initState` 中 `_loadPromptSettings()`（读取该字段）执行在
+  `_currentCharacter = widget.character` 赋值**之前**，构成读早于写。
+  该声明自 `b4490dd` 起就存在，属于既有隐患，只是此前未必每次都命中。
+- 处理：改为普通可空字段 `CharacterCard? _currentCharacter`，默认 null。
+  `late` 对可空类型本就没有收益（可空字段无需延迟初始化即可满足空安全），
+  且全项目已按可空语义使用它（`_currentCharacter?.` / `_currentCharacter!`），
+  因此改动不影响既有调用点。
+
 ### A9.6 不做
 - 不做完整自动状态解析器。
 - 不做复杂 Prompt 分频策略。
