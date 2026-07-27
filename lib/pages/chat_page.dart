@@ -2042,6 +2042,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           DataChannelPromptBuilder.collectStatusFieldPolicies(uiItems);
       final statusFormat = StatusBarEngine.buildUpdateFormatInstruction(
         statusFields,
+        _sessionState.statusValues,
         policies: policies,
       );
       if (statusFormat.isNotEmpty) {

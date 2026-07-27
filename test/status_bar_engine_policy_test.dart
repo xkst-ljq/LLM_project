@@ -22,6 +22,8 @@ final _fields = [
   ),
 ];
 
+const _values = {'f_aff': '4', 'f_alert': '0'};
+
 void main() {
   group('buildInjection - 尊重数据通道策略', () {
     test('无策略时行为不变，全部可读可写', () {
@@ -75,25 +77,25 @@ void main() {
 
   group('buildUpdateFormatInstruction - 状态栏 PHI', () {
     test('明确告知只有标签块才生效，防止口头声称已修改', () {
-      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
       // 模型最常见的失败模式：正文说「已修改」但不输出标签块。
       expect(out, contains('仅在正文里说'));
       expect(out, contains('无效'));
     });
 
     test('要求每回合输出，无变化也输出空标签', () {
-      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
       expect(out, contains('每回合'));
       expect(out, contains('空标签'));
     });
 
     test('要求每项单独一行，避免同行多项解析问题', () {
-      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
       expect(out, contains('不要把多项写在同一行'));
     });
 
     test('示例用空块，避免模型照抄具体数值', () {
-      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
       expect(out, isNot(contains('好感度:+2')));
       expect(out, contains('默认输出'));
     });
@@ -101,6 +103,7 @@ void main() {
     test('不可写字段不进入可结算项', () {
       final out = StatusBarEngine.buildUpdateFormatInstruction(
         _fields,
+        _values,
         policies: {
           'f_aff': const StatusFieldPolicy(canRead: true, canWrite: false),
         },
@@ -112,6 +115,7 @@ void main() {
     test('全部不可写时不产生约束', () {
       final out = StatusBarEngine.buildUpdateFormatInstruction(
         _fields,
+        _values,
         policies: {
           'f_aff': const StatusFieldPolicy(canWrite: false),
           'f_alert': const StatusFieldPolicy(canWrite: false),
@@ -133,17 +137,47 @@ void main() {
     });
 
     test('PHI 以肯定句说明可读，并解释结算时序', () {
-      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
       expect(out, contains('你能够看到'));
       expect(out, contains('如实回答'));
       expect(out, contains('回复之后自动结算'));
     });
 
     test('PHI 区分可读字段与隐藏字段，避免规则被泛化', () {
-      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields);
+      final out = StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
       // 只有隐藏字段才该声称「无法得知」。
       expect(out, contains('可建议更新的隐藏状态'));
       expect(out, contains('这类项才需要说明'));
+    });
+  });
+
+  group('PHI 重述当前值', () {
+    test('当前值在 PHI 里重复一份，避免模型回头翻远处的 system', () {
+      final out =
+          StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
+      // system 开头的 [状态栏] 距离太远，模型更容易采信近处历史里的旧数字。
+      expect(out, contains('当前状态值'));
+      expect(out, contains('好感度：4'));
+    });
+
+    test('明确要求以此为准，覆盖历史里说过的旧数字', () {
+      final out =
+          StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
+      expect(out, contains('过时或错误'));
+      expect(out, contains('不要沿用历史消息里的旧数字'));
+    });
+
+    test('不可读字段不在 PHI 里暴露当前值', () {
+      final out = StatusBarEngine.buildUpdateFormatInstruction(
+        _fields,
+        _values,
+        policies: {
+          'f_alert': const StatusFieldPolicy(canRead: false, canWrite: true),
+        },
+      );
+      // 敌方警觉度可写不可读，当前值绝不能出现。
+      final section = out.substring(out.indexOf('当前状态值'));
+      expect(section, isNot(contains('敌方警觉度：')));
     });
   });
 

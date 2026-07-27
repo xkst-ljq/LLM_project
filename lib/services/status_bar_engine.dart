@@ -137,7 +137,8 @@ class StatusBarEngine {
   /// 格式约束放在 system 开头时，长对话中模型会忽略它而只在正文里口头声称
   /// 「已修改」，实际不输出标签块，导致状态纹丝不动。
   static String buildUpdateFormatInstruction(
-    List<StatusBarField> fields, {
+    List<StatusBarField> fields,
+    Map<String, String> values, {
     Map<String, StatusFieldPolicy> policies = const {},
   }) {
     final writable = <StatusBarField>[];
@@ -185,16 +186,35 @@ class StatusBarEngine {
     lines.add('- 直接输出标签本身，不要用代码块或引号包裹。');
     lines.add('- 该标记不会展示给用户，正文中不要重复或提及它的内容。');
     lines.add('');
-    lines.add('关于在正文里提到数值：');
-    // 措辞必须以肯定句为主。上一版全是否定句，模型将其泛化成
-    // 「我无权读取状态」，反而拒绝回答用户的查询。
-    lines.add('- [状态栏] 段落里已经给出了所有可见状态的当前值，你能够看到它们。');
-    lines.add('- 用户询问当前状态时，请照 [状态栏] 里的数字如实回答，'
-        '这是唯一权威来源。');
-    lines.add('- 报数时以 [状态栏] 的数字为准，不需要自己根据对话历史累加，'
-        '本回合的变化会由系统在你回复之后自动结算。');
-    lines.add('- 例外：[可建议更新的隐藏状态] 里的项没有给出当前值，'
-        '这类项才需要说明你无法得知其数值。');
+    // 当前值在这里重复一遍。
+    // system prompt 开头的 [状态栏] 距离太远（世界书往往上千 token），
+    // 模型报数时更容易采信近处对话历史里自己说过的旧数字。
+    // 把权威值放到紧邻本回合的位置，是解决报错数最有效的手段。
+    final readable = <StatusBarField>[];
+    for (final f in fields) {
+      if (f.name.trim().isEmpty) continue;
+      if ((policies[f.id] ?? const StatusFieldPolicy()).canRead) {
+        readable.add(f);
+      }
+    }
+
+    if (readable.isNotEmpty) {
+      lines.add('');
+      lines.add('当前状态值（本回合权威数据，以此为准）：');
+      for (final f in readable) {
+        lines.add('- ${f.name}：${values[f.id] ?? f.initialValue}');
+      }
+      lines.add('');
+      lines.add('关于在正文里提到数值：');
+      // 措辞以肯定句为主。纯否定句会被模型泛化成「我无权读取状态」而拒绝回答。
+      lines.add('- 上面这几个数字就是当前的真实状态，你能够看到它们。');
+      lines.add('- 用户询问当前状态时，直接读出上面对应的数字即可。');
+      lines.add('- 如果你在更早的对话里说过不同的数字，那是过时或错误的，'
+          '一律以上面这份为准，不要沿用历史消息里的旧数字。');
+      lines.add('- 不需要自己累加，本回合的变化会由系统在你回复之后自动结算。');
+      lines.add('- 例外：[可建议更新的隐藏状态] 里的项没有给出当前值，'
+          '这类项才需要说明你无法得知其数值。');
+    }
 
     return lines.join('\n');
   }
