@@ -335,6 +335,13 @@ A9.6-1 已完成 MVP：
 - 删除消息时调 `_rollbackSessionStateFor()`，取最早那条的快照还原。
 - 新增任何删除消息的入口时，记得一并接入回滚，否则状态又会残留。
 
+#### 状态字段归属（owner）
+- `owner`（player/char/neutral）决定注入 Prompt 时的主语。
+  没有主语时 LLM 无法判断增减方向——实测商贩剧情里玩家花钱被写成 `+600`。
+- 只有**显示文字**用 `qualifiedName`；标签里的键必须是原始 `name`，
+  否则 `applyFromReply` 匹配不上，解析会全部失效。
+- 想让角色也有自己的属性，就再建一个 `char` 归属的字段。
+
 #### SSOT 归属规则（架构约束，不要违反）
 状态字段可能同时被状态栏和 UI 数据通道引用，但**同一字段只能由一套机制注入与解析**：
 - `targetKind == 'status_field'` → 一律由 `StatusBarEngine` 负责，用 `<状态变化>` 标签。

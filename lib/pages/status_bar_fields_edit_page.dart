@@ -117,7 +117,8 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
           a.initialValue != b.initialValue ||
           a.minValue != b.minValue ||
           a.maxValue != b.maxValue ||
-          a.pinSide != b.pinSide) {
+          a.pinSide != b.pinSide ||
+          a.owner != b.owner) {
         return true;
       }
     }
@@ -264,6 +265,42 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
                       setState(() => _fields[i] = f.copyWith(type: s.first)),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            // 归属：决定 Prompt 里的主语，直接影响 LLM 判断增减方向。
+            Row(
+              children: [
+                const Text('归属'),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: f.owner,
+                    isDense: true,
+                    decoration: const InputDecoration(isDense: true),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'player', child: Text('玩家的属性')),
+                      DropdownMenuItem(
+                          value: 'char', child: Text('角色自己的属性')),
+                      DropdownMenuItem(
+                          value: 'neutral', child: Text('中立 / 环境')),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(
+                          () => _fields[i] = _fields[i].copyWith(owner: v));
+                    },
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '注入 Prompt 时会带上主语（如「玩家的金钱」），'
+                '帮助 AI 判断该加还是该减。',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              ),
             ),
             const SizedBox(height: 8),
             // 初始值

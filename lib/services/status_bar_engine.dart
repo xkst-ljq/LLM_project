@@ -109,9 +109,10 @@ class StatusBarEngine {
         final v = values[f.id] ?? f.initialValue;
         if (f.isNumber) {
           final range = _rangeHint(f);
-          lines.add('- ${f.name}：$v${range.isNotEmpty ? '（$range）' : ''}');
+          lines.add(
+              '- ${f.qualifiedName}：$v${range.isNotEmpty ? '（$range）' : ''}');
         } else {
-          lines.add('- ${f.name}：$v');
+          lines.add('- ${f.qualifiedName}：$v');
         }
       }
     }
@@ -122,7 +123,7 @@ class StatusBarEngine {
       lines.add('[可建议更新的隐藏状态]');
       lines.add('以下状态的当前值对你隐藏，你只能根据剧情建议其变化：');
       for (final f in writeOnly) {
-        lines.add('- ${f.name}：只可输出 +N/-N，不要在正文中提及当前值。');
+        lines.add('- ${f.qualifiedName}：只可输出 +N/-N，不要在正文中提及当前值。');
       }
     }
 
@@ -165,10 +166,13 @@ class StatusBarEngine {
     for (final f in writable) {
       if (f.isNumber) {
         final range = _rangeHint(f);
-        lines.add('- ${f.name}：格式 `${f.name}:+N` 或 `${f.name}:-N`，'
+        // 标签里的键必须是原始 name（解析器按 name 匹配），
+        // 主语只出现在说明文字里，用于消除增减方向的歧义。
+        lines.add('- ${f.qualifiedName}：格式 `${f.name}:+N` 或 `${f.name}:-N`，'
             '只给变化量，不要给最终值${range.isEmpty ? '' : '（$range）'}');
       } else {
-        lines.add('- ${f.name}：格式 `${f.name}=新内容`，直接给变化后的内容');
+        lines.add('- ${f.qualifiedName}：格式 `${f.name}=新内容`，'
+            '直接给变化后的内容');
       }
     }
     lines.add('');
@@ -184,6 +188,14 @@ class StatusBarEngine {
     lines.add('- 标签内只写确有变化的项；没有变化的项不写，也不要写未列出的项。');
     lines.add('- 日常对话、寒暄、单纯的信息交流一律不产生变化；拿不准时不写。');
     lines.add('- 用户明确要求修改某项时，必须在标签块里如实写出。');
+    // 主语已写进可结算项，这里再明确增减方向的判断依据。
+    // 缺少这条时，商贩剧情里「玩家花 600 买东西」会被写成 +600
+    // （模型站在自己收钱的视角）。
+    lines.add('- **注意增减方向**：每项都标明了归属（玩家的 / 你的）。'
+        '判断正负时以该归属方为准——'
+        '玩家付出、消耗、损失时对「玩家的」项用负号，获得时用正号；'
+        '「你的」项同理，以你自己为视角。');
+    lines.add('- 一次交易若同时影响双方，只结算列出的项，未列出的不要写。');
     lines.add('- 直接输出标签本身，不要用代码块或引号包裹。');
     lines.add('- 该标记不会展示给用户，正文中不要重复或提及它的内容。');
     lines.add('');
@@ -206,7 +218,7 @@ class StatusBarEngine {
       // 再把历史里看到的请求量加一遍，导致报数虚高（如 50 报成 75）。
       lines.add('最新状态值（已包含此前所有回合的结算结果）：');
       for (final f in readable) {
-        lines.add('- ${f.name}：${values[f.id] ?? f.initialValue}');
+        lines.add('- ${f.qualifiedName}：${values[f.id] ?? f.initialValue}');
       }
       lines.add('');
       lines.add('关于在正文里提到数值：');

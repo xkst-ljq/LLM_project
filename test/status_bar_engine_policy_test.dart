@@ -234,6 +234,51 @@ void main() {
     });
   });
 
+  group('注入带主语', () {
+    test('可结算项标注归属，但标签键仍用原始名', () {
+      final fields = [
+        StatusBarField(
+            id: 'f_gold', name: '金钱数量', type: 'number', owner: 'player'),
+      ];
+      final out = StatusBarEngine.buildUpdateFormatInstruction(
+        fields,
+        {'f_gold': '8000'},
+      );
+      expect(out, contains('玩家的金钱数量'));
+      // 标签键必须是原始 name，否则 applyFromReply 匹配不上。
+      expect(out, contains('`金钱数量:+N`'));
+      expect(out, contains('注意增减方向'));
+    });
+
+    test('角色自身属性用「你的」主语', () {
+      final fields = [StatusBarField(id: 'f_p', name: '钱包', owner: 'char')];
+      final out = StatusBarEngine.buildInjection(fields, {'f_p': '500'});
+      expect(out, contains('你的钱包：500'));
+    });
+
+    test('带主语后仍能正确解析 LLM 回复', () {
+      // 关键回归：主语只在说明里，解析仍按原始 name 匹配。
+      final fields = [
+        StatusBarField(
+          id: 'f_gold',
+          name: '金钱数量',
+          type: 'number',
+          initialValue: '8000',
+          minValue: 0,
+          maxValue: 1000000,
+        ),
+      ];
+      final values = {'f_gold': '8000'};
+      final changes = StatusBarEngine.applyFromReply(
+        '正文\n<状态变化>\n金钱数量:-600\n</状态变化>',
+        fields,
+        values,
+      );
+      expect(changes.length, 1);
+      expect(values['f_gold'], '7400');
+    });
+  });
+
   group('splitSegments - 同行多项', () {
     const names = ['心情', '好感度'];
 

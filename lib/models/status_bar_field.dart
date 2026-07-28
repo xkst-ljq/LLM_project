@@ -19,6 +19,16 @@ class StatusBarField {
   String pinSide; // 'none' | 'left' | 'right'：折叠长条上固定在哪一侧
   int order; // 排序
 
+  /// 归属：这个字段描述的是谁的属性。
+  ///
+  /// 'player'  玩家的（金钱、体力、背包容量等）
+  /// 'char'    角色自己的（商贩的钱包、角色的心情）
+  /// 'neutral' 中立/环境（时间、天气、地点）
+  ///
+  /// 注入 Prompt 时会据此加上主语。缺少主语时 LLM 无法判断增减方向——
+  /// 实测「金钱数量」在商贩剧情里被理解成商贩的收入，买东西反而 +600。
+  String owner;
+
   StatusBarField({
     required this.id,
     required this.name,
@@ -28,9 +38,34 @@ class StatusBarField {
     this.maxValue,
     this.pinSide = 'none',
     this.order = 0,
+    this.owner = 'player',
   });
 
   bool get isNumber => type == 'number';
+
+  /// 带主语的显示名，用于 Prompt 注入。
+  /// 中立字段不加主语，避免「环境的时间」这种别扭表述。
+  String get qualifiedName {
+    switch (owner) {
+      case 'char':
+        return '你的$name';
+      case 'neutral':
+        return name;
+      default:
+        return '玩家的$name';
+    }
+  }
+
+  String get ownerLabel {
+    switch (owner) {
+      case 'char':
+        return '角色自己';
+      case 'neutral':
+        return '中立/环境';
+      default:
+        return '玩家';
+    }
+  }
   bool get isPinned => pinSide == 'left' || pinSide == 'right';
   bool get isPinnedLeft => pinSide == 'left';
   bool get isPinnedRight => pinSide == 'right';
@@ -39,6 +74,12 @@ class StatusBarField {
     if (v is num) return v.toDouble();
     if (v is String && v.trim().isNotEmpty) return double.tryParse(v.trim());
     return null;
+  }
+
+  static String _readOwner(dynamic raw) {
+    final v = raw?.toString();
+    if (v == 'char' || v == 'neutral' || v == 'player') return v!;
+    return 'player';
   }
 
   static String _readPinSide(Map<String, dynamic> json) {
@@ -62,6 +103,8 @@ class StatusBarField {
       maxValue: _readDouble(json['max_value']),
       pinSide: _readPinSide(json),
       order: json['order'] as int? ?? 0,
+      // 旧卡片没有该字段，默认按玩家属性处理（最常见的情况）。
+      owner: _readOwner(json['owner']),
     );
   }
 
@@ -75,6 +118,7 @@ class StatusBarField {
       'max_value': maxValue,
       'pin_side': pinSide,
       'order': order,
+      'owner': owner,
     };
   }
 
@@ -89,6 +133,7 @@ class StatusBarField {
     double? maxValue,
     String? pinSide,
     int? order,
+    String? owner,
     bool clearMinValue = false,
     bool clearMaxValue = false,
   }) {
@@ -101,6 +146,7 @@ class StatusBarField {
       maxValue: clearMaxValue ? null : (maxValue ?? this.maxValue),
       pinSide: pinSide ?? this.pinSide,
       order: order ?? this.order,
+      owner: owner ?? this.owner,
     );
   }
 }

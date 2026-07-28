@@ -40,6 +40,50 @@ void main() {
     });
   });
 
+  group('归属与主语', () {
+    StatusBarField f(String owner) => StatusBarField(
+        id: 'f', name: '金钱数量', type: 'number', owner: owner);
+
+    test('玩家属性带「玩家的」主语', () {
+      expect(f('player').qualifiedName, '玩家的金钱数量');
+    });
+
+    test('角色属性带「你的」主语', () {
+      expect(f('char').qualifiedName, '你的金钱数量');
+    });
+
+    test('中立字段不加主语，避免别扭表述', () {
+      expect(f('neutral').qualifiedName, '金钱数量');
+    });
+
+    test('默认归属为玩家', () {
+      expect(StatusBarField(id: 'f', name: '金钱').owner, 'player');
+    });
+
+    test('旧卡片缺少 owner 时回落为玩家', () {
+      final parsed = StatusBarField.fromJson({
+        'id': 'f',
+        'name': '金钱',
+        'type': 'number',
+      });
+      expect(parsed.owner, 'player');
+    });
+
+    test('非法 owner 值回落为玩家', () {
+      final parsed = StatusBarField.fromJson({
+        'id': 'f',
+        'name': '金钱',
+        'owner': 'nonsense',
+      });
+      expect(parsed.owner, 'player');
+    });
+
+    test('owner 参与序列化往返', () {
+      final original = StatusBarField(id: 'f', name: '钱包', owner: 'char');
+      expect(StatusBarField.fromJson(original.toJson()).owner, 'char');
+    });
+  });
+
   group('链式编辑', () {
     test('连续修改多个字段不会互相覆盖', () {
       // 复现编辑页的操作序列：先改初始值，再改最大值。
