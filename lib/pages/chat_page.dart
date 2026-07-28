@@ -2886,10 +2886,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               child: RawGestureDetector(
                 behavior: HitTestBehavior.opaque,
                 gestures: <Type, GestureRecognizerFactory>{
-                  PanGestureRecognizer:
+                  // 同悬浮球：普通 Pan 会被外层 HorizontalDrag 抢走，
+                  // 且要先移动 18px 才触发，显得不跟手。
+                  _EagerPanRecognizer:
                       GestureRecognizerFactoryWithHandlers<
-                          PanGestureRecognizer>(
-                    () => PanGestureRecognizer(),
+                          _EagerPanRecognizer>(
+                    () => _EagerPanRecognizer(),
                     (instance) {
                       // 必须用块体：箭头体 `(d) => _stickyDragStart = ...`
                       // 的返回值是 Offset，级联会接到 Offset 上而不是识别器。
@@ -2971,47 +2973,64 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 220),
         opacity: tucked ? 0.45 : 1.0,
-        child: GestureDetector(
+        // 用抢占式识别器：默认 Pan 要等 18px 才确认，且这段期间会被
+        // 外层的 HorizontalDrag 抢走，表现为「不跟手」+「时灵时不灵」。
+        child: RawGestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () {
-            if (tucked) {
-              // 两段式：缩进态先冒出来，再点一次才展开。
-              setState(() => _ballPeeking = true);
-              _restartBallTuckTimer();
-              return;
-            }
-            _ballTuckTimer?.cancel();
-            setState(() {
-              _stickyCollapsed = false;
-              _ballPeeking = false;
-              _ballTucked = false;
-              // 展开后 UI 出现在球的附近，位置连续。
-              _stickyOffset = _stickyOffsetForBall(pos, screen);
-            });
-          },
-          onPanStart: (_) {
-            _ballTuckTimer?.cancel();
-            setState(() {
-              _ballDragging = true;
-              _ballTucked = false;
-              _ballPeeking = false;
-              _ballPos = pos;
-            });
-          },
-          onPanUpdate: (d) {
-            setState(() {
-              final next = (_ballPos ?? pos) + d.delta;
-              _ballPos = Offset(
-                next.dx.clamp(
-                    -_ballSize / 2, screen.width - _ballSize / 2),
-                next.dy.clamp(_stickyTopAnchor, screen.height - 160.0),
-              );
-            });
-          },
-          onPanEnd: (_) {
-            setState(() => _ballDragging = false);
-            // 实时贴边：松手立刻吸附到最近一侧。
-            _snapBallToEdge(screen);
+          gestures: <Type, GestureRecognizerFactory>{
+            TapGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+              () => TapGestureRecognizer(),
+              (instance) {
+                instance.onTap = () {
+                  if (tucked) {
+                    // 两段式：缩进态先冒出来，再点一次才展开。
+                    setState(() => _ballPeeking = true);
+                    _restartBallTuckTimer();
+                    return;
+                  }
+                  _ballTuckTimer?.cancel();
+                  setState(() {
+                    _stickyCollapsed = false;
+                    _ballPeeking = false;
+                    _ballTucked = false;
+                    // 展开后 UI 出现在球的附近，位置连续。
+                    _stickyOffset = _stickyOffsetForBall(pos, screen);
+                  });
+                };
+              },
+            ),
+            _EagerPanRecognizer:
+                GestureRecognizerFactoryWithHandlers<_EagerPanRecognizer>(
+              () => _EagerPanRecognizer(),
+              (instance) {
+                instance.onStart = (_) {
+                  _ballTuckTimer?.cancel();
+                  setState(() {
+                    _ballDragging = true;
+                    _ballTucked = false;
+                    _ballPeeking = false;
+                    _ballPos = pos;
+                  });
+                };
+                instance.onUpdate = (d) {
+                  setState(() {
+                    final next = (_ballPos ?? pos) + d.delta;
+                    _ballPos = Offset(
+                      next.dx
+                          .clamp(-_ballSize / 2, screen.width - _ballSize / 2),
+                      next.dy
+                          .clamp(_stickyTopAnchor, screen.height - 160.0),
+                    );
+                  });
+                };
+                instance.onEnd = (_) {
+                  setState(() => _ballDragging = false);
+                  // 实时贴边：松手立刻吸附到最近一侧。
+                  _snapBallToEdge(screen);
+                };
+              },
+            ),
           },
           child: Container(
             width: _ballSize,
@@ -5604,5 +5623,35 @@ class _PinSliderState extends State<_PinSlider> {
         ),
       );
     });
+  }
+}
+
+/// 低阈值全向拖动识别器（挂件把手与悬浮球专用）。
+///
+/// 解决两个连带症状：
+///   1. **要拖一段距离才跟手**：默认 Pan 要移动超过 `kTouchSlop`（18px）
+///      才确认手势，起手那段位移被吞掉，显得迟钝。
+///   2. **有时拖不动**：在那段等待期内，外层的 `HorizontalDragGestureRecognizer`
+///      （聊天页滑出侧栏、挂件的水平吸收器）同样在等 18px——
+///      两者几乎同时到达阈值，而专用识别器优先于通用 Pan，
+///      于是外层常常先赢，表现为时灵时不灵。
+///
+/// 处理：把自己的判定阈值降到 6px，抢在外层的 18px 之前拿下竞技场。
+///
+/// 为什么不在 `addAllowedPointer` 里直接 `resolve(accepted)`：
+/// 那样会立刻淘汰同一竞技场里的 `TapGestureRecognizer`，
+/// 悬浮球的「点击展开」就再也不会触发了。
+/// 保留阈值判定，静止时不产生位移 → Tap 正常获胜；
+/// 一旦移动超过 6px → 本识别器获胜，两种交互得以共存。
+class _EagerPanRecognizer extends PanGestureRecognizer {
+  /// 低于系统默认 18px，但高到足以容忍点击时的手指抖动。
+  static const double _slop = 6.0;
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+    PointerDeviceKind pointerDeviceKind,
+    double? deviceTouchSlop,
+  ) {
+    return globalDistanceMoved.abs() > _slop;
   }
 }

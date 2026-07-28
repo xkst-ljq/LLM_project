@@ -361,6 +361,11 @@ A9.6-1 已完成 MVP：
   命中不到的话点击也会失效；能点说明触摸到了，只是拖动被外层抢走。
   解法是让内层识别器在 `addAllowedPointer` 里立即 `resolve(accepted)`
   （见 `_EagerHorizontalDragRecognizer`），而不是继续调层级。
+- **浮层拖动要用低阈值识别器**：默认 Pan 的 18px 阈值既不跟手，
+  又会在等待期被外层 HorizontalDrag 抢走（时灵时不灵）。
+  用 `_EagerPanRecognizer`（阈值 6px）抢先拿下竞技场。
+  注意**不要**在 `addAllowedPointer` 里直接 accept——
+  那会淘汰同竞技场的 Tap，「点击展开」就失效了。
 - **挂件要自己吸收水平拖动**：聊天页根部有滑出侧栏的 `onHorizontalDrag*`，
   不吸收就会穿透触发。用 `deferToChild` 的空 `onHorizontalDrag*` 即可，
   内部更深层的组件仍能赢过它。
