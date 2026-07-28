@@ -24,7 +24,7 @@ UIElement _atom({
       name: id,
       type: type,
       properties: {
-        ?'dataChannel': channel,
+        'dataChannel': ?channel,
       },
     ),
   );
