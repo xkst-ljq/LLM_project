@@ -5,11 +5,37 @@ import '../services/ui_engine/ui_models.dart';
 
 /// 角色卡 UI 组装方案的轻量快照
 class UIAssemblyInfo {
+  /// 设计坐标系的基准宽度。全屏类 UI 沿用它。
+  static const double defaultPcbWidth = 360.0;
+
+  /// PCB 尺寸可调范围。范围放宽，由作者自行决定；
+  /// 运行时若超出屏幕会等比缩小，不会溢出。
+  static const double minPcbWidth = 120.0;
+  static const double maxPcbWidth = 600.0;
+  static const double minPcbHeight = 64.0;
+  static const double maxPcbHeight = 2000.0;
+
+  /// 按 mode 给出的默认画布尺寸。
+  ///
+  /// 常驻 / 伴生这类挂件本来就不该占满屏宽，
+  /// 用全屏尺寸起步会让作者一开始就把元件摆错位置。
+  static Size defaultPcbSizeFor(String mode) {
+    switch (mode) {
+      case 'extra_sticky':
+        return const Size(300, 120);
+      case 'extra_companion':
+        return const Size(320, 200);
+      default:
+        return const Size(defaultPcbWidth, 800);
+    }
+  }
+
   final String id;
   String name;
   String mode; // 'opening', 'scene', 'extra'
   String elementsJson; // 旧版存储字段，保留兼容
   String pagesJson; // 新版多页面结构 JSON
+  double pcbWidth;
   double pcbHeight;
   int pcbColorValue;
   bool pcbRounded;
@@ -21,6 +47,7 @@ class UIAssemblyInfo {
     this.mode = 'extra',
     this.elementsJson = '[]',
     this.pagesJson = '[]',
+    this.pcbWidth = defaultPcbWidth,
     this.pcbHeight = 800,
     this.pcbColorValue = 0xFFFFFFFF,
     this.pcbRounded = true,
@@ -52,6 +79,7 @@ class UIAssemblyInfo {
     'mode': mode,
     'elements': elementsJson,
     'pages': pagesJson,
+    'pcbWidth': pcbWidth,
     'pcbHeight': pcbHeight,
     'pcbColorValue': pcbColorValue,
     'pcbRounded': pcbRounded,
@@ -64,6 +92,7 @@ class UIAssemblyInfo {
     mode: json['mode']?.toString() ?? 'extra',
     elementsJson: json['elements']?.toString() ?? '[]',
     pagesJson: json['pages']?.toString() ?? '[]',
+    pcbWidth: (json['pcbWidth'] as num?)?.toDouble() ?? defaultPcbWidth,
     pcbHeight: (json['pcbHeight'] as num?)?.toDouble() ?? 800,
     pcbColorValue: (json['pcbColorValue'] as num?)?.toInt() ?? 0xFFFFFFFF,
     pcbRounded: json['pcbRounded'] != false,

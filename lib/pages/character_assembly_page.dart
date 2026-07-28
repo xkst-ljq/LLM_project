@@ -281,6 +281,56 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                 ),
                               ),
                             ),
+                            // 右侧宽度手柄。常驻 / 伴生 UI 的宽度需要可调，
+                            // 固定 360 会让作者按错误比例摆放元件。
+                            Positioned(
+                              left: _canvasOffset.dx + _pcbOffset.dx +
+                                  _pcbSize.width - 12,
+                              top: _canvasOffset.dy + _pcbOffset.dy +
+                                  _pcbSize.height / 2 - 22,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onPanStart: (details) {
+                                  _pcbResizeStartWidth = _pcbSize.width;
+                                  _pcbResizeStartGlobalDx =
+                                      details.globalPosition.dx;
+                                },
+                                onPanUpdate: (details) {
+                                  final nextWidth = _clampPcbWidth(
+                                    _pcbResizeStartWidth +
+                                        (details.globalPosition.dx -
+                                            _pcbResizeStartGlobalDx),
+                                  );
+                                  setState(() {
+                                    _pcbSize =
+                                        Size(nextWidth, _pcbSize.height);
+                                  });
+                                },
+                                onPanEnd: (_) => _persistAssemblyElements(),
+                                child: Container(
+                                  width: 24,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF111116)
+                                        .withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.08),
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Container(
+                                    width: 4,
+                                    height: 18,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF555562),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                             ...ancestorPages.expand((page) {
                               return page.elements.map(
                                 (el) => Positioned(

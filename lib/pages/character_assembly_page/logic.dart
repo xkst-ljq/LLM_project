@@ -20,15 +20,19 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   int _generatedElementIdSeed = 0;
 
   static const Size _defaultPcbSize = Size(360, 800);
-  static const double _pcbMinHeight = 64.0;
-  static const double _pcbMaxHeight = 2000.0;
+  static const double _pcbMinHeight = UIAssemblyInfo.minPcbHeight;
+  static const double _pcbMaxHeight = UIAssemblyInfo.maxPcbHeight;
+  static const double _pcbMinWidth = UIAssemblyInfo.minPcbWidth;
+  static const double _pcbMaxWidth = UIAssemblyInfo.maxPcbWidth;
   late Size _pcbSize;
   late Offset _pcbOffset;
   late Color _pcbColor;
   late bool _pcbRounded;
   bool _didInitialViewportCenter = false;
   double _pcbResizeStartHeight = _defaultPcbSize.height;
+  double _pcbResizeStartWidth = _defaultPcbSize.width;
   double _pcbResizeStartGlobalDy = 0.0;
+  double _pcbResizeStartGlobalDx = 0.0;
 
   // 拖放状态
   _AssemblyDragPayload? _activePlacement;
@@ -124,7 +128,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _info = info;
     _nameCtrl = TextEditingController(text: info.name);
     _pcbSize = Size(
-      _defaultPcbSize.width,
+      info.pcbWidth.clamp(_pcbMinWidth, _pcbMaxWidth).toDouble(),
       info.pcbHeight.clamp(_pcbMinHeight, _pcbMaxHeight).toDouble(),
     );
     _pcbColor = Color(info.pcbColorValue);
@@ -3415,6 +3419,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _info.pagesJson = jsonEncode(
       _orderedPages().map((page) => page.toJson()).toList(),
     );
+    _info.pcbWidth = _pcbSize.width;
     _info.pcbHeight = _pcbSize.height;
     _info.pcbColorValue = _pcbColor.toARGB32();
     _info.pcbRounded = _pcbRounded;
@@ -3598,6 +3603,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   double _clampPcbHeight(double value) =>
       value.clamp(_pcbMinHeight, _pcbMaxHeight).toDouble();
+
+  double _clampPcbWidth(double value) =>
+      value.clamp(_pcbMinWidth, _pcbMaxWidth).toDouble();
 
   Offset _rotatePoint(Offset point, Offset center, double degrees) {
     if (degrees == 0.0) return point;

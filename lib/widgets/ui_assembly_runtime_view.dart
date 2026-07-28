@@ -15,12 +15,15 @@ import '../services/ui_engine/ui_renderer.dart';
 
 /// Runtime-style renderer for an Assembly UI.
 ///
-/// Design coordinates are always 360 × pcbHeight. The runtime viewport never
+/// Design coordinates are pcbWidth × pcbHeight (per-assembly, see
+/// [UIAssemblyInfo.defaultPcbSizeFor]). The runtime viewport never
 /// stretches PCB non-uniformly and never upscales above 1:1: it uses a single
 /// scale-down contain scale, centers the PCB, and optionally fills letterbox
 /// space with a blurred cover-scaled copy.
 class UIAssemblyRuntimeView extends StatefulWidget {
-  static const double designWidth = 360.0;
+  /// 兜底基准宽度。实际尺寸取自 `assemblyInfo.pcbWidth`——
+  /// 常驻 / 伴生这类挂件宽度可调，不能再假设固定 360。
+  static const double designWidth = UIAssemblyInfo.defaultPcbWidth;
 
   final UIAssemblyInfo assemblyInfo;
   final String? activePageId;
@@ -374,8 +377,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       backgroundPages,
       backgroundActivePage,
     );
-    final designHeight = widget.assemblyInfo.pcbHeight.clamp(64.0, 2000.0).toDouble();
-    final designSize = Size(UIAssemblyRuntimeView.designWidth, designHeight);
+    final designHeight = widget.assemblyInfo.pcbHeight
+        .clamp(UIAssemblyInfo.minPcbHeight, UIAssemblyInfo.maxPcbHeight)
+        .toDouble();
+    final designWidth = widget.assemblyInfo.pcbWidth
+        .clamp(UIAssemblyInfo.minPcbWidth, UIAssemblyInfo.maxPcbWidth)
+        .toDouble();
+    final designSize = Size(designWidth, designHeight);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -474,6 +482,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                     scale: safeContainScale,
                     renderedWidth: renderedWidth,
                     renderedHeight: renderedHeight,
+                    designWidth: designWidth,
                     designHeight: designHeight,
                   ),
                 ),
@@ -661,6 +670,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     required double scale,
     required double renderedWidth,
     required double renderedHeight,
+    required double designWidth,
     required double designHeight,
   }) {
     return Align(
@@ -673,7 +683,8 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           child: Text(
-            '设计 360×${designHeight.toStringAsFixed(0)} · '
+            '设计 ${designWidth.toStringAsFixed(0)}'
+            '×${designHeight.toStringAsFixed(0)} · '
             'scale ${scale.toStringAsFixed(3)} · '
             '渲染 ${renderedWidth.toStringAsFixed(0)}×${renderedHeight.toStringAsFixed(0)}',
             style: const TextStyle(

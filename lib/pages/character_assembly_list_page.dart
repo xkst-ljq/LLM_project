@@ -112,7 +112,15 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
         onTap: disabled ? null : () {
           Navigator.pop(ctx);
           final newId = 'ui_${DateTime.now().millisecondsSinceEpoch}';
-          final info = UIAssemblyInfo(id: newId, mode: mode);
+          // 按 mode 取默认画布尺寸：常驻 / 伴生是挂件，
+          // 用全屏尺寸起步会让作者一开始就把元件摆错位置。
+          final size = UIAssemblyInfo.defaultPcbSizeFor(mode);
+          final info = UIAssemblyInfo(
+            id: newId,
+            mode: mode,
+            pcbWidth: size.width,
+            pcbHeight: size.height,
+          );
           _openAssemblyPage(info);
         },
       ),
