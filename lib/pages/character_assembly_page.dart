@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
-import '../services/ui_engine/linker_event_bus.dart';
 import '../services/ui_engine/linker_matrix_engine.dart';
 import '../services/ui_engine/linker_service.dart';
 import '../services/ui_engine/select_option.dart';
@@ -883,8 +882,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     if (el.module != null) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
+        // 编辑态不执行任何联动效果（含页面跳转）。
+        // 制作与预览分离：编辑时的点击 / 拖动很容易误触发，
+        // 且组件状态会被 _persistAssemblyElements 一并存下，污染保存结果。
+        // 切页请用图层面板，联动效果请进运行时预览。
         onTap: el.module!.type == 'button'
-            ? () => _triggerAssemblyButton(el.id)
+            ? () => _showEditModeHint()
             : null,
         onDoubleTap: el.module!.type == 'linker'
             ? () => _showAssemblyLinkerConfigDialog(el)

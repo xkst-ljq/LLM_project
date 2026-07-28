@@ -38,7 +38,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   _AssemblyDragPayload? _activePlacement;
   static const double _dragThreshold = 24.0;
   static const String _pageRouterType = 'page_router';
-  static const String _pageRouteLinkerScheme = 'button_to_page_route';
 
   UIModule get _pageRouterTemplate => UIModule(
         id: 'atom_logic_page_router',
@@ -1523,20 +1522,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return '${_routeActionLabel(action)} · ${_displayPageName(target)}';
   }
 
-  void _executePageRouter(UIElement element) {
-    final module = element.module;
-    if (module == null || module.type != _pageRouterType) return;
-    final targetId = _routeTargetPageIdOf(module);
-    final target = targetId.isEmpty ? null : _pageById(targetId);
-    if (target == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('页面路由器尚未配置目标页')),
-      );
-      return;
-    }
-    _activatePage(target.id);
-  }
-
   Future<void> _showPageRouterConfigDialog(UIElement element) async {
     final module = element.module;
     if (module == null || module.type != _pageRouterType) return;
@@ -1680,13 +1665,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final raw = module.properties['linker'];
     if (raw is Map) return Map<String, dynamic>.from(raw);
     return <String, dynamic>{};
-  }
-
-  bool _isPageRouteLinker(UIModule module) {
-    if (module.type != 'linker') return false;
-    final data = _linkerDataOf(module);
-    return data['scheme']?.toString() == _pageRouteLinkerScheme &&
-        data['enabled'] == true;
   }
 
   String _moduleNodeLabel(UIElement element) {
@@ -2057,37 +2035,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
   }
 
-  void _triggerAssemblyButton(String buttonId) {
-    // 页面路由是编辑器专属行为（要真正切页），单独处理。
-    final matchedLinkers = _elements.where((element) {
-      final module = element.module;
-      if (module == null || !_isPageRouteLinker(module)) return false;
-      final data = _linkerDataOf(module);
-      return data['sourceModuleId']?.toString() == buttonId;
-    }).toList();
-
-    if (matchedLinkers.isEmpty) {
-      // 其余方案（surface 按压、switch 切换等）交给运行端统一处理，
-      // 编辑态点击也能看到效果，不必进预览。
-      LinkerEventBus().emit(buttonId, 'tap');
-      return;
-    }
-
-    for (final linker in matchedLinkers) {
-      final data = _linkerDataOf(linker.module!);
-      final targetId = data['targetModuleId']?.toString() ?? '';
-      final target = targetId.isEmpty ? null : _elements
-          .where((element) => element.id == targetId)
-          .cast<UIElement?>()
-          .firstWhere((element) => element != null, orElse: () => null);
-      if (target != null) {
-        _executePageRouter(target);
-        return;
-      }
-    }
-
+  /// 编辑态点击组件时的提示。
+  ///
+  /// 制作与预览严格分离：编辑器里不执行任何联动效果，包括页面跳转。
+  /// 原因是编辑时的点击 / 拖动极易误触发，而组件状态会被
+  /// `_persistAssemblyElements` 一并保存，污染最终产物。
+  void _showEditModeHint() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('联动器目标页面路由器已失效，请重新配置')),
+      const SnackBar(
+        content: Text('编辑态不执行联动；切页请用图层面板，效果请进运行时预览'),
+        duration: Duration(seconds: 2),
+      ),
     );
   }
 

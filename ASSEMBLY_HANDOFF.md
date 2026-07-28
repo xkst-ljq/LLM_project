@@ -370,6 +370,14 @@ A9.6-1 已完成 MVP：
   不吸收就会穿透触发。用 `deferToChild` 的空 `onHorizontalDrag*` 即可，
   内部更深层的组件仍能赢过它。
 
+#### 制作与预览严格分离（产品规则）
+编辑器里**不执行任何联动效果**，包括页面跳转。
+理由：编辑时的点击 / 拖动极易误触发，而组件运行时状态
+（switch 开合、slider 数值、surface 动画戳）会被 `_persistAssemblyElements`
+一并存盘，污染最终产物。得不偿失。
+- 切页用图层面板，效果一律进运行时预览验证。
+- 别再为了「方便」在编辑态加执行逻辑——这条已经试过并撤回。
+
 #### Assembly 联动器
 - 与 Studio **共用** `LinkerMatrixEngine` 的方案矩阵，不要各自维护一份。
 - 新增方案时必须登记进 `_schemeRegistry`，否则 `isSchemeSelectable()`
