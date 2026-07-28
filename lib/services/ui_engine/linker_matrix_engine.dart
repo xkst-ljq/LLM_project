@@ -74,6 +74,21 @@ class LinkerMatrixEngine {
   /// 全量协议方案注册表
   static const List<SchemeDefinition> _schemeRegistry = [
     // ==========================================
+    // Assembly 专属：页面路由
+    // ==========================================
+    // page_router 只存在于角色卡 Assembly（Studio 没有多页面概念），
+    // 但方案必须登记在这里，否则 `isSchemeSelectable` 会判为非法，
+    // 运行端直接跳过，页面跳转就失效了。
+    SchemeDefinition(
+      id: 'button_to_page_route',
+      label: '点击切换页面 (click → page_route)',
+      description: 'button 点击触发页面路由器，切换平级页或打开叠加页',
+      sourceType: 'button',
+      targetType: 'page_router',
+      isPulse: true,
+    ),
+
+    // ==========================================
     // Phase 1: 核心 Phase 协议族
     // ==========================================
 

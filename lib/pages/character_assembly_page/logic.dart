@@ -1695,89 +1695,212 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return '${module.name} · ${element.id.split('_').last}';
   }
 
+  /// 由方案 id 推导来源端口。
+  ///
+  /// Studio 侧的端口来自拖拽连线的落点，Assembly 没有连线交互，
+  /// 因此改为按方案约定推导——运行端 `LinkerService` 正是按这些
+  /// 端口名做匹配的（见其 `initEventBusListener` 中的 srcPort 判断）。
+  String _schemeSourcePort(String scheme) {
+    if (scheme.startsWith('click_') || scheme.startsWith('event_')) {
+      return 'tap';
+    }
+    if (scheme.startsWith('double_click_')) return 'double_tap';
+    if (scheme.startsWith('long_press_')) return 'long_press';
+    if (scheme.startsWith('timer_tick_')) return 'timer_tick';
+    if (scheme.startsWith('input_submit_')) return 'committedValue';
+    if (scheme.startsWith('slider_commit_')) return 'committedValue';
+    if (scheme.startsWith('input_value_')) return 'text';
+    if (scheme.startsWith('text_extract_')) return 'text';
+    return 'current';
+  }
+
+  /// 由方案 id 推导目标端口。
+  String _schemeTargetPort(String scheme) {
+    if (scheme.endsWith('_to_text')) return 'text';
+    if (scheme.contains('_to_progress')) return 'current';
+    if (scheme.contains('_to_slider')) return 'current';
+    if (scheme.contains('_to_switch')) return 'value';
+    if (scheme.contains('_to_indicator')) return 'currentValue';
+    if (scheme.contains('_to_input')) return 'text';
+    if (scheme.contains('_to_select')) return 'current';
+    // surface 的可见性方案写的是 visible 属性，不是动画端口。
+    if (scheme.contains('_to_surface_visible')) return 'visible';
+    if (scheme.contains('_to_surface')) return 'anim';
+    if (scheme.contains('_to_image')) return 'assetPath';
+    if (scheme.contains('_to_math_trigger')) return 'gate_in';
+    if (scheme.contains('_to_math_param')) return 'data_in';
+    if (scheme.contains('_to_timer')) return 'value';
+    if (scheme.contains('_to_page_route') || scheme.contains('_page_route')) {
+      return 'trigger';
+    }
+    return 'value';
+  }
+
+  /// 可作为 linker 来源 / 目标的候选组件。
+  ///
+  /// 排除 linker 自身（不支持 linker 串 linker）。
+  /// 复合组件内部的暴露项后续再接，当前只取顶层原子。
+  List<UIElement> _linkerCandidates() {
+    return _elements
+        .where((element) =>
+            !element.isComposite &&
+            element.module != null &&
+            element.module!.type != 'linker')
+        .toList();
+  }
+
+  String _linkerCandidateLabel(UIElement element) {
+    final module = element.module!;
+    final name = module.name.trim();
+    return name.isEmpty ? module.type : '$name · ${module.type}';
+  }
+
+  /// 配置 Assembly 联动器。
+  ///
+  /// 与 Studio 共用 `LinkerMatrixEngine` 的方案矩阵，
+  /// 因此这里能选到的方案与创作工作室完全一致，运行端也已全部支持。
+  /// 此前只硬编码了 button → page_router 一条通路，
+  /// 导致 button 无法联动 surface 做按压反馈等（button 本身不显形）。
   Future<void> _showAssemblyLinkerConfigDialog(UIElement linkerElement) async {
     final module = linkerElement.module;
     if (module == null || module.type != 'linker') return;
 
-    final buttons = _topLevelModulesOfType('button');
-    final routers = _topLevelModulesOfType(_pageRouterType);
+    final candidates = _linkerCandidates();
     final existing = _linkerDataOf(module);
     var sourceId = existing['sourceModuleId']?.toString() ?? '';
     var targetId = existing['targetModuleId']?.toString() ?? '';
-    if (!buttons.any((element) => element.id == sourceId)) sourceId = '';
-    if (!routers.any((element) => element.id == targetId)) targetId = '';
+    var scheme = existing['scheme']?.toString() ?? '';
+    if (!candidates.any((element) => element.id == sourceId)) sourceId = '';
+    if (!candidates.any((element) => element.id == targetId)) targetId = '';
+
+    UIElement? byId(String id) {
+      for (final element in candidates) {
+        if (element.id == id) return element;
+      }
+      return null;
+    }
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final canSave = buttons.isNotEmpty &&
-              routers.isNotEmpty &&
-              sourceId.isNotEmpty &&
-              targetId.isNotEmpty;
+          final source = byId(sourceId);
+          final target = byId(targetId);
+          // 源与目标都选定后才能算出可用方案。
+          final schemes = (source != null && target != null)
+              ? LinkerMatrixEngine.getAvailableSchemes(
+                  source.module!.type,
+                  target.module!.type,
+                )
+              : const <SchemeDefinition>[];
+          // 换了源/目标后，旧方案可能不再适用。
+          if (schemes.every((def) => def.id != scheme)) scheme = '';
+
+          final canSave = source != null && target != null && scheme.isNotEmpty;
+
+          Widget picker({
+            required String label,
+            required String value,
+            required ValueChanged<String> onChanged,
+          }) {
+            return DropdownButtonFormField<String>(
+              initialValue: value.isEmpty ? null : value,
+              isExpanded: true,
+              decoration: InputDecoration(labelText: label, isDense: true),
+              items: candidates
+                  .map(
+                    (element) => DropdownMenuItem(
+                      value: element.id,
+                      child: Text(
+                        _linkerCandidateLabel(element),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (next) {
+                if (next == null) return;
+                setDialogState(() => onChanged(next));
+              },
+            );
+          }
+
           return AlertDialog(
-            title: const Text('配置 Assembly 联动器'),
+            title: const Text('配置联动器'),
             content: SizedBox(
-              width: 360,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'A5 MVP：先打通 button.tap → linker → page_router.trigger。完整端口拖拽和通用矩阵后续再接。',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF777783),
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (buttons.isEmpty)
-                    const Text(
-                      '当前页面还没有按钮，请先从“基础交互”拖入按钮。',
-                      style: TextStyle(fontSize: 11, color: Color(0xFFD32F2F)),
-                    )
-                  else
-                    DropdownButtonFormField<String>(
-                      initialValue: sourceId.isEmpty ? null : sourceId,
-                      decoration: const InputDecoration(labelText: '来源按钮'),
-                      items: buttons
-                          .map(
-                            (button) => DropdownMenuItem(
-                              value: button.id,
-                              child: Text(_moduleNodeLabel(button)),
+              width: 400,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (candidates.length < 2)
+                      const Text(
+                        '至少需要两个非联动器组件才能建立连接。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFE65100),
+                        ),
+                      )
+                    else ...[
+                      picker(
+                        label: '来源组件',
+                        value: sourceId,
+                        onChanged: (v) => sourceId = v,
+                      ),
+                      const SizedBox(height: 12),
+                      picker(
+                        label: '目标组件',
+                        value: targetId,
+                        onChanged: (v) => targetId = v,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        '联动方案',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF111116),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      if (source == null || target == null)
+                        const Text(
+                          '请先选择来源与目标组件。',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF777783),
+                          ),
+                        )
+                      else if (schemes.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFEBEE),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${source.module!.type} 与 ${target.module!.type} '
+                            '之间没有可用的联动方案。',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFFC62828),
+                              height: 1.35,
                             ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setDialogState(() => sourceId = value);
-                      },
-                    ),
-                  const SizedBox(height: 12),
-                  if (routers.isEmpty)
-                    const Text(
-                      '当前页面还没有页面路由器，请先从“逻辑组件”拖入页面路由器并配置目标页。',
-                      style: TextStyle(fontSize: 11, color: Color(0xFFD32F2F)),
-                    )
-                  else
-                    DropdownButtonFormField<String>(
-                      initialValue: targetId.isEmpty ? null : targetId,
-                      decoration: const InputDecoration(labelText: '目标页面路由器'),
-                      items: routers
-                          .map(
-                            (router) => DropdownMenuItem(
-                              value: router.id,
-                              child: Text(_moduleNodeLabel(router)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setDialogState(() => targetId = value);
-                      },
-                    ),
-                ],
+                          ),
+                        )
+                      else
+                        ...schemes.map(
+                          (def) => _buildAssemblySchemeTile(
+                            def: def,
+                            selected: def.id == scheme,
+                            onTap: () => setDialogState(() => scheme = def.id),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -1787,9 +1910,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               ),
               TextButton(
                 onPressed: () {
-                  sourceId = '';
-                  targetId = '';
-                  Navigator.pop(ctx, true);
+                  setDialogState(() {
+                    sourceId = '';
+                    targetId = '';
+                    scheme = '';
+                  });
                 },
                 child: const Text('清除连接'),
               ),
@@ -1804,7 +1929,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
 
     if (saved == true && mounted) {
-      final index = _elements.indexWhere((element) => element.id == linkerElement.id);
+      final index =
+          _elements.indexWhere((element) => element.id == linkerElement.id);
       if (index == -1) return;
       setState(() {
         final current = _elements[index];
@@ -1816,7 +1942,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         final linkerData = Map<String, dynamic>.from(
           props['linker'] is Map ? props['linker'] as Map : const {},
         );
-        if (sourceId.isEmpty || targetId.isEmpty) {
+
+        if (sourceId.isEmpty || targetId.isEmpty || scheme.isEmpty) {
           linkerData
             ..remove('sourceModuleId')
             ..remove('sourcePort')
@@ -1829,20 +1956,21 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           linkerData['scheme'] = '未配置';
           linkerData['enabled'] = false;
         } else {
+          final def = LinkerMatrixEngine.getSchemeDefinition(scheme);
           linkerData['sourceModuleId'] = sourceId;
-          linkerData['sourcePort'] = 'tap';
-          linkerData['sourceType'] = 'pulse';
           linkerData['targetModuleId'] = targetId;
-          linkerData['targetPort'] = 'trigger';
-          linkerData['targetType'] = 'route';
-          linkerData['scheme'] = _pageRouteLinkerScheme;
+          linkerData['scheme'] = scheme;
           linkerData['enabled'] = true;
+          // 端口与类型由方案定义推导，保持与 Studio 侧一致。
+          linkerData['sourcePort'] = _schemeSourcePort(scheme);
+          linkerData['targetPort'] = _schemeTargetPort(scheme);
+          linkerData['sourceType'] = (def?.isPulse ?? false) ? 'pulse' : 'value';
           linkerData['priority'] ??= 5;
           linkerData['cooldownMs'] ??= 0;
           linkerData['maxTriggerCount'] ??= 0;
           linkerData['inputConnection'] = {
             'from': sourceId,
-            'fromPort': 'tap',
+            'fromPort': linkerData['sourcePort'],
             'to': current.id,
             'toPort': 'input',
           };
@@ -1850,7 +1978,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             'from': current.id,
             'fromPort': 'output',
             'to': targetId,
-            'toPort': 'trigger',
+            'toPort': linkerData['targetPort'],
           };
         }
         props['linker'] = linkerData;
@@ -1863,7 +1991,74 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
   }
 
+  Widget _buildAssemblySchemeTile({
+    required SchemeDefinition def,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFEDE7F6) : const Color(0xFFF6F6F9),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF7E57C2)
+                  : Colors.black.withValues(alpha: 0.06),
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                size: 16,
+                color: selected
+                    ? const Color(0xFF7E57C2)
+                    : const Color(0xFF9E9EA8),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      def.label,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111116),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      def.description,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF777783),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _triggerAssemblyButton(String buttonId) {
+    // 页面路由是编辑器专属行为（要真正切页），单独处理。
     final matchedLinkers = _elements.where((element) {
       final module = element.module;
       if (module == null || !_isPageRouteLinker(module)) return false;
@@ -1872,9 +2067,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }).toList();
 
     if (matchedLinkers.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('该按钮尚未连接页面路由器')),
-      );
+      // 其余方案（surface 按压、switch 切换等）交给运行端统一处理，
+      // 编辑态点击也能看到效果，不必进预览。
+      LinkerEventBus().emit(buttonId, 'tap');
       return;
     }
 

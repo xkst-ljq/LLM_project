@@ -370,6 +370,13 @@ A9.6-1 已完成 MVP：
   不吸收就会穿透触发。用 `deferToChild` 的空 `onHorizontalDrag*` 即可，
   内部更深层的组件仍能赢过它。
 
+#### Assembly 联动器
+- 与 Studio **共用** `LinkerMatrixEngine` 的方案矩阵，不要各自维护一份。
+- 新增方案时必须登记进 `_schemeRegistry`，否则 `isSchemeSelectable()`
+  判为非法，运行端会静默跳过（`button_to_page_route` 就漏登记过）。
+- Assembly 没有拖拽连线，端口由方案 id 推导；运行端按 `scheme` 分发行为，
+  端口只需自洽即可。
+
 #### 状态字段归属（owner）
 - `owner`（player/char/neutral）决定注入 Prompt 时的主语。
   没有主语时 LLM 无法判断增减方向——实测商贩剧情里玩家花钱被写成 `+600`。

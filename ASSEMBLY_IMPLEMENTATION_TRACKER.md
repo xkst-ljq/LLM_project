@@ -2313,6 +2313,46 @@ A10-4 的「确认后关闭」与 A10-5 的「打开聊天设置」都需要作�
 
 测试：`test/chat_assembly_mount_test.dart` 新增一次性状态与准入用例。
 
+#### A5 补完：Assembly 联动器接入完整方案矩阵（已完成，待本地测试）
+此前 Assembly 的 linker 只硬编码了 `button → page_router` 一条通路
+（A5 阶段的测试级实现），导致大量组合无法配置。最直接的后果：
+**button 本身不显形**，必须联动 surface 才能做出按下反馈，而这条路走不通。
+
+排查发现：**运行端引擎其实已经完整支持所有方案**
+（`LinkerService` 里 `click_to_surface_press`、`click_to_switch_toggle`
+等分支一应俱全），缺的只是 Assembly 的配置入口。因此本次是接线而非重写。
+
+改动：
+- 配置对话框改为通用形态：来源 / 目标可选画布上任意非 linker 组件，
+  选定后调用 `LinkerMatrixEngine.getAvailableSchemes()` 列出可用方案，
+  **与 Studio 共用同一份矩阵**，两边能选到的方案完全一致。
+- 方案以卡片列表呈现（含名称与用途说明），替代原先无选择余地的固定文案。
+- 换源 / 换目标后若旧方案不再适用，自动清空选择，避免存下非法组合。
+
+端口推导：
+- Studio 的端口来自拖拽连线落点，Assembly 没有连线交互，
+  改为由方案 id 推导（`_schemeSourcePort` / `_schemeTargetPort`）。
+- 运行端实际是按 `scheme` 分发行为的，端口只需自洽；
+  但仍按语义推导，便于调试与后续接入端口拖拽。
+- 两处易错点已单独处理：
+  - `*_to_surface_visible` 走 `visible` 而非 `anim`（前者改可见性，后者放动画）。
+  - 提交类方案（`input_submit_*` / `slider_commit_*`）取 `committedValue`
+    而非实时值——实时值会在输入过程中反复触发，语义不同。
+
+顺带修复：`button_to_page_route` **此前未登记在方案矩阵里**。
+它是 Assembly 专属（Studio 没有多页面概念），但 `isSchemeSelectable()`
+会把未登记的方案判为非法并让运行端直接跳过。改用通用矩阵后，
+不补登记会导致页面跳转彻底失效。现已补入注册表。
+
+编辑态点击：`_triggerAssemblyButton` 原先只处理页面路由，
+现在其余方案会 `emit(buttonId, 'tap')` 交给运行端统一处理，
+因此 surface 按压、switch 切换等在编辑态点击即可看到效果，不必进预览。
+
+暂缓：连线动画与端口拖拽交互（用户同意先搁置），当前用下拉选择。
+
+测试：`test/assembly_linker_scheme_test.dart` 覆盖方案矩阵可用性
+（含 button→surface 这条动因用例）、端口推导规则、页面路由登记。
+
 #### A10-2 复盘：手势与命中测试的四轮排查
 这一步返工四次，值得记录教训——四个现象其实是**四个不同的根因**，
 每次只修掉一个，剩下的继续掩盖真相：
