@@ -530,8 +530,24 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 if (!_showLayerPanel)
                   Positioned(
                     left: 8,
+                    right: 8,
                     top: 54,
-                    child: _buildCompactStatusHud(),
+                    // 参数栏与警告条并排：警告独立成块才够醒目，
+                    // 混在参数里会被当成又一个数值读数而被忽略。
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Flexible(child: _buildCompactStatusHud()),
+                        if (_missingKeyActionHint != null) ...[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: _buildKeyActionWarning(
+                              _missingKeyActionHint!,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
               ],
             ),
@@ -550,9 +566,8 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       child: BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width - 16,
-          ),
+          // 宽度由外层 Row 的 Flexible 分配：
+          // 此处再设 maxWidth 会与并排的警告条争抢空间。
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.68),
@@ -578,14 +593,54 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     : const Color(0xFF555562),
               ),
               _buildHudText('覆写 $_activePropertyOverrideCount'),
-              // 关键职责缺失提示。与参数并排、样式一致，
-              // 不做成弹窗或横幅——作者常常先摆界面、后补功能，
-              // 过于显眼会变成噪音。
-              if (_missingKeyActionHint != null)
-                _buildHudText(
-                  _missingKeyActionHint!,
-                  color: const Color(0xFFE65100),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 缺少关键职责按钮的警告条。
+  ///
+  /// 与参数栏并排的独立胶囊：橙底 + 图标，比混在参数里显眼，
+  /// 但仍不打断编辑流程（不弹窗、不遮挡画布）。
+  Widget _buildKeyActionWarning(String text) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF3E0).withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: const Color(0xFFFFB74D)),
+            boxShadow: const [
+              BoxShadow(color: Color(0x14000000), blurRadius: 8),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                size: 11,
+                color: Color(0xFFE65100),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFE65100),
+                  ),
                 ),
+              ),
             ],
           ),
         ),
