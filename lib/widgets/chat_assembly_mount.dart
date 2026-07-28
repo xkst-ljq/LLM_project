@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../models/character_meta.dart';
 import '../models/session_state.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/ui_semantic_role.dart';
 import 'ui_assembly_runtime_view.dart';
 
 /// A10-1：聊天页挂载 Assembly UI 的共性基础设施。
@@ -35,6 +38,9 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 开启会挡住内部 slider 的拖动，且挂件通常只有一页。
   final bool enablePageGestures;
 
+  /// 作者标记为「关闭 / 确认」的组件被点击时回调。
+  final VoidCallback? onDismissRequested;
+
   const ChatAssemblyMount({
     super.key,
     required this.meta,
@@ -43,6 +49,7 @@ class ChatAssemblyMount extends StatelessWidget {
     this.onSessionStateChanged,
     this.maxWidth,
     this.enablePageGestures = false,
+    this.onDismissRequested,
   });
 
   /// 取出该 mode 对应的 UI 方案；没有则返回 null。
@@ -70,6 +77,41 @@ class ChatAssemblyMount extends StatelessWidget {
   static bool hasAssembly(CharacterMeta meta, String mode) =>
       resolveAssembly(meta, mode) != null;
 
+  /// 作者是否在该 mode 的 UI 里自己标记了某个语义角色。
+  ///
+  /// 用于决定是否还需要显示引擎内置的兜底按钮——
+  /// 作者标了就用作者的，没标才兜底，避免用户失去唯一操作入口。
+  static bool hasSemanticRole(CharacterMeta meta, String mode, String role) {
+    final info = resolveAssembly(meta, mode);
+    if (info == null) return false;
+    for (final page in _restorePages(info)) {
+      if (UISemanticRole.hasRole(page.elements, role)) return true;
+    }
+    return false;
+  }
+
+  /// 解析方案里的页面，供角色查找使用。
+  static List<AssemblyPage> _restorePages(UIAssemblyInfo info) {
+    final pages = <AssemblyPage>[];
+    final raw = info.pagesJson.trim();
+    if (raw.isNotEmpty && raw != '[]') {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          pages.addAll(
+            decoded.whereType<Map>().map(
+                  (item) =>
+                      AssemblyPage.fromJson(Map<String, dynamic>.from(item)),
+                ),
+          );
+        }
+      } catch (_) {
+        pages.clear();
+      }
+    }
+    return pages;
+  }
+
   @override
   Widget build(BuildContext context) {
     final info = resolveAssembly(meta, mode);
@@ -94,6 +136,7 @@ class ChatAssemblyMount extends StatelessWidget {
         // 挂件不需要模糊背景铺满letterbox——它本身就是浮在聊天上的小窗。
         showBlurredBackdrop: false,
         enablePageGestures: enablePageGestures,
+        onDismissRequested: onDismissRequested,
         sessionState: sessionState,
         statusFields: meta.statusBarFields,
         onSessionStateChanged: onSessionStateChanged,

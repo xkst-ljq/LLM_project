@@ -31,6 +31,7 @@ import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
+import '../services/ui_engine/ui_semantic_role.dart';
 import '../widgets/chat_assembly_mount.dart';
 import '../widgets/page_guide_overlay.dart';
 import 'background_picker_sheet.dart';
@@ -2873,10 +2874,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               onSessionStateChanged: _onAssemblySessionChanged,
               // 两侧各留 8，避免贴边
               maxWidth: screenWidth - 16,
+              onDismissRequested: () => _collapseSticky(),
             ),
-            // 拖动把手放在左上角，与右上角的折叠按钮分开。
-            // 只有把手能拖动整个挂件——直接拖内容会与 slider 等
-            // 内部组件的手势冲突。
+            // 拖动把手。作者自定义把手（drag_handle 角色）尚未接入运行时，
+            // 因此这里始终显示内置把手，保证挂件可移动。
             Positioned(
               top: -6,
               left: -6,
@@ -2922,30 +2923,46 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          Positioned(
-            top: -6,
-            right: -6,
-            child: _buildStickyToggle(
-              icon: Icons.remove_rounded,
-              onTap: () {
-                final screen = MediaQuery.of(context).size;
-                setState(() {
-                  _stickyCollapsed = true;
-                  _stickyOffsetBeforeCollapse = _stickyOffset;
-                  // 球出现在挂件右上角附近，位置连续；
-                  // 随后立即吸边，避免停在屏幕中间。
-                  _ballPos ??= Offset(
-                    screen.width - _ballSize - _ballMargin,
-                    _stickyTopAnchor,
-                  );
-                });
-                _snapBallToEdge(screen);
-              },
+          // 内置折叠按钮：仅在作者没有标记「关闭」组件时兜底显示，
+          // 否则用户会看到两个关闭入口。
+          if (!ChatAssemblyMount.hasSemanticRole(
+            character.meta,
+            'extra_sticky',
+            UISemanticRole.dismiss,
+          ) &&
+              !ChatAssemblyMount.hasSemanticRole(
+                character.meta,
+                'extra_sticky',
+                UISemanticRole.confirm,
+              ))
+            Positioned(
+              top: -6,
+              right: -6,
+              child: _buildStickyToggle(
+                icon: Icons.remove_rounded,
+                onTap: _collapseSticky,
+              ),
             ),
-          ),
         ],
       ),
     );
+  }
+
+  /// 折叠常驻 UI 为悬浮球。
+  /// 内置按钮与作者标记的「关闭」组件都走这里。
+  void _collapseSticky() {
+    final screen = MediaQuery.of(context).size;
+    setState(() {
+      _stickyCollapsed = true;
+      _stickyOffsetBeforeCollapse = _stickyOffset;
+      // 球出现在挂件右上角附近，位置连续；
+      // 随后立即吸边，避免停在屏幕中间。
+      _ballPos ??= Offset(
+        screen.width - _ballSize - _ballMargin,
+        _stickyTopAnchor,
+      );
+    });
+    _snapBallToEdge(screen);
   }
 
   /// 折叠悬浮球层。独立于挂件层，可自由拖动并吸附到屏幕两侧。

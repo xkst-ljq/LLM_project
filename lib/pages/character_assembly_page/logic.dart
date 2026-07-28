@@ -2254,6 +2254,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         existingChannel?['llmWritePolicy']?.toString() ?? 'none';
     var channelApplyPolicy =
         existingChannel?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
+    var semanticRole = UISemanticRole.of(module);
     var switchValue = module.properties['value'] != false;
     var indicatorGlow = module.properties['defaultGlow'] == true;
     var imageFit = switch (module.properties['fit']?.toString()) {
@@ -2514,6 +2515,59 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       numberField(radiusController, '圆角'),
                     ],
                     const SizedBox(height: 16),
+                    // 语义角色：让作者用普通组件表达运行时职责，
+                    // 不必为「关闭」「拖动」另造专用组件类型。
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF6F6F9),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.05),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '运行时职责',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF111116),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            initialValue: semanticRole,
+                            isExpanded: true,
+                            decoration: const InputDecoration(isDense: true),
+                            items: UISemanticRole.all
+                                .map(
+                                  (role) => DropdownMenuItem(
+                                    value: role,
+                                    child: Text(UISemanticRole.labelOf(role)),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setDialogState(() => semanticRole = value);
+                            },
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            UISemanticRole.hintOf(semanticRole),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF777783),
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
@@ -2741,6 +2795,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           final nextOpacity = readDouble(opacityController, currentModule.opacity)
               .clamp(0.0, 1.0)
               .toDouble();
+
+          if (semanticRole == UISemanticRole.none) {
+            props.remove('semanticRole');
+          } else {
+            props['semanticRole'] = semanticRole;
+          }
 
           final channelName = _resolveDataChannelName(
             semanticSource: channelSource,

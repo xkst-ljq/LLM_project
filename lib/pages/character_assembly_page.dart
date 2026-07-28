@@ -12,6 +12,7 @@ import '../services/ui_engine/select_option.dart';
 import '../services/ui_engine/ui_asset_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
+import '../services/ui_engine/ui_semantic_role.dart';
 import '../widgets/ui_assembly_runtime_view.dart';
 
 part 'character_assembly_page/logic.dart';
@@ -847,6 +848,36 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   top: -14,
                   child: IgnorePointer(
                     child: _buildDataChannelChip(_dataChannelOf(el.module)!),
+                  ),
+                ),
+              // 语义角色徽标：让作者一眼看出哪个按钮绑了运行时职责。
+              if (UISemanticRole.of(el.module) != UISemanticRole.none)
+                Positioned(
+                  left: 4,
+                  bottom: -14,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF5E35B1),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.88),
+                          width: 0.7,
+                        ),
+                      ),
+                      child: Text(
+                        UISemanticRole.labelOf(UISemanticRole.of(el.module)),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          height: 1.0,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               if (el.module?.properties['is_overlay_container'] == true)

@@ -9,7 +9,9 @@ import '../models/session_state.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/data_channel_service.dart';
+import '../services/ui_engine/linker_event_bus.dart';
 import '../services/ui_engine/linker_service.dart';
+import '../services/ui_engine/ui_semantic_role.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
 
@@ -47,6 +49,12 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 显示数据通道写入的调试浮层（仅 Assembly 预览用）。
   final bool showDataChannelDebug;
 
+  /// 作者标记为「关闭 / 确认」的组件被点击时回调。
+  ///
+  /// 由挂载方决定关闭意味着什么：常驻 UI 折叠成球、开场白销毁、场景退出。
+  /// 未提供时该标记不产生行为，作者的按钮仍可正常参与 linker 等其他配置。
+  final VoidCallback? onDismissRequested;
+
   /// 是否启用整页滑动手势（切换平级页 / 打开叠加页 / 点空白关闭 overlay）。
   ///
   /// 常驻 / 伴生这类挂件不该吃掉滑动手势：
@@ -66,6 +74,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.onSessionStateChanged,
     this.showDataChannelDebug = false,
     this.enablePageGestures = true,
+    this.onDismissRequested,
   });
 
   @override
@@ -81,6 +90,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   late SessionState _session;
   List<String> _lastChannelDebug = const <String>[];
   Timer? _channelPollTimer;
+  StreamSubscription<LinkerPulseEvent>? _roleSubscription;
   Offset? _swipeStart;
   String _lastTransition = 'base_slide';
   String _lastSwipeDirection = 'swipe_left';
@@ -148,6 +158,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   @override
   void dispose() {
     _channelPollTimer?.cancel();
+    _roleSubscription?.cancel();
     LinkerService.initEventBusListener(const <UIElement>[], () {});
     super.dispose();
   }
@@ -168,6 +179,37 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       setState(() {});
     });
     _syncDataChannels();
+    _setupSemanticRoleListener();
+  }
+
+  /// 监听语义角色组件的点击。
+  ///
+  /// 直接复用 button 已有的 `tap` 脉冲，不改渲染器——
+  /// 这样作者标记的按钮同时还能正常参与 linker 等既有配置。
+  void _setupSemanticRoleListener() {
+    _roleSubscription?.cancel();
+    if (widget.onDismissRequested == null) return;
+
+    _roleSubscription = LinkerEventBus().onPulse.listen((event) {
+      if (!mounted || event.eventType != 'tap') return;
+      final activePage = _resolveActivePage(_pages, _activePageId);
+      final module = _findModuleById(activePage.elements, event.sourceModuleId);
+      if (module == null) return;
+      if (UISemanticRole.closesUI(module)) {
+        widget.onDismissRequested?.call();
+      }
+    });
+  }
+
+  UIModule? _findModuleById(List<UIElement> elements, String id) {
+    for (final node in elements) {
+      if (node.id == id) return node.module;
+      if (node.isComposite && node.composite != null) {
+        final inner = _findModuleById(node.composite!.children, id);
+        if (inner != null) return inner;
+      }
+    }
+    return null;
   }
 
   /// 收集当前页的暴露项通道覆写（复合组件用）。
