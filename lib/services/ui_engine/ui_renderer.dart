@@ -693,10 +693,10 @@ class UIRenderer {
                 };
               },
             ),
-            HorizontalDragGestureRecognizer:
+            _EagerHorizontalDragRecognizer:
                 GestureRecognizerFactoryWithHandlers<
-                    HorizontalDragGestureRecognizer>(
-              () => HorizontalDragGestureRecognizer(),
+                    _EagerHorizontalDragRecognizer>(
+              () => _EagerHorizontalDragRecognizer(),
               (instance) {
                 instance.onStart = (details) {
                   updatePosition(details.localPosition);
@@ -2691,4 +2691,22 @@ class _RingProgressBarPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RingProgressBarPainter old) =>
       old.progress != progress || old.fillColor != fillColor || old.trackColor != trackColor || old.strokeWidth != strokeWidth;
+}
+
+/// 抢占式水平拖动识别器（滑块专用）。
+///
+/// 背景：滑块「点击轨道能跳转、但拖不动」。点击能生效说明触摸确实到达了
+/// 滑块，问题出在水平拖动的竞技场竞争——聊天页根部注册了 `onHorizontalDrag*`
+/// 用于滑出侧栏，挂件外层又加了一层同类型的吸收器，
+/// 光靠「层级更深」并不足以让滑块稳定胜出。
+///
+/// 处理：在 `addAllowedPointer` 阶段立即宣告胜利，抢先关闭竞技场。
+/// 这是安全的——滑块本来就该独占自己区域内的水平拖动，
+/// 而竖直滚动由父级的 Scrollable 走另一套识别器，不受影响。
+class _EagerHorizontalDragRecognizer extends HorizontalDragGestureRecognizer {
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+  }
 }

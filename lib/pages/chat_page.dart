@@ -3835,7 +3835,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                             left: _stickyOffset.dx,
                             top: _stickyTopAnchor + _stickyOffset.dy,
                             width: screenWidth,
-                            child: _buildStickyAssembly(screenWidth),
+                            // 这一层给满宽只是为了确定水平基准；
+                            // 内部用 Align 收缩到挂件自身宽度，
+                            // 否则角上的按钮会被拉到整屏的边角去。
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: _buildStickyAssembly(screenWidth),
+                            ),
                           ),
                         ],
                       ),

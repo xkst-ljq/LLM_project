@@ -2166,6 +2166,28 @@ LLM 更新状态 → SessionState → UI 组件显示同步刷新。
      （与状态栏同样的做法）。根部因此收不到；
      而挂件内部的 slider 层级更深，仍能在竞技场中赢过这层吸收器。
 
+##### A10-2 反馈修复 · 第四轮（待本地测试）
+1. **折叠 / 拖动按钮离挂件很远**
+   - 根因：挂载层的 `Positioned` 给了 `width: screenWidth`（用于确定水平基准），
+     导致内部 `Stack` 被撑满整屏，而两个按钮用 `top:-6 / left:-6 / right:-6`
+     定位在 Stack 的角上——于是被拉到了整屏的边角。
+   - 处理：`Positioned` 内部加 `Align(alignment: topCenter)` 收缩到挂件自身宽度，
+     Stack 重新贴合挂件，按钮回到它的四角。
+2. **slider 仍只能点击不能拖动**
+   - 关键线索：**点击有效说明触摸确实到达了 slider**，
+     因此不是命中测试问题，而是水平拖动的竞技场竞争失败。
+   - 根因：竞争者有三层——聊天页根部（滑出侧栏）、挂件的水平拖动吸收器、
+     slider 自身。三者都是 `HorizontalDrag`，
+     单靠「层级更深」并不能保证 slider 稳定胜出。
+   - 处理：新增 `_EagerHorizontalDragRecognizer`，
+     在 `addAllowedPointer` 阶段立即 `resolve(accepted)` 抢先关闭竞技场。
+     滑块本来就该独占自己区域内的水平拖动，这是安全的。
+   - 点击不受影响：`Tap` 与 `HorizontalDrag` 是不同类型识别器，
+     各自独立判定。按下不动时位移未超 slop，`onStart` 不触发，
+     `Tap` 正常回调；水平移动时 `Tap` 自动取消、拖动接管。
+   - 注：不直接在工厂回调里调 `instance.resolve()`——那是 protected 成员，
+     应当通过子类覆写实现。
+
 ### 下一步候选
 - A10 mode 差异逻辑收口（其中包含聊天页挂载 Assembly UI，
   完成后反向同步可立即接上，见 A9.6-5 的「当前生效范围」）

@@ -357,6 +357,10 @@ A9.6-1 已完成 MVP：
 - **可拖动浮层必须驱动 `Positioned` 的真实坐标，不要用 `Transform.translate`**。
   Transform 只移动绘制；命中测试自上而下先查父盒子边界，
   盒子没动就收不到触摸，表现为「拖走了样貌但点不到」。
+- **「点击有效但拖动无效」= 竞技场竞争失败，不是命中测试问题**。
+  命中不到的话点击也会失效；能点说明触摸到了，只是拖动被外层抢走。
+  解法是让内层识别器在 `addAllowedPointer` 里立即 `resolve(accepted)`
+  （见 `_EagerHorizontalDragRecognizer`），而不是继续调层级。
 - **挂件要自己吸收水平拖动**：聊天页根部有滑出侧栏的 `onHorizontalDrag*`，
   不吸收就会穿透触发。用 `deferToChild` 的空 `onHorizontalDrag*` 即可，
   内部更深层的组件仍能赢过它。
