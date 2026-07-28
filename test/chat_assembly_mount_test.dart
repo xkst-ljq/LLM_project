@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:llm_project/models/character_meta.dart';
+import 'package:llm_project/models/session_state.dart';
 import 'package:llm_project/models/ui_assembly_info.dart';
 import 'package:llm_project/services/ui_engine/ui_models.dart';
 import 'package:llm_project/widgets/chat_assembly_mount.dart';
@@ -100,6 +101,19 @@ void main() {
       final meta = _meta([_assemblyJson(id: 'a', mode: 'extra_sticky')]);
       expect(ChatAssemblyMount.hasAssembly(meta, 'extra_sticky'), isTrue);
       expect(ChatAssemblyMount.hasAssembly(meta, 'scene'), isFalse);
+    });
+  });
+
+  group('挂件默认不吃页面手势', () {
+    test('ChatAssemblyMount 默认关闭整页滑动手势', () {
+      // 挂件覆盖在聊天内容上，开启会抢走内部 slider 的拖动，
+      // 且挂件通常只有一页，页面切换没有意义。
+      final mount = ChatAssemblyMount(
+        meta: CharacterMeta(),
+        mode: 'extra_sticky',
+        sessionState: SessionState(),
+      );
+      expect(mount.enablePageGestures, isFalse);
     });
   });
 

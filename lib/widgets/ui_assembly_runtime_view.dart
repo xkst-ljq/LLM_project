@@ -47,6 +47,13 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 显示数据通道写入的调试浮层（仅 Assembly 预览用）。
   final bool showDataChannelDebug;
 
+  /// 是否启用整页滑动手势（切换平级页 / 打开叠加页 / 点空白关闭 overlay）。
+  ///
+  /// 常驻 / 伴生这类挂件不该吃掉滑动手势：
+  ///   - 它覆盖在聊天内容上，会挡住内部 slider 的拖动；
+  ///   - 挂件通常只有一页，页面切换没有意义。
+  final bool enablePageGestures;
+
   const UIAssemblyRuntimeView({
     super.key,
     required this.assemblyInfo,
@@ -58,6 +65,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.statusFields = const <StatusBarField>[],
     this.onSessionStateChanged,
     this.showDataChannelDebug = false,
+    this.enablePageGestures = true,
   });
 
   @override
@@ -430,15 +438,24 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                 ),
               Positioned.fill(
                 child: Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: (event) =>
-                      _handlePreviewPointerDown(event.localPosition, pcbRect),
+                  // 不启用页面手势时用 deferToChild：
+                  // translucent 会让这层持续参与命中测试，
+                  // 从而抢走内部 slider / 输入框的拖动手势。
+                  behavior: widget.enablePageGestures
+                      ? HitTestBehavior.translucent
+                      : HitTestBehavior.deferToChild,
+                  onPointerDown: widget.enablePageGestures
+                      ? (event) => _handlePreviewPointerDown(
+                          event.localPosition, pcbRect)
+                      : null,
                   onPointerUp: (event) {
-                    _handlePreviewPointerUp(
-                      event.localPosition,
-                      pcbRect,
-                      safeContainScale,
-                    );
+                    if (widget.enablePageGestures) {
+                      _handlePreviewPointerUp(
+                        event.localPosition,
+                        pcbRect,
+                        safeContainScale,
+                      );
+                    }
                     // 抬手即同步一次，避免等到下一个轮询周期才更新。
                     if (!mounted) return;
                     final before = _lastChannelDebug;

@@ -2096,6 +2096,27 @@ LLM 更新状态 → SessionState → UI 组件显示同步刷新。
 测试：`test/chat_assembly_mount_test.dart` 覆盖 mode 匹配、空方案跳过、
 损坏数据容错、尺寸 clamp。
 
+##### A10-2 反馈修复（待本地测试）
+1. **挂件吃掉了内部组件的手势**
+   - 现象：常驻 UI 里的 slider 只能点击跳转，拖不动。
+   - 根因：`UIAssemblyRuntimeView` 有一层 `Positioned.fill` 的 `Listener`，
+     `behavior: translucent` 让它持续参与命中测试，抢走了内部组件的拖动。
+     该层的用途是整页滑动手势（切换平级页 / 打开叠加页）。
+   - 处理：新增 `enablePageGestures` 开关，`ChatAssemblyMount` 默认 **false**。
+     关闭时该 `Listener` 改用 `deferToChild` 且不注册 `onPointerDown`，
+     不再拦截内部手势。挂件通常只有一页，页面手势本就没有意义
+     （与用户「常驻 UI 去掉手势切换页」的判断一致）。
+   - 附注：slider **本来就支持拖动**（`onPanStart/Update/End` 一直都在），
+     `onTapDown` 跳到点击位置是刻意设计，与系统滑块行为一致，予以保留。
+2. **常驻 UI 不可拖动**
+   - 左上角新增拖动把手（与右上角折叠按钮分开）。
+     只有把手能拖动整个挂件——直接拖内容会与内部 slider 冲突。
+   - 双击把手复位。
+   - 偏移只存在于本次会话，不写进角色卡：位置属于临时观感。
+   - 手势归属：外层状态栏的 `GestureDetector` 用 `deferToChild`
+     且只声明 `onHorizontalDrag*`，把手声明 `onPan*` 且层级更深，
+     竞技场中优先胜出，不会误触发滑出设置页。
+
 ### 下一步候选
 - A10 mode 差异逻辑收口（其中包含聊天页挂载 Assembly UI，
   完成后反向同步可立即接上，见 A9.6-5 的「当前生效范围」）

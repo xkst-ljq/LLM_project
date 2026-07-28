@@ -342,6 +342,11 @@ A9.6-1 已完成 MVP：
   否则反向同步（A9.6-5）不会生效，UI 不会跟着 LLM 的状态更新刷新。
 - 折叠 / 隐藏时不要卸载 `UIAssemblyRuntimeView`，否则组件内部状态丢失。
 - 空方案要跳过，否则聊天页会多出一块看不见的空白占位。
+- **挂件必须关掉 `enablePageGestures`**：运行时那层全屏 `Listener`
+  在 `translucent` 下会抢走内部 slider / 输入框的拖动手势。
+  只有全屏类 mode（opening/scene）才需要页面滑动手势。
+- 要让挂件可拖动，加独立的拖动把手，不要让整块内容都能拖——
+  会和内部组件的手势打架。
 
 #### 状态字段归属（owner）
 - `owner`（player/char/neutral）决定注入 Prompt 时的主语。

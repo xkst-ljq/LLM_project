@@ -31,6 +31,10 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 可用最大宽度。超出时由运行时等比缩小，不会溢出。
   final double? maxWidth;
 
+  /// 是否启用整页滑动手势。挂件默认关闭——它覆盖在聊天内容上，
+  /// 开启会挡住内部 slider 的拖动，且挂件通常只有一页。
+  final bool enablePageGestures;
+
   const ChatAssemblyMount({
     super.key,
     required this.meta,
@@ -38,6 +42,7 @@ class ChatAssemblyMount extends StatelessWidget {
     required this.sessionState,
     this.onSessionStateChanged,
     this.maxWidth,
+    this.enablePageGestures = false,
   });
 
   /// 取出该 mode 对应的 UI 方案；没有则返回 null。
@@ -88,6 +93,7 @@ class ChatAssemblyMount extends StatelessWidget {
         assemblyInfo: info,
         // 挂件不需要模糊背景铺满letterbox——它本身就是浮在聊天上的小窗。
         showBlurredBackdrop: false,
+        enablePageGestures: enablePageGestures,
         sessionState: sessionState,
         statusFields: meta.statusBarFields,
         onSessionStateChanged: onSessionStateChanged,

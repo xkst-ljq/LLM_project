@@ -266,6 +266,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// A10-2：常驻 UI 是否已折叠为悬浮球。
   bool _stickyCollapsed = false;
 
+  /// 常驻 UI 相对默认位置的拖动偏移。
+  /// 仅存在于本次会话，不持久化——位置属于临时观感，不值得写进角色卡。
+  Offset _stickyOffset = Offset.zero;
+  Offset _stickyDragStart = Offset.zero;
+
   /// A10-1：聊天页挂载的 Assembly UI 改动了会话副本时的统一处理。
   ///
   /// 玩家在常驻 / 伴生 UI 上的交互（拖滑块、按开关）会直接写入会话副本，
@@ -2791,26 +2796,50 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     return Align(
       alignment: Alignment.topCenter,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          ChatAssemblyMount(
-            meta: character.meta,
-            mode: 'extra_sticky',
-            sessionState: _sessionState,
-            onSessionStateChanged: _onAssemblySessionChanged,
-            // 两侧各留 8，避免贴边
-            maxWidth: screenWidth - 16,
-          ),
-          Positioned(
-            top: -6,
-            right: -6,
-            child: _buildStickyToggle(
-              icon: Icons.remove_rounded,
-              onTap: () => setState(() => _stickyCollapsed = true),
+      child: Transform.translate(
+        offset: _stickyOffset,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            ChatAssemblyMount(
+              meta: character.meta,
+              mode: 'extra_sticky',
+              sessionState: _sessionState,
+              onSessionStateChanged: _onAssemblySessionChanged,
+              // 两侧各留 8，避免贴边
+              maxWidth: screenWidth - 16,
             ),
-          ),
-        ],
+            // 拖动把手放在左上角，与右上角的折叠按钮分开。
+            // 只有把手能拖动整个挂件——直接拖内容会与 slider 等
+            // 内部组件的手势冲突。
+            Positioned(
+              top: -6,
+              left: -6,
+              child: GestureDetector(
+                onPanStart: (d) => _stickyDragStart = d.globalPosition,
+                onPanUpdate: (d) {
+                  setState(() {
+                    _stickyOffset += d.globalPosition - _stickyDragStart;
+                    _stickyDragStart = d.globalPosition;
+                  });
+                },
+                onDoubleTap: () => setState(() => _stickyOffset = Offset.zero),
+                child: _buildStickyToggle(
+                  icon: Icons.open_with_rounded,
+                  onTap: () {},
+                ),
+              ),
+            ),
+            Positioned(
+              top: -6,
+              right: -6,
+              child: _buildStickyToggle(
+                icon: Icons.remove_rounded,
+                onTap: () => setState(() => _stickyCollapsed = true),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
