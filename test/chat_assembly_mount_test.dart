@@ -117,6 +117,58 @@ void main() {
     });
   });
 
+  group('开场白一次性状态', () {
+    test('默认未确认', () {
+      expect(OpeningGreetingState.isDismissed(SessionState()), isFalse);
+    });
+
+    test('标记后变为已确认', () {
+      final session = SessionState();
+      expect(OpeningGreetingState.markDismissed(session), isTrue);
+      expect(OpeningGreetingState.isDismissed(session), isTrue);
+    });
+
+    test('重复标记返回 false，避免无谓落盘', () {
+      final session = SessionState();
+      OpeningGreetingState.markDismissed(session);
+      expect(OpeningGreetingState.markDismissed(session), isFalse);
+    });
+
+    test('状态随会话副本序列化，重启后不再弹出', () {
+      final session = SessionState();
+      OpeningGreetingState.markDismissed(session);
+      final restored = SessionState.fromJsonString(session.toJsonString());
+      expect(OpeningGreetingState.isDismissed(restored), isTrue);
+    });
+
+    test('新会话副本恢复为未确认（清空记录后重新出现）', () {
+      expect(OpeningGreetingState.isDismissed(SessionState()), isFalse);
+    });
+  });
+
+  group('canRun 准入', () {
+    test('开场白缺少确认按钮时不允许运行', () {
+      // 没有出口按钮会把玩家卡在全屏遮罩后面。
+      final meta = _meta([_assemblyJson(id: 'a', mode: 'opening')]);
+      expect(ChatAssemblyMount.canRun(meta, 'opening'), isFalse);
+    });
+
+    test('场景 UI 同样受限', () {
+      final meta = _meta([_assemblyJson(id: 'a', mode: 'scene')]);
+      expect(ChatAssemblyMount.canRun(meta, 'scene'), isFalse);
+    });
+
+    test('常驻 UI 缺标记仍可运行（有内置兜底按钮）', () {
+      final meta = _meta([_assemblyJson(id: 'a', mode: 'extra_sticky')]);
+      expect(ChatAssemblyMount.canRun(meta, 'extra_sticky'), isTrue);
+    });
+
+    test('伴生 UI 不要求标记', () {
+      final meta = _meta([_assemblyJson(id: 'a', mode: 'extra_companion')]);
+      expect(ChatAssemblyMount.canRun(meta, 'extra_companion'), isTrue);
+    });
+  });
+
   group('assemblyDesignSize', () {
     test('返回该方案的设计尺寸', () {
       final meta = _meta([

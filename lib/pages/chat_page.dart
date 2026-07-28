@@ -2938,6 +2938,65 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
+  /// A10-4：开场白 UI（opening）。
+  ///
+  /// 全屏覆盖在聊天之上，玩家确认后销毁并落盘，本轮会话不再出现。
+  /// 与「开场白消息」是两回事：那是一条 assistant 消息，
+  /// 这是一层可交互界面，两者可以并存。
+  Widget _buildOpeningAssembly(Size screen) {
+    final character = _currentCharacter;
+    if (character == null) return const SizedBox.shrink();
+    if (!ChatAssemblyMount.hasAssembly(character.meta, 'opening')) {
+      return const SizedBox.shrink();
+    }
+    // 缺少「确认并关闭」标记时 canRun 为 false，
+    // ChatAssemblyMount 会渲染成空——这里提前返回，连遮罩都不铺，
+    // 否则会出现一块点不掉的黑幕。
+    if (!ChatAssemblyMount.canRun(character.meta, 'opening')) {
+      return const SizedBox.shrink();
+    }
+    if (OpeningGreetingState.isDismissed(_sessionState)) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          // 遮罩：吸收所有点击，避免玩家在确认前操作下方聊天。
+          // 点遮罩本身不关闭——必须走作者指定的确认按钮。
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {},
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.55),
+              ),
+            ),
+          ),
+          Center(
+            child: ChatAssemblyMount(
+              meta: character.meta,
+              mode: 'opening',
+              sessionState: _sessionState,
+              onSessionStateChanged: _onAssemblySessionChanged,
+              maxWidth: screen.width - 32,
+              // 开场白是全屏形态，保留页面手势（多页开场白可翻页）。
+              enablePageGestures: true,
+              onDismissRequested: _dismissOpeningAssembly,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 确认并关闭开场白 UI，同时落盘，避免重启后又弹出来。
+  Future<void> _dismissOpeningAssembly() async {
+    if (!OpeningGreetingState.markDismissed(_sessionState)) return;
+    await _saveSessionState();
+    if (mounted) setState(() {});
+  }
+
   /// 折叠常驻 UI 为悬浮球。
   /// 内置按钮与作者标记的「关闭」组件都走这里。
   void _collapseSticky() {
@@ -4323,6 +4382,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
+                  // ===== 开场白 UI（最顶层，需覆盖输入栏）=====
+                  // 必须排在输入栏之后：它要接管整个界面直到玩家确认。
+                  _buildOpeningAssembly(MediaQuery.of(context).size),
                 ],
               ),
             ),

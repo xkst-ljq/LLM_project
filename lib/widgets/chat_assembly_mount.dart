@@ -153,6 +153,27 @@ class ChatAssemblyMount extends StatelessWidget {
   }
 }
 
+/// 开场白 UI 的一次性展示状态。
+///
+/// 存在 `SessionState.overrides` 里而不是单独建表：
+///   - 它随会话副本一起持久化，重启 App 不会重复弹出；
+///   - 清空聊天记录时会一并清除，开场白重新出现——
+///     这与「开场白属于本轮会话的开端」的语义一致。
+class OpeningGreetingState {
+  static const String _key = 'openingUIDismissed';
+
+  /// 该角色的开场白 UI 是否已被玩家确认过。
+  static bool isDismissed(SessionState session) =>
+      session.overrides[_key] == true;
+
+  /// 标记为已确认。返回 true 表示状态确实发生了变化。
+  static bool markDismissed(SessionState session) {
+    if (isDismissed(session)) return false;
+    session.overrides[_key] = true;
+    return true;
+  }
+}
+
 /// 便于调用方按 mode 查询设计尺寸（用于预留布局空间 / 计算折叠位置）。
 Size? assemblyDesignSize(CharacterMeta meta, String mode) {
   final info = ChatAssemblyMount.resolveAssembly(meta, mode);
