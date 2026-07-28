@@ -569,7 +569,8 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             children: [
               _buildHudChip(_info.modeLabel, color: _modeColor),
               _buildHudText('${_elements.length} 部件'),
-              _buildHudText('PCB 360×${_pcbSize.height.toStringAsFixed(0)}'),
+              _buildHudText('PCB ${_pcbSize.width.toStringAsFixed(0)}'
+                  '×${_pcbSize.height.toStringAsFixed(0)}'),
               _buildHudText(
                 '越界 $_illegalPcbElementCount',
                 color: _illegalPcbElementCount > 0
@@ -577,11 +578,30 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     : const Color(0xFF555562),
               ),
               _buildHudText('覆写 $_activePropertyOverrideCount'),
+              // 关键职责缺失提示。与参数并排、样式一致，
+              // 不做成弹窗或横幅——作者常常先摆界面、后补功能，
+              // 过于显眼会变成噪音。
+              if (_missingKeyActionHint != null)
+                _buildHudText(
+                  _missingKeyActionHint!,
+                  color: const Color(0xFFE65100),
+                ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// 该 UI 缺少关键职责按钮时的提示语；不需要提示时为 null。
+  ///
+  /// 用大白话说清「会缺什么」，不用「语义角色未绑定」这类术语。
+  String? get _missingKeyActionHint {
+    if (!UISemanticRole.requiresKeyAction(_info.mode)) return null;
+    for (final page in _pages) {
+      if (UISemanticRole.hasKeyAction(page.elements)) return null;
+    }
+    return UISemanticRole.missingHintOf(_info.mode);
   }
 
   Widget _buildHudChip(String text, {required Color color}) {
@@ -850,8 +870,8 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     child: _buildDataChannelChip(_dataChannelOf(el.module)!),
                   ),
                 ),
-              // 语义角色徽标：让作者一眼看出哪个按钮绑了运行时职责。
-              if (UISemanticRole.of(el.module) != UISemanticRole.none)
+              // 关键职责徽标：让作者一眼看出哪个按钮承担了该 UI 的关键操作。
+              if (UISemanticRole.isKeyAction(el.module))
                 Positioned(
                   left: 4,
                   bottom: -14,
@@ -860,7 +880,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF5E35B1),
+                        color: UISemanticRole.colorOf(_info.mode),
                         borderRadius: BorderRadius.circular(5),
                         border: Border.all(
                           color: Colors.white.withValues(alpha: 0.88),
@@ -868,7 +888,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                         ),
                       ),
                       child: Text(
-                        UISemanticRole.labelOf(UISemanticRole.of(el.module)),
+                        UISemanticRole.actionLabelOf(_info.mode),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 9,

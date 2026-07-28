@@ -31,7 +31,6 @@ import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
-import '../services/ui_engine/ui_semantic_role.dart';
 import '../widgets/chat_assembly_mount.dart';
 import '../widgets/page_guide_overlay.dart';
 import 'background_picker_sheet.dart';
@@ -2923,18 +2922,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          // 内置折叠按钮：仅在作者没有标记「关闭」组件时兜底显示，
+          // 内置折叠按钮：仅在作者没有标记折叠按钮时兜底显示，
           // 否则用户会看到两个关闭入口。
-          if (!ChatAssemblyMount.hasSemanticRole(
-            character.meta,
-            'extra_sticky',
-            UISemanticRole.dismiss,
-          ) &&
-              !ChatAssemblyMount.hasSemanticRole(
-                character.meta,
-                'extra_sticky',
-                UISemanticRole.confirm,
-              ))
+          if (!ChatAssemblyMount.hasKeyAction(character.meta, 'extra_sticky'))
             Positioned(
               top: -6,
               right: -6,

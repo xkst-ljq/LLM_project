@@ -1,107 +1,103 @@
+import 'package:flutter/material.dart';
+
 import 'ui_models.dart';
 
-/// 组件的语义角色。
+/// 组件的语义标记：声明「这个组件在运行时承担该 UI 的关键职责」。
 ///
-/// 作者在 Assembly 里给普通组件（通常是 button）打上标记，
-/// 声明「这个组件在运行时承担什么职责」，运行时据此绑定行为。
-///
-/// 设计原则（与 `is_overlay_container` 一脉相承）：
-///   - 不新增专用组件类型。作者用通用 button 表达意图，
-///     外观完全由作者决定，引擎只负责识别职责。
-///   - 标记存在 `module.properties['semanticRole']`，随实例保存，
+/// 设计要点：
+///   - **一种 mode 只有一个关键职责**，因此作者不需要从一堆选项里挑，
+///     只要在按钮编辑页点亮一个标签即可（是 / 否）。
+///   - 标记含义由所在 UI 的 mode 决定，同一个 `keyAction` 值
+///     在 opening 下是「确认并关闭」，在 scene 下是「打开聊天页设置」。
+///   - 不新增专用组件类型，作者用普通 button 表达意图，外观完全自定。
+///   - 标记存在 `module.properties['keyAction']`，随实例保存，
 ///     不回写资产库模板。
-///   - 各 mode 只认自己需要的角色，不认识的角色安全忽略。
 class UISemanticRole {
-  /// 无角色（默认）。
-  static const String none = 'none';
+  /// 属性键。值为 true 表示该组件承担所在 mode 的关键职责。
+  static const String propKey = 'keyAction';
 
-  /// 关闭 / 收起当前 UI。
+  /// 该 mode 是否需要关键职责按钮。
   ///
-  /// - extra_sticky：折叠成悬浮球
-  /// - opening：确认并销毁开场白
-  /// - scene：退出场景，回到普通聊天
-  static const String dismiss = 'dismiss';
+  /// 伴生 UI 嵌在消息流里，没有需要主动退出的状态，故不作要求。
+  static bool requiresKeyAction(String mode) {
+    return mode == 'opening' || mode == 'scene' || mode == 'extra_sticky';
+  }
 
-  /// 确认并提交。opening 专用，语义上比 dismiss 更明确。
-  /// 未来可扩展为「提交前先做校验」。
-  static const String confirm = 'confirm';
-
-  /// 拖动把手：按住它可以移动整个挂件。
+  /// 缺少标记时是否阻止该 UI 运行。
   ///
-  /// **尚未接入运行时**，暂不开放给作者选择（不在 [all] 里）。
-  /// 原因：挂件的拖动目前由内置把手的 `_EagerPanRecognizer` 实现，
-  /// 要让任意作者组件承担这个职责，需要把拖动手势下沉到渲染层，
-  /// 并解决与内部 slider 的手势竞争——那是独立的一步。
-  /// 提前定义常量是为了让 `findElementId` 等 API 结构完整。
-  static const String dragHandle = 'drag_handle';
+  /// opening / scene 会接管界面，没有出口就会把玩家卡死，必须拦截。
+  /// 常驻 UI 缺折叠按钮只是少一个功能，仍可正常使用，因此只提示不拦截。
+  static bool blocksWithoutKeyAction(String mode) {
+    return mode == 'opening' || mode == 'scene';
+  }
 
-  /// 全部可选角色，供编辑器下拉使用。
-  ///
-  /// 只列已经接入运行时的角色——列出但不生效会让作者以为标了就有用。
-  static const List<String> all = [none, dismiss, confirm];
-
-  /// 编辑器里显示的名称。
-  static String labelOf(String role) {
-    switch (role) {
-      case dismiss:
-        return '关闭 / 收起';
-      case confirm:
+  /// 该 mode 下关键职责的名称，用于编辑页的标签文字。
+  static String actionLabelOf(String mode) {
+    switch (mode) {
+      case 'opening':
         return '确认并关闭';
-      case dragHandle:
-        return '拖动把手';
+      case 'scene':
+        return '打开聊天设置';
+      case 'extra_sticky':
+        return '折叠界面';
       default:
-        return '无（普通组件）';
+        return '关键操作';
     }
   }
 
-  /// 编辑器里显示的说明，讲清楚它在各 mode 下的实际效果。
-  static String hintOf(String role) {
-    switch (role) {
-      case dismiss:
-        return '常驻 UI 折叠为悬浮球；开场白关闭；场景 UI 退出。';
-      case confirm:
-        return '开场白确认并销毁。用在其他模式时等同于「关闭」。';
-      case dragHandle:
-        return '按住它可拖动整个界面。适合放一个小图标或标题条。';
+  /// 缺少标记时给作者看的提示语。
+  ///
+  /// 用大白话讲清楚「会缺什么」，不用「语义角色未绑定」这类术语。
+  static String missingHintOf(String mode) {
+    switch (mode) {
+      case 'opening':
+        return '还没有指定关闭按钮，玩家将无法关闭这个开场白。';
+      case 'scene':
+        return '还没有指定设置按钮，玩家将无法打开聊天设置页。';
+      case 'extra_sticky':
+        return '还没有指定折叠按钮，玩家将无法收起这个界面。';
       default:
-        return '不绑定任何运行时行为。';
+        return '';
     }
   }
 
-  /// 读取组件的语义角色；未标记或值非法时返回 [none]。
-  static String of(UIModule? module) {
-    final raw = module?.properties['semanticRole']?.toString();
-    if (raw == null) return none;
-    return all.contains(raw) ? raw : none;
+  /// 各 mode 的主题色，用于点亮后的标签配色，
+  /// 与 UI 方案列表里的模式配色保持一致。
+  static Color colorOf(String mode) {
+    switch (mode) {
+      case 'opening':
+        return const Color(0xFF7E57C2);
+      case 'scene':
+        return const Color(0xFF00897B);
+      case 'extra_sticky':
+        return const Color(0xFF5E35B1);
+      case 'extra_companion':
+        return const Color(0xFF00838F);
+      default:
+        return const Color(0xFF555562);
+    }
   }
 
-  /// 该组件是否承担某个角色。
-  static bool isRole(UIModule? module, String role) => of(module) == role;
+  /// 该组件是否被标记为关键职责按钮。
+  static bool isKeyAction(UIModule? module) =>
+      module?.properties[propKey] == true;
 
-  /// 是否是「点击后关闭」类角色（dismiss 与 confirm 都算）。
-  ///
-  /// 两者的差别只在语义与后续扩展，运行时的收起行为一致。
-  static bool closesUI(UIModule? module) {
-    final role = of(module);
-    return role == dismiss || role == confirm;
-  }
+  /// 只有可点击的组件承担关键职责才有意义。
+  static bool canMark(String type) => type == 'button';
 
-  /// 在元素树中查找第一个具有指定角色的元素 id（含复合组件内部）。
-  ///
-  /// 返回 null 表示作者没有标记该角色，调用方应回退到默认行为
-  /// （例如内置的关闭按钮），不能让用户失去唯一的操作入口。
-  static String? findElementId(List<UIElement> elements, String role) {
+  /// 在元素树中查找关键职责组件的 id（含复合组件内部）。
+  /// 返回 null 表示作者尚未标记。
+  static String? findKeyActionId(List<UIElement> elements) {
     for (final node in elements) {
-      if (isRole(node.module, role)) return node.id;
+      if (isKeyAction(node.module)) return node.id;
       if (node.isComposite && node.composite != null) {
-        final inner = findElementId(node.composite!.children, role);
+        final inner = findKeyActionId(node.composite!.children);
         if (inner != null) return inner;
       }
     }
     return null;
   }
 
-  /// 元素树中是否存在该角色。
-  static bool hasRole(List<UIElement> elements, String role) =>
-      findElementId(elements, role) != null;
+  static bool hasKeyAction(List<UIElement> elements) =>
+      findKeyActionId(elements) != null;
 }

@@ -2140,6 +2140,48 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return _numProp(props, key)?.toInt();
   }
 
+  /// 关键职责标签。点亮后配色与所属 UI 模式一致。
+  Widget _buildKeyActionTag({
+    required String mode,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    final color = UISemanticRole.colorOf(mode);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? color : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: active ? color : const Color(0xFFBDBDC6),
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              active ? Icons.check_circle_rounded : Icons.circle_outlined,
+              size: 13,
+              color: active ? Colors.white : const Color(0xFF9E9EA8),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              UISemanticRole.actionLabelOf(mode),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: active ? Colors.white : const Color(0xFF777783),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   bool _supportsAtomInstanceEditor(String type) {
     return const {
       'text',
@@ -2254,7 +2296,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         existingChannel?['llmWritePolicy']?.toString() ?? 'none';
     var channelApplyPolicy =
         existingChannel?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
-    var semanticRole = UISemanticRole.of(module);
+    var isKeyAction = UISemanticRole.isKeyAction(module);
     var switchValue = module.properties['value'] != false;
     var indicatorGlow = module.properties['defaultGlow'] == true;
     var imageFit = switch (module.properties['fit']?.toString()) {
@@ -2305,7 +2347,21 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             fallbackName: module.name,
           );
           return AlertDialog(
-            title: Text('编辑实例 · ${module.name}'),
+            title: Row(
+              children: [
+                Expanded(child: Text('编辑实例 · ${module.name}')),
+                // 关键职责标签：一种 mode 只有一个职责，
+                // 因此这里是「点亮 / 熄灭」而不是从列表里挑。
+                if (UISemanticRole.canMark(module.type) &&
+                    UISemanticRole.requiresKeyAction(_info.mode))
+                  _buildKeyActionTag(
+                    mode: _info.mode,
+                    active: isKeyAction,
+                    onTap: () =>
+                        setDialogState(() => isKeyAction = !isKeyAction),
+                  ),
+              ],
+            ),
             content: SizedBox(
               width: 400,
               child: SingleChildScrollView(
@@ -2514,59 +2570,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       const SizedBox(height: 12),
                       numberField(radiusController, '圆角'),
                     ],
-                    const SizedBox(height: 16),
-                    // 语义角色：让作者用普通组件表达运行时职责，
-                    // 不必为「关闭」「拖动」另造专用组件类型。
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF6F6F9),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: Colors.black.withValues(alpha: 0.05),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '运行时职责',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF111116),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            initialValue: semanticRole,
-                            isExpanded: true,
-                            decoration: const InputDecoration(isDense: true),
-                            items: UISemanticRole.all
-                                .map(
-                                  (role) => DropdownMenuItem(
-                                    value: role,
-                                    child: Text(UISemanticRole.labelOf(role)),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) {
-                              if (value == null) return;
-                              setDialogState(() => semanticRole = value);
-                            },
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            UISemanticRole.hintOf(semanticRole),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF777783),
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(10),
@@ -2796,10 +2799,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               .clamp(0.0, 1.0)
               .toDouble();
 
-          if (semanticRole == UISemanticRole.none) {
-            props.remove('semanticRole');
+          if (isKeyAction) {
+            props[UISemanticRole.propKey] = true;
           } else {
-            props['semanticRole'] = semanticRole;
+            props.remove(UISemanticRole.propKey);
           }
 
           final channelName = _resolveDataChannelName(

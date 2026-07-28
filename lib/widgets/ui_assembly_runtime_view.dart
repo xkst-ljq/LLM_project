@@ -195,7 +195,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       final activePage = _resolveActivePage(_pages, _activePageId);
       final module = _findModuleById(activePage.elements, event.sourceModuleId);
       if (module == null) return;
-      if (UISemanticRole.closesUI(module)) {
+      if (UISemanticRole.isKeyAction(module)) {
         widget.onDismissRequested?.call();
       }
     });

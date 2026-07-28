@@ -77,17 +77,23 @@ class ChatAssemblyMount extends StatelessWidget {
   static bool hasAssembly(CharacterMeta meta, String mode) =>
       resolveAssembly(meta, mode) != null;
 
-  /// 作者是否在该 mode 的 UI 里自己标记了某个语义角色。
-  ///
-  /// 用于决定是否还需要显示引擎内置的兜底按钮——
-  /// 作者标了就用作者的，没标才兜底，避免用户失去唯一操作入口。
-  static bool hasSemanticRole(CharacterMeta meta, String mode, String role) {
+  /// 作者是否标记了该 mode 的关键职责按钮。
+  static bool hasKeyAction(CharacterMeta meta, String mode) {
     final info = resolveAssembly(meta, mode);
     if (info == null) return false;
     for (final page in _restorePages(info)) {
-      if (UISemanticRole.hasRole(page.elements, role)) return true;
+      if (UISemanticRole.hasKeyAction(page.elements)) return true;
     }
     return false;
+  }
+
+  /// 该 mode 的 UI 是否可以运行。
+  ///
+  /// opening / scene 会接管界面，缺少出口按钮会把玩家卡死，
+  /// 因此没标记就不执行。常驻 UI 缺折叠按钮只是少一个功能，仍可运行。
+  static bool canRun(CharacterMeta meta, String mode) {
+    if (!UISemanticRole.blocksWithoutKeyAction(mode)) return true;
+    return hasKeyAction(meta, mode);
   }
 
   /// 解析方案里的页面，供角色查找使用。
@@ -116,6 +122,8 @@ class ChatAssemblyMount extends StatelessWidget {
   Widget build(BuildContext context) {
     final info = resolveAssembly(meta, mode);
     if (info == null) return const SizedBox.shrink();
+    // 缺少出口按钮的接管型 UI 不执行，避免玩家被卡死。
+    if (!canRun(meta, mode)) return const SizedBox.shrink();
 
     final designWidth = info.pcbWidth
         .clamp(UIAssemblyInfo.minPcbWidth, UIAssemblyInfo.maxPcbWidth)
