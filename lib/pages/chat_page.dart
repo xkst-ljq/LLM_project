@@ -276,6 +276,62 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 状态栏展开时挂件不跟随下移（它已是独立层），由用户自行拖开。
   static const double _stickyTopAnchor = 78.0;
 
+  // ---- 折叠悬浮球 ----
+  static const double _ballSize = 44.0;
+  static const double _ballMargin = 4.0;
+
+  /// 悬浮球位置（左上角坐标，相对聊天区）。null 表示尚未初始化。
+  Offset? _ballPos;
+
+  /// 是否贴边缩进（半隐）。停靠 3 秒后进入。
+  bool _ballTucked = false;
+
+  /// 缩进状态下被点出来时的临时展示态，再点一次才展开 UI。
+  bool _ballPeeking = false;
+
+  /// 正在拖动悬浮球——拖动期间不缩进。
+  bool _ballDragging = false;
+
+  Timer? _ballTuckTimer;
+
+  /// 折叠时记录 UI 位置，展开时让 UI 回到球的附近。
+  Offset _stickyOffsetBeforeCollapse = Offset.zero;
+
+  /// 悬浮球是否停靠在左侧。决定缩进方向与展开方向。
+  bool get _ballOnLeft {
+    final pos = _ballPos;
+    if (pos == null) return false;
+    final screenW = MediaQuery.of(context).size.width;
+    return pos.dx + _ballSize / 2 < screenW / 2;
+  }
+
+  /// 把球吸附到最近一侧，并重启缩进计时。
+  void _snapBallToEdge(Size screen) {
+    final pos = _ballPos;
+    if (pos == null) return;
+    final onLeft = pos.dx + _ballSize / 2 < screen.width / 2;
+    final targetX =
+        onLeft ? _ballMargin : screen.width - _ballSize - _ballMargin;
+    // 纵向留出安全范围，避免贴到状态栏或输入栏上。
+    final targetY = pos.dy.clamp(_stickyTopAnchor, screen.height - 160.0);
+    setState(() => _ballPos = Offset(targetX, targetY));
+    _restartBallTuckTimer();
+  }
+
+  /// 停靠 3 秒后缩进半个球宽并淡化。
+  void _restartBallTuckTimer() {
+    _ballTuckTimer?.cancel();
+    if (!_stickyCollapsed) return;
+    setState(() {
+      _ballTucked = false;
+      _ballPeeking = false;
+    });
+    _ballTuckTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted || !_stickyCollapsed || _ballDragging) return;
+      setState(() => _ballTucked = true);
+    });
+  }
+
   /// A10-1：聊天页挂载的 Assembly UI 改动了会话副本时的统一处理。
   ///
   /// 玩家在常驻 / 伴生 UI 上的交互（拖滑块、按开关）会直接写入会话副本，
@@ -2285,6 +2341,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _inertiaTicker?.stop();
     _inertiaTicker?.dispose();
     _fanSnapController.dispose();
+    _ballTuckTimer?.cancel();
     super.dispose();
 
   }
@@ -2789,15 +2846,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       return const SizedBox.shrink();
     }
 
-    if (_stickyCollapsed) {
-      return Align(
-        alignment: Alignment.topRight,
-        child: Padding(
-          padding: const EdgeInsets.only(right: 4),
-          child: _buildStickyBall(),
-        ),
-      );
-    }
+    // 折叠态由 _buildStickyBallLayer 独立渲染：
+    // 悬浮球要能自由拖到屏幕任意位置并吸附边缘，
+    // 不能受挂件那层的水平基准约束。
+    if (_stickyCollapsed) return const SizedBox.shrink();
 
     // 不能用 Transform.translate：它只移动绘制与自身内部的命中坐标，
     // 外层布局盒子仍留在原处。命中测试自上而下先检查父盒子边界，
@@ -2873,7 +2925,20 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             right: -6,
             child: _buildStickyToggle(
               icon: Icons.remove_rounded,
-              onTap: () => setState(() => _stickyCollapsed = true),
+              onTap: () {
+                final screen = MediaQuery.of(context).size;
+                setState(() {
+                  _stickyCollapsed = true;
+                  _stickyOffsetBeforeCollapse = _stickyOffset;
+                  // 球出现在挂件右上角附近，位置连续；
+                  // 随后立即吸边，避免停在屏幕中间。
+                  _ballPos ??= Offset(
+                    screen.width - _ballSize - _ballMargin,
+                    _stickyTopAnchor,
+                  );
+                });
+                _snapBallToEdge(screen);
+              },
             ),
           ),
         ],
@@ -2881,32 +2946,127 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
-  /// 折叠后的悬浮球。
-  Widget _buildStickyBall() {
-    return GestureDetector(
-      onTap: () => setState(() => _stickyCollapsed = false),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.42),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.22),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
+  /// 折叠悬浮球层。独立于挂件层，可自由拖动并吸附到屏幕两侧。
+  Widget _buildStickyBallLayer(Size screen) {
+    final character = _currentCharacter;
+    if (character == null || !_stickyCollapsed) {
+      return const SizedBox.shrink();
+    }
+    if (!ChatAssemblyMount.hasAssembly(character.meta, 'extra_sticky')) {
+      return const SizedBox.shrink();
+    }
+
+    // 首次折叠时若还没有位置，默认停在右上角。
+    final pos = _ballPos ??
+        Offset(screen.width - _ballSize - _ballMargin, _stickyTopAnchor);
+
+    // 缩进时露出半个球：向屏幕外侧偏移半个身位。
+    final tucked = _ballTucked && !_ballPeeking && !_ballDragging;
+    final tuckShift =
+        tucked ? (_ballOnLeft ? -_ballSize / 2 : _ballSize / 2) : 0.0;
+
+    return Positioned(
+      left: pos.dx + tuckShift,
+      top: pos.dy,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: tucked ? 0.45 : 1.0,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            if (tucked) {
+              // 两段式：缩进态先冒出来，再点一次才展开。
+              setState(() => _ballPeeking = true);
+              _restartBallTuckTimer();
+              return;
+            }
+            _ballTuckTimer?.cancel();
+            setState(() {
+              _stickyCollapsed = false;
+              _ballPeeking = false;
+              _ballTucked = false;
+              // 展开后 UI 出现在球的附近，位置连续。
+              _stickyOffset = _stickyOffsetForBall(pos, screen);
+            });
+          },
+          onPanStart: (_) {
+            _ballTuckTimer?.cancel();
+            setState(() {
+              _ballDragging = true;
+              _ballTucked = false;
+              _ballPeeking = false;
+              _ballPos = pos;
+            });
+          },
+          onPanUpdate: (d) {
+            setState(() {
+              final next = (_ballPos ?? pos) + d.delta;
+              _ballPos = Offset(
+                next.dx.clamp(
+                    -_ballSize / 2, screen.width - _ballSize / 2),
+                next.dy.clamp(_stickyTopAnchor, screen.height - 160.0),
+              );
+            });
+          },
+          onPanEnd: (_) {
+            setState(() => _ballDragging = false);
+            // 实时贴边：松手立刻吸附到最近一侧。
+            _snapBallToEdge(screen);
+          },
+          child: Container(
+            width: _ballSize,
+            height: _ballSize,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.42),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: const Icon(
-          Icons.widgets_rounded,
-          color: Colors.white,
-          size: 20,
+            child: const Icon(
+              Icons.widgets_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
         ),
       ),
     );
+  }
+
+  /// 由悬浮球位置推算展开后挂件应有的偏移。
+  ///
+  /// 按球所在象限选择展开方向，保证挂件不会跑出屏幕：
+  /// 球在左半屏则向右下展开，右半屏则向左下展开；
+  /// 贴近底部时改为向上展开。
+  Offset _stickyOffsetForBall(Offset ballPos, Size screen) {
+    final size = assemblyDesignSize(
+          _currentCharacter!.meta,
+          'extra_sticky',
+        ) ??
+        const Size(300, 120);
+    final w = min(size.width, screen.width - 16);
+    final h = size.height;
+
+    final onLeft = ballPos.dx + _ballSize / 2 < screen.width / 2;
+    // 挂件默认水平居中，这里换算成相对默认位置的偏移量。
+    final defaultLeft = (screen.width - w) / 2;
+    final targetLeft = onLeft
+        ? _ballMargin
+        : screen.width - w - _ballMargin;
+
+    // 纵向：优先在球下方展开，空间不够则改为上方。
+    var targetTop = ballPos.dy + _ballSize + 8;
+    if (targetTop + h > screen.height - 120) {
+      targetTop = max(_stickyTopAnchor, ballPos.dy - h - 8);
+    }
+
+    return Offset(targetLeft - defaultLeft, targetTop - _stickyTopAnchor);
   }
 
   Widget _buildStickyToggle({
@@ -3842,6 +4002,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                               alignment: Alignment.topCenter,
                               child: _buildStickyAssembly(screenWidth),
                             ),
+                          ),
+                          // 折叠悬浮球：独立定位，可拖到任意位置并吸边。
+                          _buildStickyBallLayer(
+                            MediaQuery.of(context).size,
                           ),
                         ],
                       ),
