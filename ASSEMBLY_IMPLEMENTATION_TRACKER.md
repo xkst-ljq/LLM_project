@@ -2313,6 +2313,22 @@ A10-4 的「确认后关闭」与 A10-5 的「打开聊天设置」都需要作�
 
 测试：`test/chat_assembly_mount_test.dart` 新增一次性状态与准入用例。
 
+##### 修复：关闭开场白后聊天页黑屏（待本地测试）
+- 现象：点确认按钮关闭 opening 后整个聊天页变黑，内容全部消失。
+- 根因：`_buildOpeningAssembly` 是主 `Stack` 的直接子节点，
+  显示时返回 `Positioned.fill`，关闭后却返回裸的 `SizedBox.shrink()`。
+  **`Stack` 的尺寸由「非定位子组件」决定**——主 Stack 里其余子节点
+  全是 `Positioned`（不参与尺寸计算），于是那个 0×0 的 `SizedBox`
+  成了唯一的非定位子组件，整个 Stack 塌缩成 0×0，所有内容被裁掉。
+- 处理：**始终返回 `Positioned.fill`**，隐藏时返回
+  `Positioned.fill(child: IgnorePointer(child: SizedBox()))`，
+  显示与否由内部条件决定。判断逻辑抽为 `_shouldShowOpeningAssembly`。
+- 教训：作为 `Stack` 直接子节点的条件渲染，
+  要么用 `if (cond) Positioned(...)` 完全不加入 children，
+  要么**始终返回同一种布局语义**；
+  绝不能在「Positioned」与「裸 widget」之间切换。
+  （常驻 UI 那层用的是前一种写法，因此不受影响。）
+
 #### A5 补完：Assembly 联动器接入完整方案矩阵（已完成，待本地测试）
 此前 Assembly 的 linker 只硬编码了 `button → page_router` 一条通路
 （A5 阶段的测试级实现），导致大量组合无法配置。最直接的后果：

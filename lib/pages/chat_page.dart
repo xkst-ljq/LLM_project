@@ -2943,21 +2943,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 全屏覆盖在聊天之上，玩家确认后销毁并落盘，本轮会话不再出现。
   /// 与「开场白消息」是两回事：那是一条 assistant 消息，
   /// 这是一层可交互界面，两者可以并存。
-  Widget _buildOpeningAssembly(Size screen) {
+  /// 是否应展示开场白 UI。
+  bool get _shouldShowOpeningAssembly {
     final character = _currentCharacter;
-    if (character == null) return const SizedBox.shrink();
-    if (!ChatAssemblyMount.hasAssembly(character.meta, 'opening')) {
-      return const SizedBox.shrink();
+    if (character == null) return false;
+    if (!ChatAssemblyMount.hasAssembly(character.meta, 'opening')) return false;
+    // 缺少「确认并关闭」标记时不铺遮罩，否则会出现点不掉的黑幕。
+    if (!ChatAssemblyMount.canRun(character.meta, 'opening')) return false;
+    return !OpeningGreetingState.isDismissed(_sessionState);
+  }
+
+  Widget _buildOpeningAssembly(Size screen) {
+    // 必须**始终**返回 Positioned：Stack 依据非定位子组件决定自身尺寸，
+    // 一旦这里返回裸的 SizedBox.shrink()，它就成了唯一的非定位子组件，
+    // 整个 Stack 会塌缩成 0×0，聊天页变黑屏。
+    if (!_shouldShowOpeningAssembly) {
+      return const Positioned.fill(child: IgnorePointer(child: SizedBox()));
     }
-    // 缺少「确认并关闭」标记时 canRun 为 false，
-    // ChatAssemblyMount 会渲染成空——这里提前返回，连遮罩都不铺，
-    // 否则会出现一块点不掉的黑幕。
-    if (!ChatAssemblyMount.canRun(character.meta, 'opening')) {
-      return const SizedBox.shrink();
-    }
-    if (OpeningGreetingState.isDismissed(_sessionState)) {
-      return const SizedBox.shrink();
-    }
+    final character = _currentCharacter!;
 
     return Positioned.fill(
       child: Stack(
