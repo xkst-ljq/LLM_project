@@ -2831,16 +2831,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                           PanGestureRecognizer>(
                     () => PanGestureRecognizer(),
                     (instance) {
-                      instance
-                        ..onStart =
-                            (d) => _stickyDragStart = d.globalPosition
-                        ..onUpdate = (d) {
-                          setState(() {
-                            _stickyOffset +=
-                                d.globalPosition - _stickyDragStart;
-                            _stickyDragStart = d.globalPosition;
-                          });
-                        };
+                      // 必须用块体：箭头体 `(d) => _stickyDragStart = ...`
+                      // 的返回值是 Offset，级联会接到 Offset 上而不是识别器。
+                      instance.onStart = (d) {
+                        _stickyDragStart = d.globalPosition;
+                      };
+                      instance.onUpdate = (d) {
+                        setState(() {
+                          _stickyOffset += d.globalPosition - _stickyDragStart;
+                          _stickyDragStart = d.globalPosition;
+                        });
+                      };
                     },
                   ),
                   DoubleTapGestureRecognizer:

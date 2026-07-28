@@ -163,9 +163,11 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        // 先取好 navigator 再 await：await 之后再用 context 会触发
+        // use_build_context_synchronously，且此时 context 可能已失效。
+        final navigator = Navigator.of(context);
         if (await _confirmDiscard()) {
-          if (!mounted) return;
-          Navigator.pop(context);
+          navigator.pop();
         }
       },
       child: Scaffold(

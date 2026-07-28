@@ -683,10 +683,14 @@ class UIRenderer {
                 GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
               () => TapGestureRecognizer(),
               (instance) {
-                instance
-                  ..onTapDown =
-                      (details) => updatePosition(details.localPosition)
-                  ..onTapUp = (_) => commitValue();
+                // 用块体而非箭头函数：updatePosition / commitValue 返回 void，
+                // 箭头体会被当成「使用 void 值」而编译失败。
+                instance.onTapDown = (details) {
+                  updatePosition(details.localPosition);
+                };
+                instance.onTapUp = (_) {
+                  commitValue();
+                };
               },
             ),
             HorizontalDragGestureRecognizer:
@@ -694,12 +698,15 @@ class UIRenderer {
                     HorizontalDragGestureRecognizer>(
               () => HorizontalDragGestureRecognizer(),
               (instance) {
-                instance
-                  ..onStart = (details) =>
-                      updatePosition(details.localPosition)
-                  ..onUpdate = (details) =>
-                      updatePosition(details.localPosition)
-                  ..onEnd = (_) => commitValue();
+                instance.onStart = (details) {
+                  updatePosition(details.localPosition);
+                };
+                instance.onUpdate = (details) {
+                  updatePosition(details.localPosition);
+                };
+                instance.onEnd = (_) {
+                  commitValue();
+                };
               },
             ),
           },

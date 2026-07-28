@@ -2139,6 +2139,14 @@ LLM 更新状态 → SessionState → UI 组件显示同步刷新。
      `TapGestureRecognizer` 保留，点击轨道跳转的行为不变。
    - 挂件的拖动把手同理改用 `RawGestureDetector` + `PanGestureRecognizer`，
      否则也会被根部的水平拖动抢走。
+   - 编译修正：`GestureRecognizerFactoryWithHandlers` 的初始化回调里
+     **不能用箭头体 + 级联**。
+     - `updatePosition` / `commitValue` 返回 `void`，
+       `..onStart = (d) => updatePosition(...)` 会报「使用 void 值」。
+     - `..onStart = (d) => _stickyDragStart = d.globalPosition` 更隐蔽：
+       箭头体返回 `Offset`，后续 `..onUpdate` 会级联到 `Offset` 上，
+       报「onUpdate isn't defined for Offset」。
+     - 统一改为 `instance.onXxx = (d) { ... };` 块体逐条赋值。
 
 ### 下一步候选
 - A10 mode 差异逻辑收口（其中包含聊天页挂载 Assembly UI，

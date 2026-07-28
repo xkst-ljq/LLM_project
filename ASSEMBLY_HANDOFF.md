@@ -351,6 +351,9 @@ A9.6-1 已完成 MVP：
   专用识别器（HorizontalDrag）优先于通用识别器（Pan），**与嵌套深浅无关**。
   因此挂件内任何需要拖动的组件都不能用 `onPanStart`，
   必须用 `RawGestureDetector` 显式声明同类型识别器才能竞争成功。
+- 写 `RawGestureDetector` 的识别器初始化回调时，用 `instance.onXxx = (d) {...};`
+  块体逐条赋值，不要用箭头体 + 级联：回调返回 void 或其他类型时，
+  级联会接到错误的对象上，报错信息还很有迷惑性。
 - **`Transform.translate` 不改变命中区域**：被移出父容器边界的部分点不到。
   可拖动的浮层必须独立成 `Positioned.fill` 层，不要塞进窄条容器里。
 
