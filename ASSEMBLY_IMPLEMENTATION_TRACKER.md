@@ -54,7 +54,7 @@
 | A9.5 | 通用模板基础版 | A9.5-5 全部子步骤完成，测试通过 | ✅ |
 | A9.6 | SSOT / LLM 数据交互 MVP | A9.6-1~4 全部完成，全链路联调通过 | ✅ |
 | A10 | mode 差异逻辑收口 | A10-0/1/2/2.5/4 完成并测试通过，余 A10-3/5 | 🚧 |
-| A11 | 消息流窗口 | 已提前到 scene 之前 / 同步 | ⏳ |
+| A11 | 消息流窗口 | A11-1 骨架完成，待本地测试 | 🚧 |
 | A12 | 高级动画 | 未开始 | ⏳ |
 | A13 | 玩家参与的会话初始化 | 已规划，A10 收口后启动 | ⏳ |
 
@@ -1695,6 +1695,61 @@ LLM 回复
 - 接受用户消息 / LLM 回复
 - append + 自动滚到底
 - scene / extra_companion 可见
+
+### A11-1：骨架（已完成，待本地测试）
+
+#### 复用而非重写
+排查发现聊天页的渲染管线已经很完整，`_buildMarkdownWidget` 会自动分流：
+HTML → `flutter_html`；复杂 Markdown → `MarkdownBody`；
+普通文本 → `_buildStyledRoleplayText`。流式追加也是现成的
+（`aiResponseContent += chunk; setState()`）。
+因此 A11-1 是接线，富文本能力后续可直接接上（见 A11-2）。
+
+#### 数据链路
+```
+chat_page._messages（含 id / versions 等编辑态字段）
+  ↓ _flowMessages：只取 role + content
+ChatAssemblyMount(messages:)
+  ↓
+UIAssemblyRuntimeView(messages:)
+  ↓ MessageFlowScope 包住整个设计面
+UIRenderer 渲染 message_flow
+  ↓ MessageFlowScope.maybeOf(context)
+_MessageFlowList 滚动列表
+```
+
+**消息走 `InheritedWidget` 而不是 `module.properties`**，两个原因：
+- 消息是会话数据而非组件配置，写进 properties 会被
+  `_persistAssemblyElements` 一并存进角色卡；
+- 流式输出每个 chunk 都要刷新，走 properties 会触发整棵树重建。
+
+#### 滚动（用户明确为必做）
+作者固定窗口尺寸后，内容必须能在其中滚动，否则长对话被裁掉且无法查看。
+- 新消息 / 流式追加自动滚到底；
+- **用户向上翻看历史时不硬拽回底部**（距底 80px 内才跟随）。
+
+#### 可配置项
+- 显示条数：留空 = 全部，填 N = 最近 N 条（两种都支持，用户要求）
+- 字号、玩家/角色消息各自的显示开关
+- 气泡配色与圆角
+
+#### 样式决策（用户选择）
+先做**固定气泡**，作者只调颜色 / 字号 / 圆角。
+「作者用复合组件自定义气泡模板」留到以后按实际需求再定——
+那需要一套模板实例化机制，工作量大很多。
+
+#### 编辑器占位
+无 `MessageFlowScope` 时（Assembly 编辑器预览）显示三条示例消息，
+让作者能看到排版效果，而不是面对一块空白。
+
+测试：`test/message_flow_test.dart` 覆盖更新通知（含流式追加）、
+条数限制语义（保留最近而非最早）、角色过滤。
+
+### A11-2：增强（待做）
+- 富文本：接上 `_buildMarkdownWidget`，支持 Markdown / HTML
+- 重新生成 / 编辑 / 删除消息
+- 版本切换（左右箭头）
+- 头像显示
 
 ### 关键区分（用户明确）
 消息流是否显示**纯粹是玩家侧的展示选择**：

@@ -109,6 +109,25 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           color: const Color(0xFFFF4081),
           properties: {'min': 0, 'max': 100, 'current': 65},
         ),
+      'atom_message_flow' => UIModule(
+          id: id,
+          name: '消息流',
+          type: 'message_flow',
+          color: const Color(0xFF3949AB),
+          material: UIModuleMaterial.solid,
+          shape: UIModuleShape.rounded,
+          borderRadius: 12,
+          properties: {
+            // 0 表示显示全部历史；大于 0 则只显示最近 N 条。
+            'historyLimit': 0,
+            'showUser': true,
+            'showAssistant': true,
+            'fontSize': 12.5,
+            'userBubbleColor': 0xFFDCF8C6,
+            'assistantBubbleColor': 0xFFF1F1F4,
+            'bubbleRadius': 12.0,
+          },
+        ),
       'atom_surface_base' => UIModule(
           id: id,
           name: '面板',
@@ -2349,6 +2368,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'select',
       'indicator',
       'image',
+      'message_flow',
     }.contains(type);
   }
 
@@ -2415,6 +2435,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               : '${option.label}|${option.value}')
           .join('\n'),
     );
+    final historyLimitController = TextEditingController(
+      text: (_intProp(module.properties, 'historyLimit') ?? 0) == 0
+          ? ''
+          : '${_intProp(module.properties, 'historyLimit')}',
+    );
+    var flowShowUser = module.properties['showUser'] != false;
+    var flowShowAssistant = module.properties['showAssistant'] != false;
     final dotSizeController = TextEditingController(
       text: (_numProp(module.properties, 'dotSize') ?? 14.0)
           .toStringAsFixed(0),
@@ -2693,6 +2720,42 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                             setDialogState(() => indicatorGlow = value),
                       ),
                     ],
+                    if (type == 'message_flow') ...[
+                      const SizedBox(height: 12),
+                      numberField(
+                        historyLimitController,
+                        '显示条数（留空显示全部）',
+                      ),
+                      const SizedBox(height: 12),
+                      numberField(fontSizeController, '字号'),
+                      const SizedBox(height: 4),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('显示玩家消息',
+                            style: TextStyle(fontSize: 13)),
+                        value: flowShowUser,
+                        onChanged: (v) =>
+                            setDialogState(() => flowShowUser = v),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('显示角色消息',
+                            style: TextStyle(fontSize: 13)),
+                        value: flowShowAssistant,
+                        onChanged: (v) =>
+                            setDialogState(() => flowShowAssistant = v),
+                      ),
+                      const Text(
+                        '窗口内可滚动；新消息自动滚到底，向上翻看历史时不会被拽回。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF777783),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                     if (type == 'image') ...[
                       const SizedBox(height: 12),
                       TextField(
@@ -2854,6 +2917,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         dotSizeController,
         imageUrlController,
         imageAssetController,
+        historyLimitController,
         channelNameController,
       ]);
       return;
@@ -2931,6 +2995,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             props['dotSize'] =
                 readDouble(dotSizeController, 14.0).clamp(8.0, 28.0).toDouble();
             props['defaultGlow'] = indicatorGlow;
+          } else if (type == 'message_flow') {
+            final limit = int.tryParse(historyLimitController.text.trim());
+            // 留空或非正数一律视为「显示全部」。
+            props['historyLimit'] = (limit == null || limit <= 0) ? 0 : limit;
+            props['fontSize'] = readDouble(fontSizeController, 12.5);
+            props['showUser'] = flowShowUser;
+            props['showAssistant'] = flowShowAssistant;
           } else if (type == 'image') {
             props['url'] = imageUrlController.text.trim();
             props['assetPath'] = imageAssetController.text.trim();
@@ -3018,6 +3089,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       dotSizeController,
       imageUrlController,
       imageAssetController,
+      historyLimitController,
       channelNameController,
     ]);
   }

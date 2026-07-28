@@ -11,6 +11,7 @@ import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/data_channel_service.dart';
 import '../services/ui_engine/linker_event_bus.dart';
 import '../services/ui_engine/linker_service.dart';
+import '../services/ui_engine/message_flow_scope.dart';
 import '../services/ui_engine/ui_semantic_role.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
@@ -49,6 +50,12 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 显示数据通道写入的调试浮层（仅 Assembly 预览用）。
   final bool showDataChannelDebug;
 
+  /// 供消息流组件显示的对话历史。
+  ///
+  /// 不塞进 `module.properties`：消息是会话数据而非组件配置，
+  /// 写进去会被 `_persistAssemblyElements` 一并存进角色卡。
+  final List<FlowMessage> messages;
+
   /// 作者标记为「关闭 / 确认」的组件被点击时回调。
   ///
   /// 由挂载方决定关闭意味着什么：常驻 UI 折叠成球、开场白销毁、场景退出。
@@ -75,6 +82,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.showDataChannelDebug = false,
     this.enablePageGestures = true,
     this.onDismissRequested,
+    this.messages = const <FlowMessage>[],
   });
 
   @override
@@ -615,7 +623,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     final snapshot = LinkerSnapshot.fromElements(elementsForSnapshot);
     final borderRadius = BorderRadius.circular(widget.assemblyInfo.pcbRounded ? 20 : 0);
 
-    return UILinkerSnapshotScope(
+    return MessageFlowScope(
+      messages: widget.messages,
+      child: UILinkerSnapshotScope(
       snapshot: snapshot,
       child: UISceneModeScope(
         isStudioCreationMode: false,
@@ -660,6 +670,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

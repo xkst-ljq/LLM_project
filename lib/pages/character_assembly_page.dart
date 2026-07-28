@@ -1661,6 +1661,13 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             module: _assetModuleTemplate('atom_text'),
           ),
           _AssemblyAssetItem.module(
+            title: '消息流',
+            subtitle: '对话历史窗口',
+            icon: Icons.forum_rounded,
+            color: const Color(0xFF3949AB),
+            module: _assetModuleTemplate('atom_message_flow'),
+          ),
+          _AssemblyAssetItem.module(
             title: '进度条',
             subtitle: '数值显示',
             icon: Icons.stacked_line_chart_rounded,

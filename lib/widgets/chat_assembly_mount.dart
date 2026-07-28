@@ -6,6 +6,7 @@ import '../models/character_meta.dart';
 import '../models/session_state.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/message_flow_scope.dart';
 import '../services/ui_engine/ui_semantic_role.dart';
 import 'ui_assembly_runtime_view.dart';
 
@@ -41,6 +42,9 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 作者标记为「关闭 / 确认」的组件被点击时回调。
   final VoidCallback? onDismissRequested;
 
+  /// 供消息流组件显示的对话历史。
+  final List<FlowMessage> messages;
+
   const ChatAssemblyMount({
     super.key,
     required this.meta,
@@ -50,6 +54,7 @@ class ChatAssemblyMount extends StatelessWidget {
     this.maxWidth,
     this.enablePageGestures = false,
     this.onDismissRequested,
+    this.messages = const <FlowMessage>[],
   });
 
   /// 取出该 mode 对应的 UI 方案；没有则返回 null。
@@ -145,6 +150,7 @@ class ChatAssemblyMount extends StatelessWidget {
         showBlurredBackdrop: false,
         enablePageGestures: enablePageGestures,
         onDismissRequested: onDismissRequested,
+        messages: messages,
         sessionState: sessionState,
         statusFields: meta.statusBarFields,
         onSessionStateChanged: onSessionStateChanged,

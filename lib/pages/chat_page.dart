@@ -28,6 +28,7 @@ import '../services/database_service.dart';
 import '../services/prompt_settings_service.dart';
 import '../services/status_bar_engine.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
+import '../services/ui_engine/message_flow_scope.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
@@ -262,6 +263,22 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       session: _sessionState,
       statusFields: character.meta.statusBarFields,
     );
+  }
+
+  /// 供 Assembly 消息流组件使用的对话历史。
+  ///
+  /// 每次构建时转换：`_messages` 里还带 id / versions 等编辑态字段，
+  /// 消息流只需要 role + content。
+  List<FlowMessage> get _flowMessages {
+    return _messages
+        .map(
+          (m) => FlowMessage(
+            role: (m['role'] as String?) ?? 'assistant',
+            content: (m['content'] as String?) ?? '',
+          ),
+        )
+        .where((m) => m.content.isNotEmpty)
+        .toList();
   }
 
   /// A10-2：常驻 UI 是否已折叠为悬浮球。
@@ -2874,6 +2891,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               // 两侧各留 8，避免贴边
               maxWidth: screenWidth - 16,
               onDismissRequested: () => _collapseSticky(),
+              messages: _flowMessages,
             ),
             // 拖动把手。作者自定义把手（drag_handle 角色）尚未接入运行时，
             // 因此这里始终显示内置把手，保证挂件可移动。
@@ -2986,6 +3004,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               // 开场白是全屏形态，保留页面手势（多页开场白可翻页）。
               enablePageGestures: true,
               onDismissRequested: _dismissOpeningAssembly,
+              messages: _flowMessages,
             ),
           ),
         ],

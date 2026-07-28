@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
+import 'message_flow_scope.dart';
 import 'select_option.dart';
 import 'ui_models.dart';
 
@@ -177,6 +178,12 @@ class UIRenderer {
           width: size.width,
           height: size.height,
           child: _buildIndicatorBlock(context, element, module, size),
+        );
+      case 'message_flow':
+        return SizedBox(
+          width: size.width,
+          height: size.height,
+          child: _buildMessageFlowBlock(context, module, size),
         );
       case 'timer':
         return SizedBox(
@@ -1677,6 +1684,75 @@ class UIRenderer {
     return Center(child: dot);
   }
 
+  /// 消息流窗口（A11-1）。
+  ///
+  /// 数据来自 `MessageFlowScope`；没有作用域时（Assembly 编辑器预览）
+  /// 显示占位示例，让作者能看到排版效果。
+  static Widget _buildMessageFlowBlock(
+    BuildContext context,
+    UIModule module,
+    Size size,
+  ) {
+    final props = module.properties;
+    final live = MessageFlowScope.maybeOf(context);
+    final isStudio = UISceneModeScope.of(context);
+
+    // 编辑态用示例消息，避免作者面对一块空白无从判断排版。
+    final messages = live ??
+        (isStudio || live == null
+            ? const [
+                FlowMessage(role: 'assistant', content: '你好，旅者。'),
+                FlowMessage(role: 'user', content: '这里是哪里？'),
+                FlowMessage(role: 'assistant', content: '星雾边境的白鸦环。'),
+              ]
+            : const <FlowMessage>[]);
+
+    final showUser = props['showUser'] != false;
+    final showAssistant = props['showAssistant'] != false;
+    final limit = (props['historyLimit'] as num?)?.toInt() ?? 0;
+
+    var visible = messages
+        .where((m) => m.isUser ? showUser : showAssistant)
+        .toList();
+    // limit 为 0 表示不限制；否则只保留最近 N 条。
+    if (limit > 0 && visible.length > limit) {
+      visible = visible.sublist(visible.length - limit);
+    }
+
+    final fontSize =
+        (props['fontSize'] as num?)?.toDouble().clamp(8.0, 24.0) ?? 12.5;
+    final radius =
+        (props['bubbleRadius'] as num?)?.toDouble().clamp(0.0, 32.0) ?? 12.0;
+    final userColor =
+        Color((props['userBubbleColor'] as num?)?.toInt() ?? 0xFFDCF8C6);
+    final assistantColor =
+        Color((props['assistantBubbleColor'] as num?)?.toInt() ?? 0xFFF1F1F4);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(module.borderRadius),
+      child: Container(
+        color: module.color.withValues(alpha: module.opacity),
+        child: visible.isEmpty
+            ? Center(
+                child: Text(
+                  '暂无消息',
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    color: const Color(0xFF9E9EA8),
+                  ),
+                ),
+              )
+            : _MessageFlowList(
+                messages: visible,
+                fontSize: fontSize,
+                bubbleRadius: radius,
+                userColor: userColor,
+                assistantColor: assistantColor,
+              ),
+      ),
+    );
+  }
+
   /// 定时脉冲发生器渲染：工作室显形为带自测热区的逻辑卡片，运行时彻底隐形 SizedBox.shrink()
   static Widget _buildTimerBlock(BuildContext context, UIElement element, UIModule module, Size size) {
     final bool isStudio = UISceneModeScope.of(context);
@@ -2708,5 +2784,105 @@ class _EagerHorizontalDragRecognizer extends HorizontalDragGestureRecognizer {
   void addAllowedPointer(PointerDownEvent event) {
     super.addAllowedPointer(event);
     resolve(GestureDisposition.accepted);
+  }
+}
+
+/// 消息流列表：固定区域内滚动，新消息自动滚到底。
+///
+/// 独立成 StatefulWidget 是为了持有 ScrollController——
+/// 作者固定了窗口尺寸后，内容必须能在其中滚动，
+/// 否则长对话会被裁掉且无法查看。
+class _MessageFlowList extends StatefulWidget {
+  final List<FlowMessage> messages;
+  final double fontSize;
+  final double bubbleRadius;
+  final Color userColor;
+  final Color assistantColor;
+
+  const _MessageFlowList({
+    required this.messages,
+    required this.fontSize,
+    required this.bubbleRadius,
+    required this.userColor,
+    required this.assistantColor,
+  });
+
+  @override
+  State<_MessageFlowList> createState() => _MessageFlowListState();
+}
+
+class _MessageFlowListState extends State<_MessageFlowList> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleScrollToBottom();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessageFlowList old) {
+    super.didUpdateWidget(old);
+    // 新消息或流式追加都要跟到底部。
+    final grew = widget.messages.length != old.messages.length;
+    final lastChanged = widget.messages.isNotEmpty &&
+        old.messages.isNotEmpty &&
+        widget.messages.last.content != old.messages.last.content;
+    if (grew || lastChanged) _scheduleScrollToBottom();
+  }
+
+  /// 用户主动向上翻看历史时不要硬拽回底部。
+  bool get _isNearBottom {
+    if (!_controller.hasClients) return true;
+    final max = _controller.position.maxScrollExtent;
+    return max - _controller.offset < 80;
+  }
+
+  void _scheduleScrollToBottom() {
+    final shouldFollow = _isNearBottom;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients || !shouldFollow) return;
+      _controller.jumpTo(_controller.position.maxScrollExtent);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      controller: _controller,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      itemCount: widget.messages.length,
+      itemBuilder: (context, index) {
+        final msg = widget.messages[index];
+        return Align(
+          alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.66,
+            ),
+            decoration: BoxDecoration(
+              color: msg.isUser ? widget.userColor : widget.assistantColor,
+              borderRadius: BorderRadius.circular(widget.bubbleRadius),
+            ),
+            child: Text(
+              msg.content,
+              style: TextStyle(
+                fontSize: widget.fontSize,
+                height: 1.35,
+                color: const Color(0xFF111116),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
