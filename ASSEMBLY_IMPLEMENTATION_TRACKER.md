@@ -2113,9 +2113,32 @@ LLM 更新状态 → SessionState → UI 组件显示同步刷新。
      只有把手能拖动整个挂件——直接拖内容会与内部 slider 冲突。
    - 双击把手复位。
    - 偏移只存在于本次会话，不写进角色卡：位置属于临时观感。
-   - 手势归属：外层状态栏的 `GestureDetector` 用 `deferToChild`
-     且只声明 `onHorizontalDrag*`，把手声明 `onPan*` 且层级更深，
-     竞技场中优先胜出，不会误触发滑出设置页。
+   - 手势归属见下一条修复（初版判断有误）。
+
+##### A10-2 反馈修复 · 第二轮（待本地测试）
+1. **拖动一次后整个挂件失去交互**
+   - 根因：`Transform.translate` 只做**视觉**位移，命中测试仍受父容器
+     边界裁剪。挂件原先塞在状态栏的 `Positioned(top:8,left:6,right:6)` 里，
+     一旦被拖出那条窄区域，触摸就落在父容器之外，全部失效。
+   - 处理：常驻 UI 独立成层（`Positioned.fill` + 内部 `Stack`），
+     在整个聊天区都能接收触摸。
+   - 注意不能给这层包 `IgnorePointer`：它铺满聊天区，
+     包了会挡住下方消息列表滚动。`Stack` 默认只在子组件实际占位处命中，
+     空白区域自然穿透。
+   - 代价：挂件不再随状态栏展开自动下移，由用户自行拖开。
+2. **slider 始终拖不动（与挂件是否被拖动无关）**
+   - 根因（上一轮判断错误，此处更正）：聊天页根部有
+     `onHorizontalDrag*` 用于滑出侧栏。手势竞技场中
+     **专用识别器（HorizontalDrag）优先于通用识别器（Pan）**，
+     水平移动达阈值时 HorizontalDrag 立即宣告胜利，而 Pan 仍在
+     等待方向判定，于是父级总是抢走手势。**与嵌套深浅无关**——
+     上一轮「层级更深会赢」的说法是错的。
+   - 处理：slider 改用 `RawGestureDetector` 显式声明
+     `HorizontalDragGestureRecognizer`。同为专用识别器时，
+     命中路径更深的子节点优先，slider 得以胜出。
+     `TapGestureRecognizer` 保留，点击轨道跳转的行为不变。
+   - 挂件的拖动把手同理改用 `RawGestureDetector` + `PanGestureRecognizer`，
+     否则也会被根部的水平拖动抢走。
 
 ### 下一步候选
 - A10 mode 差异逻辑收口（其中包含聊天页挂载 Assembly UI，

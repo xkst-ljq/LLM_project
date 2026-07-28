@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'linker_event_bus.dart';
@@ -667,13 +668,41 @@ class UIRenderer {
           LinkerEventBus().emit(element.id, 'slider_commit', value);
         }
 
-        return GestureDetector(
+        // 用 RawGestureDetector 显式声明水平拖动识别器。
+        //
+        // 原先用 onPanStart（PanGestureRecognizer）时，滑块拖不动：
+        // 聊天页根部有 onHorizontalDrag* 用于滑出侧栏，
+        // 在手势竞技场里「专用」识别器（Horizontal）优先于
+        // 「通用」识别器（Pan），与嵌套深浅无关，于是父级总是胜出。
+        // 这里改用同为专用的 HorizontalDrag，并在 onStart 立即 resolve，
+        // 让滑块在竞争中拿下手势。
+        return RawGestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapDown: (details) => updatePosition(details.localPosition),
-          onTapUp: (_) => commitValue(),
-          onPanStart: (details) => updatePosition(details.localPosition),
-          onPanUpdate: (details) => updatePosition(details.localPosition),
-          onPanEnd: (_) => commitValue(),
+          gestures: <Type, GestureRecognizerFactory>{
+            TapGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+              () => TapGestureRecognizer(),
+              (instance) {
+                instance
+                  ..onTapDown =
+                      (details) => updatePosition(details.localPosition)
+                  ..onTapUp = (_) => commitValue();
+              },
+            ),
+            HorizontalDragGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                    HorizontalDragGestureRecognizer>(
+              () => HorizontalDragGestureRecognizer(),
+              (instance) {
+                instance
+                  ..onStart = (details) =>
+                      updatePosition(details.localPosition)
+                  ..onUpdate = (details) =>
+                      updatePosition(details.localPosition)
+                  ..onEnd = (_) => commitValue();
+              },
+            ),
+          },
           child: buildSliderWidget(current),
         );
       },

@@ -347,6 +347,12 @@ A9.6-1 已完成 MVP：
   只有全屏类 mode（opening/scene）才需要页面滑动手势。
 - 要让挂件可拖动，加独立的拖动把手，不要让整块内容都能拖——
   会和内部组件的手势打架。
+- **手势竞技场的坑（踩过两次）**：聊天页根部有 `onHorizontalDrag*`（滑出侧栏）。
+  专用识别器（HorizontalDrag）优先于通用识别器（Pan），**与嵌套深浅无关**。
+  因此挂件内任何需要拖动的组件都不能用 `onPanStart`，
+  必须用 `RawGestureDetector` 显式声明同类型识别器才能竞争成功。
+- **`Transform.translate` 不改变命中区域**：被移出父容器边界的部分点不到。
+  可拖动的浮层必须独立成 `Positioned.fill` 层，不要塞进窄条容器里。
 
 #### 状态字段归属（owner）
 - `owner`（player/char/neutral）决定注入 Prompt 时的主语。

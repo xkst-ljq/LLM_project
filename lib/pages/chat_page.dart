@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_html/flutter_html.dart' as fhtml;
@@ -270,6 +271,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 仅存在于本次会话，不持久化——位置属于临时观感，不值得写进角色卡。
   Offset _stickyOffset = Offset.zero;
   Offset _stickyDragStart = Offset.zero;
+
+  /// 常驻 UI 的默认纵向锚点：状态栏长条下方。
+  /// 状态栏展开时挂件不跟随下移（它已是独立层），由用户自行拖开。
+  static const double _stickyTopAnchor = 78.0;
 
   /// A10-1：聊天页挂载的 Assembly UI 改动了会话副本时的统一处理。
   ///
@@ -2815,15 +2820,39 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             Positioned(
               top: -6,
               left: -6,
-              child: GestureDetector(
-                onPanStart: (d) => _stickyDragStart = d.globalPosition,
-                onPanUpdate: (d) {
-                  setState(() {
-                    _stickyOffset += d.globalPosition - _stickyDragStart;
-                    _stickyDragStart = d.globalPosition;
-                  });
+              // 用 RawGestureDetector：聊天页根部有 onHorizontalDrag*
+              // 用于滑出侧栏，竞技场里专用识别器优先于通用的 Pan，
+              // 直接写 onPanStart 会被父级抢走。
+              child: RawGestureDetector(
+                behavior: HitTestBehavior.opaque,
+                gestures: <Type, GestureRecognizerFactory>{
+                  PanGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          PanGestureRecognizer>(
+                    () => PanGestureRecognizer(),
+                    (instance) {
+                      instance
+                        ..onStart =
+                            (d) => _stickyDragStart = d.globalPosition
+                        ..onUpdate = (d) {
+                          setState(() {
+                            _stickyOffset +=
+                                d.globalPosition - _stickyDragStart;
+                            _stickyDragStart = d.globalPosition;
+                          });
+                        };
+                    },
+                  ),
+                  DoubleTapGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          DoubleTapGestureRecognizer>(
+                    () => DoubleTapGestureRecognizer(),
+                    (instance) {
+                      instance.onDoubleTap =
+                          () => setState(() => _stickyOffset = Offset.zero);
+                    },
+                  ),
                 },
-                onDoubleTap: () => setState(() => _stickyOffset = Offset.zero),
                 child: _buildStickyToggle(
                   icon: Icons.open_with_rounded,
                   onTap: () {},
@@ -3772,24 +3801,35 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                           onHorizontalDragEnd: (_) {},
                           child: Align(
                             alignment: Alignment.topCenter,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildStatusBar(),
-                                // A10-2：常驻 UI 挂在状态栏正下方。
-                                // 放同一个 Column 里，随状态栏展开一起下移，
-                                // 不会互相遮挡。
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: _buildStickyAssembly(screenWidth),
-                                ),
-                              ],
-                            ),
+                            child: _buildStatusBar(),
                           ),
                         ),
                       ),
                     ),
                   ),
+                  // 3.5 常驻 UI（extra_sticky）。
+                  //
+                  // 必须独立成层而不是塞进状态栏的 Positioned：
+                  // Transform.translate 只做视觉位移，命中测试仍受父容器
+                  // 边界裁剪，挂件一旦被拖出状态栏那条窄区域就再也点不到。
+                  // 用 Positioned.fill 让它在整个聊天区都能接收触摸。
+                  if (!_showFanPanel && _animController.value < 0.5)
+                    Positioned.fill(
+                      // 不能包 IgnorePointer：这一层铺满整个聊天区，
+                      // 挡住会让下方消息列表无法滚动。
+                      // Stack 默认只在子组件实际占位处命中，
+                      // 空白区域自然穿透给下层。
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            top: _stickyTopAnchor,
+                            child: _buildStickyAssembly(screenWidth),
+                          ),
+                        ],
+                      ),
+                    ),
                   // 悬浮毛玻璃输入栏（最上层）
                   if (_animController.value < 0.1 && !_showFanPanel)
                     Positioned(
