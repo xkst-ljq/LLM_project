@@ -2799,14 +2799,22 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       );
     }
 
-    return Align(
-      alignment: Alignment.topCenter,
-      child: Transform.translate(
-        offset: _stickyOffset,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            ChatAssemblyMount(
+    // 不能用 Transform.translate：它只移动绘制与自身内部的命中坐标，
+    // 外层布局盒子仍留在原处。命中测试自上而下先检查父盒子边界，
+    // 拖出原盒子范围后触摸根本传不进来（表现为「只拖走了样貌」）。
+    // 这里改为真实改变布局位置，见调用处的 Positioned。
+    // 吸收挂件区域内的水平拖动，避免穿透到聊天页根部触发滑出编辑页。
+    // 与状态栏用的是同一招；挂件内部的 slider 层级更深，仍能赢过这层。
+    return GestureDetector(
+      behavior: HitTestBehavior.deferToChild,
+      onHorizontalDragStart: (_) {},
+      onHorizontalDragUpdate: (_) {},
+      onHorizontalDragEnd: (_) {},
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          ChatAssemblyMount(
               meta: character.meta,
               mode: 'extra_sticky',
               sessionState: _sessionState,
@@ -2860,16 +2868,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            Positioned(
-              top: -6,
-              right: -6,
-              child: _buildStickyToggle(
-                icon: Icons.remove_rounded,
-                onTap: () => setState(() => _stickyCollapsed = true),
-              ),
+          Positioned(
+            top: -6,
+            right: -6,
+            child: _buildStickyToggle(
+              icon: Icons.remove_rounded,
+              onTap: () => setState(() => _stickyCollapsed = true),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -3822,10 +3829,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       // 空白区域自然穿透给下层。
                       child: Stack(
                         children: [
+                          // 用真实坐标而非 Transform：布局盒子必须跟着一起移动，
+                          // 否则拖出原位置后命中测试收不到触摸。
                           Positioned(
-                            left: 0,
-                            right: 0,
-                            top: _stickyTopAnchor,
+                            left: _stickyOffset.dx,
+                            top: _stickyTopAnchor + _stickyOffset.dy,
+                            width: screenWidth,
                             child: _buildStickyAssembly(screenWidth),
                           ),
                         ],
