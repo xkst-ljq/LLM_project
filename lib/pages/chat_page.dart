@@ -30,6 +30,7 @@ import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
+import '../widgets/chat_assembly_mount.dart';
 import '../widgets/page_guide_overlay.dart';
 import 'background_picker_sheet.dart';
 import 'prompt_preview_page.dart';
@@ -260,6 +261,19 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       session: _sessionState,
       statusFields: character.meta.statusBarFields,
     );
+  }
+
+  /// A10-2：常驻 UI 是否已折叠为悬浮球。
+  bool _stickyCollapsed = false;
+
+  /// A10-1：聊天页挂载的 Assembly UI 改动了会话副本时的统一处理。
+  ///
+  /// 玩家在常驻 / 伴生 UI 上的交互（拖滑块、按开关）会直接写入会话副本，
+  /// 这里负责落盘并刷新界面，使状态栏与 UI 组件保持一致。
+  Future<void> _onAssemblySessionChanged(SessionState next) async {
+    _sessionState = next;
+    await _saveSessionState();
+    if (mounted) setState(() {});
   }
 
   /// 读取当前角色的会话状态（进入聊天 / 切换角色时调用）。
@@ -2754,6 +2768,100 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
+  /// A10-2：常驻 UI（extra_sticky）。
+  ///
+  /// 浮在聊天内容之上、状态栏之下，可折叠成悬浮球。
+  /// 折叠状态只影响显示，不卸载运行时——否则组件状态会丢失。
+  Widget _buildStickyAssembly(double screenWidth) {
+    final character = _currentCharacter;
+    if (character == null) return const SizedBox.shrink();
+    if (!ChatAssemblyMount.hasAssembly(character.meta, 'extra_sticky')) {
+      return const SizedBox.shrink();
+    }
+
+    if (_stickyCollapsed) {
+      return Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: _buildStickyBall(),
+        ),
+      );
+    }
+
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ChatAssemblyMount(
+            meta: character.meta,
+            mode: 'extra_sticky',
+            sessionState: _sessionState,
+            onSessionStateChanged: _onAssemblySessionChanged,
+            // 两侧各留 8，避免贴边
+            maxWidth: screenWidth - 16,
+          ),
+          Positioned(
+            top: -6,
+            right: -6,
+            child: _buildStickyToggle(
+              icon: Icons.remove_rounded,
+              onTap: () => setState(() => _stickyCollapsed = true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 折叠后的悬浮球。
+  Widget _buildStickyBall() {
+    return GestureDetector(
+      onTap: () => setState(() => _stickyCollapsed = false),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.42),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.widgets_rounded,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStickyToggle({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.42),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+        ),
+        child: Icon(icon, color: Colors.white, size: 14),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -3635,7 +3743,19 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                           onHorizontalDragEnd: (_) {},
                           child: Align(
                             alignment: Alignment.topCenter,
-                            child: _buildStatusBar(),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildStatusBar(),
+                                // A10-2：常驻 UI 挂在状态栏正下方。
+                                // 放同一个 Column 里，随状态栏展开一起下移，
+                                // 不会互相遮挡。
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: _buildStickyAssembly(screenWidth),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

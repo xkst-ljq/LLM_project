@@ -335,6 +335,14 @@ A9.6-1 已完成 MVP：
 - 删除消息时调 `_rollbackSessionStateFor()`，取最早那条的快照还原。
 - 新增任何删除消息的入口时，记得一并接入回滚，否则状态又会残留。
 
+#### 聊天页挂载 Assembly UI（A10-1/2）
+- 统一入口 `ChatAssemblyMount`（`lib/widgets/chat_assembly_mount.dart`），
+  新增其他 mode 时复用它，不要各自解析 `uiAssemblies`。
+- 挂载时必须传 `sessionState` + `onSessionStateChanged`，
+  否则反向同步（A9.6-5）不会生效，UI 不会跟着 LLM 的状态更新刷新。
+- 折叠 / 隐藏时不要卸载 `UIAssemblyRuntimeView`，否则组件内部状态丢失。
+- 空方案要跳过，否则聊天页会多出一块看不见的空白占位。
+
 #### 状态字段归属（owner）
 - `owner`（player/char/neutral）决定注入 Prompt 时的主语。
   没有主语时 LLM 无法判断增减方向——实测商贩剧情里玩家花钱被写成 `+600`。
