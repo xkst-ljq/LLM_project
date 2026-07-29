@@ -2040,10 +2040,51 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         _elements[index] = current.copyWith(
           module: currentModule.copyWith(properties: props),
         );
+
+        // A13-3：配额分配的目标连上即归零。
+        //
+        // 在这里做而不是在渲染时做，有两个原因：
+        //   - 渲染时改属性需要一个「是否已初始化」的持久标记，
+        //     而它会被 _persistAssemblyElements 存进角色卡；
+        //   - 池子统计已分配量读的是各目标的 current，
+        //     不落到属性上就会把 slider 模板默认的 50 继续计入
+        //     （表现为「一连上线池子就少 50」）。
+        if (scheme == 'pool_to_allocation') {
+          final saved =
+              (linkerData['schemeParams'] as Map?)?.cast<String, dynamic>() ??
+                  const <String, dynamic>{};
+          _zeroAllocationTarget(
+            targetId,
+            (saved['initialValue'] as num?)?.toDouble() ?? 0.0,
+          );
+        }
       });
       _setupEventBusListener();
       _persistAssemblyElements();
     }
+  }
+
+  /// 把配额分配的目标组件归到初始值。
+  void _zeroAllocationTarget(String targetElementId, double initialValue) {
+    final index =
+        _elements.indexWhere((element) => element.id == targetElementId);
+    if (index == -1) return;
+    final element = _elements[index];
+    final module = element.module;
+    if (module == null) return;
+
+    final props = Map<String, dynamic>.from(
+      _deepCloneValue(module.properties) as Map,
+    );
+    final min = (props['min'] as num?)?.toDouble() ?? 0.0;
+    final max = (props['max'] as num?)?.toDouble() ?? 100.0;
+    final value = initialValue.clamp(min, max).toDouble();
+    props['current'] = value;
+    // committedValue 也要跟上，否则数据通道读到的仍是旧值。
+    props['committedValue'] = value;
+    _elements[index] = element.copyWith(
+      module: module.copyWith(properties: props),
+    );
   }
 
   /// 方案参数编辑器。

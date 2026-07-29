@@ -980,6 +980,7 @@ class LinkerService {
       if (targetId == null) continue;
       final target = _elementModules[targetId];
       if (target == null) continue;
+
       final raw = target.properties['current'] ?? 0.0;
       used += raw is num
           ? raw.toDouble()

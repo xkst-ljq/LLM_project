@@ -247,6 +247,37 @@ void main() {
     });
   });
 
+  group('连线时归零（回归）', () {
+    test('分配组件的 current 会被计入已分配量', () {
+      // slider 模板默认 current=50。若连线时不归零，
+      // 池子一连上就凭空少 50（首轮测试反馈的现象）。
+      final elements = [
+        _text('pool', text: '10'),
+        _slider('str', 50),
+        _poolLinker('l1', from: 'pool', to: 'str'),
+      ];
+      _install(elements);
+      // 这里直接验证统计口径：读的就是目标的 current。
+      expect(LinkerService.poolUsedAmount('pool'), 50.0);
+      // 因此归零必须发生在配置连线时，把 current 真正写成 0，
+      // 而不是只在渲染时改显示值。
+    });
+
+    test('归零后剩余量等于总量', () {
+      final elements = [
+        _text('pool', text: '10'),
+        _slider('str', 0),
+        _poolLinker('l1', from: 'pool', to: 'str'),
+      ];
+      _install(elements);
+      expect(LinkerService.poolUsedAmount('pool'), 0.0);
+      expect(
+        LinkerService.resolvePoolDisplay(_moduleOf(elements, 'pool'))!.remain,
+        10.0,
+      );
+    });
+  });
+
   group('识别与边界', () {
     test('分配组件能被正确识别', () {
       final elements = _panel();

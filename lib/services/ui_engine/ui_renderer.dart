@@ -621,13 +621,10 @@ class UIRenderer {
     if (isStudio) {
       final double min = (module.properties['min'] ?? 0).toDouble();
       double current = (module.properties['current'] ?? min).toDouble();
-      // A13-3：编辑态也要体现配额分配的归零，否则作者连好线后
-      // 画布上滑块仍停在旧位置，只有进预览才归零，看起来像没生效。
-      if (LinkerService.isAllocationTarget(module)) {
-        current = (LinkerService.allocationInitialValue(module) ?? 0.0)
-            .clamp(min, (module.properties['max'] ?? 100).toDouble())
-            .toDouble();
-      } else {
+      // A13-3：分配组件的值由玩家决定，编辑态不接收上游联动值。
+      // 归零发生在配置连线时（见 `_zeroAllocationTargets`），
+      // 此处 current 已经是 0，直接画即可。
+      if (!LinkerService.isAllocationTarget(module)) {
         final linkedVal = LinkerService.resolveTargetValue(module);
         if (linkedVal != null && linkedVal is num) {
           current = linkedVal.toDouble();
@@ -646,21 +643,12 @@ class UIRenderer {
         final double max = (module.properties['max'] ?? 100).toDouble();
         double current = (module.properties['current'] ?? min).toDouble();
 
-        // A13-3：作为配额分配组件时，值由玩家拖动决定，
-        // 引擎只负责「连上归零」与「不超过剩余额度」，
-        // 因此不能走 resolveTargetValue 去接收上游值。
+        // A13-3：作为配额分配组件时，值完全由玩家拖动决定，
+        // 引擎只负责「不超过剩余额度」。归零已在配置连线时完成，
+        // 这里绝不能走 resolveTargetValue 去接收上游值——
+        // 上游是配额池，把总量灌进分配项就全乱了。
         final isAllocation = LinkerService.isAllocationTarget(module);
-        if (isAllocation) {
-          // 首次渲染时归零（或归到作者设定的初始值）。
-          // 用独立标记而非判断 current==0：玩家可能确实分配了 0 点，
-          // 每帧都重置会让滑块拖不动。
-          if (module.properties['__poolInit'] != true) {
-            final init = LinkerService.allocationInitialValue(module) ?? 0.0;
-            current = init.clamp(min, max).toDouble();
-            module.properties['current'] = current;
-            module.properties['__poolInit'] = true;
-          }
-        } else {
+        if (!isAllocation) {
           final linkedVal = LinkerService.resolveTargetValue(module);
           if (linkedVal != null && linkedVal is num) {
             current = linkedVal.toDouble();
