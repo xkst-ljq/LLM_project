@@ -134,8 +134,10 @@ class ChatAssemblyMount extends StatelessWidget {
     // 缺少出口按钮的接管型 UI 不执行，避免玩家被卡死。
     if (!canRun(meta, mode)) return const SizedBox.shrink();
 
+    // 上限按 mode 取：伴生必须塞进消息气泡，比其余 mode 窄。
+    // 旧数据可能超限（宽度约束是后加的），这里 clamp 兜底。
     final designWidth = info.pcbWidth
-        .clamp(UIAssemblyInfo.minPcbWidth, UIAssemblyInfo.maxPcbWidth)
+        .clamp(UIAssemblyInfo.minPcbWidth, UIAssemblyInfo.maxPcbWidthFor(mode))
         .toDouble();
     final designHeight = info.pcbHeight
         .clamp(UIAssemblyInfo.minPcbHeight, UIAssemblyInfo.maxPcbHeight)
@@ -193,7 +195,7 @@ Size? assemblyDesignSize(CharacterMeta meta, String mode) {
   if (info == null) return null;
   return Size(
     info.pcbWidth
-        .clamp(UIAssemblyInfo.minPcbWidth, UIAssemblyInfo.maxPcbWidth)
+        .clamp(UIAssemblyInfo.minPcbWidth, UIAssemblyInfo.maxPcbWidthFor(mode))
         .toDouble(),
     info.pcbHeight
         .clamp(UIAssemblyInfo.minPcbHeight, UIAssemblyInfo.maxPcbHeight)

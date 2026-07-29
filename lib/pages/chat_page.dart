@@ -2854,6 +2854,62 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
+  /// A10-3：伴生 UI（extra_companion）。
+  ///
+  /// 内嵌在 AI 消息气泡的最下方，与正文同属一个气泡容器。
+  /// 这样带来两个好处（用户设计）：
+  ///   - 省掉了气泡外围一套功能按钮的排布空间；
+  ///   - 撤回 / 删除消息时，这条消息携带的数据记录一并消失，
+  ///     不需要额外的清理逻辑。
+  ///
+  /// **只有最新一条 AI 消息可交互**：历史消息里的伴生 UI 仍然渲染
+  /// （否则翻看历史会看到一堆空气泡），但禁止操作——
+  /// 它们共享同一份 `SessionState`，允许操作历史实例等于让玩家
+  /// 回到过去改当前状态，语义混乱。
+  ///
+  /// 与 scene **互斥**：scene 不渲染原生消息列表，伴生没有宿主。
+  /// 互斥在新建 UI 方案时就已拦截（`character_assembly_list_page`），
+  /// 这里再判一次是防御旧数据——先做了伴生、后加 scene 的卡片
+  /// 在补上双向拦截之前可能同时存在两者。
+  Widget _buildCompanionAssembly(int index) {
+    final character = _currentCharacter;
+    if (character == null) return const SizedBox.shrink();
+    if (_sceneTakesOver) return const SizedBox.shrink();
+    if (!ChatAssemblyMount.hasAssembly(character.meta, 'extra_companion')) {
+      return const SizedBox.shrink();
+    }
+
+    final interactive = _isLatestAiMessage(index);
+
+    // 宽度上限跟随气泡：气泡本身是 `屏宽 * 0.7 - 20` 再减去 10 的内边距 ×2。
+    // 超出部分由 ChatAssemblyMount 等比缩小，不会撑破气泡。
+    final bubbleMaxWidth =
+        MediaQuery.of(context).size.width * 0.7 - 20 - 20;
+
+    return Padding(
+      // 与正文之间留一点间隔，避免视觉上粘成一块。
+      padding: const EdgeInsets.only(top: 8),
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: Opacity(
+          // 历史实例压暗，让「这个不能点」一眼可见。
+          opacity: interactive ? 1.0 : 0.55,
+          child: ChatAssemblyMount(
+            meta: character.meta,
+            mode: 'extra_companion',
+            sessionState: _sessionState,
+            onSessionStateChanged: _onAssemblySessionChanged,
+            maxWidth: bubbleMaxWidth,
+            // 伴生嵌在滚动列表里，绝不能开页面手势：
+            // 它的全屏 Listener 会与 ListView 的垂直滚动打架。
+            enablePageGestures: false,
+            messages: _flowMessages,
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 常驻 UI 所在的整层（挂件本体 + 折叠悬浮球）。
   ///
   /// 独立成方法是因为它在主 Stack 里的位置很讲究：必须排在
@@ -3532,9 +3588,23 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                 ),
                                                               ),
                                                             ),
-                                                            child:
-                                                            _buildMarkdownWidget(
-                                                              msg['content']!,
+                                                            // A10-3：伴生 UI 内嵌在气泡最下方，
+                                                            // 与正文同属一个气泡容器——
+                                                            // 撤回消息时数据记录一并撤回。
+                                                            child: Column(
+                                                              crossAxisAlignment:
+                                                                  CrossAxisAlignment
+                                                                      .start,
+                                                              mainAxisSize:
+                                                                  MainAxisSize.min,
+                                                              children: [
+                                                                _buildMarkdownWidget(
+                                                                  msg['content']!,
+                                                                ),
+                                                                _buildCompanionAssembly(
+                                                                  index,
+                                                                ),
+                                                              ],
                                                             ),
                                                           ),
                                                         ],

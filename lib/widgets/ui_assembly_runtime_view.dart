@@ -496,7 +496,8 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         .clamp(UIAssemblyInfo.minPcbHeight, UIAssemblyInfo.maxPcbHeight)
         .toDouble();
     final designWidth = widget.assemblyInfo.pcbWidth
-        .clamp(UIAssemblyInfo.minPcbWidth, UIAssemblyInfo.maxPcbWidth)
+        .clamp(UIAssemblyInfo.minPcbWidth,
+            UIAssemblyInfo.maxPcbWidthFor(widget.assemblyInfo.mode))
         .toDouble();
     final designSize = Size(designWidth, designHeight);
 

@@ -15,6 +15,21 @@ class UIAssemblyInfo {
   static const double minPcbHeight = 64.0;
   static const double maxPcbHeight = 2000.0;
 
+  /// 伴生 UI 的宽度上限。
+  ///
+  /// 伴生内嵌在 AI 消息气泡里，宽度不能超出气泡的可显示区域，
+  /// 否则运行时只能等比缩小——作者在编辑器里摆好的字号与间距全变样。
+  /// 气泡宽度是 `屏宽 * 0.7 - 20`，再扣掉左右各 10 的内边距；
+  /// 以设计基准宽 [defaultPcbWidth]（360）折算即 `360 * 0.7 - 40 = 212`。
+  static const double companionMaxPcbWidth = 212.0;
+
+  /// 按 mode 给出的宽度上限。
+  ///
+  /// 只有伴生有额外约束——它必须塞进气泡。
+  /// 其余 mode 由作者自行决定，运行时超出屏幕会等比缩小。
+  static double maxPcbWidthFor(String mode) =>
+      mode == 'extra_companion' ? companionMaxPcbWidth : maxPcbWidth;
+
   /// 按 mode 给出的默认画布尺寸。
   ///
   /// 常驻 / 伴生这类挂件本来就不该占满屏宽，
@@ -24,7 +39,9 @@ class UIAssemblyInfo {
       case 'extra_sticky':
         return const Size(300, 120);
       case 'extra_companion':
-        return const Size(320, 200);
+        // 宽度贴着气泡上限；高度不做多大限制（用户设计），
+        // 内容长了由气泡自身撑高，随聊天列表一起滚动。
+        return const Size(companionMaxPcbWidth, 200);
       default:
         return const Size(defaultPcbWidth, 800);
     }

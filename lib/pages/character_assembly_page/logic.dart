@@ -23,7 +23,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   static const double _pcbMinHeight = UIAssemblyInfo.minPcbHeight;
   static const double _pcbMaxHeight = UIAssemblyInfo.maxPcbHeight;
   static const double _pcbMinWidth = UIAssemblyInfo.minPcbWidth;
-  static const double _pcbMaxWidth = UIAssemblyInfo.maxPcbWidth;
   late Size _pcbSize;
   late Offset _pcbOffset;
   late Color _pcbColor;
@@ -148,7 +147,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _info = info;
     _nameCtrl = TextEditingController(text: info.name);
     _pcbSize = Size(
-      info.pcbWidth.clamp(_pcbMinWidth, _pcbMaxWidth).toDouble(),
+      info.pcbWidth
+          .clamp(_pcbMinWidth, UIAssemblyInfo.maxPcbWidthFor(info.mode))
+          .toDouble(),
       info.pcbHeight.clamp(_pcbMinHeight, _pcbMaxHeight).toDouble(),
     );
     _pcbColor = Color(info.pcbColorValue);
@@ -4065,8 +4066,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   double _clampPcbHeight(double value) =>
       value.clamp(_pcbMinHeight, _pcbMaxHeight).toDouble();
 
+  /// 宽度上限按 mode 取：伴生必须塞进消息气泡，比其余 mode 更窄。
+  double get _pcbMaxWidthForMode => UIAssemblyInfo.maxPcbWidthFor(_info.mode);
+
   double _clampPcbWidth(double value) =>
-      value.clamp(_pcbMinWidth, _pcbMaxWidth).toDouble();
+      value.clamp(_pcbMinWidth, _pcbMaxWidthForMode).toDouble();
 
   Offset _rotatePoint(Offset point, Offset center, double degrees) {
     if (degrees == 0.0) return point;

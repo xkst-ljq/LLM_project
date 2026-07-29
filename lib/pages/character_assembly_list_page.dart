@@ -40,6 +40,9 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
   void _addNewUI() {
     final hasOpening = _assemblies.any((a) => a.mode == 'opening');
     final hasScene = _assemblies.any((a) => a.mode == 'scene');
+    // scene 与伴生**互斥**：scene 不渲染原生消息列表，伴生就没有宿主气泡。
+    // 两个方向都要拦——先做伴生再加 scene 同样会造出无效组合。
+    final hasCompanion = _assemblies.any((a) => a.mode == 'extra_companion');
 
     final options = <Map<String, dynamic>>[];
     if (!hasOpening) {
@@ -48,12 +51,17 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
     }
     if (!hasScene) {
       options.add({'mode': 'scene', 'icon': Icons.gamepad_rounded, 'title': '场景 UI (全屏接管)',
-        'desc': '替代传统对话气泡，整个屏幕变为游戏 HUD。\n适合：战斗界面、养成面板。'});
+        'desc': hasCompanion
+            ? '已有伴生 UI，两者互斥：场景会接管整个聊天页，伴生 UI 将失去所依附的消息气泡。'
+            : '替代传统对话气泡，整个屏幕变为游戏 HUD。\n适合：战斗界面、养成面板。',
+        'disabled': hasCompanion});
     }
     options.add({'mode': 'extra_sticky', 'icon': Icons.widgets_rounded, 'title': '常驻 UI',
       'desc': '浮在聊天上方，可折叠为悬浮球。\n适合：好感条、状态指示器。'});
     options.add({'mode': 'extra_companion', 'icon': Icons.chat_bubble_outline_rounded, 'title': '伴生 UI',
-      'desc': '嵌入最新消息气泡下方，跟随聊天滚动。\n适合：评论区、记录面板。',
+      'desc': hasScene
+          ? '已有场景 UI，两者互斥：场景接管聊天页后没有消息气泡可供依附。'
+          : '嵌入最新消息气泡下方，跟随聊天滚动。\n适合：评论区、记录面板。',
       'disabled': hasScene});
 
     if (options.isEmpty) return;
