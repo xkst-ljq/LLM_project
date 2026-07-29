@@ -2983,19 +2983,52 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
     final character = _currentCharacter!;
 
-    return Positioned.fill(
-      child: ChatAssemblyMount(
-        meta: character.meta,
-        mode: 'scene',
-        sessionState: _sessionState,
-        onSessionStateChanged: _onAssemblySessionChanged,
-        maxWidth: screen.width,
-        // 场景是全屏形态，保留页面手势（多页场景可翻页）。
-        enablePageGestures: true,
-        // 关键职责在 scene 下是「打开聊天设置」，不是关闭 UI。
-        onDismissRequested: _openPanel,
-        messages: _flowMessages,
-        onSendMessage: _sendMessageFromAssembly,
+    final panelW = panelWidth;
+
+    // 与聊天主体同步左移：设置页从右侧滑入时，scene 要一起让开，
+    // 否则面板会被压在 scene 之下（scene 层排在主体之后）。
+    return Positioned(
+      left: -panelW * _animController.value,
+      top: 0,
+      bottom: 0,
+      width: screen.width,
+      child: IgnorePointer(
+        // 设置页滑出过半后不再接收触摸，避免隔着面板误触场景。
+        ignoring: _showFanPanel || _animController.value > 0.5,
+        child: Stack(
+          children: [
+            // 背景蒙版：scene 顶替整个聊天页，下方的背景图不应透出来。
+            // PCB 按比例缩放后会留出信箱区，没有这层就会看到聊天背景，
+            // 观感上像是「UI 浮在聊天上」，与顶替语义相悖。
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // 吸收点击与横向拖动：蒙版本身不可穿透，
+                // 也不该触发聊天页根部的「滑出侧栏」手势。
+                onTap: () {},
+                onHorizontalDragStart: (_) {},
+                onHorizontalDragUpdate: (_) {},
+                onHorizontalDragEnd: (_) {},
+                child: Container(color: const Color(0xFF07070B)),
+              ),
+            ),
+            Positioned.fill(
+              child: ChatAssemblyMount(
+                meta: character.meta,
+                mode: 'scene',
+                sessionState: _sessionState,
+                onSessionStateChanged: _onAssemblySessionChanged,
+                maxWidth: screen.width,
+                // 场景是全屏形态，保留页面手势（多页场景可翻页）。
+                enablePageGestures: true,
+                // 关键职责在 scene 下是「打开聊天设置」，不是关闭 UI。
+                onDismissRequested: _openPanel,
+                messages: _flowMessages,
+                onSendMessage: _sendMessageFromAssembly,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3289,9 +3322,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                     bottom: 0,
                     width: screenWidth + panelW,
                     child: IgnorePointer(
-                      // scene 接管时连同原生消息气泡一起禁用交互，
-                      // 避免玩家隔着场景 UI 误触下方的消息操作。
-                      ignoring: _showFanPanel || _sceneTakesOver,
+                      // scene 接管时禁用聊天主体的交互，避免玩家隔着场景 UI
+                      // 误触下方内容；但设置页滑出时必须恢复，
+                      // 否则「打开聊天设置」进去后所有条目都点不动。
+                      ignoring: _showFanPanel ||
+                          (_sceneTakesOver && _animController.value < 0.5),
                       child: Row(
                         children: [
                           IgnorePointer(
@@ -3300,6 +3335,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                               width: screenWidth,
                               child: Column(
                                 children: [
+                                  // scene 接管时整条消息列表（含头像与气泡）不渲染：
+                                  // 聊天页只作为背景蒙版，历史由 scene 内的
+                                  // message_flow 组件按作者意愿呈现。
+                                  if (_sceneTakesOver)
+                                    const Expanded(child: SizedBox())
+                                  else
                                   Expanded(
                                     child: ListView.builder(
                                       controller: _scrollController,
@@ -4099,6 +4140,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                     ),
                   // 3. 状态栏（固定长条 + 点击在下方展开详情块网格）
                   // 加宽到几乎贴边，遮住两侧头像，聚焦更强。
+                  // scene 接管时不渲染：状态栏属于聊天页外壳，
+                  // 场景 UI 需要的状态由作者自己在 PCB 上摆组件呈现。
+                  if (!_sceneTakesOver)
                   Positioned(
                     top: 8,
                     left: 6,

@@ -733,7 +733,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     double opacity = 1.0,
   }) {
     final displayElement = _applyPropertyOverridesToElement(element, overrides);
-    Widget child = UIRenderer.render(context, displayElement);
+    // 必须用 Builder 取新的 context：这里传进来的 context 是 State.build 的
+    // context，位于 MessageFlowScope / UILinkerSnapshotScope **之上**，
+    // 用它去 dependOnInheritedWidgetOfExactType 永远拿不到这些作用域，
+    // 消息流会一直落到「无作用域→显示示例消息」的兜底分支。
+    Widget child = Builder(
+      builder: (innerContext) => UIRenderer.render(innerContext, displayElement),
+    );
     if (opacity < 1.0) {
       child = Opacity(opacity: opacity, child: child);
     }

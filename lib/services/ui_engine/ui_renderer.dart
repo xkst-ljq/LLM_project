@@ -1723,14 +1723,15 @@ class UIRenderer {
     final isStudio = UISceneModeScope.of(context);
 
     // 编辑态用示例消息，避免作者面对一块空白无从判断排版。
-    final messages = live ??
-        (isStudio || live == null
-            ? const [
-                FlowMessage(role: 'assistant', content: '你好，旅者。'),
-                FlowMessage(role: 'user', content: '这里是哪里？'),
-                FlowMessage(role: 'assistant', content: '星雾边境的白鸦环。'),
-              ]
-            : const <FlowMessage>[]);
+    // 运行时**绝不**回落到示例：拿不到作用域时宁可显示「暂无消息」，
+    // 也不能让玩家看见三句假对话。
+    final messages = isStudio
+        ? const [
+            FlowMessage(role: 'assistant', content: '你好，旅者。'),
+            FlowMessage(role: 'user', content: '这里是哪里？'),
+            FlowMessage(role: 'assistant', content: '星雾边境的白鸦环。'),
+          ]
+        : (live ?? const <FlowMessage>[]);
 
     final showUser = props['showUser'] != false;
     final showAssistant = props['showAssistant'] != false;
