@@ -826,6 +826,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var llmWritePolicy = existing?['llmWritePolicy']?.toString() ?? 'none';
     var applyPolicy =
         existing?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
+    var promptSection = existing?['promptSection']?.toString() ??
+        DataChannelPromptItem.sectionUiData;
 
     Future<void> closeDialog(BuildContext ctx, bool value) async {
       FocusManager.instance.primaryFocus?.unfocus();
@@ -900,6 +902,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       llmReadPolicy: llmReadPolicy,
                       llmWritePolicy: llmWritePolicy,
                       applyPolicy: applyPolicy,
+                      promptSection: promptSection,
                       onSemanticSource: (value) =>
                           setDialogState(() => semanticSource = value),
                       onLabelElementId: (value) =>
@@ -914,6 +917,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           setDialogState(() => llmWritePolicy = value),
                       onApplyPolicy: (value) =>
                           setDialogState(() => applyPolicy = value),
+                      onPromptSection: (value) =>
+                          setDialogState(() => promptSection = value),
                       onNormalizeLabelId: (value) => labelElementId = value,
                       onNameChanged: () => setDialogState(() {}),
                     ),
@@ -960,6 +965,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           llmReadPolicy: llmReadPolicy,
           llmWritePolicy: llmWritePolicy,
           applyPolicy: applyPolicy,
+          promptSection: promptSection,
         );
       }
       setState(() {
@@ -2719,6 +2725,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         existingChannel?['llmWritePolicy']?.toString() ?? 'none';
     var channelApplyPolicy =
         existingChannel?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
+    var channelPromptSection = existingChannel?['promptSection']?.toString() ??
+        DataChannelPromptItem.sectionUiData;
     var isKeyAction = UISemanticRole.isKeyAction(module);
     var sendsMessage = UISemanticRole.sendsMessage(module);
     var textOverflow = switch (module.properties['overflow']?.toString()) {
@@ -3251,6 +3259,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                               llmReadPolicy: channelReadPolicy,
                               llmWritePolicy: channelWritePolicy,
                               applyPolicy: channelApplyPolicy,
+                              promptSection: channelPromptSection,
                               onSemanticSource: (value) =>
                                   setDialogState(() => channelSource = value),
                               onLabelElementId: (value) =>
@@ -3265,6 +3274,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                   () => channelWritePolicy = value),
                               onApplyPolicy: (value) => setDialogState(
                                   () => channelApplyPolicy = value),
+                              onPromptSection: (value) => setDialogState(
+                                  () => channelPromptSection = value),
                               onNormalizeLabelId: (value) =>
                                   channelLabelId = value,
                               onNameChanged: () => setDialogState(() {}),
@@ -3466,6 +3477,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               llmReadPolicy: channelReadPolicy,
               llmWritePolicy: channelWritePolicy,
               applyPolicy: channelApplyPolicy,
+              promptSection: channelPromptSection,
             );
           }
 
@@ -3644,6 +3656,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String llmReadPolicy,
     required String llmWritePolicy,
     required String applyPolicy,
+    required String promptSection,
   }) {
     final isStatus = targetKind == 'status_field';
     final resolved = isStatus
@@ -3665,6 +3678,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'llmReadPolicy': llmReadPolicy,
       'llmWritePolicy': llmWritePolicy,
       'llmUpdateApplyPolicy': applyPolicy,
+      // A13-1：注入到 [界面数据] 还是 [玩家档案]。
+      'promptSection': promptSection,
       // 命中状态字段时以卡片端字段类型为准，避免 UI 组件类型与状态字段类型冲突。
       'fieldType': resolved.fieldType ?? _fieldTypeForModule(module),
     };
@@ -3720,6 +3735,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String llmReadPolicy,
     required String llmWritePolicy,
     required String applyPolicy,
+    required String promptSection,
     required ValueChanged<String> onSemanticSource,
     required ValueChanged<String> onLabelElementId,
     required ValueChanged<String> onTargetKind,
@@ -3727,6 +3743,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required ValueChanged<String> onReadPolicy,
     required ValueChanged<String> onWritePolicy,
     required ValueChanged<String> onApplyPolicy,
+    required ValueChanged<String> onPromptSection,
     required ValueChanged<String> onNormalizeLabelId,
     VoidCallback? onNameChanged,
   }) {
@@ -3849,6 +3866,37 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         ],
         onReadPolicy,
       ),
+      // A13-1：注入位置。只在「会发送给 AI」时才有意义。
+      if (llmReadPolicy != 'none') ...[
+        const SizedBox(height: 10),
+        dropdown(
+          promptSection,
+          '注入位置',
+          const [
+            DropdownMenuItem(
+                value: DataChannelPromptItem.sectionUiData,
+                child: Text('界面数据（运行时状态）')),
+            DropdownMenuItem(
+                value: DataChannelPromptItem.sectionCoreSetting,
+                child: Text('玩家档案（会话初始设定）')),
+          ],
+          onPromptSection,
+        ),
+        if (promptSection == DataChannelPromptItem.sectionCoreSetting)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              '将与「核心角色设定」并列注入，权重更高、全程有效。'
+              '适合玩家在开场白里填写的姓名、职业、属性等档案信息；'
+              '会随会话保存，清空聊天记录后需要重新填写。',
+              style: TextStyle(
+                fontSize: 11,
+                color: Color(0xFF777783),
+                height: 1.35,
+              ),
+            ),
+          ),
+      ],
       const SizedBox(height: 10),
       dropdown(
         llmWritePolicy,

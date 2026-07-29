@@ -38,6 +38,17 @@ class DataChannelPromptItem {
   /// 数值字段的范围提示，例如「范围 0~100」。无范围时为空。
   final String rangeHint;
 
+  /// A13-1：注入到 Prompt 的哪一段。
+  ///
+  /// `'ui_data'`（默认）→ `[界面数据]`，语义是「玩家操作界面产生的运行时数据」。
+  /// `'core_setting'`   → `[玩家档案]`，语义是「本次会话的初始设定」，
+  ///                      与 `[核心角色设定]` 并列，权重显著更高。
+  ///
+  /// 为什么需要这个区分：玩家在 opening UI 里填的姓名 / 职业 / 属性点，
+  /// 本质是**角色设定的一部分**，而不是「界面上的一个数值」。
+  /// 混在 `[界面数据]` 里模型会当成可有可无的运行时状态而弱化处理。
+  final String promptSection;
+
   const DataChannelPromptItem({
     required this.semanticLabel,
     required this.targetKind,
@@ -47,7 +58,17 @@ class DataChannelPromptItem {
     required this.value,
     required this.rangeHint,
     this.applyPolicy = 'confirm',
+    this.promptSection = sectionUiData,
   });
+
+  /// 注入到 `[界面数据]`（默认）。
+  static const String sectionUiData = 'ui_data';
+
+  /// 注入到 `[玩家档案]`，与核心角色设定并列。
+  static const String sectionCoreSetting = 'core_setting';
+
+  /// 这条数据是否属于会话初始化档案。
+  bool get isCoreSetting => promptSection == sectionCoreSetting;
 
   /// 当前值可以出现在 Prompt 里。
   bool get canRead => llmReadPolicy == 'prompt' || llmReadPolicy == 'hidden_context';
@@ -114,6 +135,8 @@ class DataChannelPromptBuilder {
               channel['llmUpdateApplyPolicy']?.toString() ?? 'confirm',
           value: value,
           rangeHint: field == null ? '' : _rangeHint(field),
+          promptSection: channel['promptSection']?.toString() ??
+              DataChannelPromptItem.sectionUiData,
         ),
       );
     }
@@ -195,10 +218,30 @@ class DataChannelPromptBuilder {
 
     final lines = <String>[];
 
-    if (readable.isNotEmpty) {
+    // A13-1：玩家档案单独成段。
+    //
+    // 与 `[界面数据]` 分开是刻意的——档案是「本次会话的初始设定」，
+    // 语义上与角色设定同级；混在界面数据里会被模型当成可有可无的
+    // 运行时数值而弱化处理（玩家填的姓名被无视是最典型的症状）。
+    final profile = readable.where((item) => item.isCoreSetting).toList();
+    final uiData = readable.where((item) => !item.isCoreSetting).toList();
+
+    if (profile.isNotEmpty) {
+      lines.add('[玩家档案]');
+      lines.add('以下是本次会话开始时由玩家确定的设定，属于角色设定的一部分，'
+          '在整场对话中保持有效，请严格遵守：');
+      for (final item in profile) {
+        final value = item.value.trim().isEmpty ? '（未设置）' : item.value;
+        final range = item.rangeHint.isEmpty ? '' : '（${item.rangeHint}）';
+        lines.add('- ${item.semanticLabel}：$value$range');
+      }
+    }
+
+    if (uiData.isNotEmpty) {
+      if (lines.isNotEmpty) lines.add('');
       lines.add('[界面数据]');
       lines.add('以下是界面当前数据（由玩家操作界面产生）：');
-      for (final item in readable) {
+      for (final item in uiData) {
         final value = item.value.trim().isEmpty ? '（未设置）' : item.value;
         final range = item.rangeHint.isEmpty ? '' : '（${item.rangeHint}）';
         lines.add('- ${item.semanticLabel}：$value$range');

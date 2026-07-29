@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/linker_matrix_engine.dart';
 import '../services/ui_engine/message_action.dart';
 import '../services/ui_engine/linker_service.dart';
