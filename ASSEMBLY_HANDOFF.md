@@ -486,6 +486,51 @@ UI 交互 → SessionState → Prompt → LLM → 解析算账 → 确认 → �
 子级 HorizontalDrag 赢过根部同类识别器从而截断冒泡；
 PCB 内部翻页走 `Listener`（不参与竞技场），不受影响。
 
+### A11 进度：A11-1 / 长文本 / A11-2 富文本 + 正则着色均测试通过
+剩余：消息操作（重新生成 / 编辑 / 删除 / 版本切换 / 头像）。
+
+#### 富文本三档降级（`assembly_rich_text.dart`）
+HTML → Markdown → 正则着色。消息流与可滚动长文本共用。
+
+**不复用聊天页的 `_buildMarkdownWidget`**：它绑在 `_ChatPageState` 上，
+依赖 `_renderPromptTemplate` 与 `_handleMarkdownAction`，
+这两样在 Assembly 运行时都不存在。判定与降级策略保持一致即可。
+
+**两个判定边界不要改（有测试守着）**：
+- 不检测 `**加粗**` / `*斜体*`——星号在角色扮演文本里是动作标记
+  （`*他转过身*`），按 Markdown 解析会把内容吃掉。
+  列表判定要求星号后必须有空格。
+- HTML 只认白名单标签——否则「当 HP<50 时触发」会被当成未闭合标签。
+
+**默认值按用途分档**：message_flow 开 / 滚动 text 开 / 其他 text 关。
+最后一档默认关是因为它多被 linker 指向显示数值，解析无收益还会误判。
+
+#### 正则着色规则（`text_highlight_rule.dart` + `text_highlight_engine.dart`）
+
+作者可自定义，存 `CharacterMeta.textHighlightRules`，
+聊天页原生气泡与 Assembly 组件共用同一套。
+
+**只着色，不改写文本。** 与酒馆 `regex_scripts` 的本质区别，
+也是这套设计敢开放给作者的前提：规则写坏了最多是难看，
+不会污染存档，也不会让模型收到错误输入。**不要**在此基础上加替换能力。
+
+**非法正则跳过而非抛异常。** 作者边写边预览必然出现半成品状态
+（刚敲 `(` 还没敲 `)`），抛异常会让整个消息列表白屏。
+
+**顺序即优先级，部分重叠整条丢弃**——半截着色比不着色更糟。
+
+**空列表 = 没配过 → 回落内置默认**，不等于「不要着色」。
+想完全关闭需留一条停用的空规则。
+
+**切分后拼回必须等于原文**，测试守着这条：漏字是内容丢失，
+比着色错误严重得多。
+
+**只作用于第 3 档**：Markdown / HTML 有自己的语法着色，叠加会打架。
+
+Assembly 侧走 `TextHighlightScope`（InheritedWidget），
+不走 `module.properties`——规则是角色卡级配置，
+写进 properties 会被 `_persistAssemblyElements` 复制进每个组件。
+
 ### A10 早期进度：A10-0/1/2 完成并测试通过
 常驻 UI 已能在真实聊天里显示、拖动、交互，并与 SessionState 双向同步。
 A9.6 的完整闭环至此在真实会话中跑通：
