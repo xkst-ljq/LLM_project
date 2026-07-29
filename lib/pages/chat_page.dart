@@ -2854,9 +2854,52 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
+  /// 常驻 UI 所在的整层（挂件本体 + 折叠悬浮球）。
+  ///
+  /// 独立成方法是因为它在主 Stack 里的位置很讲究：必须排在
+  /// **scene 场景层之后**。常驻挂件是「始终可用的工具层」，
+  /// scene 再全屏也不该把它埋掉；但仍要排在开场白之前——
+  /// 开场白要求玩家先确认再进入场景，中途不该被挂件干扰。
+  ///
+  /// 与开场白 / scene 同理：必须**始终返回 Positioned**。
+  /// 返回裸 widget 会成为主 Stack 唯一的非定位子组件，
+  /// 把整个 Stack 压成 0×0，聊天页黑屏。
+  Widget _buildStickyAssemblyLayer(double screenWidth) {
+    final hidden = _showFanPanel || _animController.value >= 0.5;
+    if (hidden) {
+      return const Positioned.fill(child: IgnorePointer(child: SizedBox()));
+    }
+
+    return Positioned.fill(
+      // 不能包 IgnorePointer：这一层铺满整个聊天区，
+      // 挡住会让下方消息列表无法滚动。
+      // Stack 默认只在子组件实际占位处命中，空白区域自然穿透给下层。
+      child: Stack(
+        children: [
+          // 用真实坐标而非 Transform：布局盒子必须跟着一起移动，
+          // 否则拖出原位置后命中测试收不到触摸。
+          Positioned(
+            left: _stickyOffset.dx,
+            top: _stickyTopAnchor + _stickyOffset.dy,
+            width: screenWidth,
+            // 这一层给满宽只是为了确定水平基准；
+            // 内部用 Align 收缩到挂件自身宽度，
+            // 否则角上的按钮会被拉到整屏的边角去。
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: _buildStickyAssembly(screenWidth),
+            ),
+          ),
+          // 折叠悬浮球：独立定位，可拖到任意位置并吸边。
+          _buildStickyBallLayer(MediaQuery.of(context).size),
+        ],
+      ),
+    );
+  }
+
   /// A10-2：常驻 UI（extra_sticky）。
   ///
-  /// 浮在聊天内容之上、状态栏之下，可折叠成悬浮球。
+  /// 浮在聊天内容之上，可折叠成悬浮球。
   /// 折叠状态只影响显示，不卸载运行时——否则组件状态会丢失。
   Widget _buildStickyAssembly(double screenWidth) {
     final character = _currentCharacter;
@@ -4180,45 +4223,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                  // 3.5 常驻 UI（extra_sticky）。
+                  // 3.5 常驻 UI（extra_sticky）**不在这里渲染**。
                   //
-                  // 必须独立成层而不是塞进状态栏的 Positioned：
-                  // Transform.translate 只做视觉位移，命中测试仍受父容器
-                  // 边界裁剪，挂件一旦被拖出状态栏那条窄区域就再也点不到。
-                  // 用 Positioned.fill 让它在整个聊天区都能接收触摸。
-                  // scene 接管时隐藏常驻 UI：场景已是完整界面，
-                  // 再浮一个挂件既遮挡又语义重复。
-                  if (!_showFanPanel &&
-                      _animController.value < 0.5 &&
-                      !_sceneTakesOver)
-                    Positioned.fill(
-                      // 不能包 IgnorePointer：这一层铺满整个聊天区，
-                      // 挡住会让下方消息列表无法滚动。
-                      // Stack 默认只在子组件实际占位处命中，
-                      // 空白区域自然穿透给下层。
-                      child: Stack(
-                        children: [
-                          // 用真实坐标而非 Transform：布局盒子必须跟着一起移动，
-                          // 否则拖出原位置后命中测试收不到触摸。
-                          Positioned(
-                            left: _stickyOffset.dx,
-                            top: _stickyTopAnchor + _stickyOffset.dy,
-                            width: screenWidth,
-                            // 这一层给满宽只是为了确定水平基准；
-                            // 内部用 Align 收缩到挂件自身宽度，
-                            // 否则角上的按钮会被拉到整屏的边角去。
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              child: _buildStickyAssembly(screenWidth),
-                            ),
-                          ),
-                          // 折叠悬浮球：独立定位，可拖到任意位置并吸边。
-                          _buildStickyBallLayer(
-                            MediaQuery.of(context).size,
-                          ),
-                        ],
-                      ),
-                    ),
+                  // 它必须叠在 scene 场景层之上，否则会被全屏场景盖住，
+                  // 因此挪到了下方 scene 之后，见 `_buildStickyAssemblyLayer`。
+                  //
                   // 悬浮毛玻璃输入栏（最上层）
                   // scene 接管时禁用：玩家只能通过 scene 内的组件对话。
                   if (_animController.value < 0.1 &&
@@ -4513,6 +4522,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   // 排在输入栏之后、开场白之前：
                   // 它要盖住消息流与输入栏，但开场白仍需盖在它上面。
                   _buildSceneAssembly(MediaQuery.of(context).size),
+                  // ===== 常驻 UI（extra_sticky）=====
+                  // 排在 scene 之后：常驻挂件是「始终可用的工具层」，
+                  // 场景再全屏也不该把它埋掉（用户反馈）。
+                  // 仍排在开场白之前——开场白要求玩家先确认再进场景。
+                  _buildStickyAssemblyLayer(screenWidth),
                   // ===== 开场白 UI（最顶层，需覆盖输入栏）=====
                   // 必须排在输入栏之后：它要接管整个界面直到玩家确认。
                   _buildOpeningAssembly(MediaQuery.of(context).size),
