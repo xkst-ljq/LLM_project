@@ -2477,6 +2477,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var channelApplyPolicy =
         existingChannel?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
     var isKeyAction = UISemanticRole.isKeyAction(module);
+    var textOverflow = switch (module.properties['overflow']?.toString()) {
+      'scroll' => 'scroll',
+      'clip' => 'clip',
+      _ => 'ellipsis',
+    };
+    var textAlignMode = switch (module.properties['textAlign']?.toString()) {
+      'left' => 'left',
+      'right' => 'right',
+      _ => 'center',
+    };
     var switchValue = module.properties['value'] != false;
     var indicatorGlow = module.properties['defaultGlow'] == true;
     var imageFit = switch (module.properties['fit']?.toString()) {
@@ -2584,11 +2594,68 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       const SizedBox(height: 12),
                       TextField(
                         controller: textController,
-                        maxLines: 3,
+                        // 长文说明可能很长，给足编辑空间。
+                        maxLines: textOverflow == 'scroll' ? 10 : 3,
+                        minLines: textOverflow == 'scroll' ? 6 : 1,
                         decoration: const InputDecoration(labelText: '文本内容'),
                       ),
                       const SizedBox(height: 12),
                       numberField(fontSizeController, '字号'),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: textOverflow,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: '超出显示区时',
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'ellipsis', child: Text('省略号截断')),
+                          DropdownMenuItem(
+                              value: 'clip', child: Text('直接裁切')),
+                          DropdownMenuItem(
+                              value: 'scroll', child: Text('可滚动（长文说明）')),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setDialogState(() => textOverflow = v);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: textAlignMode,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: '对齐方式',
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'left', child: Text('左对齐')),
+                          DropdownMenuItem(
+                              value: 'center', child: Text('居中')),
+                          DropdownMenuItem(
+                              value: 'right', child: Text('右对齐')),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setDialogState(() => textAlignMode = v);
+                        },
+                      ),
+                      if (textOverflow == 'scroll')
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            '滚动模式：内容从顶部开始、可选中复制、带滚动条。'
+                            '适合角色说明、道具描述等长文；'
+                            '内容也可由联动器或数据通道动态注入。',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF777783),
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
                     ],
                     if (type == 'surface' || type == 'base_box') ...[
                       const SizedBox(height: 12),
@@ -2937,6 +3004,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           if (type == 'text') {
             props['text'] = textController.text;
             props['fontSize'] = readDouble(fontSizeController, 14.0);
+            props['overflow'] = textOverflow;
+            props['textAlign'] = textAlignMode;
           } else if (type == 'progress') {
             props['min'] = readDouble(minController, 0.0);
             props['max'] = readDouble(maxController, 100.0);

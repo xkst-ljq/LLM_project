@@ -881,16 +881,41 @@ class UIRenderer {
       boxAlign = Alignment.centerRight;
     }
 
+    final isScroll = overflowMode == 'scroll';
+
     final textWidget = Text(
       displayText,
-      style: TextStyle(color: module.color, fontSize: fs, fontWeight: FontWeight.w600),
+      style: TextStyle(
+        color: module.color,
+        fontSize: fs,
+        // 长文说明需要正常字重与行距，粗体读起来很累。
+        fontWeight: isScroll ? FontWeight.w400 : FontWeight.w600,
+        height: isScroll ? 1.5 : null,
+      ),
       textAlign: ta,
       overflow: overflowMode == 'ellipsis' ? TextOverflow.ellipsis : null,
     );
 
+    if (isScroll) {
+      // 滚动长文：内容从顶部开始、可选择复制、带滚动条。
+      // 与消息流不同——这里是一整块静态内容，不该自动滚到底。
+      return _ScrollableTextBlock(
+        text: displayText,
+        style: TextStyle(
+          color: module.color,
+          fontSize: fs,
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+        ),
+        textAlign: ta,
+        padding: (module.properties['contentPadding'] as num?)?.toDouble() ??
+            10.0,
+      );
+    }
+
     return Container(
       alignment: boxAlign,
-      child: overflowMode == 'scroll' ? SingleChildScrollView(child: textWidget) : textWidget,
+      child: textWidget,
     );
   }
 
@@ -2883,6 +2908,68 @@ class _MessageFlowListState extends State<_MessageFlowList> {
           ),
         );
       },
+    );
+  }
+}
+
+/// 可滚动长文本块。
+///
+/// 用于 readme 说明、道具描述这类「一整块静态内容」：
+///   - 从顶部开始，不像消息流那样自动滚到底；
+///   - 带滚动条，让玩家知道还有内容；
+///   - 可选中复制。
+class _ScrollableTextBlock extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  final TextAlign textAlign;
+  final double padding;
+
+  const _ScrollableTextBlock({
+    required this.text,
+    required this.style,
+    required this.textAlign,
+    required this.padding,
+  });
+
+  @override
+  State<_ScrollableTextBlock> createState() => _ScrollableTextBlockState();
+}
+
+class _ScrollableTextBlockState extends State<_ScrollableTextBlock> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant _ScrollableTextBlock old) {
+    super.didUpdateWidget(old);
+    // 内容被 linker / 数据通道换成另一段时回到顶部，
+    // 否则玩家会从上一段的滚动位置开始看新内容。
+    if (old.text != widget.text && _controller.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _controller.hasClients) _controller.jumpTo(0);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scrollbar(
+      controller: _controller,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _controller,
+        padding: EdgeInsets.all(widget.padding),
+        child: SelectableText(
+          widget.text,
+          style: widget.style,
+          textAlign: widget.textAlign,
+        ),
+      ),
     );
   }
 }
