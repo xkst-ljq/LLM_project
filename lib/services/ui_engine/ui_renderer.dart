@@ -12,6 +12,7 @@ import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
 import 'message_flow_scope.dart';
 import 'select_option.dart';
+import 'text_highlight_scope.dart';
 import 'ui_models.dart';
 
 class UIRenderer {
@@ -925,14 +926,17 @@ class UIRenderer {
     if (module.properties['richText'] == true) {
       return Container(
         alignment: boxAlign,
-        child: AssemblyRichText(
-          text: displayText,
-          baseStyle: TextStyle(
-            color: module.color,
-            fontSize: fs,
-            fontWeight: FontWeight.w600,
+        child: Builder(
+          builder: (context) => AssemblyRichText(
+            text: displayText,
+            baseStyle: TextStyle(
+              color: module.color,
+              fontSize: fs,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: ta,
+            highlightRules: TextHighlightScope.maybeOf(context),
           ),
-          textAlign: ta,
         ),
       );
     }
@@ -2945,6 +2949,7 @@ class _MessageFlowListState extends State<_MessageFlowList> {
                   text: msg.content,
                   baseStyle: style,
                   textAlign: TextAlign.left,
+                  highlightRules: TextHighlightScope.maybeOf(context),
                 );
               },
             ),
@@ -3021,6 +3026,7 @@ class _ScrollableTextBlockState extends State<_ScrollableTextBlock> {
                   baseStyle: widget.style,
                   textAlign: widget.textAlign,
                   selectable: true,
+                  highlightRules: TextHighlightScope.maybeOf(context),
                 ),
               )
             : SelectableText(

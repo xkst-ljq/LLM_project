@@ -26,7 +26,9 @@ import '../services/api_config_service.dart';
 import '../services/background_service.dart';
 import '../services/database_service.dart';
 import '../services/prompt_settings_service.dart';
+import '../models/text_highlight_rule.dart';
 import '../services/status_bar_engine.dart';
+import '../services/text_highlight_engine.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/message_flow_scope.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
@@ -5011,98 +5013,23 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         trimmed.contains(RegExp(r'\[[^\]]+\]\([^)]+\)'));
   }
 
+  /// 对白高亮：按角色卡配置的正则规则着色。
+  ///
+  /// 规则可由作者在「文本着色」页自定义；没配过时用内置默认四条
+  /// （台词 / 心理活动 / 书名 / 系统提示），与改造前观感一致。
   Widget _buildStyledRoleplayText(String text) {
-    final baseStyle = const TextStyle(
+    const baseStyle = TextStyle(
       fontSize: 14,
       height: 1.45,
       color: Colors.black87,
       decoration: TextDecoration.none,
     );
 
-    final spans = <TextSpan>[];
-
-    final pattern = RegExp(
-      r'(（[^（）]*）|\([^()]*\)|“[^”]*”|"[^"]*"|《[^》]*》|【[^】]*】)',
-    );
-
-    int last = 0;
-
-    for (final match in pattern.allMatches(text)) {
-      if (match.start > last) {
-        spans.add(
-          TextSpan(
-            text: text.substring(last, match.start),
-            style: baseStyle,
-          ),
-        );
-      }
-
-      final token = match.group(0)!;
-      spans.add(
-        TextSpan(
-          text: token,
-          style: _styleForRoleplayToken(token, baseStyle),
-        ),
-      );
-
-      last = match.end;
-    }
-
-    if (last < text.length) {
-      spans.add(
-        TextSpan(
-          text: text.substring(last),
-          style: baseStyle,
-        ),
-      );
-    }
+    final rules = _currentCharacter?.meta.effectiveHighlightRules ??
+        TextHighlightRule.defaults();
 
     return SelectableText.rich(
-      TextSpan(
-        style: baseStyle,
-        children: spans,
-      ),
-    );
-  }
-
-  TextStyle _styleForRoleplayToken(String token, TextStyle baseStyle) {
-    if ((token.startsWith('（') && token.endsWith('）')) ||
-        (token.startsWith('(') && token.endsWith(')'))) {
-      return baseStyle.copyWith(
-        color: const Color(0xFF6A5A78),
-        fontStyle: FontStyle.italic,
-        fontWeight: FontWeight.w500,
-        decoration: TextDecoration.none,
-      );
-    }
-
-    if ((token.startsWith('“') && token.endsWith('”')) ||
-        (token.startsWith('"') && token.endsWith('"'))) {
-      return baseStyle.copyWith(
-        color: Colors.black,
-        fontWeight: FontWeight.w600,
-        decoration: TextDecoration.none,
-      );
-    }
-
-    if (token.startsWith('《') && token.endsWith('》')) {
-      return baseStyle.copyWith(
-        color: const Color(0xFF4E6FAE),
-        fontWeight: FontWeight.w600,
-        decoration: TextDecoration.none,
-      );
-    }
-
-    if (token.startsWith('【') && token.endsWith('】')) {
-      return baseStyle.copyWith(
-        color: Theme.of(context).primaryColor,
-        fontWeight: FontWeight.bold,
-        decoration: TextDecoration.none,
-      );
-    }
-
-    return baseStyle.copyWith(
-      decoration: TextDecoration.none,
+      TextHighlightEngine.buildSpan(text, rules, baseStyle),
     );
   }
 

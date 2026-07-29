@@ -11,7 +11,9 @@ import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/data_channel_service.dart';
 import '../services/ui_engine/linker_event_bus.dart';
 import '../services/ui_engine/linker_service.dart';
+import '../models/text_highlight_rule.dart';
 import '../services/ui_engine/message_flow_scope.dart';
+import '../services/ui_engine/text_highlight_scope.dart';
 import '../services/ui_engine/ui_semantic_role.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
@@ -55,6 +57,9 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// scene 禁用了原生输入框，玩家只能通过这些组件与 LLM 对话。
   final ValueChanged<String>? onSendMessage;
 
+  /// 角色卡的正则着色规则。null 表示用内置默认。
+  final List<TextHighlightRule>? highlightRules;
+
   /// 供消息流组件显示的对话历史。
   ///
   /// 不塞进 `module.properties`：消息是会话数据而非组件配置，
@@ -89,6 +94,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.onDismissRequested,
     this.messages = const <FlowMessage>[],
     this.onSendMessage,
+    this.highlightRules,
   });
 
   @override
@@ -676,6 +682,8 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
 
     return MessageFlowScope(
       messages: widget.messages,
+      child: TextHighlightScope(
+      rules: widget.highlightRules ?? TextHighlightRule.defaults(),
       child: UILinkerSnapshotScope(
       snapshot: snapshot,
       child: UISceneModeScope(
@@ -721,6 +729,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
             ),
           ),
         ),
+      ),
       ),
       ),
     );

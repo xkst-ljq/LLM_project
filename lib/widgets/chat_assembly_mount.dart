@@ -156,6 +156,8 @@ class ChatAssemblyMount extends StatelessWidget {
         onDismissRequested: onDismissRequested,
         messages: messages,
         onSendMessage: onSendMessage,
+        // 着色规则是角色卡级配置，直接从 meta 取，调用方不用逐处传。
+        highlightRules: meta.effectiveHighlightRules,
         sessionState: sessionState,
         statusFields: meta.statusBarFields,
         onSessionStateChanged: onSessionStateChanged,

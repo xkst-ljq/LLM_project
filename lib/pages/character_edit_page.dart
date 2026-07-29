@@ -7,12 +7,14 @@ import '../models/character_card.dart';
 import '../models/character_entry.dart';
 import '../models/character_meta.dart';
 import '../models/status_bar_field.dart';
+import '../models/text_highlight_rule.dart';
 import '../models/ui_assembly_info.dart';
 import '../services/database_service.dart';
 import '../services/image_pick_service.dart';
 import '../utils/id_utils.dart';
 import 'character_assembly_list_page.dart';
 import 'status_bar_fields_edit_page.dart';
+import 'text_highlight_rules_edit_page.dart';
 
 class CharacterEditOverlay extends StatefulWidget {
   final CharacterCard character;
@@ -1132,6 +1134,8 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                                           Expanded(child: _buildUIAssemblyEntry()),
                                         ],
                                       ),
+                                      const SizedBox(height: 8),
+                                      _buildTextHighlightEntry(),
 
                                       const SizedBox(height: 12),
                                       const Divider(),
@@ -1311,6 +1315,60 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     );
     if (result != null) {
       setState(() => _meta.statusBarFields = result);
+    }
+  }
+
+  /// 文本着色入口：正则规则决定台词 / 旁白等片段的颜色。
+  Widget _buildTextHighlightEntry() {
+    final rules = _meta.textHighlightRules;
+    final summary = rules.isEmpty
+        ? '默认规则（台词 · 旁白 · 书名 · 系统提示）'
+        : '${rules.where((r) => r.enabled).length} 条生效 / 共 ${rules.length} 条';
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _editTextHighlightRules,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(children: [
+            const Icon(Icons.format_color_text,
+                size: 20, color: Color(0xFFE8833A)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('文本着色',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text(summary,
+                      style: const TextStyle(
+                          fontSize: 10, color: Color(0xFF888896))),
+                ],
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editTextHighlightRules() async {
+    final result = await Navigator.push<List<TextHighlightRule>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            TextHighlightRulesEditPage(rules: _meta.textHighlightRules),
+      ),
+    );
+    if (result != null) {
+      setState(() => _meta.textHighlightRules = result);
     }
   }
 

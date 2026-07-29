@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../services/ui_engine/ui_models.dart';
 import 'status_bar_field.dart';
+import 'text_highlight_rule.dart';
 
 /// 角色扩展元信息。
 ///
@@ -19,6 +20,7 @@ import 'status_bar_field.dart';
 ///   - postHistoryInstructions    历史之后注入指令（我们暂无注入位，先保留）
 ///   - mesExample                 对话示例（暂以条目承载，这里也保留原文）
 ///   - uiElements                 角色专属的 UI 引擎排版布局定义 (Lego-like UI)
+///   - textHighlightRules         正则着色规则（纯展示，不改写文本）
 class CharacterMeta {
   List<String> tags;
   String creator;
@@ -37,6 +39,11 @@ class CharacterMeta {
   /// 角色绑定的 UI 组装方案列表（JSON 字符串）
   List<String> uiAssemblies;
 
+  /// 正则着色规则。空表示沿用内置默认（见 [effectiveHighlightRules]）。
+  ///
+  /// 只影响文本怎么显示，不改写内容——发给 LLM 与存库的始终是原文。
+  List<TextHighlightRule> textHighlightRules;
+
   CharacterMeta({
     List<String>? tags,
     this.creator = '',
@@ -48,10 +55,23 @@ class CharacterMeta {
     List<StatusBarField>? statusBarFields,
     List<UIElement>? uiElements,
     List<String>? uiAssemblies,
+    List<TextHighlightRule>? textHighlightRules,
   })  : tags = tags ?? <String>[],
         statusBarFields = statusBarFields ?? <StatusBarField>[],
         uiElements = uiElements ?? <UIElement>[],
-        uiAssemblies = uiAssemblies ?? <String>[];
+        uiAssemblies = uiAssemblies ?? <String>[],
+        textHighlightRules =
+            textHighlightRules ?? <TextHighlightRule>[];
+
+  /// 实际生效的着色规则。
+  ///
+  /// 作者没配过时回落到内置默认，保证老卡片升级后观感不变。
+  /// 想要「完全不着色」需要留一条停用的空规则，而不是清空列表——
+  /// 清空的语义是「没配过」，不是「不要着色」。
+  List<TextHighlightRule> get effectiveHighlightRules =>
+      textHighlightRules.isEmpty
+          ? TextHighlightRule.defaults()
+          : textHighlightRules;
 
   bool get isEmpty =>
       tags.isEmpty &&
@@ -113,6 +133,8 @@ class CharacterMeta {
       statusBarFields: readFields(json['status_bar_fields']),
       uiElements: readUIElements(json['ui_elements']),
       uiAssemblies: (json['ui_assemblies'] as List?)?.map((e) => e.toString()).toList() ?? <String>[],
+      textHighlightRules:
+          TextHighlightRule.listFromJson(json['text_highlight_rules']),
     );
   }
 
@@ -143,6 +165,8 @@ class CharacterMeta {
       'status_bar_fields': statusBarFields.map((f) => f.toJson()).toList(),
       'ui_elements': uiElements.map((e) => e.toJson()).toList(),
       'ui_assemblies': uiAssemblies,
+      'text_highlight_rules':
+          textHighlightRules.map((r) => r.toJson()).toList(),
     };
   }
 

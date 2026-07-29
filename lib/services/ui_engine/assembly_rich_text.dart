@@ -6,6 +6,9 @@ import 'package:flutter_html/flutter_html.dart' as fhtml;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md hide Text;
 
+import '../../models/text_highlight_rule.dart';
+import '../text_highlight_engine.dart';
+
 /// A11-2：Assembly 组件的富文本渲染。
 ///
 /// 消息流与可滚动长文本共用同一套渲染（用户要求一起接，避免重复工作）：
@@ -25,6 +28,8 @@ import 'package:markdown/markdown.dart' as md hide Text;
 ///
 /// 第 3 档不是「纯文本」：角色扮演文本绝大多数属于这一类，
 /// 走一遍轻量着色比直接 `Text` 观感好得多，且开销远低于跑一次 Markdown 解析。
+/// 着色规则由 [highlightRules] 提供（作者可在角色卡里自定义），
+/// 不传时用 [TextHighlightRule.defaults]。
 class AssemblyRichText extends StatelessWidget {
   final String text;
 
@@ -37,12 +42,19 @@ class AssemblyRichText extends StatelessWidget {
   /// （会与滚动、点击抢手势）。
   final bool selectable;
 
+  /// 正则着色规则。null 表示用内置默认。
+  ///
+  /// 只作用于第 3 档（对白高亮）——Markdown / HTML 有自己的语法着色，
+  /// 再叠一层正则会互相打架（比如规则里的 `*` 与 Markdown 的强调冲突）。
+  final List<TextHighlightRule>? highlightRules;
+
   const AssemblyRichText({
     super.key,
     required this.text,
     required this.baseStyle,
     this.textAlign = TextAlign.left,
     this.selectable = false,
+    this.highlightRules,
   });
 
   @override
@@ -287,63 +299,11 @@ class AssemblyRichText extends StatelessWidget {
   // ---------------------------------------------------------------
 
   Widget _buildStyledText() {
-    final spans = <TextSpan>[];
-    // 中英双份标点：导入的第三方卡两种写法都有。
-    final pattern = RegExp(
-      r'(（[^（）]*）|\([^()]*\)|“[^”]*”|"[^"]*"|《[^》]*》|【[^】]*】)',
-    );
-
-    var last = 0;
-    for (final match in pattern.allMatches(text)) {
-      if (match.start > last) {
-        spans.add(TextSpan(text: text.substring(last, match.start)));
-      }
-      final token = match.group(0)!;
-      spans.add(TextSpan(text: token, style: _styleForToken(token)));
-      last = match.end;
-    }
-    if (last < text.length) {
-      spans.add(TextSpan(text: text.substring(last)));
-    }
-
-    final root = TextSpan(style: baseStyle, children: spans);
+    final rules = highlightRules ?? TextHighlightRule.defaults();
+    final root = TextHighlightEngine.buildSpan(text, rules, baseStyle);
     if (selectable) {
       return SelectableText.rich(root, textAlign: textAlign);
     }
     return Text.rich(root, textAlign: textAlign);
-  }
-
-  TextStyle _styleForToken(String token) {
-    bool wrapped(String open, String close) =>
-        token.startsWith(open) && token.endsWith(close);
-
-    // 括号 = 心理活动 / 旁白：弱化成偏灰的紫，避免与对白抢注意力。
-    if (wrapped('（', '）') || wrapped('(', ')')) {
-      return baseStyle.copyWith(
-        color: const Color(0xFF6A5A78),
-        fontStyle: FontStyle.italic,
-        fontWeight: FontWeight.w500,
-      );
-    }
-    // 引号 = 台词：加重，这是读者最需要抓住的部分。
-    if (wrapped('“', '”') || wrapped('"', '"')) {
-      return baseStyle.copyWith(
-        color: const Color(0xFF000000),
-        fontWeight: FontWeight.w600,
-      );
-    }
-    if (wrapped('《', '》')) {
-      return baseStyle.copyWith(
-        color: const Color(0xFF4E6FAE),
-        fontWeight: FontWeight.w600,
-      );
-    }
-    if (wrapped('【', '】')) {
-      return baseStyle.copyWith(
-        color: const Color(0xFFB8632A),
-        fontWeight: FontWeight.bold,
-      );
-    }
-    return baseStyle;
   }
 }
