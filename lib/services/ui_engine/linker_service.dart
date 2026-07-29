@@ -872,6 +872,157 @@ class LinkerService {
     );
   }
 
+  /// A13-3：配额分配。
+  ///
+  /// 与其他方案的数据流向不同：源是「可分配总量」，目标是「参与分配的组件」。
+  /// 一个总量源可以连出多条到不同的分配组件。
+  ///
+  /// 这里解析的是**分配组件（目标）视角**：它自己的值仍由玩家拖动决定，
+  /// 引擎只负责两件事——连上时归零、拖动时限制在剩余额度内。
+  static _PoolAllocation? _resolvePoolForTarget(
+    String targetElId,
+    Set<String> visitedSet,
+  ) {
+    for (final module in _sortedLinkersForTarget(targetElId)) {
+      final data =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data == null) continue;
+      if (data['scheme']?.toString() != 'pool_to_allocation') continue;
+
+      final sourceId = data['sourceModuleId']?.toString();
+      if (sourceId == null || !_elementModules.containsKey(sourceId)) continue;
+
+      final params =
+          (data['schemeParams'] as Map?)?.cast<String, dynamic>() ?? const {};
+      return _PoolAllocation(
+        poolElementId: sourceId,
+        total: _poolTotalOf(sourceId, visitedSet),
+        initialValue: (params['initialValue'] as num?)?.toDouble() ?? 0.0,
+      );
+    }
+    return null;
+  }
+
+  /// 取某个配额池的总量。
+  ///
+  /// 优先用连线参数里填的 `total`（只需在任一条上填）；
+  /// 留 0 时回退到来源组件自身的数值，方便作者用一个进度条当池子。
+  static double _poolTotalOf(String poolElementId, Set<String> visitedSet) {
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final data =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data == null || data['enabled'] == false) continue;
+      if (data['scheme']?.toString() != 'pool_to_allocation') continue;
+      if (data['sourceModuleId']?.toString() != poolElementId) continue;
+      final params =
+          (data['schemeParams'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final t = (params['total'] as num?)?.toDouble() ?? 0.0;
+      if (t > 0) return t;
+    }
+    final pool = _elementModules[poolElementId];
+    if (pool == null) return 0.0;
+    final raw = pool.properties['current'] ?? pool.properties['value'] ?? 0.0;
+    return raw is num ? raw.toDouble() : (double.tryParse(raw.toString()) ?? 0.0);
+  }
+
+  /// 该配额池已被分配掉的总量。
+  ///
+  /// 遍历从该池连出的所有分配连线，累加各目标组件的当前值。
+  /// 注意读的是目标自身的 `current`，不能走 `resolveTargetValue`——
+  /// 那会绕回本方案造成无限递归。
+  static double poolUsedAmount(String poolElementId) {
+    var used = 0.0;
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final data =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data == null || data['enabled'] == false) continue;
+      if (data['scheme']?.toString() != 'pool_to_allocation') continue;
+      if (data['sourceModuleId']?.toString() != poolElementId) continue;
+
+      final targetId = data['targetModuleId']?.toString();
+      if (targetId == null) continue;
+      final target = _elementModules[targetId];
+      if (target == null) continue;
+      final raw = target.properties['current'] ?? 0.0;
+      used += raw is num
+          ? raw.toDouble()
+          : (double.tryParse(raw.toString()) ?? 0.0);
+    }
+    return used;
+  }
+
+  /// 分配组件在配额约束下允许达到的最大值。
+  ///
+  /// = 剩余可分配额 + 自己已占用的部分。加回自己是必须的：
+  /// 否则玩家想把已分配的 5 点调成 6 点时，会因为「剩余只有 3」
+  /// 而被卡在 3，等于永远只能往下调。
+  static double? allocationCeilingFor(UIModule targetModule) {
+    final targetElId = _findElementIdForModule(targetModule);
+    if (targetElId == null) return null;
+    final pool = _resolvePoolForTarget(targetElId, <String>{});
+    if (pool == null) return null;
+
+    final own = (targetModule.properties['current'] as num?)?.toDouble() ?? 0.0;
+    final used = poolUsedAmount(pool.poolElementId);
+    final remain = pool.total - used;
+    final ceiling = own + remain;
+    return ceiling < 0 ? 0.0 : ceiling;
+  }
+
+  /// 该组件是否是某个配额池的分配目标。
+  static bool isAllocationTarget(UIModule targetModule) {
+    final targetElId = _findElementIdForModule(targetModule);
+    if (targetElId == null) return false;
+    return _resolvePoolForTarget(targetElId, <String>{}) != null;
+  }
+
+  /// 分配组件连上配额池时应有的初始值。
+  static double? allocationInitialValue(UIModule targetModule) {
+    final targetElId = _findElementIdForModule(targetModule);
+    if (targetElId == null) return null;
+    return _resolvePoolForTarget(targetElId, <String>{})?.initialValue;
+  }
+
+  /// 配额池自身要显示的剩余量信息；不是池子则返回 null。
+  static PoolDisplay? resolvePoolDisplay(UIModule poolModule) {
+    final poolElId = _findElementIdForModule(poolModule);
+    if (poolElId == null) return null;
+
+    var isPool = false;
+    var precision = 0;
+    var template = '{{remain}}';
+    for (final module in _elementModules.values) {
+      if (module.type != 'linker') continue;
+      final data =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data == null || data['enabled'] == false) continue;
+      if (data['scheme']?.toString() != 'pool_to_allocation') continue;
+      if (data['sourceModuleId']?.toString() != poolElId) continue;
+      isPool = true;
+      final params =
+          (data['schemeParams'] as Map?)?.cast<String, dynamic>() ?? const {};
+      if (params['precision'] != null) {
+        precision = ((params['precision'] as num?)?.toInt() ?? 0).clamp(0, 6);
+      }
+      if (params['template'] != null &&
+          params['template'].toString().isNotEmpty) {
+        template = params['template'].toString();
+      }
+    }
+    if (!isPool) return null;
+
+    final total = _poolTotalOf(poolElId, <String>{});
+    final used = poolUsedAmount(poolElId);
+    return PoolDisplay(
+      total: total,
+      used: used,
+      precision: precision,
+      template: template,
+    );
+  }
+
   /// 解析任一目标模块接收到的联动数值或字面量
   static dynamic resolveTargetValue(UIModule targetModule, [Set<String>? visited]) {
     final targetElId = _findElementIdForModule(targetModule);
@@ -1391,5 +1542,48 @@ class _SumAggregate {
         .replaceAll('{{value}}', fmt(value))
         .replaceAll('{{total}}', fmt(total))
         .replaceAll('{{remain}}', fmt(remain));
+  }
+}
+
+/// A13-3：配额分配中「分配组件」侧的解析结果。
+class _PoolAllocation {
+  /// 提供可分配总量的组件 id。
+  final String poolElementId;
+
+  final double total;
+
+  /// 连上配额池时该分配组件的初始值。默认 0——
+  /// 大多数分配面板都从零开始，需要预分配才单独设。
+  final double initialValue;
+
+  const _PoolAllocation({
+    required this.poolElementId,
+    required this.total,
+    required this.initialValue,
+  });
+}
+
+/// A13-3：配额池自身要显示的剩余量。
+class PoolDisplay {
+  final double total;
+  final double used;
+  final int precision;
+  final String template;
+
+  const PoolDisplay({
+    required this.total,
+    required this.used,
+    required this.precision,
+    required this.template,
+  });
+
+  double get remain => total - used;
+
+  String render() {
+    String fmt(double v) => v.toStringAsFixed(precision);
+    return template
+        .replaceAll('{{remain}}', fmt(remain))
+        .replaceAll('{{used}}', fmt(used))
+        .replaceAll('{{total}}', fmt(total));
   }
 }

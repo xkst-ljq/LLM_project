@@ -127,6 +127,61 @@ class LinkerMatrixEngine {
     ),
 
     // ==========================================
+    // Assembly / Studio 通用：配额分配（A13-3）
+    // ==========================================
+    // 方向与 sum_to_display 相反，也更贴近作者的心智：
+    // **源是「可分配总量」，目标是「参与分配的组件」**。
+    // 连上之后分配组件归零，总量组件显示剩余可分配数。
+    //
+    // 为什么这不违反「源不随目标改变」：
+    // 源提供的是**可分配总数**（固定值，作者设定后不变），
+    // 显示剩余只是它的呈现方式——就像进度条的 current 变化
+    // 不代表它的 max 被改写了。
+    SchemeDefinition(
+      id: 'pool_to_allocation',
+      label: '配额分配 (pool → allocation)',
+      description: '把一个组件当作「可分配总量」，其余组件从中分配。'
+          '用法：从总量组件各连一条到每个分配组件。'
+          '分配组件会自动归零并被限制在剩余额度内，'
+          '总量组件则显示剩余可分配数。'
+          '例：文本「剩余 10 点」连到力量/敏捷/智力三个滑块，即成点数分配面板。',
+      sourceType: 'any',
+      targetType: 'any',
+      allowedSourceTypes: ['text', 'progress', 'slider', 'input', 'math_node'],
+      allowedTargetTypes: ['slider', 'progress'],
+      params: [
+        SchemeParamField(
+          key: 'total',
+          label: '可分配总量',
+          type: SchemeParamType.doubleVal,
+          defaultValue: 10.0,
+          description: '多条连线中只需填一次；留 0 则读取来源组件自身的数值',
+        ),
+        SchemeParamField(
+          key: 'initialValue',
+          label: '分配组件初始值',
+          type: SchemeParamType.doubleVal,
+          defaultValue: 0.0,
+          description: '大多数情况保持 0（连上即归零）。'
+              '需要预分配时可在各自连线上单独设定',
+        ),
+        SchemeParamField(
+          key: 'precision',
+          label: '小数位数',
+          type: SchemeParamType.number,
+          defaultValue: 0,
+        ),
+        SchemeParamField(
+          key: 'template',
+          label: '总量组件显示模板（仅文本来源）',
+          type: SchemeParamType.text,
+          defaultValue: '{{remain}}',
+          description: '{{remain}}=剩余可分配，{{used}}=已分配，{{total}}=总量',
+        ),
+      ],
+    ),
+
+    // ==========================================
     // Assembly / Studio 通用：多源数值聚合（A13-3）
     // ==========================================
     // 与其他方案的根本区别：**同一目标可以接多条**，运行端把它们
@@ -1129,15 +1184,22 @@ class LinkerMatrixEngine {
     final normalizedSrc = _normalizeType(sourceType);
     final normalizedTgt = _normalizeType(targetType);
 
-    // 检查黑名单屏蔽
+    // 检查黑名单屏蔽。
+    //
+    // 黑名单表达的是「这类源默认不该驱动这类目标」（如 text → slider
+    // 通常是误连）。但个别方案的语义恰恰要求这条通路——
+    // `pool_to_allocation` 就是用文本当「可分配总量」去驱动滑块。
+    // 因此改为：黑名单只屏蔽**没有显式声明该目标白名单**的方案，
+    // 显式白名单视为作者已确认该通路合法。
     final blacklistedTargets = _blacklistMap[normalizedSrc];
-    if (blacklistedTargets != null &&
-        blacklistedTargets.contains(normalizedTgt)) {
-      return const [];
-    }
+    final blacklisted = blacklistedTargets != null &&
+        blacklistedTargets.contains(normalizedTgt);
 
     final result = <SchemeDefinition>[];
     for (final def in _schemeRegistry) {
+      if (blacklisted && !(def.allowedTargetTypes?.contains(normalizedTgt) ?? false)) {
+        continue;
+      }
       final matchSrc = (def.allowedSourceTypes != null
               ? def.allowedSourceTypes!.contains(normalizedSrc)
               : def.sourceType == 'any' || def.sourceType == normalizedSrc) &&

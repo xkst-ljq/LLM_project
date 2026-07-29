@@ -1,0 +1,259 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:llm_project/services/ui_engine/linker_matrix_engine.dart';
+import 'package:llm_project/services/ui_engine/linker_service.dart';
+import 'package:llm_project/services/ui_engine/ui_models.dart';
+
+/// A13-3：配额分配（`pool_to_allocation`）。
+///
+/// 源 = 可分配总量，目标 = 参与分配的组件。
+/// 连上后分配组件归零，总量组件显示剩余可分配数。
+
+UIElement _text(String id) => UIElement(
+      id: id,
+      isComposite: false,
+      offset: Offset.zero,
+      size: const Size(100, 30),
+      module: UIModule(
+        id: 'm_$id',
+        name: id,
+        type: 'text',
+        properties: {'text': ''},
+      ),
+    );
+
+UIElement _slider(String id, double current) => UIElement(
+      id: id,
+      isComposite: false,
+      offset: Offset.zero,
+      size: const Size(100, 30),
+      module: UIModule(
+        id: 'm_$id',
+        name: id,
+        type: 'slider',
+        properties: {'current': current, 'min': 0.0, 'max': 100.0},
+      ),
+    );
+
+UIElement _poolLinker(
+  String id, {
+  required String from,
+  required String to,
+  Map<String, dynamic>? params,
+  bool enabled = true,
+}) =>
+    UIElement(
+      id: id,
+      isComposite: false,
+      offset: Offset.zero,
+      size: const Size(40, 40),
+      module: UIModule(
+        id: 'm_$id',
+        name: id,
+        type: 'linker',
+        properties: {
+          'linker': {
+            'sourceModuleId': from,
+            'targetModuleId': to,
+            'scheme': 'pool_to_allocation',
+            'enabled': enabled,
+            if (params != null) 'schemeParams': params,
+          },
+        },
+      ),
+    );
+
+UIModule _moduleOf(List<UIElement> elements, String id) =>
+    elements.firstWhere((e) => e.id == id).module!;
+
+void _install(List<UIElement> elements) {
+  LinkerService.installSnapshot(LinkerSnapshot.fromElements(elements));
+}
+
+/// 力量/敏捷/智力三滑块共享 10 点。
+List<UIElement> _panel({
+  double str = 0,
+  double agi = 0,
+  double intel = 0,
+  double total = 10.0,
+}) =>
+    [
+      _text('pool'),
+      _slider('str', str),
+      _slider('agi', agi),
+      _slider('int', intel),
+      _poolLinker('l1', from: 'pool', to: 'str', params: {
+        'total': total,
+        'template': '剩余 {{remain}}/{{total}}',
+      }),
+      _poolLinker('l2', from: 'pool', to: 'agi'),
+      _poolLinker('l3', from: 'pool', to: 'int'),
+    ];
+
+void main() {
+  group('方案登记', () {
+    test('已登记进方案矩阵', () {
+      expect(
+        LinkerMatrixEngine.isSchemeSelectable('pool_to_allocation'),
+        isTrue,
+      );
+    });
+
+    test('text → slider 能选到（黑名单需为显式白名单方案放行）', () {
+      // text→slider 在黑名单里，但这正是本方案最主要的用法：
+      // 用文本当「剩余 10 点」去驱动滑块。
+      final ids = LinkerMatrixEngine.getAvailableSchemes('text', 'slider')
+          .map((s) => s.id);
+      expect(ids, contains('pool_to_allocation'));
+    });
+
+    test('黑名单对未声明白名单的方案依然生效', () {
+      // 放行只针对显式声明了该目标的方案，不能把整条通路敞开。
+      final ids = LinkerMatrixEngine.getAvailableSchemes('text', 'slider')
+          .map((s) => s.id);
+      expect(ids, isNot(contains('to_string')));
+    });
+
+    test('progress 也可以当池子', () {
+      final ids = LinkerMatrixEngine.getAvailableSchemes('progress', 'slider')
+          .map((s) => s.id);
+      expect(ids, contains('pool_to_allocation'));
+    });
+  });
+
+  group('剩余量显示', () {
+    test('未分配时显示全部总量', () {
+      final elements = _panel();
+      _install(elements);
+      final display = LinkerService.resolvePoolDisplay(_moduleOf(elements, 'pool'));
+      expect(display, isNotNull);
+      expect(display!.render(), '剩余 10/10');
+    });
+
+    test('分配后总量组件显示剩余数', () {
+      final elements = _panel(str: 3, agi: 2);
+      _install(elements);
+      final display = LinkerService.resolvePoolDisplay(_moduleOf(elements, 'pool'));
+      expect(display!.remain, 5.0);
+      expect(display.used, 5.0);
+      expect(display.render(), '剩余 5/10');
+    });
+
+    test('非池子组件返回 null，不影响普通文本', () {
+      final elements = _panel();
+      _install(elements);
+      expect(
+        LinkerService.resolvePoolDisplay(_moduleOf(elements, 'str')),
+        isNull,
+      );
+    });
+
+    test('总量参数只需在一条连线上填写', () {
+      // 第一条填了 total，另外两条留空。
+      final elements = _panel(str: 4);
+      _install(elements);
+      expect(
+        LinkerService.resolvePoolDisplay(_moduleOf(elements, 'pool'))!.total,
+        10.0,
+      );
+    });
+  });
+
+  group('分配上限', () {
+    test('上限 = 剩余额度 + 自己已占用', () {
+      // 加回自己是关键：否则已分配 5 点的滑块想调到 6 会被卡在剩余值上，
+      // 等于只能往下调、调不回去。
+      final elements = _panel(str: 5, agi: 2);
+      _install(elements);
+      // 剩余 3，自己占 5 → 上限 8。
+      expect(LinkerService.allocationCeilingFor(_moduleOf(elements, 'str')), 8.0);
+      // 剩余 3，自己占 2 → 上限 5。
+      expect(LinkerService.allocationCeilingFor(_moduleOf(elements, 'agi')), 5.0);
+    });
+
+    test('额度耗尽时未分配项的上限为 0', () {
+      final elements = _panel(str: 6, agi: 4);
+      _install(elements);
+      expect(LinkerService.allocationCeilingFor(_moduleOf(elements, 'int')), 0.0);
+    });
+
+    test('超额时上限不会变成负数', () {
+      // 旧数据或作者手改可能造成超额，上限必须收敛到 0 而不是负值。
+      final elements = _panel(str: 8, agi: 8);
+      _install(elements);
+      expect(LinkerService.allocationCeilingFor(_moduleOf(elements, 'int')), 0.0);
+    });
+
+    test('非分配组件没有上限约束', () {
+      final elements = _panel();
+      _install(elements);
+      expect(LinkerService.allocationCeilingFor(_moduleOf(elements, 'pool')), isNull);
+    });
+  });
+
+  group('初始值', () {
+    test('默认归零', () {
+      final elements = _panel();
+      _install(elements);
+      expect(LinkerService.allocationInitialValue(_moduleOf(elements, 'str')), 0.0);
+    });
+
+    test('可为单个分配组件设定初始值', () {
+      final elements = [
+        _text('pool'),
+        _slider('str', 0),
+        _poolLinker('l1', from: 'pool', to: 'str', params: {
+          'total': 10.0,
+          'initialValue': 3.0,
+        }),
+      ];
+      _install(elements);
+      expect(LinkerService.allocationInitialValue(_moduleOf(elements, 'str')), 3.0);
+    });
+  });
+
+  group('识别与边界', () {
+    test('分配组件能被正确识别', () {
+      final elements = _panel();
+      _install(elements);
+      expect(LinkerService.isAllocationTarget(_moduleOf(elements, 'str')), isTrue);
+      expect(LinkerService.isAllocationTarget(_moduleOf(elements, 'pool')), isFalse);
+    });
+
+    test('停用的连线不参与统计', () {
+      final elements = [
+        _text('pool'),
+        _slider('str', 3),
+        _slider('agi', 4),
+        _poolLinker('l1', from: 'pool', to: 'str', params: {'total': 10.0}),
+        _poolLinker('l2', from: 'pool', to: 'agi', enabled: false),
+      ];
+      _install(elements);
+      // 只统计启用的那条：已用 3 而不是 7。
+      expect(LinkerService.poolUsedAmount('pool'), 3.0);
+    });
+
+    test('总量留 0 时回退读取来源组件自身数值', () {
+      final elements = [
+        UIElement(
+          id: 'pool',
+          isComposite: false,
+          offset: Offset.zero,
+          size: const Size(100, 30),
+          module: UIModule(
+            id: 'm_pool',
+            name: 'pool',
+            type: 'progress',
+            properties: {'current': 20.0, 'min': 0.0, 'max': 100.0},
+          ),
+        ),
+        _slider('str', 5),
+        _poolLinker('l1', from: 'pool', to: 'str', params: {'total': 0.0}),
+      ];
+      _install(elements);
+      // 用进度条当池子：总量取它的 current=20，已分配 5 → 上限 20。
+      expect(LinkerService.allocationCeilingFor(_moduleOf(elements, 'str')), 20.0);
+    });
+  });
+}

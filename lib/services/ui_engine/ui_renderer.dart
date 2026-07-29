@@ -638,9 +638,25 @@ class UIRenderer {
         final double max = (module.properties['max'] ?? 100).toDouble();
         double current = (module.properties['current'] ?? min).toDouble();
 
-        final linkedVal = LinkerService.resolveTargetValue(module);
-        if (linkedVal != null && linkedVal is num) {
-          current = linkedVal.toDouble();
+        // A13-3：作为配额分配组件时，值由玩家拖动决定，
+        // 引擎只负责「连上归零」与「不超过剩余额度」，
+        // 因此不能走 resolveTargetValue 去接收上游值。
+        final isAllocation = LinkerService.isAllocationTarget(module);
+        if (isAllocation) {
+          // 首次渲染时归零（或归到作者设定的初始值）。
+          // 用独立标记而非判断 current==0：玩家可能确实分配了 0 点，
+          // 每帧都重置会让滑块拖不动。
+          if (module.properties['__poolInit'] != true) {
+            final init = LinkerService.allocationInitialValue(module) ?? 0.0;
+            current = init.clamp(min, max).toDouble();
+            module.properties['current'] = current;
+            module.properties['__poolInit'] = true;
+          }
+        } else {
+          final linkedVal = LinkerService.resolveTargetValue(module);
+          if (linkedVal != null && linkedVal is num) {
+            current = linkedVal.toDouble();
+          }
         }
         module.properties['committedValue'] ??= current;
 
@@ -660,8 +676,22 @@ class UIRenderer {
           final rawCurrent = actualMin + newRatio * (actualMax - actualMin);
           final step =
               ((module.properties['step'] as num?)?.toDouble() ?? 1.0).abs();
-          final newCurrent =
+          var newCurrent =
               _snapSliderValue(rawCurrent, actualMin, actualMax, step);
+
+          // A13-3：配额约束。上限 = 剩余可分配额 + 自己已占用的部分，
+          // 加回自己是必须的，否则已分配的点数只能往下调、调不回去。
+          final ceiling = LinkerService.allocationCeilingFor(module);
+          if (ceiling != null && newCurrent > ceiling) {
+            newCurrent = _snapSliderValue(
+              ceiling.clamp(actualMin, actualMax).toDouble(),
+              actualMin,
+              actualMax,
+              step,
+            );
+            // snap 可能又超出上限（步长不整除时），再收一次。
+            if (newCurrent > ceiling) newCurrent = math.max(actualMin, newCurrent - step);
+          }
 
           module.properties['current'] = newCurrent;
           final snapshot = UILinkerSnapshotScope.peekOf(ctx);
@@ -865,7 +895,13 @@ class UIRenderer {
     String displayText = module.properties['text']?.toString() ?? module.name;
     final linkedValue = _resolveLinkerValueForText(module);
 
-    if (module.displayExpression != null && module.displayExpression!.trim().isNotEmpty) {
+    // A13-3：作为配额池时显示剩余可分配数。
+    // 优先级高于普通联动值——池子的语义就是「还能分多少」。
+    final poolDisplay = LinkerService.resolvePoolDisplay(module);
+
+    if (poolDisplay != null) {
+      displayText = poolDisplay.render();
+    } else if (module.displayExpression != null && module.displayExpression!.trim().isNotEmpty) {
       displayText = evaluateDisplayExpression(
         module,
         LinkerService.getSourceContextForTarget(module),

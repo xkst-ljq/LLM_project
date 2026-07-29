@@ -2065,6 +2065,28 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       // 多源聚合与其他方案的用法完全不同：必须给每个来源各连一条到
       // 同一目标。不明说的话作者只会连一条然后以为方案坏了
       // （首轮测试反馈「看不懂怎么操作」）。
+      if (scheme == 'pool_to_allocation')
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8F5E9),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Text(
+            '来源 = 可分配总量，目标 = 参与分配的组件。\n'
+            '从同一个总量组件，给每个分配组件各连一条本方案的连线。\n'
+            '分配组件会自动归零，并被限制在剩余额度内；'
+            '来源如果是文本，会自动显示剩余可分配数。\n'
+            '总量、模板等参数只需在其中一条上填写。',
+            style: TextStyle(
+              fontSize: 11,
+              color: Color(0xFF2E7D32),
+              height: 1.4,
+            ),
+          ),
+        ),
       if (scheme == 'sum_to_display')
         Container(
           width: double.infinity,
