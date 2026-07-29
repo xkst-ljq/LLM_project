@@ -138,8 +138,12 @@ class LinkerMatrixEngine {
     SchemeDefinition(
       id: 'sum_to_display',
       label: '数值求和汇总 (sum → display)',
-      description: '把多个来源的数值加总后显示；同一目标可连接多条，'
-          '用于点数分配、总计统计等',
+      description: '把多个数值加起来显示在一处。'
+          '用法：每个来源各连一条本方案到【同一个】目标组件，'
+          '目标就会显示它们的总和。'
+          '例：力量/敏捷/智力三个滑块各连一条到同一个文本，'
+          '填总量 10、模板「已分配 {{value}}/{{total}}，剩余 {{remain}}」，'
+          '即成点数分配面板。',
       sourceType: 'any',
       targetType: 'any',
       allowedSourceTypes: ['slider', 'progress', 'input', 'math_node', 'timer'],
@@ -150,7 +154,8 @@ class LinkerMatrixEngine {
           label: '配额总量（0 表示不设上限）',
           type: SchemeParamType.doubleVal,
           defaultValue: 0.0,
-          description: '设定后可用 {{remain}} 显示剩余量；仅需在其中一条连线上填写',
+          description: '多条连线中只需填一次。设定后可用 {{remain}} 显示剩余量；'
+              '目标是进度条时，总量即满值',
         ),
         SchemeParamField(
           key: 'overflowMode',
@@ -169,10 +174,11 @@ class LinkerMatrixEngine {
         ),
         SchemeParamField(
           key: 'template',
-          label: '显示模板',
+          label: '显示模板（仅文本目标）',
           type: SchemeParamType.text,
           defaultValue: '{{value}}',
-          description: '{{value}}=汇总值，{{total}}=配额总量，{{remain}}=剩余量',
+          description: '{{value}}=总和，{{total}}=配额总量，{{remain}}=剩余量。'
+              '目标是进度条 / 滑块时按数值填充，模板不生效',
         ),
       ],
     ),

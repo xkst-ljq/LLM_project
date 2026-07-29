@@ -151,6 +151,7 @@ void main() {
         _sumLinker('l1', from: 's1', to: 'p1', params: {'template': '共 {{value}} 点'}),
         _sumLinker('l2', from: 's2', to: 'p1'),
       ];
+      // 未设总量：原样给出，由目标自身量程决定观感。
       expect(_resolve(elements, 'p1'), 11.0);
     });
   });
@@ -224,6 +225,49 @@ void main() {
         _sumLinker('l2', from: 's2', to: 't1'),
       ];
       expect(_resolve(elements, 't1'), '3.75');
+    });
+  });
+
+  group('文本目标与数值目标语义一致', () {
+    // 首轮测试反馈「用不同的目标效果不一样」。同一份配置换个目标类型
+    // 就变一套行为，作者无法预期，必须对齐。
+    List<UIElement> build(String targetId, UIElement target, String mode) {
+      return [
+        _slider('s1', 6),
+        _slider('s2', 7),
+        target,
+        _sumLinker('l1', from: 's1', to: targetId, params: {
+          'total': 10.0,
+          'overflowMode': mode,
+          'template': '{{value}}/{{total}}',
+        }),
+        _sumLinker('l2', from: 's2', to: targetId),
+      ];
+    }
+
+    test('设了总量时，进度条把总量当作满值', () {
+      // 作者填总量 10、已分配 7，进度条就该是 70%，
+      // 而不是拿 7 去套进度条自己的 max=100 变成 7%。
+      final elements = [
+        _slider('s1', 3),
+        _slider('s2', 4),
+        _progress('p1'),
+        _sumLinker('l1', from: 's1', to: 'p1', params: {'total': 10.0}),
+        _sumLinker('l2', from: 's2', to: 'p1'),
+      ];
+      expect(_resolve(elements, 'p1'), 70.0);
+    });
+
+    test('clamp 模式下两种目标都被限制住', () {
+      expect(_resolve(build('t1', _text('t1'), 'clamp'), 't1'), '10/10');
+      expect(_resolve(build('p1', _progress('p1'), 'clamp'), 'p1'), 100.0);
+    });
+
+    test('allow 模式下文本可超额，进度条填满但不溢出', () {
+      // 文本保留真实值 13 供作者提示超支；
+      // 进度条没有「超过 100%」的表现形式，填满即可。
+      expect(_resolve(build('t1', _text('t1'), 'allow'), 't1'), '13/10');
+      expect(_resolve(build('p1', _progress('p1'), 'allow'), 'p1'), 100.0);
     });
   });
 

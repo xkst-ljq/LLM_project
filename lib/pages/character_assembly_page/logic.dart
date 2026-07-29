@@ -2062,6 +2062,29 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     return [
       const SizedBox(height: 14),
+      // 多源聚合与其他方案的用法完全不同：必须给每个来源各连一条到
+      // 同一目标。不明说的话作者只会连一条然后以为方案坏了
+      // （首轮测试反馈「看不懂怎么操作」）。
+      if (scheme == 'sum_to_display')
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8F5E9),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Text(
+            '这个方案要连多条：给每个要参与求和的组件，都建一条本方案的连线，'
+            '并且目标都选同一个组件。目标就会显示它们的总和。\n'
+            '配额总量、模板等参数只需在其中一条上填写。',
+            style: TextStyle(
+              fontSize: 11,
+              color: Color(0xFF2E7D32),
+              height: 1.4,
+            ),
+          ),
+        ),
       const Text(
         '方案参数',
         style: TextStyle(

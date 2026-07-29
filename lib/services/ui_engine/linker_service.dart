@@ -884,10 +884,16 @@ class LinkerService {
     // 聚合优先：它要吃掉所有同类连线，不能落进下面「取第一条」的循环。
     final aggregate = _resolveSumAggregate(targetElId, visitedSet);
     if (aggregate != null) {
-      // 数值型目标直接给数，文本型才套模板——
+      // 数值型目标给数字，文本型才套模板——
       // progress/slider 拿到带单位的字符串会解析失败。
+      //
+      // 但**语义必须与文本目标一致**：同一份配置换个目标类型就变一套
+      // 行为，作者根本无法预期（首轮测试反馈「用不同的目标效果不一样」）。
+      // 因此这里也走 clamp，并且把「配额总量」当作进度条的满值，
+      // 而不是让它去用自己的 max —— 作者填了总量 10，
+      // 进度条却按自身 max=100 渲染成 13%，这不是任何人想要的。
       if (targetModule.type == 'progress' || targetModule.type == 'slider') {
-        return aggregate.value;
+        return aggregate.numericFor(targetModule);
       }
       return aggregate.render();
     }
@@ -1365,6 +1371,19 @@ class _SumAggregate {
 
   /// 剩余量。未设总量时为 0；allow 模式下可能为负（超支）。
   double get remain => total > 0 ? total - value : 0.0;
+
+  /// 数值型目标（progress / slider）该显示的值。
+  ///
+  /// 设了配额总量时，把总量视为目标的满值做等比换算——
+  /// 这样「已分配 7/10」在进度条上就是 70%，与文本显示的语义一致。
+  /// 没设总量则原样给出，由目标自己的量程决定观感。
+  double numericFor(UIModule target) {
+    final tgtMin = (target.properties['min'] as num?)?.toDouble() ?? 0.0;
+    final tgtMax = (target.properties['max'] as num?)?.toDouble() ?? 100.0;
+    if (total <= 0) return value.clamp(tgtMin, tgtMax);
+    final ratio = (value / total).clamp(0.0, 1.0);
+    return tgtMin + ratio * (tgtMax - tgtMin);
+  }
 
   String render() {
     String fmt(double v) => v.toStringAsFixed(precision);
