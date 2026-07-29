@@ -445,13 +445,54 @@ UI 交互 → SessionState → Prompt → LLM → 解析算账 → 确认 → �
   聊天页挂载属于 A10 范围；A10 做完后传入 `sessionState` /
   `onSessionStateChanged` 即可让反向同步在真实会话里生效。
 
-### A10 进度：A10-0/1/2 完成并测试通过
+### A10 进度：A10-0/1/2/4/5 完成并测试通过
+剩 A10-3（extra_companion 伴生）未做。
+
+#### scene 接管的两条硬规则（A10-5 测试后确立）
+
+**a) 接管 = 停止渲染，不是 IgnorePointer**
+`IgnorePointer` 只禁交互，元素仍然可见。scene 语义是「顶替聊天页」，
+状态栏、消息列表（含头像与气泡）、常驻 UI、输入栏都必须**不渲染**。
+聊天背景图保留，另加 `alpha: 0.32` 压暗蒙版——
+背景是场景观感的一部分，不要做成不透明。
+
+**b) 接管层要跟随设置面板一起左移**
+设置面板在「聊天主体 + 右侧面板」那个 `Positioned` 内部，
+而 scene 层排在它之后，不同步位移就会把面板整个盖住。
+同时主体的 `IgnorePointer` 要写成
+`_sceneTakesOver && _animController.value < 0.5`，
+否则进了设置页所有条目都点不动。
+
+#### 取作用域必须用 Builder（通用规则，踩过一次）
+
+在 `build` 里包了 InheritedWidget 之后，子树读取该作用域
+**必须用 `Builder` 拿新的 context**，不能沿用外层的 `context`——
+外层 context 位于 InheritedWidget 之上，
+`dependOnInheritedWidgetOfExactType` 永远返回 null。
+
+`ui_assembly_runtime_view.dart` 的 `_buildRuntimeElement` 就栽在这里：
+消息流永远读不到 `MessageFlowScope`，一直显示占位示例。
+同理适用于 `UILinkerSnapshotScope` / `UISceneModeScope`。
+
+配套原则：**运行时的兜底不能是假数据**。
+编辑器（`isStudio`）显示示例消息是为了让作者看排版；
+运行时拿不到数据只能显示「暂无消息」，绝不能让玩家看见假对话。
+
+#### scene 内禁用页面级横向拖动
+
+聊天页根部「右滑打开设置」与 PCB 翻页手势方向相同，必然误触。
+**设置页的唯一入口收敛为「打开聊天设置」关键职责按钮。**
+做法：scene 层最外层 `GestureDetector` 用空实现吃掉 `onHorizontalDrag*`。
+子级 HorizontalDrag 赢过根部同类识别器从而截断冒泡；
+PCB 内部翻页走 `Listener`（不参与竞技场），不受影响。
+
+### A10 早期进度：A10-0/1/2 完成并测试通过
 常驻 UI 已能在真实聊天里显示、拖动、交互，并与 SessionState 双向同步。
 A9.6 的完整闭环至此在真实会话中跑通：
 LLM 更新状态 → SessionState → 常驻 UI 组件刷新；
 玩家操作组件 → SessionState → 状态栏与 Prompt。
 
-剩余：A10-3 伴生 / A10-5 场景（A10-4 开场白已完成待测）。
+剩余：A10-3 伴生（A10-4 开场白、A10-5 场景均已测试通过）。
 A10-1 的挂载基础设施可直接复用，主要工作是各自的形态差异。
 
 ### 待后期统一处理的优化（用户已提出，暂缓）
