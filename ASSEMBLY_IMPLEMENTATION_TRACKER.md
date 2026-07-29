@@ -1910,6 +1910,41 @@ Assembly 侧通过 `TextHighlightScope` 传递——规则是角色卡级配置�
 - `_buildImageBlock` 外包 `Builder`——
   又一次「取作用域必须用新 context」（见上文通用规则）。
 
+#### 首轮测试暴露的问题
+
+**1. Assembly 联动器配置页缺方案参数编辑器（主因）**
+`_showAssemblyLinkerConfigDialog` 只做了「选源 → 选目标 → 选方案」，
+**没有把 Studio 侧的参数编辑器搬过来**。
+后果：带参数的方案保存后只能吃默认值，作者无从配置——
+表现就是「只有一种操作，切不了别的动作」。
+
+补上 `_buildAssemblySchemeParamEditors`，支持
+choice / number / doubleVal / text / boolean。
+Studio 侧还有 color，Assembly 暂无带颜色参数的方案，等出现再补。
+
+配套的三条状态维护：
+- 换方案 / 换源目标时**清空 schemeParams**——
+  留着会把上一个方案的键带进新方案；
+- 保存时用方案声明的默认值补齐缺省项，运行端不必各自兜底；
+- 清除连接时一并 `remove('schemeParams')`。
+
+**2. 运行端对缺失参数过于严格**
+`_resolveMessageAction` 原本参数缺失就返回 null，按钮完全没反应。
+改为区分两种情况：
+- **参数缺失**（老数据 / 跳过配置）→ 回落方案声明的默认动作；
+- **参数值非法**（认不出来）→ 仍返回 null，静默执行别的动作更危险。
+
+**3. 「只能退回旧版本」的排查结论**
+`_switchVersion` 本身是对称的，`version_prev` / `version_next`
+两个动作也都已登记。实际原因是问题 1——
+作者只能保存出默认的 `regenerate`，根本选不到 `version_next`。
+参数编辑器补上后即可正常双向切换。
+
+> 教训：**新增带参数的方案时，务必确认 Assembly 侧也能配置该参数。**
+> Assembly 与 Studio 共用方案矩阵，但**编辑器是两套**，
+> 只在矩阵里登记不等于作者能用上。这与 `button_to_page_route`
+> 漏登记是同类问题的两个不同环节。
+
 测试：`test/message_action_test.dart`。
 
 ### A11-2 剩余（待做）

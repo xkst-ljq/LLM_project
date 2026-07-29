@@ -71,6 +71,26 @@ void main() {
     });
   });
 
+  group('方案参数缺省处理', () {
+    test('action 参数声明了默认值，缺省时不会变成「按钮没反应」', () {
+      final def =
+          LinkerMatrixEngine.getSchemeDefinition('button_to_message_action')!;
+      final param = def.params.firstWhere((p) => p.key == 'action');
+      expect(param.defaultValue, isNotNull);
+      // 默认值必须是合法动作，否则回落逻辑同样解析不出来。
+      expect(MessageAction.fromKey(param.defaultValue.toString()), isNotNull);
+    });
+
+    test('六个动作都能从参数选项里选到，含两个方向的版本切换', () {
+      final def =
+          LinkerMatrixEngine.getSchemeDefinition('button_to_message_action')!;
+      final options = def.params.firstWhere((p) => p.key == 'action').options!;
+      expect(options, contains('version_prev'));
+      expect(options, contains('version_next'));
+      expect(options.length, MessageAction.values.length);
+    });
+  });
+
   group('AvatarScope', () {
     testWidgets('按来源取出对应头像', (tester) async {
       late BuildContext ctx;

@@ -1770,6 +1770,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var sourceId = existing['sourceModuleId']?.toString() ?? '';
     var targetId = existing['targetModuleId']?.toString() ?? '';
     var scheme = existing['scheme']?.toString() ?? '';
+    // 方案参数（如消息操作要执行哪个动作）。与 Studio 侧一致地按 key 存取，
+    // 这样同一条 linker 在两边打开看到的配置完全相同。
+    var schemeParams = <String, dynamic>{
+      ...(existing['schemeParams'] as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{},
+    };
     if (!candidates.any((element) => element.id == sourceId)) sourceId = '';
     if (!candidates.any((element) => element.id == targetId)) targetId = '';
 
@@ -1794,7 +1800,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 )
               : const <SchemeDefinition>[];
           // 换了源/目标后，旧方案可能不再适用。
-          if (schemes.every((def) => def.id != scheme)) scheme = '';
+          if (schemes.every((def) => def.id != scheme)) {
+            scheme = '';
+            // 参数属于具体方案，方案没了就必须清掉——
+            // 留着会把上一个方案的键带进新方案的配置里。
+            schemeParams = <String, dynamic>{};
+          }
 
           final canSave = source != null && target != null && scheme.isNotEmpty;
 
@@ -1895,9 +1906,24 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           (def) => _buildAssemblySchemeTile(
                             def: def,
                             selected: def.id == scheme,
-                            onTap: () => setDialogState(() => scheme = def.id),
+                            onTap: () => setDialogState(() {
+                              if (scheme == def.id) return;
+                              scheme = def.id;
+                              // 换方案即重置参数，理由同上。
+                              schemeParams = <String, dynamic>{};
+                            }),
                           ),
                         ),
+                      // 方案参数编辑器。
+                      //
+                      // 此前漏了这一块，导致带参数的方案（如消息操作要选
+                      // 执行哪个动作）保存后只能吃默认值，作者无从配置。
+                      ..._buildAssemblySchemeParamEditors(
+                        scheme: scheme,
+                        params: schemeParams,
+                        onChanged: (key, value) =>
+                            setDialogState(() => schemeParams[key] = value),
+                      ),
                     ],
                   ],
                 ),
@@ -1952,7 +1978,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ..remove('targetPort')
             ..remove('targetType')
             ..remove('inputConnection')
-            ..remove('outputConnection');
+            ..remove('outputConnection')
+            ..remove('schemeParams');
           linkerData['scheme'] = '未配置';
           linkerData['enabled'] = false;
         } else {
@@ -1965,6 +1992,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           linkerData['sourcePort'] = _schemeSourcePort(scheme);
           linkerData['targetPort'] = _schemeTargetPort(scheme);
           linkerData['sourceType'] = (def?.isPulse ?? false) ? 'pulse' : 'value';
+          // 参数缺省时补上方案声明的默认值，运行端就不必各自兜底。
+          final resolvedParams = <String, dynamic>{};
+          for (final field in def?.params ?? const <SchemeParamField>[]) {
+            final value = schemeParams[field.key] ?? field.defaultValue;
+            if (value != null) resolvedParams[field.key] = value;
+          }
+          if (resolvedParams.isEmpty) {
+            linkerData.remove('schemeParams');
+          } else {
+            linkerData['schemeParams'] = resolvedParams;
+          }
           linkerData['priority'] ??= 5;
           linkerData['cooldownMs'] ??= 0;
           linkerData['maxTriggerCount'] ??= 0;
@@ -1990,6 +2028,163 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _persistAssemblyElements();
     }
   }
+
+  /// 方案参数编辑器。
+  ///
+  /// 只实现方案矩阵实际用到的类型（choice / number / doubleVal / text /
+  /// boolean）。Studio 侧还有 color，Assembly 目前没有带颜色参数的方案，
+  /// 等真的出现再补——提前写一个用不到的取色器只会增加维护面。
+  List<Widget> _buildAssemblySchemeParamEditors({
+    required String scheme,
+    required Map<String, dynamic> params,
+    required void Function(String key, dynamic value) onChanged,
+  }) {
+    if (scheme.isEmpty) return const <Widget>[];
+    final def = LinkerMatrixEngine.getSchemeDefinition(scheme);
+    if (def == null || def.params.isEmpty) return const <Widget>[];
+
+    return [
+      const SizedBox(height: 14),
+      const Text(
+        '方案参数',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF111116),
+        ),
+      ),
+      const SizedBox(height: 6),
+      for (final field in def.params)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _buildAssemblySchemeParamField(
+            field: field,
+            value: params[field.key] ?? field.defaultValue,
+            onChanged: (v) => onChanged(field.key, v),
+          ),
+        ),
+    ];
+  }
+
+  Widget _buildAssemblySchemeParamField({
+    required SchemeParamField field,
+    required dynamic value,
+    required ValueChanged<dynamic> onChanged,
+  }) {
+    switch (field.type) {
+      case SchemeParamType.choice:
+        final options = field.options ?? const <String>[];
+        if (options.isEmpty) return const SizedBox.shrink();
+        final current = options.contains(value?.toString())
+            ? value!.toString()
+            : options.first;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: current,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: field.label,
+                isDense: true,
+                border: const OutlineInputBorder(),
+              ),
+              items: [
+                for (final opt in options)
+                  DropdownMenuItem(
+                    value: opt,
+                    child: Text(
+                      _assemblyParamOptionLabel(opt),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: (v) {
+                if (v != null) onChanged(v);
+              },
+            ),
+            if (_assemblyParamOptionHint(current) != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  _assemblyParamOptionHint(current)!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF777783),
+                    height: 1.35,
+                  ),
+                ),
+              ),
+          ],
+        );
+
+      case SchemeParamType.boolean:
+        final on = value is bool
+            ? value
+            : value?.toString().toLowerCase() == 'true';
+        return SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(field.label, style: const TextStyle(fontSize: 13)),
+          subtitle: field.description == null
+              ? null
+              : Text(field.description!,
+                  style: const TextStyle(fontSize: 11, height: 1.3)),
+          value: on,
+          onChanged: onChanged,
+        );
+
+      case SchemeParamType.number:
+      case SchemeParamType.doubleVal:
+        final isInt = field.type == SchemeParamType.number;
+        return TextFormField(
+          initialValue: value?.toString() ?? '',
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            labelText: field.label,
+            helperText: field.description,
+            helperMaxLines: 3,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          // 只在解析成功时回写：输入中途的空串 / 半个负号不该覆盖已有值。
+          onChanged: (raw) {
+            final parsed =
+                isInt ? int.tryParse(raw.trim()) : double.tryParse(raw.trim());
+            if (parsed != null) onChanged(parsed);
+          },
+        );
+
+      case SchemeParamType.text:
+      case SchemeParamType.color:
+        return TextFormField(
+          initialValue: value?.toString() ?? '',
+          decoration: InputDecoration(
+            labelText: field.label,
+            helperText: field.description,
+            helperMaxLines: 3,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: onChanged,
+        );
+    }
+  }
+
+  /// 参数取值的显示名。
+  ///
+  /// 方案里存的是英文 key（要序列化进角色卡），但作者看到的应该是中文。
+  String _assemblyParamOptionLabel(String option) {
+    final action = MessageAction.fromKey(option);
+    if (action != null) return action.label;
+    if (option == 'ratio') return '比例归一化（0~100% 折算）';
+    if (option == 'absolute') return '绝对数值透传（超出截断）';
+    return option;
+  }
+
+  /// 参数取值的补充说明。
+  String? _assemblyParamOptionHint(String option) =>
+      MessageAction.fromKey(option)?.description;
 
   Widget _buildAssemblySchemeTile({
     required SchemeDefinition def,

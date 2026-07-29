@@ -10,6 +10,7 @@ import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/data_channel_service.dart';
 import '../services/ui_engine/linker_event_bus.dart';
+import '../services/ui_engine/linker_matrix_engine.dart';
 import '../services/ui_engine/linker_service.dart';
 import '../models/text_highlight_rule.dart';
 import '../services/ui_engine/avatar_scope.dart';
@@ -293,7 +294,20 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
 
       final params =
           (data['schemeParams'] as Map?)?.cast<String, dynamic>() ?? const {};
-      return MessageAction.fromKey(params['action']?.toString());
+      final raw = params['action']?.toString();
+      if (raw == null || raw.isEmpty) {
+        // 参数缺失 ≠ 参数非法：老数据或跳过配置时回落到方案声明的默认动作，
+        // 否则按钮会完全没反应，作者只会以为连线坏了。
+        final def =
+            LinkerMatrixEngine.getSchemeDefinition('button_to_message_action');
+        final fallback = def?.params
+            .firstWhere((p) => p.key == 'action')
+            .defaultValue
+            ?.toString();
+        return MessageAction.fromKey(fallback);
+      }
+      // 值本身认不出来才返回 null——静默执行别的动作更危险。
+      return MessageAction.fromKey(raw);
     }
     return null;
   }
