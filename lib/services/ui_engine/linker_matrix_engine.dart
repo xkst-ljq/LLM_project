@@ -127,6 +127,57 @@ class LinkerMatrixEngine {
     ),
 
     // ==========================================
+    // Assembly / Studio 通用：多源数值聚合（A13-3）
+    // ==========================================
+    // 与其他方案的根本区别：**同一目标可以接多条**，运行端把它们
+    // 全部收集起来算总和，而不是像普通方案那样只取优先级最高的一条。
+    //
+    // 典型用途是「点数分配」——多个 slider 连到同一个 text/progress，
+    // 显示已分配总点数。但聚合本身与用途无关，任何需要
+    // 「多个数值汇总到一处」的场景都能用（用户提出的通用化要求）。
+    SchemeDefinition(
+      id: 'sum_to_display',
+      label: '数值求和汇总 (sum → display)',
+      description: '把多个来源的数值加总后显示；同一目标可连接多条，'
+          '用于点数分配、总计统计等',
+      sourceType: 'any',
+      targetType: 'any',
+      allowedSourceTypes: ['slider', 'progress', 'input', 'math_node', 'timer'],
+      allowedTargetTypes: ['text', 'progress', 'slider'],
+      params: [
+        SchemeParamField(
+          key: 'total',
+          label: '配额总量（0 表示不设上限）',
+          type: SchemeParamType.doubleVal,
+          defaultValue: 0.0,
+          description: '设定后可用 {{remain}} 显示剩余量；仅需在其中一条连线上填写',
+        ),
+        SchemeParamField(
+          key: 'overflowMode',
+          label: '超出配额时',
+          type: SchemeParamType.choice,
+          defaultValue: 'allow',
+          options: ['allow', 'clamp'],
+          description: 'allow=允许超出并把剩余显示为负数；'
+              'clamp=汇总值不超过总量',
+        ),
+        SchemeParamField(
+          key: 'precision',
+          label: '小数位数',
+          type: SchemeParamType.number,
+          defaultValue: 0,
+        ),
+        SchemeParamField(
+          key: 'template',
+          label: '显示模板',
+          type: SchemeParamType.text,
+          defaultValue: '{{value}}',
+          description: '{{value}}=汇总值，{{total}}=配额总量，{{remain}}=剩余量',
+        ),
+      ],
+    ),
+
+    // ==========================================
     // Phase 1: 核心 Phase 协议族
     // ==========================================
 

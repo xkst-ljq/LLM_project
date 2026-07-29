@@ -803,6 +803,75 @@ class LinkerService {
     return null;
   }
 
+  /// A13-3：解析指向该目标的「数值求和汇总」连线。
+  ///
+  /// 与其他方案的根本区别：普通方案在 `resolveTargetValue` 里遍历到
+  /// 第一条匹配就 return，而聚合必须把**所有**连到同一目标的连线
+  /// 收集起来一起算。因此单独走一条路径，在主循环之前处理。
+  ///
+  /// 返回 null 表示该目标没有配置聚合连线，交回普通流程。
+  static _SumAggregate? _resolveSumAggregate(
+    String targetElId,
+    Set<String> visitedSet,
+  ) {
+    var count = 0;
+    var sum = 0.0;
+    double total = 0.0;
+    var overflowMode = 'allow';
+    var precision = 0;
+    var template = '{{value}}';
+
+    for (final module in _sortedLinkersForTarget(targetElId)) {
+      final data =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data == null) continue;
+      if (data['scheme']?.toString() != 'sum_to_display') continue;
+
+      final sourceId = data['sourceModuleId']?.toString();
+      if (sourceId == null || !_elementModules.containsKey(sourceId)) continue;
+      final sourceModule = _elementModules[sourceId]!;
+
+      final raw = _getEffectivePropertyValue(sourceModule, 'current', visitedSet) ??
+          _getEffectivePropertyValue(sourceModule, 'value', visitedSet) ??
+          _getEffectivePropertyValue(sourceModule, 'text', visitedSet) ??
+          sourceModule.properties['currentVal'] ??
+          0.0;
+      final value = raw is num
+          ? raw.toDouble()
+          : (double.tryParse(raw.toString().trim()) ?? 0.0);
+      sum += value;
+      count++;
+
+      // 配额参数只需在任一条连线上填写，避免作者给每条都重复配一遍。
+      final params =
+          (data['schemeParams'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final t = (params['total'] as num?)?.toDouble() ?? 0.0;
+      if (t > 0 && total <= 0) total = t;
+      if (params['overflowMode'] != null) {
+        overflowMode = params['overflowMode'].toString();
+      }
+      if (params['precision'] != null) {
+        precision = ((params['precision'] as num?)?.toInt() ?? 0).clamp(0, 6);
+      }
+      if (params['template'] != null &&
+          params['template'].toString().isNotEmpty) {
+        template = params['template'].toString();
+      }
+    }
+
+    if (count == 0) return null;
+    // clamp 模式下汇总值本身不超过总量；allow 模式保留真实值，
+    // 让作者能用 {{remain}} 的负数做「超支」提示。
+    final effective =
+        (overflowMode == 'clamp' && total > 0 && sum > total) ? total : sum;
+    return _SumAggregate(
+      value: effective,
+      total: total,
+      precision: precision,
+      template: template,
+    );
+  }
+
   /// 解析任一目标模块接收到的联动数值或字面量
   static dynamic resolveTargetValue(UIModule targetModule, [Set<String>? visited]) {
     final targetElId = _findElementIdForModule(targetModule);
@@ -811,6 +880,17 @@ class LinkerService {
     final visitedSet = visited != null ? Set<String>.from(visited) : <String>{};
     if (visitedSet.contains(targetElId)) return null;
     visitedSet.add(targetElId);
+
+    // 聚合优先：它要吃掉所有同类连线，不能落进下面「取第一条」的循环。
+    final aggregate = _resolveSumAggregate(targetElId, visitedSet);
+    if (aggregate != null) {
+      // 数值型目标直接给数，文本型才套模板——
+      // progress/slider 拿到带单位的字符串会解析失败。
+      if (targetModule.type == 'progress' || targetModule.type == 'slider') {
+        return aggregate.value;
+      }
+      return aggregate.render();
+    }
 
     for (final module in _sortedLinkersForTarget(targetElId)) {
       final linkerData = (module.properties['linker'] as Map?)?.cast<String, dynamic>();
@@ -1263,4 +1343,34 @@ class LinkerService {
   }
 
 
+}
+
+/// A13-3：数值求和汇总的计算结果。
+class _SumAggregate {
+  /// 汇总值（clamp 模式下已被截到总量以内）。
+  final double value;
+
+  /// 配额总量；0 表示作者没设上限。
+  final double total;
+
+  final int precision;
+  final String template;
+
+  const _SumAggregate({
+    required this.value,
+    required this.total,
+    required this.precision,
+    required this.template,
+  });
+
+  /// 剩余量。未设总量时为 0；allow 模式下可能为负（超支）。
+  double get remain => total > 0 ? total - value : 0.0;
+
+  String render() {
+    String fmt(double v) => v.toStringAsFixed(precision);
+    return template
+        .replaceAll('{{value}}', fmt(value))
+        .replaceAll('{{total}}', fmt(total))
+        .replaceAll('{{remain}}', fmt(remain));
+  }
 }

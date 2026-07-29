@@ -2196,6 +2196,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     if (action != null) return action.label;
     if (option == 'ratio') return '比例归一化（0~100% 折算）';
     if (option == 'absolute') return '绝对数值透传（超出截断）';
+    // A13-3 求和汇总的超额策略。
+    if (option == 'allow') return '允许超出（剩余显示为负数）';
+    if (option == 'clamp') return '限制在总量内（不允许超出）';
     return option;
   }
 
