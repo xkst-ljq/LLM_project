@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'assembly_rich_text.dart';
+import 'avatar_scope.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
@@ -111,7 +112,11 @@ class UIRenderer {
         return SizedBox(
           width: size.width,
           height: size.height,
-          child: _buildImageBlock(context, module),
+          // Builder 取新 context：AvatarScope 在运行时视图内部，
+          // 沿用外层 context 拿不到（MessageFlowScope 上踩过这个坑）。
+          child: Builder(
+            builder: (inner) => _buildImageBlock(inner, module),
+          ),
         );
       case 'slider':
         return SizedBox(
@@ -996,6 +1001,22 @@ class UIRenderer {
     final props = module.properties;
     String url = props['url']?.toString() ?? '';
     String assetPath = props['assetPath']?.toString() ?? '';
+
+    // A11-2：头像同步。来源选了角色 / 用户头像时，路径由运行时提供，
+    // 覆盖作者填的静态值——作者在编辑器里填不出运行时才知道的本地路径。
+    final avatarSource = props['imageSource']?.toString();
+    if (AvatarScope.isDynamic(avatarSource)) {
+      final resolved = AvatarScope.resolve(context, avatarSource);
+      if (resolved != null && resolved.trim().isNotEmpty) {
+        assetPath = resolved.trim();
+        url = '';
+      } else {
+        // 头像没设置时不回落到作者填的静态图：作者选了「显示角色头像」，
+        // 却显示出一张无关的占位图会更让人困惑。
+        assetPath = '';
+        url = '';
+      }
+    }
     final String fitStr = props['fit']?.toString() ?? 'cover';
     final String shapeStr = props['shape']?.toString() ?? 'rectangle';
     final double radiusVal = (props['borderRadius'] ?? 8.0).toDouble();

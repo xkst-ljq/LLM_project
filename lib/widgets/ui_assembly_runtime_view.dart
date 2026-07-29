@@ -12,6 +12,8 @@ import '../services/ui_engine/data_channel_service.dart';
 import '../services/ui_engine/linker_event_bus.dart';
 import '../services/ui_engine/linker_service.dart';
 import '../models/text_highlight_rule.dart';
+import '../services/ui_engine/avatar_scope.dart';
+import '../services/ui_engine/message_action.dart';
 import '../services/ui_engine/message_flow_scope.dart';
 import '../services/ui_engine/text_highlight_scope.dart';
 import '../services/ui_engine/ui_semantic_role.dart';
@@ -60,6 +62,15 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 角色卡的正则着色规则。null 表示用内置默认。
   final List<TextHighlightRule>? highlightRules;
 
+  /// 作者通过 `button_to_message_action` 方案触发消息操作时回调。
+  final ValueChanged<MessageAction>? onMessageAction;
+
+  /// 角色头像本地路径，供 image 组件的「头像同步」来源使用。
+  final String characterAvatar;
+
+  /// 用户头像本地路径。
+  final String userAvatar;
+
   /// 供消息流组件显示的对话历史。
   ///
   /// 不塞进 `module.properties`：消息是会话数据而非组件配置，
@@ -95,6 +106,9 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.messages = const <FlowMessage>[],
     this.onSendMessage,
     this.highlightRules,
+    this.onMessageAction,
+    this.characterAvatar = '',
+    this.userAvatar = '',
   });
 
   @override
@@ -208,7 +222,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   /// 不改渲染器——这样被标记的组件仍可正常参与 linker 等既有配置。
   void _setupSemanticRoleListener() {
     _roleSubscription?.cancel();
-    if (widget.onDismissRequested == null && widget.onSendMessage == null) {
+    if (widget.onDismissRequested == null &&
+        widget.onSendMessage == null &&
+        widget.onMessageAction == null) {
       return;
     }
 
@@ -222,6 +238,18 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       // 关键职责：点击触发（关闭 / 确认 / 打开设置）。
       if (event.eventType == 'tap' && UISemanticRole.isKeyAction(module)) {
         widget.onDismissRequested?.call();
+      }
+
+      // 消息操作：button 通过 linker 连到 message_flow。
+      //
+      // 走 linker 而不是语义标记，是因为它需要携带参数（执行哪个动作）。
+      // 语义标记是「是 / 否」的单一职责，表达不了六种动作的选择。
+      if (event.eventType == 'tap' && widget.onMessageAction != null) {
+        final action = _resolveMessageAction(
+          event.sourceModuleId,
+          activePage.elements,
+        );
+        if (action != null) widget.onMessageAction!(action);
       }
 
       // 发送消息：button 点击，或 input 回车提交。
@@ -245,6 +273,42 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         }
       }
     });
+  }
+
+  /// 查找该 button 通过 `button_to_message_action` 方案配置的消息操作。
+  ///
+  /// 直接读 linker 节点而不是走 `LinkerService`：后者的输出通道面向
+  /// 「把值写进目标组件」，而消息操作要调的是聊天页的方法，
+  /// 不落在任何组件属性上。
+  MessageAction? _resolveMessageAction(
+    String sourceElementId,
+    List<UIElement> elements,
+  ) {
+    for (final linker in _collectLinkers(elements)) {
+      final data =
+          (linker.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data == null || data['enabled'] == false) continue;
+      if (data['scheme']?.toString() != 'button_to_message_action') continue;
+      if (data['sourceModuleId']?.toString() != sourceElementId) continue;
+
+      final params =
+          (data['schemeParams'] as Map?)?.cast<String, dynamic>() ?? const {};
+      return MessageAction.fromKey(params['action']?.toString());
+    }
+    return null;
+  }
+
+  /// 收集元素树里的全部 linker 节点（含复合组件内部）。
+  List<UIModule> _collectLinkers(List<UIElement> elements) {
+    final out = <UIModule>[];
+    for (final node in elements) {
+      final module = node.module;
+      if (module != null && module.type == 'linker') out.add(module);
+      if (node.isComposite && node.composite != null) {
+        out.addAll(_collectLinkers(node.composite!.children));
+      }
+    }
+    return out;
   }
 
   /// 取出该组件要发送的文本。
@@ -683,6 +747,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
 
     return MessageFlowScope(
       messages: widget.messages,
+      child: AvatarScope(
+      characterAvatar: widget.characterAvatar,
+      userAvatar: widget.userAvatar,
       child: TextHighlightScope(
       rules: widget.highlightRules ?? TextHighlightRule.defaults(),
       child: UILinkerSnapshotScope(
@@ -730,6 +797,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
             ),
           ),
         ),
+      ),
       ),
       ),
       ),

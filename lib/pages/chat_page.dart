@@ -30,6 +30,7 @@ import '../models/text_highlight_rule.dart';
 import '../services/status_bar_engine.dart';
 import '../services/text_highlight_engine.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
+import '../services/ui_engine/message_action.dart';
 import '../services/ui_engine/message_flow_scope.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
 import '../services/user_service.dart';
@@ -281,6 +282,18 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         )
         .where((m) => m.content.isNotEmpty)
         .toList();
+  }
+
+  /// 角色头像本地路径，供 Assembly 的 image 组件「头像同步」使用。
+  String get _characterAvatarPath => _currentCharacter?.avatar ?? '';
+
+  /// 用户头像本地路径。
+  ///
+  /// 角色卡里的 `userAvatar` 优先于全局用户设定——
+  /// 作者可以为单张卡指定专属的玩家形象。
+  String get _userAvatarPath {
+    final local = _currentCharacter?.userAvatar ?? '';
+    return local.isNotEmpty ? local : _currentUser.avatarPath;
   }
 
   /// A10-2：常驻 UI 是否已折叠为悬浮球。
@@ -2854,6 +2867,149 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
+  /// A11-2：执行来自 Assembly 按钮的消息操作。
+  ///
+  /// 作用对象固定为**最新一条 AI 消息**（用户确认），与原生气泡的
+  /// 功能键一致——因此 `message_flow` 不需要引入「选中态」。
+  ///
+  /// 复用聊天页已有的方法，不另写一套：重生成 / 继续 / 撤回的
+  /// 数据库写入、状态回滚、版本记录都已经在那些方法里处理妥当，
+  /// 平行实现必然漏掉其中某一步。
+  Future<void> _handleMessageAction(MessageAction action) async {
+    if (_isLoading) {
+      _toast('正在生成回复，请稍候');
+      return;
+    }
+
+    final aiIndex = _messages.lastIndexWhere((m) => m['role'] == 'assistant');
+    if (aiIndex < 0) {
+      _toast('还没有可操作的回复');
+      return;
+    }
+
+    switch (action) {
+      case MessageAction.regenerate:
+        // _regenerateMessage 内部要求前一条是 user 消息（要重发它）。
+        if (aiIndex == 0 || _messages[aiIndex - 1]['role'] != 'user') {
+          _toast('这条回复没有对应的提问，无法重新生成');
+          return;
+        }
+        await _regenerateMessage(aiIndex);
+      case MessageAction.continueWrite:
+        await _continueMessage(aiIndex);
+      case MessageAction.edit:
+        await _editMessageViaDialog(aiIndex);
+      case MessageAction.delete:
+        await _deleteRoundFromAssembly(aiIndex);
+      case MessageAction.versionPrev:
+        _switchVersion(aiIndex, -1);
+      case MessageAction.versionNext:
+        _switchVersion(aiIndex, 1);
+    }
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 弹窗编辑消息内容。
+  ///
+  /// 不复用 `_startEdit`：那条路径把内容送进底部输入栏，
+  /// 而 scene 接管时输入栏根本不渲染，玩家会看到「点了没反应」。
+  Future<void> _editMessageViaDialog(int index) async {
+    if (index < 0 || index >= _messages.length) return;
+    final controller =
+        TextEditingController(text: _messages[index]['content'] as String? ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑回复'),
+        content: TextField(
+          controller: controller,
+          maxLines: 10,
+          minLines: 4,
+          autofocus: true,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+
+    final text = result.trim();
+    if (text.isEmpty) return;
+    if (text == _messages[index]['content']) return;
+
+    setState(() => _messages[index]['content'] = text);
+
+    // 同步落库，否则重进聊天页就变回旧内容。
+    final id = int.tryParse(_messages[index]['id']?.toString() ?? '');
+    if (id != null) {
+      await DatabaseService.updateMessageContent(id, text);
+    }
+  }
+
+  /// 撤回最近一轮对话。
+  ///
+  /// `_deleteUserMessage` 的入口是 user 消息（它会连带删掉其后的 AI 回复），
+  /// 而这里拿到的是 AI 消息下标，因此先往前找到本轮的提问。
+  Future<void> _deleteRoundFromAssembly(int aiIndex) async {
+    var userIndex = -1;
+    for (var i = aiIndex; i >= 0; i--) {
+      if (_messages[i]['role'] == 'user') {
+        userIndex = i;
+        break;
+      }
+    }
+    if (userIndex < 0) {
+      _toast('这条回复没有对应的提问，无法撤回');
+      return;
+    }
+    await _deleteUserMessage(userIndex);
+  }
+
+  /// 切换到相邻版本。`delta` 为 -1 / +1。
+  ///
+  /// 只有重新生成过的消息才有多个版本；没有时给出提示而不是静默无反应——
+  /// 玩家按了按钮却什么都没发生，会以为是 UI 坏了。
+  void _switchVersion(int index, int delta) {
+    final msg = _messages[index];
+    final rawVersions = msg['versions'];
+    if (rawVersions is! List || rawVersions.length < 2) {
+      _toast('这条回复只有一个版本');
+      return;
+    }
+    final versions = List<String>.from(rawVersions);
+    final cur = (msg['currentVersionIndex'] as int?) ?? versions.length - 1;
+    final next = cur + delta;
+    if (next < 0 || next >= versions.length) {
+      _toast(delta < 0 ? '已经是第一个版本' : '已经是最后一个版本');
+      return;
+    }
+
+    setState(() {
+      msg['currentVersionIndex'] = next;
+      msg['content'] = versions[next];
+      // id 要跟着切：后续的编辑 / 删除都按 id 落库，
+      // 不同步会把改动写到别的版本上。
+      final rawIds = msg['versionIds'];
+      if (rawIds is List && next < rawIds.length) {
+        msg['id'] = rawIds[next];
+      }
+    });
+  }
+
   /// A10-3：伴生 UI（extra_companion）。
   ///
   /// 内嵌在 AI 消息气泡的最下方，与正文同属一个气泡容器。
@@ -2904,6 +3060,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             // 它的全屏 Listener 会与 ListView 的垂直滚动打架。
             enablePageGestures: false,
             messages: _flowMessages,
+            // 历史实例已被 IgnorePointer 挡住，不会走到这里；
+            // 传进去是为了让最新一条的操作按钮可用。
+            onMessageAction: _handleMessageAction,
+            characterAvatar: _characterAvatarPath,
+            userAvatar: _userAvatarPath,
           ),
         ),
       ),
@@ -2993,6 +3154,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               maxWidth: screenWidth - 16,
               onDismissRequested: () => _collapseSticky(),
               messages: _flowMessages,
+              characterAvatar: _characterAvatarPath,
+              userAvatar: _userAvatarPath,
             ),
             // 拖动把手。作者自定义把手（drag_handle 角色）尚未接入运行时，
             // 因此这里始终显示内置把手，保证挂件可移动。
@@ -3136,6 +3299,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 onDismissRequested: _openPanel,
                 messages: _flowMessages,
                 onSendMessage: _sendMessageFromAssembly,
+                onMessageAction: _handleMessageAction,
+                characterAvatar: _characterAvatarPath,
+                userAvatar: _userAvatarPath,
               ),
             ),
           ],
@@ -3189,6 +3355,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               enablePageGestures: true,
               onDismissRequested: _dismissOpeningAssembly,
               messages: _flowMessages,
+              characterAvatar: _characterAvatarPath,
+              userAvatar: _userAvatarPath,
             ),
           ),
         ],

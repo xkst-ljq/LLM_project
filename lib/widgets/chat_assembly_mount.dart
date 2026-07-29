@@ -6,6 +6,7 @@ import '../models/character_meta.dart';
 import '../models/session_state.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/message_action.dart';
 import '../services/ui_engine/message_flow_scope.dart';
 import '../services/ui_engine/ui_semantic_role.dart';
 import 'ui_assembly_runtime_view.dart';
@@ -48,6 +49,15 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 作者标记为「发送消息」的组件触发时回调。
   final ValueChanged<String>? onSendMessage;
 
+  /// 作者用 linker 配置的消息操作（重生成 / 编辑 / 删除等）触发时回调。
+  final ValueChanged<MessageAction>? onMessageAction;
+
+  /// 角色头像本地路径，供 image 组件的「头像同步」来源使用。
+  final String characterAvatar;
+
+  /// 用户头像本地路径。
+  final String userAvatar;
+
   const ChatAssemblyMount({
     super.key,
     required this.meta,
@@ -59,6 +69,9 @@ class ChatAssemblyMount extends StatelessWidget {
     this.onDismissRequested,
     this.messages = const <FlowMessage>[],
     this.onSendMessage,
+    this.onMessageAction,
+    this.userAvatar = '',
+    this.characterAvatar = '',
   });
 
   /// 取出该 mode 对应的 UI 方案；没有则返回 null。
@@ -158,6 +171,9 @@ class ChatAssemblyMount extends StatelessWidget {
         onDismissRequested: onDismissRequested,
         messages: messages,
         onSendMessage: onSendMessage,
+        onMessageAction: onMessageAction,
+        characterAvatar: characterAvatar,
+        userAvatar: userAvatar,
         // 着色规则是角色卡级配置，直接从 meta 取，调用方不用逐处传。
         highlightRules: meta.effectiveHighlightRules,
         sessionState: sessionState,

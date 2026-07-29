@@ -2546,6 +2546,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     };
     var switchValue = module.properties['value'] != false;
     var indicatorGlow = module.properties['defaultGlow'] == true;
+    // A11-2：图片来源。选了头像时路径由运行时提供，作者填的静态值被忽略。
+    var imageSource = switch (module.properties['imageSource']?.toString()) {
+      AvatarScope.sourceCharacter => AvatarScope.sourceCharacter,
+      AvatarScope.sourceUser => AvatarScope.sourceUser,
+      _ => AvatarScope.sourceCustom,
+    };
     var imageFit = switch (module.properties['fit']?.toString()) {
       'contain' => 'contain',
       'fill' => 'fill',
@@ -2923,13 +2929,52 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     ],
                     if (type == 'image') ...[
                       const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: imageSource,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: '图片来源',
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                              value: AvatarScope.sourceCustom,
+                              child: Text('自定义（下方填写）')),
+                          DropdownMenuItem(
+                              value: AvatarScope.sourceCharacter,
+                              child: Text('角色头像')),
+                          DropdownMenuItem(
+                              value: AvatarScope.sourceUser,
+                              child: Text('用户头像')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => imageSource = value);
+                        },
+                      ),
+                      if (AvatarScope.isDynamic(imageSource))
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            '头像路径在运行时才确定，下面的地址与路径会被忽略。'
+                            '玩家没设置头像时这里显示为空。',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF777783),
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 12),
                       TextField(
                         controller: imageUrlController,
+                        enabled: !AvatarScope.isDynamic(imageSource),
                         decoration: const InputDecoration(labelText: '网络图片地址（可留空）'),
                       ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: imageAssetController,
+                        enabled: !AvatarScope.isDynamic(imageSource),
                         decoration: const InputDecoration(
                           labelText: '本地/内部资产路径（可留空）',
                         ),
@@ -3172,6 +3217,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             props['showAssistant'] = flowShowAssistant;
             props['richText'] = flowRichText;
           } else if (type == 'image') {
+            props['imageSource'] = imageSource;
+            // 静态地址照常保存：作者切回「自定义」时不用重填。
             props['url'] = imageUrlController.text.trim();
             props['assetPath'] = imageAssetController.text.trim();
             props['fit'] = imageFit;

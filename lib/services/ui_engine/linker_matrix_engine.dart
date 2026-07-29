@@ -89,6 +89,44 @@ class LinkerMatrixEngine {
     ),
 
     // ==========================================
+    // Assembly 专属：消息操作（A11-2）
+    // ==========================================
+    // 原生气泡上的重生成 / 编辑 / 删除 / 版本切换按钮，在 scene 接管后
+    // 全部消失。与其在 message_flow 里内置一排小图标（外观不可控、
+    // 与作者的美术风格冲突），不如让作者用普通 button 连到消息流上——
+    // 与「发送消息」标记同一条原则：作者用通用组件表达意图。
+    //
+    // 与 page_router 同理：方案必须登记在这里，
+    // 否则 `isSchemeSelectable` 判为非法，运行端静默跳过。
+    SchemeDefinition(
+      id: 'button_to_message_action',
+      label: '点击操作消息 (click → message_action)',
+      description: 'button 点击对消息流中最新一条 AI 消息执行重生成 / 编辑 / 删除等操作',
+      sourceType: 'button',
+      targetType: 'message_flow',
+      isPulse: true,
+      params: [
+        SchemeParamField(
+          key: 'action',
+          label: '执行的操作',
+          type: SchemeParamType.choice,
+          defaultValue: 'regenerate',
+          options: [
+            'regenerate',
+            'continue',
+            'edit',
+            'delete',
+            'version_prev',
+            'version_next',
+          ],
+          description:
+              'regenerate=重新生成，continue=继续写，edit=编辑，delete=撤回该轮对话，'
+              'version_prev/next=切换到上/下一个版本',
+        ),
+      ],
+    ),
+
+    // ==========================================
     // Phase 1: 核心 Phase 协议族
     // ==========================================
 
