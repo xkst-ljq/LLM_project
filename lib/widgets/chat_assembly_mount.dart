@@ -45,6 +45,9 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 供消息流组件显示的对话历史。
   final List<FlowMessage> messages;
 
+  /// 作者标记为「发送消息」的组件触发时回调。
+  final ValueChanged<String>? onSendMessage;
+
   const ChatAssemblyMount({
     super.key,
     required this.meta,
@@ -55,6 +58,7 @@ class ChatAssemblyMount extends StatelessWidget {
     this.enablePageGestures = false,
     this.onDismissRequested,
     this.messages = const <FlowMessage>[],
+    this.onSendMessage,
   });
 
   /// 取出该 mode 对应的 UI 方案；没有则返回 null。
@@ -151,6 +155,7 @@ class ChatAssemblyMount extends StatelessWidget {
         enablePageGestures: enablePageGestures,
         onDismissRequested: onDismissRequested,
         messages: messages,
+        onSendMessage: onSendMessage,
         sessionState: sessionState,
         statusFields: meta.statusBarFields,
         onSessionStateChanged: onSessionStateChanged,

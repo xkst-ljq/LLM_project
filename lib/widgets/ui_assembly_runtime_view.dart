@@ -50,6 +50,11 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 显示数据通道写入的调试浮层（仅 Assembly 预览用）。
   final bool showDataChannelDebug;
 
+  /// 作者标记为「发送消息」的组件触发时回调。
+  ///
+  /// scene 禁用了原生输入框，玩家只能通过这些组件与 LLM 对话。
+  final ValueChanged<String>? onSendMessage;
+
   /// 供消息流组件显示的对话历史。
   ///
   /// 不塞进 `module.properties`：消息是会话数据而非组件配置，
@@ -83,6 +88,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.enablePageGestures = true,
     this.onDismissRequested,
     this.messages = const <FlowMessage>[],
+    this.onSendMessage,
   });
 
   @override
@@ -190,23 +196,68 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     _setupSemanticRoleListener();
   }
 
-  /// 监听语义角色组件的点击。
+  /// 监听语义标记组件的事件。
   ///
-  /// 直接复用 button 已有的 `tap` 脉冲，不改渲染器——
-  /// 这样作者标记的按钮同时还能正常参与 linker 等既有配置。
+  /// 直接复用组件已有的脉冲（button 的 `tap`、input 的 `committedValue`），
+  /// 不改渲染器——这样被标记的组件仍可正常参与 linker 等既有配置。
   void _setupSemanticRoleListener() {
     _roleSubscription?.cancel();
-    if (widget.onDismissRequested == null) return;
+    if (widget.onDismissRequested == null && widget.onSendMessage == null) {
+      return;
+    }
 
     _roleSubscription = LinkerEventBus().onPulse.listen((event) {
-      if (!mounted || event.eventType != 'tap') return;
+      if (!mounted) return;
       final activePage = _resolveActivePage(_pages, _activePageId);
-      final module = _findModuleById(activePage.elements, event.sourceModuleId);
+      final module =
+          _findModuleById(activePage.elements, event.sourceModuleId);
       if (module == null) return;
-      if (UISemanticRole.isKeyAction(module)) {
+
+      // 关键职责：点击触发（关闭 / 确认 / 打开设置）。
+      if (event.eventType == 'tap' && UISemanticRole.isKeyAction(module)) {
         widget.onDismissRequested?.call();
       }
+
+      // 发送消息：button 点击，或 input 回车提交。
+      if (UISemanticRole.sendsMessage(module)) {
+        // input 回车提交时发的是 input_commit，payload 即提交内容。
+        final isSubmit = event.eventType == 'input_commit';
+        if (event.eventType == 'tap' || isSubmit) {
+          final text = isSubmit
+              ? (event.payload?.toString() ?? '')
+              : _resolveSendText(module, activePage.elements);
+          if (text.trim().isNotEmpty) {
+            widget.onSendMessage?.call(text);
+            // 发送后清空输入框，避免玩家重复提交同一句。
+            if (module.type == 'input') {
+              module.properties['text'] = '';
+              module.properties['value'] = '';
+              module.properties['committedValue'] = '';
+              setState(() {});
+            }
+          }
+        }
+      }
     });
+  }
+
+  /// 取出该组件要发送的文本。
+  ///
+  /// input 用自己的内容；button 则取它通过 linker 指向的文本源
+  /// （选项式剧情：按钮上写「向左走」，点击就发送这句）。
+  String _resolveSendText(UIModule module, List<UIElement> elements) {
+    if (module.type == 'input') {
+      return (module.properties['committedValue'] ??
+              module.properties['text'] ??
+              '')
+          .toString();
+    }
+    // button：优先用 linker 联动到的值，否则用按钮自身文字。
+    final linked = LinkerService.resolveTargetValue(module);
+    if (linked != null && linked.toString().trim().isNotEmpty) {
+      return linked.toString();
+    }
+    return (module.properties['text'] ?? module.name).toString();
   }
 
   UIModule? _findModuleById(List<UIElement> elements, String id) {

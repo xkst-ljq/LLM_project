@@ -2354,6 +2354,48 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
   }
 
+  /// 「发送消息」标记标签。
+  Widget _buildSendMessageTag({
+    required bool active,
+    required bool isInput,
+    required VoidCallback onTap,
+  }) {
+    const color = Color(0xFF2E7D32);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? color : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: active ? color : const Color(0xFFBDBDC6),
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              active ? Icons.send_rounded : Icons.send_outlined,
+              size: 13,
+              color: active ? Colors.white : const Color(0xFF9E9EA8),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              isInput ? '回车发送' : '点击发送',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: active ? Colors.white : const Color(0xFF777783),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   bool _supportsAtomInstanceEditor(String type) {
     return const {
       'text',
@@ -2477,6 +2519,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var channelApplyPolicy =
         existingChannel?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
     var isKeyAction = UISemanticRole.isKeyAction(module);
+    var sendsMessage = UISemanticRole.sendsMessage(module);
     var textOverflow = switch (module.properties['overflow']?.toString()) {
       'scroll' => 'scroll',
       'clip' => 'clip',
@@ -2550,6 +2593,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     onTap: () =>
                         setDialogState(() => isKeyAction = !isKeyAction),
                   ),
+                // 发送消息标记：仅 scene 需要（它禁用了原生输入框）。
+                if (UISemanticRole.canMarkSend(module.type) &&
+                    UISemanticRole.supportsSendMessage(_info.mode)) ...[
+                  const SizedBox(width: 6),
+                  _buildSendMessageTag(
+                    active: sendsMessage,
+                    isInput: module.type == 'input',
+                    onTap: () =>
+                        setDialogState(() => sendsMessage = !sendsMessage),
+                  ),
+                ],
               ],
             ),
             content: SizedBox(
@@ -3096,6 +3150,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             props[UISemanticRole.propKey] = true;
           } else {
             props.remove(UISemanticRole.propKey);
+          }
+          if (sendsMessage) {
+            props[UISemanticRole.sendKey] = true;
+          } else {
+            props.remove(UISemanticRole.sendKey);
           }
 
           final channelName = _resolveDataChannelName(

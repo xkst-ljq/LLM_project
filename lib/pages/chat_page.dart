@@ -2961,6 +2961,45 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 全屏覆盖在聊天之上，玩家确认后销毁并落盘，本轮会话不再出现。
   /// 与「开场白消息」是两回事：那是一条 assistant 消息，
   /// 这是一层可交互界面，两者可以并存。
+  /// A10-5：是否由 scene UI 接管整个聊天页。
+  ///
+  /// scene 完全顶替聊天页——原生消息气泡与输入框全部禁用，
+  /// 聊天页只作为背景蒙版。**底层无法关闭**，只能删除该 UI 方案。
+  bool get _sceneTakesOver {
+    final character = _currentCharacter;
+    if (character == null) return false;
+    if (!ChatAssemblyMount.hasAssembly(character.meta, 'scene')) return false;
+    // 缺少「打开聊天设置」标记时不接管：
+    // 否则玩家进不了设置页，连重置对话都做不到，等于被锁死。
+    return ChatAssemblyMount.canRun(character.meta, 'scene');
+  }
+
+  /// scene 场景 UI 层。
+  Widget _buildSceneAssembly(Size screen) {
+    // 与开场白同理：必须始终返回 Positioned，
+    // 返回裸 widget 会让主 Stack 塌缩成 0×0（黑屏）。
+    if (!_sceneTakesOver) {
+      return const Positioned.fill(child: IgnorePointer(child: SizedBox()));
+    }
+    final character = _currentCharacter!;
+
+    return Positioned.fill(
+      child: ChatAssemblyMount(
+        meta: character.meta,
+        mode: 'scene',
+        sessionState: _sessionState,
+        onSessionStateChanged: _onAssemblySessionChanged,
+        maxWidth: screen.width,
+        // 场景是全屏形态，保留页面手势（多页场景可翻页）。
+        enablePageGestures: true,
+        // 关键职责在 scene 下是「打开聊天设置」，不是关闭 UI。
+        onDismissRequested: _openPanel,
+        messages: _flowMessages,
+        onSendMessage: _sendMessageFromAssembly,
+      ),
+    );
+  }
+
   /// 是否应展示开场白 UI。
   bool get _shouldShowOpeningAssembly {
     final character = _currentCharacter;
@@ -3250,7 +3289,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                     bottom: 0,
                     width: screenWidth + panelW,
                     child: IgnorePointer(
-                      ignoring: _showFanPanel,
+                      // scene 接管时连同原生消息气泡一起禁用交互，
+                      // 避免玩家隔着场景 UI 误触下方的消息操作。
+                      ignoring: _showFanPanel || _sceneTakesOver,
                       child: Row(
                         children: [
                           IgnorePointer(
@@ -4088,7 +4129,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   // Transform.translate 只做视觉位移，命中测试仍受父容器
                   // 边界裁剪，挂件一旦被拖出状态栏那条窄区域就再也点不到。
                   // 用 Positioned.fill 让它在整个聊天区都能接收触摸。
-                  if (!_showFanPanel && _animController.value < 0.5)
+                  // scene 接管时隐藏常驻 UI：场景已是完整界面，
+                  // 再浮一个挂件既遮挡又语义重复。
+                  if (!_showFanPanel &&
+                      _animController.value < 0.5 &&
+                      !_sceneTakesOver)
                     Positioned.fill(
                       // 不能包 IgnorePointer：这一层铺满整个聊天区，
                       // 挡住会让下方消息列表无法滚动。
@@ -4118,7 +4163,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       ),
                     ),
                   // 悬浮毛玻璃输入栏（最上层）
-                  if (_animController.value < 0.1 && !_showFanPanel)
+                  // scene 接管时禁用：玩家只能通过 scene 内的组件对话。
+                  if (_animController.value < 0.1 &&
+                      !_showFanPanel &&
+                      !_sceneTakesOver)
                     Positioned(
                       left: 0,
                       right: 0,
@@ -4404,6 +4452,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
+                  // ===== scene 场景 UI（顶替聊天页）=====
+                  // 排在输入栏之后、开场白之前：
+                  // 它要盖住消息流与输入栏，但开场白仍需盖在它上面。
+                  _buildSceneAssembly(MediaQuery.of(context).size),
                   // ===== 开场白 UI（最顶层，需覆盖输入栏）=====
                   // 必须排在输入栏之后：它要接管整个界面直到玩家确认。
                   _buildOpeningAssembly(MediaQuery.of(context).size),
@@ -5143,6 +5195,36 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         characterId: _currentCharacter!.id,
         role: 'user',
         content: newText,
+      );
+    }
+    _requestAiReply();
+  }
+
+  /// A10-5：由 scene UI 触发发送消息。
+  ///
+  /// 与 `_sendMessage` 的区别：文本来自 UI 组件而非输入框控制器。
+  /// scene 完全顶替聊天页后，原生输入框被禁用，
+  /// 玩家只能通过作者摆放的组件与 LLM 对话。
+  Future<void> _sendMessageFromAssembly(String rawText) async {
+    final text = rawText.trim();
+    if (text.isEmpty) return;
+    if (_isLoading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('正在生成回复，请稍候')),
+      );
+      return;
+    }
+
+    setState(() {
+      _messages.add({'role': 'user', 'content': text});
+      _isLoading = true;
+    });
+
+    if (_currentCharacter != null) {
+      await DatabaseService.insertMessage(
+        characterId: _currentCharacter!.id,
+        role: 'user',
+        content: text,
       );
     }
     _requestAiReply();

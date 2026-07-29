@@ -16,6 +16,13 @@ class UISemanticRole {
   /// 属性键。值为 true 表示该组件承担所在 mode 的关键职责。
   static const String propKey = 'keyAction';
 
+  /// 属性键：标记该组件为「发送消息」触发器。
+  ///
+  /// 与 [propKey] 并列而非合并——一个 scene 里
+  /// 「打开聊天设置」和「发送消息」是两个不同的按钮，
+  /// 各自独立标记，互不排斥。
+  static const String sendKey = 'sendsMessage';
+
   /// 该 mode 是否需要关键职责按钮。
   ///
   /// 伴生 UI 嵌在消息流里，没有需要主动退出的状态，故不作要求。
@@ -81,6 +88,22 @@ class UISemanticRole {
   /// 该组件是否被标记为关键职责按钮。
   static bool isKeyAction(UIModule? module) =>
       module?.properties[propKey] == true;
+
+  /// 该组件是否被标记为「发送消息」触发器。
+  static bool sendsMessage(UIModule? module) =>
+      module?.properties[sendKey] == true;
+
+  /// 哪些 mode 支持「发送消息」标记。
+  ///
+  /// 仅 scene——它禁用了原生输入框，玩家只能靠 UI 组件对话。
+  /// 其余 mode 的原生输入框仍在，不需要这个能力。
+  static bool supportsSendMessage(String mode) => mode == 'scene';
+
+  /// 可以承担「发送消息」的组件类型。
+  ///
+  /// button：点击即发送（选项式剧情）。
+  /// input：回车提交即发送（自由输入）。
+  static bool canMarkSend(String type) => type == 'button' || type == 'input';
 
   /// 只有可点击的组件承担关键职责才有意义。
   static bool canMark(String type) => type == 'button';
