@@ -100,6 +100,42 @@ void main() {
       );
     });
 
+    test('来源限于玩家改不了的组件', () {
+      // 总量一旦能被玩家自己拖动 / 输入，配额约束就失去意义。
+      for (final src in ['text', 'progress', 'math_node']) {
+        expect(
+          LinkerMatrixEngine.getAvailableSchemes(src, 'slider')
+              .map((s) => s.id),
+          contains('pool_to_allocation'),
+          reason: src,
+        );
+      }
+      for (final src in ['slider', 'input']) {
+        expect(
+          LinkerMatrixEngine.getAvailableSchemes(src, 'slider')
+              .map((s) => s.id),
+          isNot(contains('pool_to_allocation')),
+          reason: src,
+        );
+      }
+    });
+
+    test('目标限于玩家能操作的组件', () {
+      // progress 没有任何手势，玩家改不了它的值，作分配项纯属摆设。
+      for (final tgt in ['slider', 'input']) {
+        expect(
+          LinkerMatrixEngine.getAvailableSchemes('text', tgt).map((s) => s.id),
+          contains('pool_to_allocation'),
+          reason: tgt,
+        );
+      }
+      expect(
+        LinkerMatrixEngine.getAvailableSchemes('text', 'progress')
+            .map((s) => s.id),
+        isNot(contains('pool_to_allocation')),
+      );
+    });
+
     test('text → slider 能选到（黑名单需为显式白名单方案放行）', () {
       // text→slider 在黑名单里，但这正是本方案最主要的用法：
       // 用文本当「剩余 10 点」去驱动滑块。
@@ -297,6 +333,61 @@ void main() {
       _install(elements);
       // 只统计启用的那条：已用 3 而不是 7。
       expect(LinkerService.poolUsedAmount('pool'), 3.0);
+    });
+
+    test('input 作分配项时按 text 计入已分配量', () {
+      // input 把值存在 text 而不是 current，取值口径必须覆盖两者，
+      // 否则用输入框做分配项时统计恒为 0。
+      final elements = [
+        _text('pool', text: '10'),
+        UIElement(
+          id: 'name',
+          isComposite: false,
+          offset: Offset.zero,
+          size: const Size(100, 30),
+          module: UIModule(
+            id: 'm_name',
+            name: 'name',
+            type: 'input',
+            properties: {'text': '4'},
+          ),
+        ),
+        _poolLinker('l1', from: 'pool', to: 'name'),
+      ];
+      _install(elements);
+      expect(LinkerService.poolUsedAmount('pool'), 4.0);
+      expect(
+        LinkerService.resolvePoolDisplay(_moduleOf(elements, 'pool'))!.remain,
+        6.0,
+      );
+    });
+
+    test('slider 与 input 混用时合并统计', () {
+      final elements = [
+        _text('pool', text: '10'),
+        _slider('str', 3),
+        UIElement(
+          id: 'bonus',
+          isComposite: false,
+          offset: Offset.zero,
+          size: const Size(100, 30),
+          module: UIModule(
+            id: 'm_bonus',
+            name: 'bonus',
+            type: 'input',
+            properties: {'text': '2'},
+          ),
+        ),
+        _poolLinker('l1', from: 'pool', to: 'str'),
+        _poolLinker('l2', from: 'pool', to: 'bonus'),
+      ];
+      _install(elements);
+      expect(LinkerService.poolUsedAmount('pool'), 5.0);
+      // 上限 = 自己已占 + 剩余：input 自己占 2，剩余 5 → 7。
+      expect(
+        LinkerService.allocationCeilingFor(_moduleOf(elements, 'bonus')),
+        7.0,
+      );
     });
 
     test('进度条当池子时读其当前值', () {

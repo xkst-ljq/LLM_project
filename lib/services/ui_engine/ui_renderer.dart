@@ -2270,16 +2270,46 @@ class _InputBlockWidgetState extends State<_InputBlockWidget> {
       }
       return;
     }
-    final didChange = widget.module.properties['committedValue'] != value;
-    widget.module.properties['committedValue'] = value;
+    // A13-3：作为配额分配项时，提交的数字不能超出剩余额度。
+    // 超额直接截断而不是拒绝提交——玩家输入 99 时给他能给的最大值，
+    // 比整条丢弃、输入框莫名清空要好理解。
+    var value2 = value;
+    final ceiling = LinkerService.allocationCeilingFor(widget.module);
+    if (ceiling != null) {
+      final typed = double.tryParse(value.trim());
+      if (typed == null) {
+        // 非数字对配额没有意义，按 0 处理，避免污染统计。
+        value2 = '0';
+      } else if (typed > ceiling) {
+        value2 = _trimAllocationNumber(ceiling);
+      } else if (typed < 0) {
+        value2 = '0';
+      }
+      if (value2 != value) {
+        _controller.text = value2;
+        _controller.selection =
+            TextSelection.collapsed(offset: value2.length);
+      }
+      widget.module.properties['text'] = value2;
+      widget.module.properties['value'] = value2;
+    }
+
+    final didChange = widget.module.properties['committedValue'] != value2;
+    widget.module.properties['committedValue'] = value2;
     if (shouldClear && value.isNotEmpty) {
       widget.module.properties['text'] = '';
       widget.module.properties['value'] = '';
       _controller.clear();
     }
     if (didChange || shouldClear) {
-      LinkerEventBus().emit(widget.element.id, 'input_commit', value);
+      LinkerEventBus().emit(widget.element.id, 'input_commit', value2);
     }
+  }
+
+  /// 把配额上限格式化成输入框里的字符串。整数不带小数尾巴。
+  static String _trimAllocationNumber(double value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value.toString();
   }
 
   void _handleFocusChange() {

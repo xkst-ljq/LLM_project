@@ -148,8 +148,12 @@ class LinkerMatrixEngine {
           '例：文本写「10」连到力量/敏捷/智力三个滑块，即成点数分配面板。',
       sourceType: 'any',
       targetType: 'any',
-      allowedSourceTypes: ['text', 'progress', 'slider', 'input', 'math_node'],
-      allowedTargetTypes: ['slider', 'progress'],
+      // 来源必须是**玩家改不了**的组件：总量一旦能被玩家自己拖动，
+      // 配额约束就失去意义（slider / input 因此排除在外）。
+      allowedSourceTypes: ['text', 'progress', 'math_node'],
+      // 目标必须是**玩家能操作**的组件：配额约束是在玩家改值时生效的。
+      // progress 没有任何手势，放这里纯属摆设，因此排除。
+      allowedTargetTypes: ['slider', 'input'],
       params: [
         SchemeParamField(
           key: 'total',

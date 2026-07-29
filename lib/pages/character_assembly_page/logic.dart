@@ -2076,12 +2076,22 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final props = Map<String, dynamic>.from(
       _deepCloneValue(module.properties) as Map,
     );
-    final min = (props['min'] as num?)?.toDouble() ?? 0.0;
-    final max = (props['max'] as num?)?.toDouble() ?? 100.0;
-    final value = initialValue.clamp(min, max).toDouble();
-    props['current'] = value;
-    // committedValue 也要跟上，否则数据通道读到的仍是旧值。
-    props['committedValue'] = value;
+    if (module.type == 'input') {
+      // input 把值存在 text/value，没有 min/max 概念。
+      final text = initialValue == initialValue.roundToDouble()
+          ? initialValue.toInt().toString()
+          : initialValue.toString();
+      props['text'] = text;
+      props['value'] = text;
+      props['committedValue'] = text;
+    } else {
+      final min = (props['min'] as num?)?.toDouble() ?? 0.0;
+      final max = (props['max'] as num?)?.toDouble() ?? 100.0;
+      final value = initialValue.clamp(min, max).toDouble();
+      props['current'] = value;
+      // committedValue 也要跟上，否则数据通道读到的仍是旧值。
+      props['committedValue'] = value;
+    }
     _elements[index] = element.copyWith(
       module: module.copyWith(properties: props),
     );

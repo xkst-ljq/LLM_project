@@ -981,10 +981,16 @@ class LinkerService {
       final target = _elementModules[targetId];
       if (target == null) continue;
 
-      final raw = target.properties['current'] ?? 0.0;
+      // input 把值存在 text/value 而不是 current，取值口径要覆盖两者，
+      // 否则用输入框做分配项时已分配量恒为 0。
+      final raw = target.properties['current'] ??
+          target.properties['committedValue'] ??
+          target.properties['text'] ??
+          target.properties['value'] ??
+          0.0;
       used += raw is num
           ? raw.toDouble()
-          : (double.tryParse(raw.toString()) ?? 0.0);
+          : (double.tryParse(raw.toString().trim()) ?? 0.0);
     }
     return used;
   }
@@ -1000,11 +1006,25 @@ class LinkerService {
     final pool = _resolvePoolForTarget(targetElId, <String>{});
     if (pool == null) return null;
 
-    final own = (targetModule.properties['current'] as num?)?.toDouble() ?? 0.0;
+    final own = allocationValueOf(targetModule);
     final used = poolUsedAmount(pool.poolElementId);
     final remain = pool.total - used;
     final ceiling = own + remain;
     return ceiling < 0 ? 0.0 : ceiling;
+  }
+
+  /// 读取分配组件当前占用的数值。
+  ///
+  /// slider 存在 `current`，input 存在 `text` / `committedValue`，
+  /// 两种口径都要认，否则用输入框做分配项时统计恒为 0。
+  static double allocationValueOf(UIModule module) {
+    final raw = module.properties['current'] ??
+        module.properties['committedValue'] ??
+        module.properties['text'] ??
+        module.properties['value'];
+    if (raw == null) return 0.0;
+    if (raw is num) return raw.toDouble();
+    return double.tryParse(raw.toString().trim()) ?? 0.0;
   }
 
   /// 该组件是否是某个配额池的分配目标。
