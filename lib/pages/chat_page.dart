@@ -2995,21 +2995,31 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       child: IgnorePointer(
         // 设置页滑出过半后不再接收触摸，避免隔着面板误触场景。
         ignoring: _showFanPanel || _animController.value > 0.5,
-        child: Stack(
+        // 整个 scene 区吞掉横向拖动：滑出聊天设置的手势与 PCB 的
+        // 翻页手势方向完全相同，同时存在必然误触。设置页的唯一入口
+        // 收敛为作者标记的「打开聊天设置」按钮。
+        //
+        // 这里用 GestureDetector 而非 Listener：竞技场里子级的
+        // HorizontalDrag 会赢过根部的同类识别器，从而截断冒泡；
+        // 而 PCB 内部翻页走的是 Listener（不参与竞技场），不受影响。
+        child: GestureDetector(
+          behavior: HitTestBehavior.deferToChild,
+          onHorizontalDragStart: (_) {},
+          onHorizontalDragUpdate: (_) {},
+          onHorizontalDragEnd: (_) {},
+          child: Stack(
           children: [
-            // 背景蒙版：scene 顶替整个聊天页，下方的背景图不应透出来。
-            // PCB 按比例缩放后会留出信箱区，没有这层就会看到聊天背景，
-            // 观感上像是「UI 浮在聊天上」，与顶替语义相悖。
+            // 背景蒙版：压暗聊天背景，让 PCB 缩放留出的信箱区不至于
+            // 和场景内容抢视线。保持半透明——作者选的聊天背景图仍是
+            // 场景观感的一部分，全遮住反而丢了信息。
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                // 吸收点击与横向拖动：蒙版本身不可穿透，
-                // 也不该触发聊天页根部的「滑出侧栏」手势。
+                // 吸收点击：蒙版本身不可穿透到下方聊天内容。
                 onTap: () {},
-                onHorizontalDragStart: (_) {},
-                onHorizontalDragUpdate: (_) {},
-                onHorizontalDragEnd: (_) {},
-                child: Container(color: const Color(0xFF07070B)),
+                child: Container(
+                  color: const Color(0xFF07070B).withValues(alpha: 0.32),
+                ),
               ),
             ),
             Positioned.fill(
@@ -3028,6 +3038,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
             ),
           ],
+          ),
         ),
       ),
     );
