@@ -141,10 +141,11 @@ class LinkerMatrixEngine {
       id: 'pool_to_allocation',
       label: '配额分配 (pool → allocation)',
       description: '把一个组件当作「可分配总量」，其余组件从中分配。'
+          '总量直接取来源组件的内容——文本里写「10」就是 10 点，改文本即改总量。'
           '用法：从总量组件各连一条到每个分配组件。'
           '分配组件会自动归零并被限制在剩余额度内，'
-          '总量组件则显示剩余可分配数。'
-          '例：文本「剩余 10 点」连到力量/敏捷/智力三个滑块，即成点数分配面板。',
+          '来源是文本时会实时显示剩余可分配数。'
+          '例：文本写「10」连到力量/敏捷/智力三个滑块，即成点数分配面板。',
       sourceType: 'any',
       targetType: 'any',
       allowedSourceTypes: ['text', 'progress', 'slider', 'input', 'math_node'],
@@ -152,10 +153,12 @@ class LinkerMatrixEngine {
       params: [
         SchemeParamField(
           key: 'total',
-          label: '可分配总量',
+          label: '可分配总量（备用）',
           type: SchemeParamType.doubleVal,
-          defaultValue: 10.0,
-          description: '多条连线中只需填一次；留 0 则读取来源组件自身的数值',
+          defaultValue: 0.0,
+          description: '通常留 0：总量直接读来源组件的内容'
+              '（文本写「10」即为 10 点，进度条 / 滑块读其当前值）。'
+              '只有来源读不出数字时才用这里填的值兜底',
         ),
         SchemeParamField(
           key: 'initialValue',

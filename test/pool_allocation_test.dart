@@ -10,7 +10,7 @@ import 'package:llm_project/services/ui_engine/ui_models.dart';
 /// 源 = 可分配总量，目标 = 参与分配的组件。
 /// 连上后分配组件归零，总量组件显示剩余可分配数。
 
-UIElement _text(String id) => UIElement(
+UIElement _text(String id, {String text = ''}) => UIElement(
       id: id,
       isComposite: false,
       offset: Offset.zero,
@@ -19,7 +19,7 @@ UIElement _text(String id) => UIElement(
         id: 'm_$id',
         name: id,
         type: 'text',
-        properties: {'text': ''},
+        properties: {'text': text},
       ),
     );
 
@@ -76,15 +76,15 @@ List<UIElement> _panel({
   double str = 0,
   double agi = 0,
   double intel = 0,
-  double total = 10.0,
+  String poolText = '10',
 }) =>
     [
-      _text('pool'),
+      // 总量直接写在文本里，作者改文本即改总量。
+      _text('pool', text: poolText),
       _slider('str', str),
       _slider('agi', agi),
       _slider('int', intel),
       _poolLinker('l1', from: 'pool', to: 'str', params: {
-        'total': total,
         'template': '剩余 {{remain}}/{{total}}',
       }),
       _poolLinker('l2', from: 'pool', to: 'agi'),
@@ -149,14 +149,49 @@ void main() {
       );
     });
 
-    test('总量参数只需在一条连线上填写', () {
-      // 第一条填了 total，另外两条留空。
-      final elements = _panel(str: 4);
+    test('总量直接读文本内容，改文本即改总量', () {
+      // 首轮测试反馈：总量只能在方案编辑器里填，text 的值用不上。
+      final elements = _panel(poolText: '25', str: 5);
+      _install(elements);
+      final display =
+          LinkerService.resolvePoolDisplay(_moduleOf(elements, 'pool'))!;
+      expect(display.total, 25.0);
+      expect(display.remain, 20.0);
+    });
+
+    test('允许文本带单位', () {
+      final elements = _panel(poolText: '10 点');
       _install(elements);
       expect(
         LinkerService.resolvePoolDisplay(_moduleOf(elements, 'pool'))!.total,
         10.0,
       );
+    });
+
+    test('文本读不出数字时回退连线参数', () {
+      final elements = [
+        _text('pool', text: '属性点'),
+        _slider('str', 0),
+        _poolLinker('l1', from: 'pool', to: 'str', params: {'total': 8.0}),
+      ];
+      _install(elements);
+      expect(
+        LinkerService.resolvePoolDisplay(_moduleOf(elements, 'pool'))!.total,
+        8.0,
+      );
+    });
+
+    test('渲染出的剩余数不会回写文本，不产生反馈循环', () {
+      // 池文本渲染成「剩余 7」，若把它当总量读会每帧递减。
+      final elements = _panel(poolText: '10', str: 3);
+      _install(elements);
+      final pool = _moduleOf(elements, 'pool');
+      for (var i = 0; i < 3; i++) {
+        final d = LinkerService.resolvePoolDisplay(pool)!;
+        expect(d.total, 10.0);
+        expect(d.remain, 7.0);
+      }
+      expect(pool.properties['text'], '10');
     });
   });
 
@@ -201,10 +236,9 @@ void main() {
 
     test('可为单个分配组件设定初始值', () {
       final elements = [
-        _text('pool'),
+        _text('pool', text: '10'),
         _slider('str', 0),
         _poolLinker('l1', from: 'pool', to: 'str', params: {
-          'total': 10.0,
           'initialValue': 3.0,
         }),
       ];
@@ -223,10 +257,10 @@ void main() {
 
     test('停用的连线不参与统计', () {
       final elements = [
-        _text('pool'),
+        _text('pool', text: '10'),
         _slider('str', 3),
         _slider('agi', 4),
-        _poolLinker('l1', from: 'pool', to: 'str', params: {'total': 10.0}),
+        _poolLinker('l1', from: 'pool', to: 'str'),
         _poolLinker('l2', from: 'pool', to: 'agi', enabled: false),
       ];
       _install(elements);
@@ -234,7 +268,7 @@ void main() {
       expect(LinkerService.poolUsedAmount('pool'), 3.0);
     });
 
-    test('总量留 0 时回退读取来源组件自身数值', () {
+    test('进度条当池子时读其当前值', () {
       final elements = [
         UIElement(
           id: 'pool',
@@ -249,7 +283,7 @@ void main() {
           ),
         ),
         _slider('str', 5),
-        _poolLinker('l1', from: 'pool', to: 'str', params: {'total': 0.0}),
+        _poolLinker('l1', from: 'pool', to: 'str'),
       ];
       _install(elements);
       // 用进度条当池子：总量取它的 current=20，已分配 5 → 上限 20。

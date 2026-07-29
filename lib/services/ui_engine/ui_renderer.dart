@@ -621,9 +621,17 @@ class UIRenderer {
     if (isStudio) {
       final double min = (module.properties['min'] ?? 0).toDouble();
       double current = (module.properties['current'] ?? min).toDouble();
-      final linkedVal = LinkerService.resolveTargetValue(module);
-      if (linkedVal != null && linkedVal is num) {
-        current = linkedVal.toDouble();
+      // A13-3：编辑态也要体现配额分配的归零，否则作者连好线后
+      // 画布上滑块仍停在旧位置，只有进预览才归零，看起来像没生效。
+      if (LinkerService.isAllocationTarget(module)) {
+        current = (LinkerService.allocationInitialValue(module) ?? 0.0)
+            .clamp(min, (module.properties['max'] ?? 100).toDouble())
+            .toDouble();
+      } else {
+        final linkedVal = LinkerService.resolveTargetValue(module);
+        if (linkedVal != null && linkedVal is num) {
+          current = linkedVal.toDouble();
+        }
       }
       return buildSliderWidget(current);
     }

@@ -258,6 +258,16 @@ class LinkerService {
           continue;
         }
 
+        // A13-3：配额分配的数据流向与众不同——变化发生在**目标**（玩家拖动
+        // 分配滑块），要刷新的却是**源**（池子显示的剩余数）。
+        // 下面的匹配逻辑只认 srcId == event.sourceModuleId，
+        // 因此拖动分配项永远匹配不上，池子的剩余数不会实时更新。
+        if (scheme == 'pool_to_allocation' &&
+            tgtId == event.sourceModuleId) {
+          needRefresh = true;
+          continue;
+        }
+
         final bool isGestureEvent = event.eventType == 'tap' ||
             event.eventType == 'double_tap' ||
             event.eventType == 'long_press';
@@ -905,9 +915,14 @@ class LinkerService {
 
   /// 取某个配额池的总量。
   ///
-  /// 优先用连线参数里填的 `total`（只需在任一条上填）；
-  /// 留 0 时回退到来源组件自身的数值，方便作者用一个进度条当池子。
+  /// **优先读来源组件自身的数值**——作者摆一个写着「10」的文本当池子，
+  /// 改文本就该改总量，这是最符合直觉的做法（首轮测试反馈：
+  /// 「text 所设定的值根本无法作为固定可分配值，而且还不会实时更新」）。
+  /// 组件里读不出数字时，才回退到连线参数里填的 `total`。
   static double _poolTotalOf(String poolElementId, Set<String> visitedSet) {
+    final own = _poolOwnTotal(poolElementId, visitedSet);
+    if (own != null) return own;
+
     for (final module in _elementModules.values) {
       if (module.type != 'linker') continue;
       final data =
@@ -920,10 +935,30 @@ class LinkerService {
       final t = (params['total'] as num?)?.toDouble() ?? 0.0;
       if (t > 0) return t;
     }
+    return 0.0;
+  }
+
+  /// 从池组件自身读出总量；读不出数字返回 null。
+  ///
+  /// 文本组件读 `text`（作者直接写「10」），数值组件读 `current` / `value`。
+  /// 注意：不能读渲染后的显示串——池文本渲染出来是「剩余 7」，
+  /// 拿它当总量会造成每帧递减的反馈循环。这里只读作者配置的原始值。
+  static double? _poolOwnTotal(String poolElementId, Set<String> visitedSet) {
     final pool = _elementModules[poolElementId];
-    if (pool == null) return 0.0;
-    final raw = pool.properties['current'] ?? pool.properties['value'] ?? 0.0;
-    return raw is num ? raw.toDouble() : (double.tryParse(raw.toString()) ?? 0.0);
+    if (pool == null) return null;
+
+    if (pool.type == 'text') {
+      final raw = pool.properties['text']?.toString().trim() ?? '';
+      if (raw.isEmpty) return null;
+      // 允许作者写「10 点」这类带单位的文本，取其中第一个数字。
+      final match = RegExp(r'-?\d+(\.\d+)?').firstMatch(raw);
+      return match == null ? null : double.tryParse(match.group(0)!);
+    }
+
+    final raw = pool.properties['current'] ?? pool.properties['value'];
+    if (raw == null) return null;
+    if (raw is num) return raw.toDouble();
+    return double.tryParse(raw.toString().trim());
   }
 
   /// 该配额池已被分配掉的总量。
