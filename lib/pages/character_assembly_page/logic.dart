@@ -122,6 +122,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             'historyLimit': 0,
             'showUser': true,
             'showAssistant': true,
+            // A11-2：LLM 回复常带 Markdown，默认按富文本渲染。
+            'richText': true,
             'fontSize': 12.5,
             'userBubbleColor': 0xFFDCF8C6,
             'assistantBubbleColor': 0xFFF1F1F4,
@@ -2484,6 +2486,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
     var flowShowUser = module.properties['showUser'] != false;
     var flowShowAssistant = module.properties['showAssistant'] != false;
+    // A11-2 富文本开关（message_flow 用）。默认开——
+    // LLM 回复里带 Markdown 是常态，关掉会看到满屏的 ** 和 #。
+    var flowRichText = module.properties['richText'] != false;
     final dotSizeController = TextEditingController(
       text: (_numProp(module.properties, 'dotSize') ?? 14.0)
           .toStringAsFixed(0),
@@ -2525,6 +2530,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'clip' => 'clip',
       _ => 'ellipsis',
     };
+    // A11-2 富文本开关（text 用）。默认值随显示模式而定：
+    //   滚动模式   → 开。readme / 道具说明几乎都带标题和列表。
+    //   其余模式   → 关。这类 text 多被 linker 指向来显示数值或短标签，
+    //                解析反而会把「HP<50」误判成 HTML 标签。
+    // 作者显式设过就以存档为准，不再按模式推断。
+    var textRichText = module.properties.containsKey('richText')
+        ? module.properties['richText'] == true
+        : textOverflow == 'scroll';
     var textAlignMode = switch (module.properties['textAlign']?.toString()) {
       'left' => 'left',
       'right' => 'right',
@@ -2696,13 +2709,29 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           setDialogState(() => textAlignMode = v);
                         },
                       ),
+                      const SizedBox(height: 4),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('富文本渲染',
+                            style: TextStyle(fontSize: 13)),
+                        subtitle: const Text(
+                          '识别 Markdown 标题 / 列表 / 表格与 HTML 排版。'
+                          '显示纯数值或短标签时建议关闭。',
+                          style: TextStyle(fontSize: 11, height: 1.3),
+                        ),
+                        value: textRichText,
+                        onChanged: (v) =>
+                            setDialogState(() => textRichText = v),
+                      ),
                       if (textOverflow == 'scroll')
                         const Padding(
                           padding: EdgeInsets.only(top: 8),
                           child: Text(
                             '滚动模式：内容从顶部开始、可选中复制、带滚动条。'
                             '适合角色说明、道具描述等长文；'
-                            '内容也可由联动器或数据通道动态注入。',
+                            '内容也可由联动器或数据通道动态注入。'
+                            '富文本默认开启——readme 与道具说明几乎都带标题和列表。',
                             style: TextStyle(
                               fontSize: 11,
                               color: Color(0xFF777783),
@@ -2867,6 +2896,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         value: flowShowAssistant,
                         onChanged: (v) =>
                             setDialogState(() => flowShowAssistant = v),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('富文本渲染',
+                            style: TextStyle(fontSize: 13)),
+                        subtitle: const Text(
+                          '识别 Markdown 与 HTML。默认开启——'
+                          '关闭后 LLM 回复里的 ** 和 # 会原样显示。',
+                          style: TextStyle(fontSize: 11, height: 1.3),
+                        ),
+                        value: flowRichText,
+                        onChanged: (v) =>
+                            setDialogState(() => flowRichText = v),
                       ),
                       const Text(
                         '窗口内可滚动；新消息自动滚到底，向上翻看历史时不会被拽回。',
@@ -3060,6 +3103,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             props['fontSize'] = readDouble(fontSizeController, 14.0);
             props['overflow'] = textOverflow;
             props['textAlign'] = textAlignMode;
+            props['richText'] = textRichText;
           } else if (type == 'progress') {
             props['min'] = readDouble(minController, 0.0);
             props['max'] = readDouble(maxController, 100.0);
@@ -3125,6 +3169,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             props['fontSize'] = readDouble(fontSizeController, 12.5);
             props['showUser'] = flowShowUser;
             props['showAssistant'] = flowShowAssistant;
+            props['richText'] = flowRichText;
           } else if (type == 'image') {
             props['url'] = imageUrlController.text.trim();
             props['assetPath'] = imageAssetController.text.trim();

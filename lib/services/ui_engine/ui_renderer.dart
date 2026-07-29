@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'assembly_rich_text.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
@@ -899,6 +900,10 @@ class UIRenderer {
     if (isScroll) {
       // 滚动长文：内容从顶部开始、可选择复制、带滚动条。
       // 与消息流不同——这里是一整块静态内容，不该自动滚到底。
+      //
+      // A11-2：滚动模式富文本默认**开启**——它的典型用途是 readme 与
+      // 道具说明，这类内容几乎必然带标题和列表。
+      // 非滚动 text 的默认相反，见下方分支。
       return _ScrollableTextBlock(
         text: displayText,
         style: TextStyle(
@@ -910,6 +915,25 @@ class UIRenderer {
         textAlign: ta,
         padding: (module.properties['contentPadding'] as num?)?.toDouble() ??
             10.0,
+        richText: module.properties['richText'] != false,
+      );
+    }
+
+    // 非滚动 text：仅在作者显式开启时走富文本。
+    // 它常被 linker 指向来显示数值 / 短标签，默认解析会带来
+    // 「HP<50」被当成 HTML 标签这类误判。
+    if (module.properties['richText'] == true) {
+      return Container(
+        alignment: boxAlign,
+        child: AssemblyRichText(
+          text: displayText,
+          baseStyle: TextStyle(
+            color: module.color,
+            fontSize: fs,
+            fontWeight: FontWeight.w600,
+          ),
+          textAlign: ta,
+        ),
       );
     }
 
@@ -1774,6 +1798,9 @@ class UIRenderer {
                 bubbleRadius: radius,
                 userColor: userColor,
                 assistantColor: assistantColor,
+                // A11-2：消息流默认开启富文本——LLM 回复里带 Markdown
+                // 是常态，关掉会看到满屏的 ** 和 #。
+                richText: props['richText'] != false,
               ),
       ),
     );
@@ -2825,12 +2852,16 @@ class _MessageFlowList extends StatefulWidget {
   final Color userColor;
   final Color assistantColor;
 
+  /// A11-2：气泡内容是否按 Markdown / HTML 渲染。
+  final bool richText;
+
   const _MessageFlowList({
     required this.messages,
     required this.fontSize,
     required this.bubbleRadius,
     required this.userColor,
     required this.assistantColor,
+    this.richText = true,
   });
 
   @override
@@ -2898,13 +2929,24 @@ class _MessageFlowListState extends State<_MessageFlowList> {
               color: msg.isUser ? widget.userColor : widget.assistantColor,
               borderRadius: BorderRadius.circular(widget.bubbleRadius),
             ),
-            child: Text(
-              msg.content,
-              style: TextStyle(
-                fontSize: widget.fontSize,
-                height: 1.35,
-                color: const Color(0xFF111116),
-              ),
+            child: Builder(
+              builder: (context) {
+                final style = TextStyle(
+                  fontSize: widget.fontSize,
+                  height: 1.35,
+                  color: const Color(0xFF111116),
+                );
+                if (!widget.richText) {
+                  return Text(msg.content, style: style);
+                }
+                // 气泡内不开 selectable：长按选中会与列表滚动、
+                // 以及外层可能存在的拖动手势抢竞技场。
+                return AssemblyRichText(
+                  text: msg.content,
+                  baseStyle: style,
+                  textAlign: TextAlign.left,
+                );
+              },
             ),
           ),
         );
@@ -2925,11 +2967,15 @@ class _ScrollableTextBlock extends StatefulWidget {
   final TextAlign textAlign;
   final double padding;
 
+  /// A11-2：是否按 Markdown / HTML 渲染。
+  final bool richText;
+
   const _ScrollableTextBlock({
     required this.text,
     required this.style,
     required this.textAlign,
     required this.padding,
+    this.richText = true,
   });
 
   @override
@@ -2965,11 +3011,23 @@ class _ScrollableTextBlockState extends State<_ScrollableTextBlock> {
       child: SingleChildScrollView(
         controller: _controller,
         padding: EdgeInsets.all(widget.padding),
-        child: SelectableText(
-          widget.text,
-          style: widget.style,
-          textAlign: widget.textAlign,
-        ),
+        child: widget.richText
+            // 长文说明按整块渲染，且允许选中复制——
+            // readme 里的设定、道具描述都是玩家会想摘出来的内容。
+            ? SizedBox(
+                width: double.infinity,
+                child: AssemblyRichText(
+                  text: widget.text,
+                  baseStyle: widget.style,
+                  textAlign: widget.textAlign,
+                  selectable: true,
+                ),
+              )
+            : SelectableText(
+                widget.text,
+                style: widget.style,
+                textAlign: widget.textAlign,
+              ),
       ),
     );
   }
