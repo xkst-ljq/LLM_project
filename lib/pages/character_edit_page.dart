@@ -1412,6 +1412,8 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
         builder: (_) => UIAssemblyListPage(
           meta: _meta.copy(),
           onMetaChanged: (m) => setState(() => _meta = m),
+          cardEntries: _entries,
+          cardType: _cardType,
         ),
       ),
     );

@@ -1,3 +1,4 @@
+import '../../models/card_entry_target.dart';
 import '../../models/session_state.dart';
 import '../../models/status_bar_field.dart';
 import 'ui_models.dart';
@@ -12,6 +13,9 @@ class DataChannelWrite {
 
   /// 'local_ui_state' | 'session_var' | 'status_field'
   final String targetKind;
+
+  /// A13-2：角色卡设定条目的三级定位；其余情况为 null。
+  final CardEntryTarget? cardTarget;
 
   /// 状态字段命中时的内部 id；未命中或非状态字段时为空。
   final String targetId;
@@ -31,6 +35,7 @@ class DataChannelWrite {
   const DataChannelWrite({
     required this.semanticLabel,
     required this.targetKind,
+    this.cardTarget,
     required this.targetId,
     required this.pendingName,
     required this.fieldType,
@@ -40,6 +45,9 @@ class DataChannelWrite {
 
   bool get isSessionVar => targetKind == 'session_var';
   bool get isStatusField => targetKind == 'status_field';
+
+  /// A13-2：写入角色卡设定条目（实际落在会话副本的专属键上）。
+  bool get isCardEntry => targetKind == 'card_entry';
 
   /// 状态字段通道但没有匹配到角色卡字段，本轮不写入。
   bool get isPendingStatus => isStatusField && targetId.trim().isEmpty;
@@ -219,6 +227,12 @@ class DataChannelService {
       return session.vars[label];
     }
 
+    if (targetKind == 'card_entry') {
+      final target = CardEntryTarget.fromJson(channel['cardEntryTarget']);
+      if (target == null || !target.isValid) return null;
+      return session.vars[target.sessionKey];
+    }
+
     return null;
   }
 
@@ -272,6 +286,7 @@ class DataChannelService {
     return DataChannelWrite(
       semanticLabel: label,
       targetKind: channel['targetKind']?.toString() ?? 'local_ui_state',
+      cardTarget: CardEntryTarget.fromJson(channel['cardEntryTarget']),
       targetId: channel['targetId']?.toString() ?? '',
       pendingName: channel['pendingName']?.toString() ?? '',
       fieldType: channel['fieldType']?.toString() ?? 'string',
@@ -297,6 +312,18 @@ class DataChannelService {
       if (write.isSessionVar) {
         if (session.vars[write.semanticLabel] != write.value) {
           session.vars[write.semanticLabel] = write.value;
+          changed = true;
+        }
+        continue;
+      }
+
+      if (write.isCardEntry) {
+        final target = write.cardTarget;
+        // 定位不完整时无处可写。自定义条目尤其常见：
+        // 作者选了「添加自定义条目」但还没填标题。
+        if (target == null || !target.isValid) continue;
+        if (session.vars[target.sessionKey] != write.value) {
+          session.vars[target.sessionKey] = write.value;
           changed = true;
         }
         continue;

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../models/card_entry_target.dart';
+import '../../models/character_entry.dart';
 import '../../models/session_state.dart';
 import '../../models/status_bar_field.dart';
 import '../../models/ui_assembly_info.dart';
@@ -38,6 +40,12 @@ class DataChannelPromptItem {
   /// 数值字段的范围提示，例如「范围 0~100」。无范围时为空。
   final String rangeHint;
 
+  /// A13-2：指向角色卡设定条目时的三级定位；其余情况为 null。
+  final CardEntryTarget? cardTarget;
+
+  /// A13-2：该条目在角色卡里的标题，用于生成显示名。
+  final String cardEntryTitle;
+
   /// A13-1：注入到 Prompt 的哪一段。
   ///
   /// `'ui_data'`（默认）→ `[界面数据]`，语义是「玩家操作界面产生的运行时数据」。
@@ -59,6 +67,8 @@ class DataChannelPromptItem {
     required this.rangeHint,
     this.applyPolicy = 'confirm',
     this.promptSection = sectionUiData,
+    this.cardTarget,
+    this.cardEntryTitle = '',
   });
 
   /// 注入到 `[界面数据]`（默认）。
@@ -68,7 +78,17 @@ class DataChannelPromptItem {
   static const String sectionCoreSetting = 'core_setting';
 
   /// 这条数据是否属于会话初始化档案。
-  bool get isCoreSetting => promptSection == sectionCoreSetting;
+  ///
+  /// 角色卡设定天然属于档案——它填的就是角色设定本身，
+  /// 不需要作者再去选一次注入位置。
+  bool get isCoreSetting =>
+      promptSection == sectionCoreSetting || targetKind == 'card_entry';
+
+  /// 展示用名称。角色卡设定显示成「身体数据 · 种族」这种带归属的形式，
+  /// 比裸的语义名更能让模型理解它在设定体系里的位置。
+  String get displayLabel => cardTarget == null
+      ? semanticLabel
+      : cardTarget!.displayLabel(cardEntryTitle);
 
   /// 当前值可以出现在 Prompt 里。
   bool get canRead => llmReadPolicy == 'prompt' || llmReadPolicy == 'hidden_context';
@@ -98,6 +118,7 @@ class DataChannelPromptBuilder {
     required List<String> uiAssemblyJsons,
     required SessionState session,
     List<StatusBarField> statusFields = const <StatusBarField>[],
+    List<CharacterEntry> cardEntries = const <CharacterEntry>[],
   }) {
     final items = <DataChannelPromptItem>[];
     final seen = <String>{};
@@ -114,15 +135,35 @@ class DataChannelPromptBuilder {
       // 状态字段还没匹配到卡片定义时没有可靠取值来源，跳过。
       if (targetKind == 'status_field' && targetId.trim().isEmpty) return;
 
-      final dedupeKey = '$targetKind::${targetId.isEmpty ? label : targetId}';
+      // A13-2：角色卡设定条目。三级定位不完整时无处可写，跳过。
+      final cardTarget = targetKind == 'card_entry'
+          ? CardEntryTarget.fromJson(channel['cardEntryTarget'])
+          : null;
+      if (targetKind == 'card_entry' &&
+          (cardTarget == null || !cardTarget.isValid)) {
+        return;
+      }
+
+      final dedupeKey = cardTarget != null
+          ? 'card_entry::${cardTarget.sessionKey}'
+          : '$targetKind::${targetId.isEmpty ? label : targetId}';
       if (!seen.add(dedupeKey)) return;
 
       final field = targetKind == 'status_field'
           ? _fieldById(statusFields, targetId)
           : null;
-      final value = targetKind == 'status_field'
-          ? (session.statusValues[targetId] ?? field?.initialValue ?? '')
-          : (session.vars[label] ?? '');
+      // 角色卡设定按三级定位的专属键取值，与普通会话变量隔开，
+      // 避免作者起了同名变量互相覆盖。
+      final value = switch (targetKind) {
+        'status_field' =>
+          session.statusValues[targetId] ?? field?.initialValue ?? '',
+        'card_entry' => session.vars[cardTarget!.sessionKey] ?? '',
+        _ => session.vars[label] ?? '',
+      };
+
+      // 玩家没填时整条不注入：档案项的语义是「玩家做出的选择」，
+      // 没选就该让母版里作者写的原值继续生效，而不是覆盖成「（未设置）」。
+      if (targetKind == 'card_entry' && value.trim().isEmpty) return;
 
       items.add(
         DataChannelPromptItem(
@@ -137,6 +178,10 @@ class DataChannelPromptBuilder {
           rangeHint: field == null ? '' : _rangeHint(field),
           promptSection: channel['promptSection']?.toString() ??
               DataChannelPromptItem.sectionUiData,
+          cardTarget: cardTarget,
+          cardEntryTitle: cardTarget == null
+              ? ''
+              : _cardEntryTitle(cardEntries, cardTarget),
         ),
       );
     }
@@ -164,6 +209,18 @@ class DataChannelPromptBuilder {
     }
 
     return items;
+  }
+
+  /// 取角色卡条目的标题；自定义条目直接用玩家填的标题。
+  static String _cardEntryTitle(
+    List<CharacterEntry> entries,
+    CardEntryTarget target,
+  ) {
+    if (target.isCustomEntry) return target.fieldKey.trim();
+    for (final entry in entries) {
+      if (entry.id == target.entryId) return entry.title;
+    }
+    return target.entryId;
   }
 
   /// 提取「被 UI 数据通道引用的状态字段」的读写策略。
@@ -229,11 +286,11 @@ class DataChannelPromptBuilder {
     if (profile.isNotEmpty) {
       lines.add('[玩家档案]');
       lines.add('以下是本次会话开始时由玩家确定的设定，属于角色设定的一部分，'
-          '在整场对话中保持有效，请严格遵守：');
+          '在整场对话中保持有效。若与前文的角色设定有冲突，以此处为准：');
       for (final item in profile) {
         final value = item.value.trim().isEmpty ? '（未设置）' : item.value;
         final range = item.rangeHint.isEmpty ? '' : '（${item.rangeHint}）';
-        lines.add('- ${item.semanticLabel}：$value$range');
+        lines.add('- ${item.displayLabel}：$value$range');
       }
     }
 
@@ -244,7 +301,7 @@ class DataChannelPromptBuilder {
       for (final item in uiData) {
         final value = item.value.trim().isEmpty ? '（未设置）' : item.value;
         final range = item.rangeHint.isEmpty ? '' : '（${item.rangeHint}）';
-        lines.add('- ${item.semanticLabel}：$value$range');
+        lines.add('- ${item.displayLabel}：$value$range');
       }
     }
 

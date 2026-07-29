@@ -828,6 +828,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         existing?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
     var promptSection = existing?['promptSection']?.toString() ??
         DataChannelPromptItem.sectionUiData;
+    var cardTarget = CardEntryTarget.fromJson(existing?['cardEntryTarget']) ??
+        const CardEntryTarget(
+            group: CardEntryTarget.groupIntro, entryId: '', fieldKey: '');
+    final cardCustomTitleController =
+        TextEditingController(text: cardTarget.isCustomEntry ? cardTarget.fieldKey : '');
 
     Future<void> closeDialog(BuildContext ctx, bool value) async {
       FocusManager.instance.primaryFocus?.unfocus();
@@ -903,6 +908,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       llmWritePolicy: llmWritePolicy,
                       applyPolicy: applyPolicy,
                       promptSection: promptSection,
+                      cardTarget: cardTarget,
+                      cardCustomTitleController: cardCustomTitleController,
+                      onCardTarget: (value) =>
+                          setDialogState(() => cardTarget = value),
                       onSemanticSource: (value) =>
                           setDialogState(() => semanticSource = value),
                       onLabelElementId: (value) =>
@@ -966,6 +975,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           llmWritePolicy: llmWritePolicy,
           applyPolicy: applyPolicy,
           promptSection: promptSection,
+          cardTarget: cardTarget,
         );
       }
       setState(() {
@@ -975,6 +985,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       });
     }
     nameController.dispose();
+    cardCustomTitleController.dispose();
   }
 
   Future<void> _showCompositeOverrideBindingEditor({
@@ -2727,6 +2738,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         existingChannel?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
     var channelPromptSection = existingChannel?['promptSection']?.toString() ??
         DataChannelPromptItem.sectionUiData;
+    var channelCardTarget =
+        CardEntryTarget.fromJson(existingChannel?['cardEntryTarget']) ??
+            const CardEntryTarget(
+                group: CardEntryTarget.groupIntro, entryId: '', fieldKey: '');
+    final channelCardTitleController = TextEditingController(
+        text: channelCardTarget.isCustomEntry ? channelCardTarget.fieldKey : '');
     var isKeyAction = UISemanticRole.isKeyAction(module);
     var sendsMessage = UISemanticRole.sendsMessage(module);
     var textOverflow = switch (module.properties['overflow']?.toString()) {
@@ -3260,6 +3277,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                               llmWritePolicy: channelWritePolicy,
                               applyPolicy: channelApplyPolicy,
                               promptSection: channelPromptSection,
+                              cardTarget: channelCardTarget,
+                              cardCustomTitleController:
+                                  channelCardTitleController,
+                              onCardTarget: (value) => setDialogState(
+                                  () => channelCardTarget = value),
                               onSemanticSource: (value) =>
                                   setDialogState(() => channelSource = value),
                               onLabelElementId: (value) =>
@@ -3478,6 +3500,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               llmWritePolicy: channelWritePolicy,
               applyPolicy: channelApplyPolicy,
               promptSection: channelPromptSection,
+              cardTarget: channelCardTarget,
             );
           }
 
@@ -3620,6 +3643,32 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   List<StatusBarField> get _statusFields => widget.statusFields;
 
+  List<CharacterEntry> get _cardEntries => widget.cardEntries;
+  String get _cardType => widget.cardType;
+
+  /// 该一级分组下作者**已启用**的条目。
+  ///
+  /// 只列启用的：作者关掉的条目不参与 Prompt，让玩家填了也不会生效，
+  /// 摆出来只会造成「填了没用」的困惑。
+  List<CharacterEntry> _entriesOfGroup(String group) {
+    final fixedIds = CardEntryTarget.fixedEntryIdsOf(_cardType, group);
+    final out = <CharacterEntry>[];
+    for (final id in fixedIds) {
+      final hit = _cardEntries.where((e) => e.id == id && e.enabled);
+      if (hit.isNotEmpty) out.add(hit.first);
+    }
+    // 自定义条目一律归入「详细设定」，与角色卡编辑页的分区一致。
+    if (group == CardEntryTarget.groupDetail) {
+      out.addAll(_cardEntries.where((e) => e.isCustom && e.enabled));
+    }
+    return out;
+  }
+
+  CharacterEntry? _cardEntryById(String id) {
+    final hit = _cardEntries.where((e) => e.id == id);
+    return hit.isEmpty ? null : hit.first;
+  }
+
   /// 按名称在角色卡状态栏字段里查找匹配项（忽略大小写与首尾空白）。
   StatusBarField? _matchStatusFieldByName(String name) {
     final key = name.trim().toLowerCase();
@@ -3657,6 +3706,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String llmWritePolicy,
     required String applyPolicy,
     required String promptSection,
+    required CardEntryTarget cardTarget,
   }) {
     final isStatus = targetKind == 'status_field';
     final resolved = isStatus
@@ -3680,6 +3730,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'llmUpdateApplyPolicy': applyPolicy,
       // A13-1：注入到 [界面数据] 还是 [玩家档案]。
       'promptSection': promptSection,
+      // A13-2：指向角色卡设定条目时的三级定位。
+      if (targetKind == 'card_entry' && cardTarget.isValid)
+        'cardEntryTarget': cardTarget.toJson(),
       // 命中状态字段时以卡片端字段类型为准，避免 UI 组件类型与状态字段类型冲突。
       'fieldType': resolved.fieldType ?? _fieldTypeForModule(module),
     };
@@ -3723,6 +3776,157 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
   }
 
+  /// A13-2：角色卡设定的三级选择器。
+  ///
+  /// 一级「简单介绍 / 详细设定」→ 二级条目 → 三级子字段。
+  /// 自定义条目的第三级是**标题输入**（默认名都是「新条目」，
+  /// 靠标题区分才能同时存在多个），且只在详细设定下可选。
+  List<Widget> _buildCardEntryTargetFields({
+    required CardEntryTarget target,
+    required TextEditingController customTitleController,
+    required ValueChanged<CardEntryTarget> onChanged,
+  }) {
+    if (_cardEntries.isEmpty) {
+      return const [
+        Text(
+          '角色卡还没有设定条目，或条目都未启用。请先在角色卡编辑页填写并启用条目。',
+          style: TextStyle(fontSize: 11, color: Color(0xFFE65100), height: 1.35),
+        ),
+      ];
+    }
+
+    final group = target.group.isEmpty ? CardEntryTarget.groupIntro : target.group;
+    final entries = _entriesOfGroup(group);
+
+    Widget dropdown(
+      String value,
+      String label,
+      List<DropdownMenuItem<String>> items,
+      ValueChanged<String> onPick,
+    ) {
+      return DropdownButtonFormField<String>(
+        initialValue: value.isEmpty ? null : value,
+        isExpanded: true,
+        decoration: InputDecoration(labelText: label, isDense: true),
+        items: items,
+        onChanged: (next) {
+          if (next == null) return;
+          onPick(next);
+        },
+      );
+    }
+
+    final widgets = <Widget>[
+      dropdown(
+        group,
+        '设定分组',
+        const [
+          DropdownMenuItem(
+              value: CardEntryTarget.groupIntro, child: Text('简单介绍')),
+          DropdownMenuItem(
+              value: CardEntryTarget.groupDetail, child: Text('详细设定')),
+        ],
+        // 换分组时清空二三级：旧条目多半不属于新分组。
+        (value) => onChanged(CardEntryTarget(
+          group: value,
+          entryId: '',
+          fieldKey: '',
+        )),
+      ),
+      const SizedBox(height: 10),
+    ];
+
+    if (entries.isEmpty && group == CardEntryTarget.groupIntro) {
+      widgets.add(const Text(
+        '「简单介绍」下没有已启用的条目。',
+        style: TextStyle(fontSize: 11, color: Color(0xFFE65100), height: 1.35),
+      ));
+      return widgets;
+    }
+
+    widgets.add(dropdown(
+      target.entryId,
+      '设定条目',
+      [
+        for (final entry in entries)
+          DropdownMenuItem(value: entry.id, child: Text(entry.title)),
+        // 自定义条目只在详细设定下允许——与角色卡编辑页的规则一致。
+        if (group == CardEntryTarget.groupDetail)
+          const DropdownMenuItem(
+            value: CardEntryTarget.customEntryMarker,
+            child: Text('＋ 添加自定义条目'),
+          ),
+      ],
+      (value) => onChanged(target.copyWith(
+        group: group,
+        entryId: value,
+        // 换条目后子字段必然失效。
+        fieldKey: '',
+      )),
+    ));
+
+    if (target.entryId.isEmpty) return widgets;
+
+    widgets.add(const SizedBox(height: 10));
+
+    if (target.entryId == CardEntryTarget.customEntryMarker) {
+      // 第三级 = 条目标题。此时才真正决定「是哪一个自定义条目」。
+      widgets.add(TextField(
+        controller: customTitleController,
+        decoration: const InputDecoration(
+          labelText: '自定义条目标题',
+          hintText: '例如：职业、天赋、随身物品',
+          isDense: true,
+        ),
+        onChanged: (value) => onChanged(target.copyWith(
+          group: group,
+          fieldKey: value,
+        )),
+      ));
+      widgets.add(const Padding(
+        padding: EdgeInsets.only(top: 6),
+        child: Text(
+          '玩家输入并提交后才会真正产生这个条目，留空则不生效。'
+          '标题相同视为同一条目，重复填写是覆盖而非新增。',
+          style: TextStyle(fontSize: 11, color: Color(0xFF777783), height: 1.35),
+        ),
+      ));
+      return widgets;
+    }
+
+    final entry = _cardEntryById(target.entryId);
+    final fieldKeys =
+        entry == null ? const <String>[] : CardEntryTarget.fieldKeysOf(entry);
+
+    if (fieldKeys.isEmpty) {
+      // 纯文本条目（如「与用户关系」）没有子字段，整条即目标。
+      widgets.add(const Text(
+        '该条目是整段文本，没有更细的子项，玩家填写的内容会覆盖整条。',
+        style: TextStyle(fontSize: 11, color: Color(0xFF777783), height: 1.35),
+      ));
+      if (target.fieldKey != '__whole__') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          onChanged(target.copyWith(group: group, fieldKey: '__whole__'));
+        });
+      }
+      return widgets;
+    }
+
+    widgets.add(dropdown(
+      target.fieldKey == '__whole__' ? '' : target.fieldKey,
+      '具体子项',
+      [
+        for (final key in fieldKeys)
+          DropdownMenuItem(
+            value: key,
+            child: Text(CardEntryTarget.fieldLabelOf(target.entryId, key)),
+          ),
+      ],
+      (value) => onChanged(target.copyWith(group: group, fieldKey: value)),
+    ));
+    return widgets;
+  }
+
   /// 数据通道表单字段，供原子实例编辑器与复合暴露项实例编辑器共用。
   List<Widget> _buildDataChannelFormFields({
     required List<UIElement> labels,
@@ -3736,6 +3940,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String llmWritePolicy,
     required String applyPolicy,
     required String promptSection,
+    required CardEntryTarget cardTarget,
+    required TextEditingController cardCustomTitleController,
+    required ValueChanged<CardEntryTarget> onCardTarget,
     required ValueChanged<String> onSemanticSource,
     required ValueChanged<String> onLabelElementId,
     required ValueChanged<String> onTargetKind,
@@ -3829,9 +4036,19 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           DropdownMenuItem(value: 'local_ui_state', child: Text('UI 内部状态')),
           DropdownMenuItem(value: 'session_var', child: Text('会话变量')),
           DropdownMenuItem(value: 'status_field', child: Text('状态字段')),
+          DropdownMenuItem(value: 'card_entry', child: Text('角色卡设定')),
         ],
         onTargetKind,
       ),
+      // A13-2：角色卡设定的三级定位。
+      if (targetKind == 'card_entry') ...[
+        const SizedBox(height: 8),
+        ..._buildCardEntryTargetFields(
+          target: cardTarget,
+          customTitleController: cardCustomTitleController,
+          onChanged: onCardTarget,
+        ),
+      ],
       if (targetKind == 'status_field') ...[
         const SizedBox(height: 8),
         _buildStatusFieldMatchHint(

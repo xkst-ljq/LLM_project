@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/character_entry.dart';
 import '../models/character_meta.dart';
 import '../models/ui_assembly_info.dart';
 import 'character_assembly_page.dart';
@@ -9,10 +10,19 @@ class UIAssemblyListPage extends StatefulWidget {
   final CharacterMeta meta;
   final ValueChanged<CharacterMeta> onMetaChanged;
 
+  /// 角色卡的设定条目（只读参考）。
+  /// A13-2 让数据通道能指向具体条目的子字段，需要知道卡片有哪些条目。
+  final List<CharacterEntry> cardEntries;
+
+  /// 卡类型（`character` / `system`），决定可选条目集合。
+  final String cardType;
+
   const UIAssemblyListPage({
     super.key,
     required this.meta,
     required this.onMetaChanged,
+    this.cardEntries = const <CharacterEntry>[],
+    this.cardType = 'character',
   });
 
   @override
@@ -142,6 +152,8 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
         builder: (_) => CharacterAssemblyPage(
           assemblyInfo: info,
           statusFields: widget.meta.statusBarFields,
+          cardEntries: widget.cardEntries,
+          cardType: widget.cardType,
         ),
       ),
     );

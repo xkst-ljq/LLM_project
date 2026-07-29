@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/card_entry_target.dart';
+import '../models/character_entry.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
@@ -97,10 +99,21 @@ class CharacterAssemblyPage extends StatefulWidget {
   /// Assembly 不修改角色卡字段本体，未匹配到的名称记为 pendingName。
   final List<StatusBarField> statusFields;
 
+  /// 角色卡设定条目（只读参考）。
+  ///
+  /// 数据通道选择「角色卡设定」时，用于列出可填写的条目与子字段。
+  /// Assembly 不修改条目本体——玩家填的值写会话副本，注入时覆盖母版。
+  final List<CharacterEntry> cardEntries;
+
+  /// 卡类型（`character` / `system`）。人物卡与系统卡的条目集合不同。
+  final String cardType;
+
   const CharacterAssemblyPage({
     super.key,
     required this.assemblyInfo,
     this.statusFields = const <StatusBarField>[],
+    this.cardEntries = const <CharacterEntry>[],
+    this.cardType = 'character',
   });
   @override
   State<CharacterAssemblyPage> createState() => _CharacterAssemblyPageState();

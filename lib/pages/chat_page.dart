@@ -265,7 +265,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       uiAssemblyJsons: assemblies,
       session: _sessionState,
       statusFields: character.meta.statusBarFields,
+      cardEntries: _allCardEntries(),
     );
+  }
+
+  /// 角色卡的全部设定条目（含未启用的）。
+  ///
+  /// A13-2 用它把 `cardEntryTarget` 还原成「身体数据 · 种族」这类显示名。
+  /// 这里不过滤 enabled：条目被作者关掉后，玩家此前填的值仍然存在，
+  /// 显示名要能正常解析，否则会退化成裸的内部 id。
+  List<CharacterEntry> _allCardEntries() {
+    final raw = _currentCharacter?.entriesJson ?? '';
+    if (raw.trim().isEmpty) return const <CharacterEntry>[];
+    try {
+      final list = jsonDecode(raw) as List;
+      return list.map((e) => CharacterEntry.fromJson(e)).toList();
+    } catch (_) {
+      return const <CharacterEntry>[];
+    }
   }
 
   /// 供 Assembly 消息流组件使用的对话历史。
