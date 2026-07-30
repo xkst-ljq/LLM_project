@@ -4664,9 +4664,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final index = _elements.indexWhere((e) => e.id == element.id);
     if (index == -1) return;
     if (_isGeometryLocked(_elements[index])) return;
+    final current = _elements[index];
+    // 方向键与拖动受同一套约束，否则「拖不出去但按方向键能挪出去」。
+    final desired = current.offset + delta;
     setState(() {
-      _elements[index] =
-          _elements[index].copyWith(offset: _elements[index].offset + delta);
+      _elements[index] = current.copyWith(
+        offset: _applyPlacementConstraints(current, desired),
+      );
     });
     _persistAssemblyElements();
   }
@@ -7936,7 +7940,40 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return (box.localToGlobal(Offset.zero) & box.size).contains(globalPosition);
   }
 
-  bool _requiresPcbContainment(UIElement element) => element.isComposite;
+  /// 元件出 PCB 的三态分类。
+  ///
+  /// | 类别 | 类型 | 规则 |
+  /// |---|---|---|
+  /// | 原生后台节点 | linker / math_node / timer / page_router | 随便摆 |
+  /// | 可后台化白名单 | text / switch / progress / indicator / input | 走 4.1 双阈值 |
+  /// | 其余原子 + 复合件 | button / slider / select / surface / ... | **必须留在 PCB 内** |
+  ///
+  /// 第三类此前完全没有约束，是个真缺口（用户发现）：
+  /// 它们既不像后台节点那样运行时有存在意义，
+  /// 也不在后台化白名单里，拖出去等于**静默丢失**——
+  /// 编辑器里看得见，一进运行时就没了，作者根本不知道发生了什么。
+  bool _requiresPcbContainment(UIElement element) {
+    if (element.isComposite) return true;
+    final type = element.module?.type;
+    // 原生后台节点：运行时本就 `SizedBox.shrink`，摆哪都行。
+    // 作者常特意把它们拖到 PCB 外当「后台机房」，别拦。
+    if (_isNativeBackendNodeType(type)) return false;
+    // 可后台化白名单：由 4.1 的双阈值滞回接管，不走硬夹取。
+    if (_canUseBackgroundRuntimePlacement(element)) return false;
+    return true;
+  }
+
+  /// 天生的后台逻辑节点类型。
+  ///
+  /// 与 `UIRenderer.render` 里非 Studio 模式直接 `SizedBox.shrink`
+  /// 的那份清单对应；`timer` 在渲染器里走 `_renderComposite` 的
+  /// `backendTypes`，同属此类。
+  static bool _isNativeBackendNodeType(String? type) => const {
+        'linker',
+        'math_node',
+        'timer',
+        _pageRouterType,
+      }.contains(type);
 
   // ==========================================================================
   // 灵感池 4.1：拖出 PCB 自动后台化（双阈值滞回）
@@ -8002,27 +8039,18 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   ///
   /// 用轴对齐包围盒而非旋转后的真实四角：后台化是个粗判定，
   /// 旋转元件的精确外接框会让阈值手感随角度漂移，反而不好用。
-  double _pcbOverflowDepth(Offset offset, Size size) {
-    final double left = -offset.dx;
-    final double top = -offset.dy;
-    final double right = offset.dx + size.width - _pcbSize.width;
-    final double bottom = offset.dy + size.height - _pcbSize.height;
+  double _pcbOverflowDepth(Offset offset, Size size, {double rotation = 0.0}) {
+    final bounds = _rotatedBounds(size, rotation);
+    final origin = offset + bounds.delta;
+    final double left = -origin.dx;
+    final double top = -origin.dy;
+    final double right = origin.dx + bounds.size.width - _pcbSize.width;
+    final double bottom = origin.dy + bounds.size.height - _pcbSize.height;
     final double depth = math.max(
       math.max(left, top),
       math.max(right, bottom),
     );
     return depth <= 0 ? 0.0 : depth;
-  }
-
-  /// 把元件吸附回 PCB 内壁（贴边，不是塞回中心）。
-  Offset _snapOffsetInsidePcb(Offset desired, Size size) {
-    // PCB 比元件还小时 max 会变负，clamp 会抛异常，所以先兜底。
-    final double maxX = math.max(0.0, _pcbSize.width - size.width);
-    final double maxY = math.max(0.0, _pcbSize.height - size.height);
-    return Offset(
-      desired.dx.clamp(0.0, maxX).toDouble(),
-      desired.dy.clamp(0.0, maxY).toDouble(),
-    );
   }
 
   /// 拖动开始：重置本次拖动的滞回状态。
@@ -8043,9 +8071,27 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   /// 不允许后台化的元件原样返回（它们可以随便摆在 PCB 外，
   /// 那是老早就有的行为：「位移不限制负坐标，逻辑件常被特意拖出 PCB」）。
   Offset _resolveBackstageDragOffset(UIElement element, Offset desired) {
-    if (!_canUseBackgroundRuntimePlacement(element)) return desired;
+    if (!_canUseBackgroundRuntimePlacement(element)) {
+      _backstageHintElementId = null;
+      _backstageHintWillBackstage = false;
+      // 不可后台化的普通原子（button / slider / surface / image ...）
+      // 必须留在 PCB 内：它们运行时照常渲染，拖出去等于静默丢失。
+      // 原生后台节点（linker / math_node / timer / page_router）不在此列，
+      // `_requiresPcbContainment` 已把它们放行。
+      return _requiresPcbContainment(element)
+          ? _clampOffsetInsidePcb(
+              desired,
+              element.size,
+              rotation: element.rotation,
+            )
+          : desired;
+    }
 
-    final double depth = _pcbOverflowDepth(desired, element.size);
+    final double depth = _pcbOverflowDepth(
+      desired,
+      element.size,
+      rotation: element.rotation,
+    );
 
     if (_dragDetachedFromPcb) {
       // 已脱离：只有拖回到「回吸阈值」以内才重新被吸附。
@@ -8074,7 +8120,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     return willBackstage
         ? desired
-        : _snapOffsetInsidePcb(desired, element.size);
+        : _clampOffsetInsidePcb(
+            desired,
+            element.size,
+            rotation: element.rotation,
+          );
   }
 
   /// 拖动结束：按最终位置落定 `runtimePlacement`。
@@ -8153,7 +8203,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       // 从后台移回时，元件很可能还停在 PCB 外面。
       // 不把它拉回来的话，作者会看到「已移回画布」但屏幕上啥也没多出来。
       _elements[index] = _elements[index].copyWith(
-        offset: _snapOffsetInsidePcb(element.offset, element.size),
+        offset: _clampOffsetInsidePcb(
+          element.offset,
+          element.size,
+          rotation: element.rotation,
+        ),
       );
     }
     setState(() {
@@ -8417,20 +8471,62 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
   }
 
-  Offset _clampCompositeOffsetInsidePcb(Offset desired, Size size) {
-    final minX = 0.0;
-    final minY = 0.0;
-    final maxX = math.max(0.0, _pcbSize.width - size.width);
-    final maxY = math.max(0.0, _pcbSize.height - size.height);
-    return Offset(
-      desired.dx.clamp(minX, maxX).toDouble(),
-      desired.dy.clamp(minY, maxY).toDouble(),
+  /// 把 offset 夹进 PCB 内。
+  ///
+  /// 原名 `_clampCompositeOffsetInsidePcb`——现在约束对象不止复合件，
+  /// 普通原子也要夹，名字里的 Composite 已经误导。
+  /// 也用作 4.1 的「吸附回内壁」：贴边，不是塞回中心。
+  Offset _clampOffsetInsidePcb(
+    Offset desired,
+    Size size, {
+    double rotation = 0.0,
+  }) {
+    // 旋转元件按旋转后的包围盒夹取，否则与退出校验的四角判定打架。
+    final bounds = _rotatedBounds(size, rotation);
+    // 包围盒左上角 = desired + delta，先把 desired 换算到包围盒坐标系。
+    final boxOrigin = desired + bounds.delta;
+    // PCB 比元件还小时 max 会变负，clamp 会抛异常，所以先兜底。
+    final maxX = math.max(0.0, _pcbSize.width - bounds.size.width);
+    final maxY = math.max(0.0, _pcbSize.height - bounds.size.height);
+    final clamped = Offset(
+      boxOrigin.dx.clamp(0.0, maxX).toDouble(),
+      boxOrigin.dy.clamp(0.0, maxY).toDouble(),
     );
+    // 再换算回元件左上角。
+    return clamped - bounds.delta;
   }
 
   Offset _applyPlacementConstraints(UIElement prototype, Offset desired) {
     if (!_requiresPcbContainment(prototype)) return desired;
-    return _clampCompositeOffsetInsidePcb(desired, prototype.size);
+    return _clampOffsetInsidePcb(
+      desired,
+      prototype.size,
+      rotation: prototype.rotation,
+    );
+  }
+
+  /// 旋转后四角的轴对齐包围盒（相对元件左上角的偏移量 + 尺寸）。
+  ///
+  /// 旋转元件不做这一步就会**死锁**：`_isElementInsidePcb` 按旋转后的
+  /// 四角判定，而夹取若按未旋转的 w×h 来算，贴边后四角仍探在外面——
+  /// 退出时被拦下「请先移回可视区域」，可作者已经拖到头了，移不动。
+  ///
+  /// `Transform.rotate` 绕**中心**旋转，所以先算出旋转后包围盒相对
+  /// 中心的半宽半高，再换算回左上角。
+  ({Offset delta, Size size}) _rotatedBounds(Size size, double rotation) {
+    if (rotation == 0.0) {
+      return (delta: Offset.zero, size: size);
+    }
+    final radians = rotation * math.pi / 180.0;
+    final cosA = math.cos(radians).abs();
+    final sinA = math.sin(radians).abs();
+    final w = size.width * cosA + size.height * sinA;
+    final h = size.width * sinA + size.height * cosA;
+    // 包围盒与原盒共中心，左上角相对原左上角的偏移。
+    return (
+      delta: Offset((size.width - w) / 2, (size.height - h) / 2),
+      size: Size(w, h),
+    );
   }
 
   bool _validateAssemblyBeforeExit() {
@@ -8440,7 +8536,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '当前有 $illegalCount 个复合组件超出 PCB 边界，请先移回可视区域后再保存。',
+          '当前有 $illegalCount 个组件超出 PCB 边界，请先移回可视区域后再保存。',
         ),
         backgroundColor: const Color(0xFF8B4B4B),
       ),
@@ -8459,7 +8555,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           builder: (ctx) => AlertDialog(
             title: const Text('存在未保存的非法布局'),
             content: const Text(
-              '当前有复合组件超出 PCB 边界，无法保存。要放弃本次修改并返回吗？',
+              '当前有组件超出 PCB 边界，无法保存。要放弃本次修改并返回吗？',
             ),
             actions: [
               TextButton(

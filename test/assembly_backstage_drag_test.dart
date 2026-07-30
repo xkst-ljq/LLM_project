@@ -16,24 +16,88 @@ import 'package:flutter_test/flutter_test.dart';
 const double kDetach = 56.0;
 const double kReattach = 24.0;
 
+/// 复刻 `_rotatedBounds`：旋转后四角的轴对齐包围盒。
+({Offset delta, Size size}) rotatedBounds(Size size, double rotation) {
+  if (rotation == 0.0) return (delta: Offset.zero, size: size);
+  final r = rotation * math.pi / 180.0;
+  final c = math.cos(r).abs();
+  final s = math.sin(r).abs();
+  final w = size.width * c + size.height * s;
+  final h = size.width * s + size.height * c;
+  return (
+    delta: Offset((size.width - w) / 2, (size.height - h) / 2),
+    size: Size(w, h),
+  );
+}
+
 /// 复刻 `_pcbOverflowDepth`。
-double overflowDepth(Offset offset, Size size, Size pcb) {
-  final double left = -offset.dx;
-  final double top = -offset.dy;
-  final double right = offset.dx + size.width - pcb.width;
-  final double bottom = offset.dy + size.height - pcb.height;
+double overflowDepth(Offset offset, Size size, Size pcb,
+    {double rotation = 0.0}) {
+  final b = rotatedBounds(size, rotation);
+  final o = offset + b.delta;
+  final double left = -o.dx;
+  final double top = -o.dy;
+  final double right = o.dx + b.size.width - pcb.width;
+  final double bottom = o.dy + b.size.height - pcb.height;
   final double depth = math.max(math.max(left, top), math.max(right, bottom));
   return depth <= 0 ? 0.0 : depth;
 }
 
-/// 复刻 `_snapOffsetInsidePcb`。
-Offset snapInside(Offset desired, Size size, Size pcb) {
-  final double maxX = math.max(0.0, pcb.width - size.width);
-  final double maxY = math.max(0.0, pcb.height - size.height);
-  return Offset(
-    desired.dx.clamp(0.0, maxX).toDouble(),
-    desired.dy.clamp(0.0, maxY).toDouble(),
+/// 复刻 `_clampOffsetInsidePcb`。
+Offset snapInside(Offset desired, Size size, Size pcb,
+    {double rotation = 0.0}) {
+  final b = rotatedBounds(size, rotation);
+  final origin = desired + b.delta;
+  final double maxX = math.max(0.0, pcb.width - b.size.width);
+  final double maxY = math.max(0.0, pcb.height - b.size.height);
+  final clamped = Offset(
+    origin.dx.clamp(0.0, maxX).toDouble(),
+    origin.dy.clamp(0.0, maxY).toDouble(),
   );
+  return clamped - b.delta;
+}
+
+/// 复刻 `_rotatePoint` + `_isElementInsidePcb` 的四角判定。
+Offset rotatePoint(Offset p, Offset c, double deg) {
+  if (deg == 0.0) return p;
+  final r = deg * math.pi / 180.0;
+  final dx = p.dx - c.dx;
+  final dy = p.dy - c.dy;
+  return Offset(
+    c.dx + dx * math.cos(r) - dy * math.sin(r),
+    c.dy + dx * math.sin(r) + dy * math.cos(r),
+  );
+}
+
+bool isInsidePcb(Offset off, Size size, Size pcb, {double rotation = 0.0}) {
+  final center = Offset(off.dx + size.width / 2, off.dy + size.height / 2);
+  const e = 0.001;
+  final corners = <Offset>[
+    off,
+    Offset(off.dx + size.width, off.dy),
+    Offset(off.dx + size.width, off.dy + size.height),
+    Offset(off.dx, off.dy + size.height),
+  ].map((p) => rotatePoint(p, center, rotation));
+  return corners.every((p) =>
+      p.dx >= -e &&
+      p.dx <= pcb.width + e &&
+      p.dy >= -e &&
+      p.dy <= pcb.height + e);
+}
+
+/// 三态分类：元件是否必须留在 PCB 内。
+const Set<String> kNativeBackendTypes = {
+  'linker',
+  'math_node',
+  'timer',
+  'page_router',
+};
+
+bool requiresPcbContainment(String type, {bool isComposite = false}) {
+  if (isComposite) return true;
+  if (kNativeBackendTypes.contains(type)) return false;
+  if (canBackstage(type)) return false;
+  return true;
 }
 
 const Set<String> kBackgroundCapable = {
@@ -339,6 +403,111 @@ void main() {
     test('本来就在内的元件取消后台时位置不变', () {
       const inside = Offset(100, 200);
       expect(snapInside(inside, size, pcb), inside);
+    });
+  });
+
+  group('三态分类：谁必须留在 PCB 内', () {
+    test('复合件必须留在内（产品规则 3.1）', () {
+      expect(requiresPcbContainment('text', isComposite: true), isTrue);
+    });
+
+    for (final t in kNativeBackendTypes) {
+      test('$t 是原生后台节点，可随便摆', () {
+        expect(requiresPcbContainment(t), isFalse);
+      });
+    }
+
+    for (final t in kBackgroundCapable) {
+      test('$t 走 4.1 双阈值，不硬夹', () {
+        expect(requiresPcbContainment(t), isFalse);
+      });
+    }
+
+    // 这一组是本次修复的核心：它们此前完全没有约束。
+    for (final t in [
+      'button',
+      'slider',
+      'select',
+      'surface',
+      'base_box',
+      'message_flow',
+      'image',
+      'line',
+      'primitive_art',
+      'surface_art',
+      'light_effect',
+    ]) {
+      test('$t 必须留在 PCB 内（此前是缺口）', () {
+        expect(requiresPcbContainment(t), isTrue);
+      });
+    }
+
+    test('三态互斥且完备：没有类型同时属于两类', () {
+      final overlap =
+          kNativeBackendTypes.intersection(kBackgroundCapable);
+      expect(overlap, isEmpty);
+    });
+  });
+
+  group('普通原子被硬夹在 PCB 内', () {
+    test('button 拖到远处被夹回边界', () {
+      final clamped = snapInside(const Offset(900, 900), size, pcb);
+      expect(clamped, const Offset(280, 770));
+    });
+
+    test('button 往左上拖被夹到原点', () {
+      expect(snapInside(const Offset(-200, -200), size, pcb), Offset.zero);
+    });
+
+    test('PCB 内的位置不受影响', () {
+      expect(snapInside(const Offset(50, 60), size, pcb), const Offset(50, 60));
+    });
+  });
+
+  group('旋转元件：夹取与退出校验不能打架', () {
+    const big = Size(240, 100);
+
+    test('0° 时旋转包围盒退化为原尺寸', () {
+      final b = rotatedBounds(big, 0.0);
+      expect(b.delta, Offset.zero);
+      expect(b.size, big);
+    });
+
+    test('90° 时包围盒宽高互换', () {
+      final b = rotatedBounds(big, 90.0);
+      expect(b.size.width, closeTo(100, 0.001));
+      expect(b.size.height, closeTo(240, 0.001));
+    });
+
+    test('45° 包围盒变大', () {
+      final b = rotatedBounds(big, 45.0);
+      expect(b.size.width, greaterThan(big.width));
+    });
+
+    // 死锁回归：夹取按未旋转 w×h 算的话，贴边后四角仍探在外面，
+    // 退出时被拦「请先移回可视区域」，可作者已经拖到头了，移不动。
+    for (final rot in [0.0, 15.0, 30.0, 45.0, 90.0, 137.0, 180.0, 233.0]) {
+      test('旋转 $rot° 夹取后四角判定必须通过（死锁回归）', () {
+        final clamped =
+            snapInside(const Offset(900, 900), big, pcb, rotation: rot);
+        expect(isInsidePcb(clamped, big, pcb, rotation: rot), isTrue,
+            reason: '夹到头了却仍被判越界 = 作者无法保存');
+      });
+
+      test('旋转 $rot° 往左上夹取后同样通过', () {
+        final clamped =
+            snapInside(const Offset(-500, -500), big, pcb, rotation: rot);
+        expect(isInsidePcb(clamped, big, pcb, rotation: rot), isTrue);
+      });
+    }
+
+    test('旋转元件的越界深度也按包围盒算', () {
+      // 90° 后 240x100 变成 100x240，右边界从 360-240=120 变成 360-100=260。
+      expect(overflowDepth(const Offset(120, 100), big, pcb, rotation: 0),
+          0.0);
+      // 同一 offset 在 90° 下中心不变，包围盒左上角右移，深度不同。
+      final d = overflowDepth(const Offset(300, 100), big, pcb, rotation: 90);
+      expect(d, greaterThan(0.0));
     });
   });
 }
