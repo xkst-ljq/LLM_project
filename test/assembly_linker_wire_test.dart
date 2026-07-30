@@ -280,6 +280,60 @@ void main() {
     });
   });
 
+  group('端口切线跟随旋转', () {
+    // 首轮测试反馈：端口位置会跟着元件转，但线的「出头」仍水平拉出，
+    // 元件转 90° 时线先横着窜出去再拐回来，像从侧面漏出来的。
+    // 根因是 painter 里两个控制点写死了水平方向。
+
+    Offset dirOf(bool isInput, String? port, double rotation) {
+      final base = port == 'gate_in'
+          ? LinkerConnectionPainter.gateEndDirection
+          : (isInput
+              ? LinkerConnectionPainter.defaultEndDirection
+              : LinkerConnectionPainter.defaultStartDirection);
+      return LinkerConnectionPainter.rotateDirection(base, rotation);
+    }
+
+    test('未旋转时与历史行为一致', () {
+      expect(dirOf(false, null, 0), const Offset(1, 0));
+      expect(dirOf(true, null, 0), const Offset(-1, 0));
+      expect(dirOf(true, 'gate_in', 0), const Offset(0, -1));
+    });
+
+    test('输出口转 90 度后朝下', () {
+      // 与 _assemblyPortOffset 对同一角度算出的端口位置同向，
+      // 两者必须同步，否则线会从端口旁边而不是端口上冒出来。
+      final d = dirOf(false, null, 90);
+      expect(d.dx, closeTo(0, 1e-9));
+      expect(d.dy, closeTo(1, 1e-9));
+    });
+
+    test('输入口转 90 度后朝上', () {
+      final d = dirOf(true, null, 90);
+      expect(d.dx, closeTo(0, 1e-9));
+      expect(d.dy, closeTo(-1, 1e-9));
+    });
+
+    test('gate 口跟着转', () {
+      final d = dirOf(true, 'gate_in', 90);
+      expect(d.dx, closeTo(1, 1e-9));
+      expect(d.dy, closeTo(0, 1e-9));
+    });
+
+    test('方向始终是单位向量', () {
+      for (final angle in [0.0, 37.0, 90.0, 213.0, -45.0]) {
+        expect(dirOf(false, null, angle).distance, closeTo(1, 1e-9),
+            reason: '$angle');
+      }
+    });
+
+    test('旋转 180 度后出入方向互换', () {
+      final out180 = dirOf(false, null, 180);
+      expect(out180.dx, closeTo(-1, 1e-9));
+      expect(out180.dy, closeTo(0, 1e-9));
+    });
+  });
+
   group('画笔重绘判定', () {
     test('线宽或透明度变化要触发重绘', () {
       const a = LinkerConnectionPainter(
@@ -302,6 +356,23 @@ void main() {
       expect(thinner.shouldRepaint(a), isTrue);
       expect(fainter.shouldRepaint(a), isTrue);
       expect(a.shouldRepaint(a), isFalse);
+    });
+
+    test('切线方向变化要触发重绘', () {
+      // 元件旋转时端点可能不变（绕中心转到对称位置），
+      // 只有方向变了——不比较方向就会漏重绘，线卡在旧朝向上。
+      const a = LinkerConnectionPainter(
+        start: Offset.zero,
+        end: Offset(10, 10),
+        color: Color(0xFF00ACC1),
+      );
+      const turned = LinkerConnectionPainter(
+        start: Offset.zero,
+        end: Offset(10, 10),
+        color: Color(0xFF00ACC1),
+        startDirection: Offset(0, 1),
+      );
+      expect(turned.shouldRepaint(a), isTrue);
     });
   });
 }

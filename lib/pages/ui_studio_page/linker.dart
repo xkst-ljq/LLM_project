@@ -53,6 +53,16 @@ mixin _UIStudioLinker on _UIStudioLogic {
             end: endOffset,
             color: lineColor,
             isControlLine: isControlLine,
+            startDirection: _resolvePortDirection(
+              fromEl,
+              false,
+              conn['fromPort'] as String?,
+            ),
+            endDirection: _resolvePortDirection(
+              toEl,
+              true,
+              conn['toPort'] as String?,
+            ),
           ),
         ),
       );
@@ -111,6 +121,34 @@ mixin _UIStudioLinker on _UIStudioLogic {
       cx + sign * halfWidth * math.cos(rad),
       cy + sign * halfWidth * math.sin(rad),
     );
+  }
+
+  /// 端口朝向（单位向量，指向元件外侧）。
+  ///
+  /// 与 `_resolvePortGlobalOffset` 配套。端口位置本来就跟着旋转走，
+  /// 但曲线切线若恒为水平，元件转 90° 后线会先横着窜出去再拐回来。
+  /// 复合件内部子元素以外框为锚点，不参与旋转，按默认水平方向处理。
+  Offset _resolvePortDirection(UIElement el, bool isInput, [String? portName]) {
+    final base = portName == 'gate_in'
+        ? LinkerConnectionPainter.gateEndDirection
+        : (isInput
+            ? LinkerConnectionPainter.defaultEndDirection
+            : LinkerConnectionPainter.defaultStartDirection);
+    if (_resolveCompositeChildGlobalOffset(el.id, isInput) != null) {
+      return base;
+    }
+    return LinkerConnectionPainter.rotateDirection(base, el.rotation);
+  }
+
+  /// 自由端（跟着手指走、尚未吸附到端口）的入线方向。
+  ///
+  /// 取「从终点指回起点」的单位向量：线自然地朝来路收束，
+  /// 而不是固定朝左——固定朝左时把线往左边拖会画出一个多余的回勾。
+  Offset _freeEndDirection(Offset start, Offset end) {
+    final delta = start - end;
+    final distance = delta.distance;
+    if (distance < 1e-3) return LinkerConnectionPainter.defaultEndDirection;
+    return delta / distance;
   }
 
   bool _isPointInsideRotatedRect(Offset point, UIElement el) {
@@ -179,17 +217,23 @@ mixin _UIStudioLinker on _UIStudioLogic {
             : dragColor;
 
     Offset endOffset = _dragConnectionEnd!;
+    // 未吸附到目标时，末端跟着手指走，没有「端口朝向」可言——
+    // 让它自然地朝向来路，否则拖到左边会画出一个多余的回勾。
+    Offset endDirection = _freeEndDirection(startOffset, endOffset);
     if (_hoveringTargetId != null) {
       final targetEl =
           _findElementById(_hoveringTargetId!) ?? UIElement(id: '', isComposite: false);
       if (targetEl.id.isNotEmpty) {
         endOffset = _resolvePortGlobalOffset(targetEl, true, _hoveringTargetPort);
+        endDirection =
+            _resolvePortDirection(targetEl, true, _hoveringTargetPort);
       }
     } else if (compositeHoverEl != null && compositeHoverEl.id.isNotEmpty) {
       endOffset = _resolveCompositeBodyHoverAnchor(
         compositeHoverEl,
         _hoveringCompositeTargetPort ?? 'input',
       );
+      endDirection = LinkerConnectionPainter.defaultEndDirection;
     }
 
     return CustomPaint(
@@ -198,6 +242,12 @@ mixin _UIStudioLinker on _UIStudioLogic {
         end: endOffset,
         color: lineColor,
         isControlLine: isControlLine,
+        startDirection: _resolvePortDirection(
+          sourceEl,
+          isLeftPort,
+          _draggingSourcePort,
+        ),
+        endDirection: endDirection,
       ),
     );
   }

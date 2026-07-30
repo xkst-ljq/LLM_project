@@ -496,6 +496,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
   }
 
+  /// 端口的**朝向**（单位向量，指向元件外侧）。
+  ///
+  /// 与 `_assemblyPortOffset` 配套：那个算端口在哪，这个算线该往哪冒。
+  /// 只算位置不算朝向的话，元件转了 90°，线仍会先水平窜出去再拐回来，
+  /// 看着像从元件侧面漏出来的（首轮测试反馈）。
+  Offset _assemblyPortDirection(UIElement el, bool isInput, [String? portName]) {
+    final base = portName == 'gate_in'
+        ? LinkerConnectionPainter.gateEndDirection
+        : (isInput
+            ? LinkerConnectionPainter.defaultEndDirection
+            : LinkerConnectionPainter.defaultStartDirection);
+    return LinkerConnectionPainter.rotateDirection(base, el.rotation);
+  }
+
   /// 连线层。放在元素之下、PCB 之上——
   /// 压在元件上面会挡住内容，尤其是文本与消息流。
   List<Widget> _buildAssemblyConnectionsLayer() {
@@ -529,6 +543,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                   conn['fromPort'] as String?,
                 ),
                 end: _assemblyPortOffset(toEl, true, toPort),
+                // 切线跟随元件旋转，避免线从端口水平窜出。
+                startDirection: _assemblyPortDirection(
+                  fromEl,
+                  false,
+                  conn['fromPort'] as String?,
+                ),
+                endDirection: _assemblyPortDirection(toEl, true, toPort),
                 color: LinkerLineColors.resolve(
                   isInput: lineType == 'input',
                   isControlLine: isControlLine,

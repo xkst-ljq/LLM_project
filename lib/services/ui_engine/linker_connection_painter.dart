@@ -70,6 +70,22 @@ class LinkerConnectionPainter extends CustomPainter {
   /// 箭头尺寸。随线宽一起缩小，否则细线配大箭头会很突兀。
   final double arrowSize;
 
+  /// 起点处的**出线方向**（单位向量，指向元件外侧）。
+  ///
+  /// 端口位置会随元件旋转，但曲线的切线方向如果不跟着转，
+  /// 线从端口冒出来的那一小截永远朝右，元件转 90° 时线会先横着窜出去
+  /// 再拐回来，看着像从元件侧面「漏」出来。
+  ///
+  /// 默认 (1, 0)：未旋转元件的输出口朝右，与历史行为一致。
+  final Offset startDirection;
+
+  /// 终点处的**入线方向**（单位向量，指向元件外侧）。
+  ///
+  /// 注意是「外侧」而非「行进方向」：线要从端口的正前方切进去，
+  /// 所以控制点落在 `end + endDirection * offset`。
+  /// 默认 (-1, 0)：未旋转元件的输入口朝左，与历史行为一致。
+  final Offset endDirection;
+
   const LinkerConnectionPainter({
     required this.start,
     required this.end,
@@ -78,7 +94,30 @@ class LinkerConnectionPainter extends CustomPainter {
     this.strokeWidth = 2.5,
     this.opacity = 1.0,
     this.arrowSize = 9.0,
+    this.startDirection = const Offset(1, 0),
+    this.endDirection = const Offset(-1, 0),
   });
+
+  /// 未旋转元件的默认出线方向（输出口朝右）。
+  static const Offset defaultStartDirection = Offset(1, 0);
+
+  /// 未旋转元件的默认入线方向（输入口朝左）。
+  static const Offset defaultEndDirection = Offset(-1, 0);
+
+  /// 顶部 `gate_in` 在未旋转时的入线方向（朝上）。
+  static const Offset gateEndDirection = Offset(0, -1);
+
+  /// 把一个方向向量按角度旋转，用于让端口切线跟随元件旋转。
+  static Offset rotateDirection(Offset direction, double degrees) {
+    if (degrees == 0.0) return direction;
+    final rad = degrees * math.pi / 180.0;
+    final cos = math.cos(rad);
+    final sin = math.sin(rad);
+    return Offset(
+      direction.dx * cos - direction.dy * sin,
+      direction.dx * sin + direction.dy * cos,
+    );
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -93,13 +132,26 @@ class LinkerConnectionPainter extends CustomPainter {
 
     final path = Path()..moveTo(start.dx, start.dy);
 
-    final controlOffset = (end.dx - start.dx).abs() * 0.4;
-    final cp1 = Offset(start.dx + controlOffset, start.dy);
-    // 普通端口以水平方向进入；顶部 Gate 仅调整末端切线为垂直向下。
-    // 这仍是一条连续贝塞尔曲线，不再添加生硬的固定长度引导段。
+    // 控制点臂长。
+    //
+    // 历史公式只取水平分量 `|dx| * 0.4`——那是「切线恒为水平」时的合理近似。
+    // 一旦端口因元件旋转而朝向别的方向，两端垂直对齐时 dx 趋近 0，
+    // 曲线会塌成一条直线段，连弧度都没有。
+    // 因此只在两端切线都是默认水平方向时沿用旧公式（保持 Studio 观感不变），
+    // 其余情况改用两点直线距离，曲率才跟得上朝向。
+    final bool isAxisAligned = startDirection == defaultStartDirection &&
+        (endDirection == defaultEndDirection ||
+            endDirection == gateEndDirection);
+    final controlOffset = isAxisAligned
+        ? (end.dx - start.dx).abs() * 0.4
+        : (end - start).distance * 0.4;
+
+    // 起点顺着端口朝向出线，终点从端口正前方入线。
+    final cp1 = start + startDirection * controlOffset;
+    // 顶部 Gate 的引导段保底 24，避免短距离连线看不出「从上方接入」。
     final cp2 = isControlLine
-        ? Offset(end.dx, end.dy - math.max(24.0, controlOffset * 0.55))
-        : Offset(end.dx - controlOffset, end.dy);
+        ? end + endDirection * math.max(24.0, controlOffset * 0.55)
+        : end + endDirection * controlOffset;
     path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, end.dx, end.dy);
 
     const t = 0.5;
@@ -153,6 +205,8 @@ class LinkerConnectionPainter extends CustomPainter {
         oldDelegate.isControlLine != isControlLine ||
         oldDelegate.strokeWidth != strokeWidth ||
         oldDelegate.opacity != opacity ||
-        oldDelegate.arrowSize != arrowSize;
+        oldDelegate.arrowSize != arrowSize ||
+        oldDelegate.startDirection != startDirection ||
+        oldDelegate.endDirection != endDirection;
   }
 }
