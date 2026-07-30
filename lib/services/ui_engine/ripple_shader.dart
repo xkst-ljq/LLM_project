@@ -34,6 +34,13 @@ class RippleShaderLoader {
   static bool _loading = false;
   static bool _failed = false;
 
+  /// 加载失败的原因。
+  ///
+  /// 着色器失败是**静默**的——`RippleShaderView` 会安静地退回原样显示，
+  /// 用户只看到「没有动画」，无从判断是效果不对还是根本没加载。
+  /// 这里留下原因，配合 debugPrint 至少能在控制台看到。
+  static Object? lastError;
+
   /// 着色器是否已就绪。未就绪时调用方应回退到无动画显示。
   static bool get isReady => _program != null;
 
@@ -50,10 +57,23 @@ class RippleShaderLoader {
       _program = await ui.FragmentProgram.fromAsset(
         'shaders/ripple_refraction.frag',
       );
-    } catch (_) {
+    } catch (error, stack) {
       // 着色器缺失或编译失败时不应拖垮整个 UI，
       // 调用方会退回「不播动画」而不是崩溃。
+      //
+      // 但必须留下痕迹：否则表现为「动画毫无反应」，
+      // 与「效果做得不好」无法区分（已经因此浪费过一轮排查）。
       _failed = true;
+      lastError = error;
+      assert(() {
+        debugPrint(
+          '[RippleShader] 着色器加载失败，水波动画将退回无特效显示。\n'
+          '常见原因：pubspec.yaml 漏配 shaders: 段、'
+          '或 .frag 缺少 #extension GL_GOOGLE_include_directive。\n'
+          '$error\n$stack',
+        );
+        return true;
+      }());
     } finally {
       _loading = false;
     }
@@ -136,22 +156,40 @@ class _RippleShaderViewState extends State<RippleShaderView> {
   @override
   Widget build(BuildContext context) {
     final snapshot = _snapshot;
+    final useShader = snapshot != null && RippleShaderLoader.isReady;
 
-    // 纹理还没抓到、或着色器不可用时，原样显示。
-    // 宁可没有特效，也不能让组件消失或报错。
-    if (snapshot == null || !RippleShaderLoader.isReady) {
-      return RepaintBoundary(key: _boundaryKey, child: widget.child);
-    }
-
-    return CustomPaint(
-      painter: _RippleShaderPainter(
-        image: snapshot,
-        progress: widget.progress,
-        intensity: widget.intensity,
-        tint: widget.tint,
-      ),
-      // 尺寸由 child 决定；child 本身不再绘制（已经在纹理里）。
-      child: Opacity(opacity: 0.0, child: widget.child),
+    // ⚠️ RepaintBoundary 必须**恒定存在于同一位置**。
+    //
+    // 曾写成「未就绪时 return RepaintBoundary，就绪后 return CustomPaint」，
+    // 两个分支在同一位置是不同的 widget 类型：一旦切换，
+    // 原来的 RepaintBoundary 被销毁、GlobalKey 脱离，
+    // 下次就再也抓不到纹理了。
+    // 这与「手势进行中改变树结构」是同一类陷阱。
+    return Stack(
+      children: [
+        // 纹理来源。用 Offstage 会跳过绘制导致抓不到图，
+        // 因此改用 Opacity(0) —— 它仍然参与布局与绘制。
+        Opacity(
+          opacity: useShader ? 0.0 : 1.0,
+          child: RepaintBoundary(
+            key: _boundaryKey,
+            child: widget.child,
+          ),
+        ),
+        if (useShader)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _RippleShaderPainter(
+                  image: snapshot,
+                  progress: widget.progress,
+                  intensity: widget.intensity,
+                  tint: widget.tint,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -224,6 +262,11 @@ class RippleWaveMath {
     return k.isEven ? f : 1.0 - f;
   }
 
+  /// 与 GLSL 侧保持一致。
+  ///
+  /// 着色器里用 `step(abs(x), 2.0)` 做无分支截断
+  /// （部分 GLSL 后端对函数中途 return 支持参差），
+  /// 这里的 early return 在数值上等价。
   static double ringProfile(double dist, double front, double width) {
     final x = (dist - front) / width;
     if (x.abs() > 2.0) return 0.0;

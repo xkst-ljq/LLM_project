@@ -4066,6 +4066,40 @@ Radio 废弃告警，但不在本次报错清单内、属既有代码，本轮�
 
 ⚠️ **沙箱无法编译着色器**，GLSL 语法与真机表现需本地验证。
 
+**着色器首轮：「就是普通的变换值，没有动画」（已修三处）**
+
+「没有动画」= 着色器分支根本没进去。查出三个问题，
+前两个都会导致**静默失败**：
+
+**1. GLSL 缺 `#extension GL_GOOGLE_include_directive : enable`**
+
+impellerc 默认不启用 include 指令，缺了它
+`#include <flutter/runtime_effect.glsl>` 编译失败
+→ `FragmentProgram.fromAsset` 抛异常
+→ `_failed = true` → 永远走「原样显示」分支。
+
+**2. 分支切换销毁了 RepaintBoundary**
+
+原写法是「未就绪 return RepaintBoundary，就绪后 return CustomPaint」。
+两个分支在同一位置是**不同的 widget 类型**，一旦切换，
+原 RepaintBoundary 被销毁、GlobalKey 脱离，之后再也抓不到纹理。
+
+与「手势进行中改变树结构」同源。改为 Stack 里恒定保留
+RepaintBoundary，用 `Opacity` 切换可见性
+（不能用 Offstage——它跳过绘制就抓不到图）。
+
+**3. 失败无痕迹**
+
+着色器加载失败是静默的，用户只看到「没动画」，
+无法区分是没加载还是效果不好——已经因此浪费一轮排查。
+新增 `RippleShaderLoader.lastError` 与 debug 输出，
+提示常见原因（漏配 shaders 段 / 缺 extension 指令）。
+
+**顺带降低编译风险**：`ringProfile` 的中途 return 改为
+`step()` 无分支写法，循环内的 `continue` 改为乘掩码——
+部分 GLSL 后端对这两者支持参差。
+已验证数学等价（最大差异 1e-4，来自原本被跳过的极小项）。
+
 ### A12-4：剩余打磨（未开始）
 
 * 粒子在小 PCB 上的实际观感（可能要调参）

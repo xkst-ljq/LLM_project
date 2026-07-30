@@ -1,4 +1,14 @@
 #version 460 core
+
+// ⚠️ 这一行不能省。
+//
+// Flutter 的 impellerc 默认不启用 include 指令，
+// 缺了它 `#include <flutter/runtime_effect.glsl>` 会编译失败，
+// FragmentProgram.fromAsset 抛异常 → 加载标记为失败
+// → RippleShaderView 永远走「原样显示」分支，
+// 表现就是「没有动画，只是普通的变换值」。
+#extension GL_GOOGLE_include_directive : enable
+
 #include <flutter/runtime_effect.glsl>
 
 // A12 水波折射着色器（方案 A）。
@@ -31,7 +41,8 @@ float waveFront(float t, float phaseOffset) {
     float d = t * 2.5 + phaseOffset;
     float k = floor(d);
     float f = d - k;
-    // mod(k,2)==0 时外行，否则回弹。
+    // mod(k,2) 为 0 时外行、为 1 时回弹。
+    // mix 的第三参数只在 0/1 取值，等价于分支但无跳转。
     return mix(f, 1.0 - f, mod(k, 2.0));
 }
 
@@ -42,8 +53,11 @@ float waveFront(float t, float phaseOffset) {
 // 内容原地折叠成一团——那不是放大镜，是像素乱挤。
 float ringProfile(float dist, float front, float width) {
     float x = (dist - front) / width;
-    if (abs(x) > 2.0) return 0.0;
-    return exp(-3.0 * x * x);
+    // 用 step 代替 if-return：部分 GLSL 后端对函数中途 return
+    // 的支持参差不齐，无分支写法更安全，也便于编译器展开。
+    // step(x, 2.0) 在 |x| <= 2 时为 1，否则为 0。
+    float inRange = step(abs(x), 2.0);
+    return exp(-3.0 * x * x) * inRange;
 }
 
 void main() {
@@ -78,18 +92,18 @@ void main() {
         float amp = 0.12 * uIntensity * envelope;
 
         // 三道波错开相位，形成一圈接一圈荡开。
+        // 固定 3 次迭代，便于编译器完全展开。
+        // 内部不用 continue——改为乘掩码，无分支。
         for (int i = 0; i < 3; i++) {
             float phase = float(i) * 0.22;
             float front = waveFront(uProgress, phase);
             float fade = envelope * max(1.0 - float(i) * 0.3, 0.0);
-            if (fade <= 0.015) continue;
-
             float p = ringProfile(dist, front, bandWidth);
-            if (p <= 0.001) continue;
+            float w = p * fade;
 
             // 位移恒为「向外」，方向由径向单位向量给出。
-            offset += dir * p * amp * fade;
-            glow += p * fade;
+            offset += dir * w * amp;
+            glow += w;
         }
     }
 
