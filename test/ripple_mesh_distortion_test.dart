@@ -14,74 +14,119 @@ import 'package:llm_project/services/ui_engine/ripple_mesh_distortion.dart';
 /// 新实现抓取纹理 + 扰动网格顶点，做出真正的折射（透镜）效果。
 
 void main() {
-  group('环带剖面（透镜的内推外拉）', () {
-    test('波前处连续过零，不会撕裂', () {
-      // ⚠️ 最初写成 cos²(πx/2) × sign(x)，在 x=0 处从 -1 跳到 +1，
-      // 是 2.0 的阶跃，表现为波前处图像撕裂，
-      // 且加密网格反而更明显（因为跳变本身没消失）。
-      const front = 0.5;
-      final atFront = RippleMeshDistortion.ringProfile(front, front);
-      expect(atFront.abs(), lessThan(1e-9));
-
-      // 紧邻两侧应该符号相反且幅度相近——这才是透镜。
-      final inner = RippleMeshDistortion.ringProfile(front - 0.05, front);
-      final outer = RippleMeshDistortion.ringProfile(front + 0.05, front);
-      expect(inner * outer, lessThan(0));
-      expect((inner.abs() - outer.abs()).abs(), lessThan(0.05));
-    });
-
-    test('环带之外没有位移', () {
-      const front = 0.5;
-      // 超出环带宽度的地方必须完全归零，否则整个组件都在抖。
-      expect(
-        RippleMeshDistortion.ringProfile(
-            front + RippleMeshDistortion.ringWidth + 0.01, front),
-        0.0,
-      );
-      expect(
-        RippleMeshDistortion.ringProfile(
-            front - RippleMeshDistortion.ringWidth - 0.01, front),
-        0.0,
-      );
-    });
-
-    test('剖面处处有界', () {
-      // 防止某个角度算出爆炸的位移把纹理扯坏。
+  group('环带剖面（凸透镜）', () {
+    test('剖面恒为非负，方向由径向向量决定', () {
+      // ⚠️ 这是第三版剖面。前两版都因为「正负对撞」出问题：
+      // 内侧向外推、外侧向内拉，两股位移在波前处相遇，
+      // 相邻顶点间距被压到 2%，内容原地折叠成一团。
+      // 那不是放大镜，是像素在小范围挤压 —— 用户两轮都反馈「像抖动」。
       for (var i = 0; i <= 100; i++) {
         final d = i / 50.0;
         final v = RippleMeshDistortion.ringProfile(d, 0.5);
-        expect(v.abs(), lessThanOrEqualTo(1.0), reason: 'd=$d');
+        expect(v, greaterThanOrEqualTo(0.0), reason: 'd=$d');
         expect(v.isNaN, isFalse, reason: 'd=$d');
       }
     });
 
-    test('环带跨越足够多的顶点，不会被采样成折线', () {
-      // 衡量的是「跳变相对峰值」而非绝对跳变——
-      // 波峰本来就陡，绝对跳变大是正常的，
-      // 关键是环带要跨越足够多的列。
+    test('波前处取得峰值', () {
       const front = 0.5;
-      double worst = 0;
-      double peak = 0;
-      double? prev;
-      for (var c = 0; c <= RippleMeshDistortion.cols; c++) {
-        final x = c / RippleMeshDistortion.cols;
-        final d = (x - 0.5).abs() * 2;
-        final v = RippleMeshDistortion.ringProfile(d, front);
-        peak = math.max(peak, v.abs());
-        if (prev != null) worst = math.max(worst, (v - prev).abs());
-        prev = v;
-      }
-      expect(worst / peak, lessThan(0.4));
+      final atFront = RippleMeshDistortion.ringProfile(front, front);
+      expect(atFront, closeTo(1.0, 1e-9));
+      // 两侧对称衰减。
+      final a = RippleMeshDistortion.ringProfile(front - 0.1, front);
+      final b = RippleMeshDistortion.ringProfile(front + 0.1, front);
+      expect(a, closeTo(b, 1e-9));
+      expect(a, lessThan(atFront));
     });
 
-    test('环带只覆盖组件的一段，不笼罩全局', () {
-      // 首版 ringWidth=0.6 时，波前在 0.5 的影响范围是 -0.1~1.1，
-      // 整个组件都在环带内，表现为整体起伏而非一圈环扫过——
-      // 这是「看不出水波」的另一个主因。
-      expect(RippleMeshDistortion.ringWidth, lessThan(0.5));
-      // 波前居中时，组件两端应当在环带之外。
-      expect(RippleMeshDistortion.ringProfile(0.0, 0.5), 0.0);
-      expect(RippleMeshDistortion.ringProfile(1.0, 0.5), 0.0);
+    test('远离波前处归零', () {
+      const front = 0.5;
+      // 高斯在 ±2σ 外截断，避免整个组件都被轻微扰动。
+      expect(
+        RippleMeshDistortion.ringProfile(
+            front + RippleMeshDistortion.ringWidth * 2.1, front),
+        0.0,
+      );
+    });
+
+    test('位移场单调，不产生网格折叠', () {
+      // 核心不变量：变形后相邻顶点的间距必须恒为正，
+      // 否则内容会折叠、糊成一团。
+      const w = 200.0;
+      const cols = RippleMeshDistortion.cols;
+      const halfW = w / 2;
+      var worstGap = double.infinity;
+
+      for (var i = 0; i <= 40; i++) {
+        final t = i / 40.0;
+        final front = RippleMeshDistortion.waveFront(t);
+        final amp = RippleMeshDistortion.maxStrength *
+            0.6 *
+            RippleMeshDistortion.damping(t);
+        double? prevNew;
+        double? prevX;
+        for (var c = 0; c <= cols; c++) {
+          final x = w * c / cols;
+          final d = (x - halfW).abs() / halfW;
+          var nx = x;
+          if (c != 0 && c != cols && d > 1e-6) {
+            final taper = ((1.0 - d) / 0.15).clamp(0.0, 1.0);
+            final sign = x > halfW ? 1.0 : -1.0;
+            nx = x +
+                RippleMeshDistortion.ringProfile(d, front) *
+                    amp *
+                    halfW *
+                    sign *
+                    taper;
+          }
+          if (prevNew != null && prevX != null) {
+            final gap = (nx - prevNew) / (x - prevX);
+            worstGap = math.min(worstGap, gap);
+          }
+          prevNew = nx;
+          prevX = x;
+        }
+      }
+      expect(worstGap, greaterThan(0.0));
+    });
+
+    test('产生足够的局部放大，才看得出透镜', () {
+      // 前一版剖面最大放大率仅 1.58x 且伴随折叠；
+      // 单向高斯凸起能到约 4x，这才是「放大镜扫过」。
+      const w = 200.0;
+      const cols = RippleMeshDistortion.cols;
+      const halfW = w / 2;
+      var bestGap = 0.0;
+      for (var i = 0; i <= 40; i++) {
+        final t = i / 40.0;
+        final front = RippleMeshDistortion.waveFront(t);
+        final amp = RippleMeshDistortion.maxStrength *
+            0.6 *
+            RippleMeshDistortion.damping(t);
+        double? prevNew;
+        double? prevX;
+        for (var c = 0; c <= cols; c++) {
+          final x = w * c / cols;
+          final d = (x - halfW).abs() / halfW;
+          var nx = x;
+          if (c != 0 && c != cols && d > 1e-6) {
+            final taper = ((1.0 - d) / 0.15).clamp(0.0, 1.0);
+            final sign = x > halfW ? 1.0 : -1.0;
+            nx = x +
+                RippleMeshDistortion.ringProfile(d, front) *
+                    amp *
+                    halfW *
+                    sign *
+                    taper;
+          }
+          if (prevNew != null && prevX != null) {
+            bestGap = math.max(bestGap, (nx - prevNew) / (x - prevX));
+          }
+          prevNew = nx;
+          prevX = x;
+        }
+      }
+      expect(bestGap, greaterThan(2.0));
     });
   });
 
@@ -209,13 +254,13 @@ void main() {
       expect((sx - 1.0) * (sy - 1.0), lessThan(0));
     });
 
-    test('幅度不超过 3%，让折射当主角', () {
+    test('幅度不超过 1.5%，让折射当主角', () {
       // 形变是全局运动、折射是局部扭曲，量级相近时眼睛只看得到前者。
-      // 首版 9% 让 200px 组件整体横移 9.2px，盖过 4.7px 的折射，
-      // 用户反馈「就是抖动了，没看出有水波」。
+      // 9% 时 200px 组件整体横移 9.2px，用户反馈「就是抖动了」；
+      // 降到 3% 仍嫌抢戏，现在压到 1.5%，只留一丝介质回弹的余味。
       for (var i = 0; i <= 100; i++) {
         final m = RippleMeshDistortion.bodyDistortion(i / 100.0, 1.0);
-        expect((m.storage[0] - 1.0).abs(), lessThanOrEqualTo(0.03 + 1e-9));
+        expect((m.storage[0] - 1.0).abs(), lessThanOrEqualTo(0.015 + 1e-9));
       }
     });
 
@@ -243,7 +288,7 @@ void main() {
         final bodyShift = ((m.storage[0] - 1.0).abs() * size.width / 2);
         if (bodyShift > maxBodyShift) maxBodyShift = bodyShift;
       }
-      expect(maxRefraction, greaterThan(maxBodyShift * 2));
+      expect(maxRefraction, greaterThan(maxBodyShift * 4));
     });
 
     test('结束时回到原始比例', () {

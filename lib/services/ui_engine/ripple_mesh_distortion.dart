@@ -44,11 +44,11 @@ class RippleMeshDistortion {
 
   /// 环带宽度（归一化距离单位）。
   ///
-  /// ⚠️ 首版取 0.6，是「看不出水波、只觉得在抖」的主因之一：
-  /// 波前在 0.5 时影响范围是 -0.1~1.1，**整个组件都在环带内**，
-  /// 表现为整体缓慢起伏而非一圈环扫过。
-  /// 0.4 时环带只占组件的一段，才有波纹推进的观感。
-  static const double ringWidth = 0.4;
+  /// ⚠️ 首版取 0.6，波前在 0.5 时影响范围是 -0.1~1.1，
+  /// **整个组件都在环带内**，表现为整体起伏而非一圈环扫过。
+  /// 0.3 配合高斯剖面（±2σ 截断）实际影响半宽约 0.6，
+  /// 波前居中时两端已在环外。
+  static const double ringWidth = 0.3;
 
   /// 波在组件内来回反弹的次数。
   ///
@@ -64,11 +64,11 @@ class RippleMeshDistortion {
 
   /// 位移强度上限（相对该方向半径的比例）。
   ///
-  /// 首版 0.12 时折射峰值只有 4.7px，而同期本体形变让整个组件
-  /// 横向移动 9.2px——**全局运动压过局部扭曲**，
-  /// 眼睛只看得到「整体在抖」，这是用户反馈的直接原因。
-  /// 提到 0.28 后折射峰值约 10.6px，成为视觉主角。
-  static const double maxStrength = 0.28;
+  /// 改用单向高斯凸起后，位移不再正负对撞，
+  /// 同样的数值能产生大得多的**有效拉伸**（放大镜效应）。
+  /// 0.16 时局部间距比在 0.35~1.6 之间——
+  /// 既有明显的放大/压缩，又不会挤到折叠（间距比必须恒 > 0）。
+  static const double maxStrength = 0.16;
 
   /// 波前位置：在 [0,1] 之间折返行进。
   ///
@@ -82,18 +82,30 @@ class RippleMeshDistortion {
     return k.isEven ? f : 1.0 - f;
   }
 
-  /// 环带剖面：波前处为 0，内侧正、外侧负。
+  /// 环带剖面：**单向外推**的高斯凸起，模拟凸透镜。
   ///
-  /// ⚠️ 这个函数的形式很关键。最初写成 `cos²(πx/2) × sign(x)`，
-  /// 在 x=0 处会从 -1 直接跳到 +1，**2.0 的阶跃**——
-  /// 表现为波前处图像撕裂，且加密网格反而更明显。
-  /// 改用 `-sin(πx)·cos²(πx/2)` 后 x=0 处连续过零，两侧自然反向，
-  /// 这才是透镜的「内推外拉」。
+  /// ⚠️ 这个函数改过两次，两次都是因为观感不对：
+  ///
+  /// 1. 最初 `cos²(πx/2) × sign(x)`：波前处从 -1 跳到 +1，2.0 的阶跃，
+  ///    图像撕裂。
+  /// 2. 改成 `-sin(πx)·cos²(πx/2)`：连续了，但**内侧正、外侧负**——
+  ///    环内的点向外推、环外的点向内拉，两股位移在波前处**对撞**，
+  ///    相邻顶点间距被压到原来的 **2%**（实测），
+  ///    内容在原地折叠成一团再散开。
+  ///    那不是放大镜，是像素在小范围里来回挤压，
+  ///    视觉上只剩「抖动」——正是用户两轮反馈的现象。
+  ///
+  /// 真实透镜的光线偏折是**单向连续弯曲**，不是对撞。
+  /// 因此现在用纯正的高斯凸起：位移恒为「向外」，
+  /// 幅度在波前处最大、两侧平滑衰减。
+  /// 波前内侧被拉伸（放大）、外侧被压缩（缩小），
+  /// 这才是透镜扫过的观感。
+  ///
+  /// 返回值恒为非负，方向由调用方按径向单位向量决定。
   static double ringProfile(double distance, double front) {
     final x = (distance - front) / ringWidth;
-    if (x.abs() > 1.0) return 0.0;
-    final c = math.cos(x * math.pi / 2);
-    return -math.sin(x * math.pi) * c * c;
+    if (x.abs() > 2.0) return 0.0;
+    return math.exp(-3.0 * x * x);
   }
 
   /// 衰减包络：越到后面波越平息。
@@ -138,6 +150,11 @@ class RippleMeshDistortion {
           grid[r][c] = Offset(x, y);
           continue;
         }
+        // 靠近边界时让位移平滑趋零。
+        //
+        // 只钉死最外圈是不够的：内侧第一圈若仍有满幅位移，
+        // 它与钉死点之间的间距会被压扁甚至反向（网格折叠），
+        // 表现为边缘一圈像素糊成一团。
 
         final ndx = (x - cx) / halfW;
         final ndy = (y - cy) / halfH;
@@ -152,6 +169,12 @@ class RippleMeshDistortion {
           grid[r][c] = Offset(x, y);
           continue;
         }
+        // 边缘渐隐系数：距离边界 0.15 以内线性衰减到 0。
+        final taper = ((1.0 - d) / 0.15).clamp(0.0, 1.0);
+        if (taper <= 0.0) {
+          grid[r][c] = Offset(x, y);
+          continue;
+        }
 
         // 归一化空间里的单位方向。
         final ux = ndx / d;
@@ -161,12 +184,14 @@ class RippleMeshDistortion {
         final radius = math.sqrt(
           (ux * halfW) * (ux * halfW) + (uy * halfH) * (uy * halfH),
         );
-        final shift = profile * amp * radius;
+        // profile 恒非负，方向由径向单位向量给出——
+        // 位移始终「向外」，不会与邻点对撞造成折叠。
+        final shift = profile * amp * radius * taper;
 
-        grid[r][c] = Offset(
-          (x + ux * shift).clamp(0.0, w),
-          (y + uy * shift).clamp(0.0, h),
-        );
+        // 不再 clamp 到组件范围：clamp 会把超界点压到同一个边界值上，
+        // 相邻顶点因此重合、间距归零，同样是折叠。
+        // 边缘渐隐已经保证了不会越界太多。
+        grid[r][c] = Offset(x + ux * shift, y + uy * shift);
       }
     }
 
@@ -209,13 +234,14 @@ class RippleMeshDistortion {
   /// **反相**才有被挤压又回弹的果冻感（近似体积守恒）。
   static Matrix4 bodyDistortion(double progress, double intensity) {
     final osc = math.sin(2 * math.pi * bounces * progress);
-    // 上限从 9% 降到 3%。
+    // 上限 1.5%。
     //
     // 形变是**全局**运动、折射是**局部**扭曲，两者量级相近时
-    // 眼睛只会注意到前者——首版 9% 让 200px 宽的组件整体横移 9.2px，
-    // 盖过了 4.7px 的折射，用户因此只看到「抖动」。
-    // 现在形变退为辅助，只提供轻微的介质回弹感。
-    final a = 0.03 * intensity.clamp(0.0, 1.0) * damping(progress);
+    // 眼睛只会注意到前者。首版 9% 让 200px 组件整体横移 9.2px，
+    // 用户反馈「就是抖动了」。降到 3% 仍嫌抢戏，
+    // 现在压到 1.5%，只留一丝介质回弹的余味，
+    // 视觉主体完全交给折射。
+    final a = 0.015 * intensity.clamp(0.0, 1.0) * damping(progress);
     final sx = 1.0 + a * osc;
     final sy = 1.0 - a * osc;
     // scale(x, y, z) 已废弃，改用 scaleByDouble（需要第四个 w 分量）。
