@@ -216,8 +216,42 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
 
     _pages.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    _flattenNestedOverlayPages();
     _activePageId = _pages.first.id;
     _loadActivePageState();
+  }
+
+  /// 把嵌套的叠加页拍平到它所属的平级页下。
+  ///
+  /// 叠加层不能变成子叠加层（用户明确规则），但早期实现允许嵌套建到 3 层。
+  /// 这不是「兼容老卡」——是**修正由错误实现产生的非法结构**：
+  /// 留着的话 `_canDropPageInto` 会拒绝一切落点，那些页面卡在原地拖不动。
+  ///
+  /// 找不到平级祖先的（父级悬空）挂到根平级页，不丢页面。
+  void _flattenNestedOverlayPages() {
+    if (_pages.isEmpty) return;
+    final root = _rootBasePage;
+    var changed = false;
+    for (final page in _pages) {
+      if (!page.isOverlay) continue;
+      final parent = page.parentPageId == null
+          ? null
+          : _pageById(page.parentPageId!);
+      if (parent != null && parent.isBase) continue;
+      page.parentPageId = (_baseAncestorOf(page) ?? root).id;
+      changed = true;
+    }
+    if (!changed) return;
+    // 拍平后同一父级下可能出现重复 sortOrder，重排一遍。
+    for (final base in _pages.where((p) => p.isBase)) {
+      final children = _pages
+          .where((p) => p.parentPageId == base.id)
+          .toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      for (var i = 0; i < children.length; i++) {
+        children[i].sortOrder = i;
+      }
+    }
   }
 
   /// 打开 Assembly 时重新对齐状态字段通道。
@@ -7307,13 +7341,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   void _createPage({required String type}) {
     _syncCanvasStateIntoActivePage();
     final pageType = type == 'overlay' ? 'overlay' : 'base';
-    if (pageType == 'overlay' && _pageDepth(_activePage) >= 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前已达到最大叠加深度（3 层）')),
-      );
-      return;
-    }
-    final parentPageId = pageType == 'overlay' ? _activePage.id : null;
+    // 叠加页恒为平级页的直接子级，**不允许嵌套**（用户明确规则）。
+    //
+    // 旧实现允许在叠加页上再建叠加页（最深 3 层），
+    // 那是错误前提：叠加层无论如何都不能变成子叠加层。
+    // 因此当前页若本身是叠加页，新叠加页挂到它所属的平级页下，
+    // 而不是挂到它自己下面。
+    final String? parentPageId = pageType == 'overlay'
+        ? (_baseAncestorOf(_activePage) ?? _rootBasePage).id
+        : null;
     final siblingCount = _pages.where((page) => page.parentPageId == parentPageId).length;
     final page = AssemblyPage(
       id: 'page_${DateTime.now().millisecondsSinceEpoch}_${_pages.length}',
@@ -7401,39 +7437,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _persistAssemblyElements();
   }
 
-  bool _isDescendantPage(String pageId, String ancestorId) {
-    var currentId = pageId;
-    final visited = <String>{};
-    while (visited.add(currentId)) {
-      final index = _pages.indexWhere((page) => page.id == currentId);
-      if (index == -1) return false;
-      final parentId = _pages[index].parentPageId;
-      if (parentId == null || parentId.isEmpty) return false;
-      if (parentId == ancestorId) return true;
-      currentId = parentId;
-    }
-    return false;
-  }
-
+  /// 叠加页的换父候选 = **其他平级页**。
+  ///
+  /// 换父级是「同一类型的父级之间切换」：叠加页永远挂在某个平级页下，
+  /// 换的是挂在哪一个平级页。叠加层无论如何都不能变成子叠加层，
+  /// 因此候选里不含任何叠加页。
+  ///
+  /// 平级页没有父级，不参与换父（返回空表）。
   List<AssemblyPage> _reparentCandidatesForPage(AssemblyPage page) {
-    final depth = _pageDepth(page);
-    if (depth == 0) return const <AssemblyPage>[];
-    final candidates = <AssemblyPage>[];
-    for (final candidate in _pages) {
-      if (candidate.id == page.id) continue;
-      if (_isDescendantPage(candidate.id, page.id)) continue;
-      final candidateDepth = _pageDepth(candidate);
-      if (depth == 1) {
-        if (candidateDepth <= 1) candidates.add(candidate);
-      } else {
-        if (candidate.isOverlay && candidateDepth == 1) candidates.add(candidate);
-      }
-    }
-    candidates.sort((a, b) {
-      final depthCompare = _pageDepth(a).compareTo(_pageDepth(b));
-      if (depthCompare != 0) return depthCompare;
-      return a.sortOrder.compareTo(b.sortOrder);
-    });
+    if (!page.isOverlay) return const <AssemblyPage>[];
+    final candidates = _pages
+        .where((candidate) =>
+            candidate.isBase && candidate.id != page.parentPageId)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     return candidates;
   }
 
@@ -7513,11 +7530,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final oldParentId = _pages[pageIndex].parentPageId;
     if (oldParentId == newParentId) return false;
 
-    // 防环：不能把页面挂到自己的后代下面，否则页面树成环，
-    // `_pageDepth` 靠 visited 兜底不会死循环，但那一支会从树上消失。
-    if (newParentId == pageId || _isDescendantPage(newParentId, pageId)) {
-      return false;
-    }
+    // 叠加页恒为平级页的直接子级，所以新父级必须是平级页。
+    // 这一条同时天然排除了成环：平级页没有父级，构不成环。
+    final newParent = _pageById(newParentId);
+    if (newParent == null || !newParent.isBase) return false;
+    if (!_pages[pageIndex].isOverlay) return false;
+
+    assert(
+      _pageDepth(newParent) == 0,
+      '平级页深度必须为 0，否则「叠加页不嵌套」的不变式已被破坏',
+    );
 
     _pushHistory();
 
@@ -7567,25 +7589,21 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   ///
   /// 判据与 `_reparentCandidatesForPage` 保持一致——
   /// 拖放能放进去、弹窗里却查不到这个候选，会让作者觉得随机。
+  /// 能否把 [pageId] 拖到 [targetId] 下。
+  ///
+  /// 规则极简：**被拖的必须是叠加页，落点必须是平级页**。
+  /// 叠加层不能变成子叠加层，所以叠加页永远不是合法落点——
+  /// 这一条同时天然消除了成环的可能（平级页没有父级，构不成环）。
   bool _canDropPageInto(String pageId, String targetId) {
     final pageIndex = _pages.indexWhere((p) => p.id == pageId);
     if (pageIndex == -1) return false;
     final page = _pages[pageIndex];
     if (!page.isOverlay) return false;
-    if (targetId == pageId) return false;
     if (page.parentPageId == targetId) return false;
-    // 不能挂到自己的后代下面。
-    if (_isDescendantPage(targetId, pageId)) return false;
 
     final targetIndex = _pages.indexWhere((p) => p.id == targetId);
     if (targetIndex == -1) return false;
-    final target = _pages[targetIndex];
-    final depth = _pageDepth(page);
-    final targetDepth = _pageDepth(target);
-    if (depth == 1) {
-      return targetDepth <= 1;
-    }
-    return target.isOverlay && targetDepth == 1;
+    return _pages[targetIndex].isBase;
   }
 
   void _beginPageDrag(String pageId) {

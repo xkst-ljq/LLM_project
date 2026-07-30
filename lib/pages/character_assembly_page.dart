@@ -2055,31 +2055,20 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     //
     // 分流的依据（用户的观察）：平级页没有父级、只需要排序；
     // 叠加页同级顺序不影响打开、只需要换父。每种页面只有一种拖动行为，
-    // 因此不必在同一套手势里区分两种意图——这消解了原先
-    // 「手势风险高」的判定。
+    // 因此不必在同一套手势里区分两种意图。
     //
-    // 混合组（同一父级下既有平级页又有叠加页）实际只出现在根层：
-    // 那里 excludeRoot 分支拿到的全是平级页。这里按多数决分流，
-    // 并对个别不匹配的条目单独处理。
+    // 换父 = **在不同平级页之间切换挂靠**，不是嵌套：
+    // 叠加层无论如何都不能变成子叠加层。
     final bool overlayGroup = children.every((page) => page.isOverlay);
     if (overlayGroup) {
+      // 叠加页不再递归子组：它们恒为平级页的直接子级，不可能有叠加子页。
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final page in children)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildDraggablePageTile(page, depth: depth),
-                  if (_directChildPages(page.id).isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: _buildPageGroup(page.id, depth + 1),
-                    ),
-                ],
-              ),
+              child: _buildDraggablePageTile(page, depth: depth),
             ),
         ],
       );
