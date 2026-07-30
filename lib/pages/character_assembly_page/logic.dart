@@ -6710,8 +6710,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                   const Padding(
                     padding: EdgeInsets.only(top: 2, bottom: 8),
                     child: Text(
-                      '被联动器触发时播放。在这里配一次，'
-                      '所有指向它的连线都用这套参数。',
+                      '被联动器触发时播放（方案选「事件触发动画」）。'
+                      '在这里配一次，所有指向它的连线都用这套参数。',
                       style: TextStyle(
                           fontSize: 11, color: Color(0xFF777783), height: 1.35),
                     ),
@@ -6768,6 +6768,29 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       (v) => setPageState(
                           () => animation = animation!.copyWith(intensity: v)),
                     ),
+                    // 值驱动组件配了「跟着数值动」的类型时，
+                    // 不接线也会在值变化时自动播——这是数值跳动的
+                    // 自然语义，明确告知作者，免得他再去接一条多余的线。
+                    if (const {'progress', 'text', 'slider', 'select',
+                            'input'}
+                            .contains(type) &&
+                        const {
+                          ElementAnimationType.numberPop,
+                          ElementAnimationType.glowPulse,
+                          ElementAnimationType.flash,
+                        }.contains(animation!.type))
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Text(
+                          '这个组件的数值发生变化时会自动播放，无需接线。'
+                          '若还想让按钮或定时器额外触发，再另接连线即可。',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF2E7D32),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
                     DropdownButtonFormField<ElementAnimationCurve>(
                       initialValue: animation!.curve,
                       isExpanded: true,

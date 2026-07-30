@@ -90,6 +90,72 @@ void main() {
     });
   });
 
+  group('值变化自动播放（A12-2）', () {
+    // 数值跳动的自然语义是「值变了就自己弹一下」，
+    // 不该还要额外接一条 event_to_animation 连线——
+    // 那等于让作者手动告诉系统「现在数值变了」，而系统自己明明知道。
+
+    const valueDrivenTypes = {
+      'progress',
+      'text',
+      'slider',
+      'select',
+      'input',
+    };
+    const autoPlayTypes = {
+      ElementAnimationType.numberPop,
+      ElementAnimationType.glowPulse,
+      ElementAnimationType.flash,
+    };
+
+    test('只有显示数值/文本的组件参与自动播放', () {
+      expect(valueDrivenTypes.contains('progress'), isTrue);
+      expect(valueDrivenTypes.contains('text'), isTrue);
+      // 面板、按钮没有「值」可言，动画仍由连线触发。
+      expect(valueDrivenTypes.contains('surface'), isFalse);
+      expect(valueDrivenTypes.contains('button'), isFalse);
+    });
+
+    test('交互反馈类动画不自动播放', () {
+      // 按压/涟漪是「我碰了它」的反馈，
+      // 值变了自己涟漪一下会很怪。
+      expect(autoPlayTypes.contains(ElementAnimationType.press), isFalse);
+      expect(autoPlayTypes.contains(ElementAnimationType.ripple), isFalse);
+    });
+
+    test('跟数值相关的动画会自动播放', () {
+      expect(autoPlayTypes.contains(ElementAnimationType.numberPop), isTrue);
+      expect(autoPlayTypes.contains(ElementAnimationType.glowPulse), isTrue);
+    });
+
+    test('自动播放不依赖时间戳', () {
+      // 关键约束：不能在渲染时往 props 写时间戳，
+      // 那会被 _persistAssemblyElements 存进角色卡，
+      // 既污染产物、又让作者下次打开时凭空看到一次动画。
+      // 因此自动播放走 ValueChangeAnimator 的本地状态，
+      // 配置里的 timestamp 保持为 0 也应能播。
+      const anim = ElementAnimation(
+        type: ElementAnimationType.numberPop,
+        timestamp: 0,
+      );
+      // 连线触发那条通路要求时间戳有效……
+      expect(anim.isActiveAt(999999), isFalse);
+      // ……但值变化通路不看它，只看值有没有变。
+      expect(anim.type, ElementAnimationType.numberPop);
+    });
+
+    test('两条通路可以并存', () {
+      // 值变化自动播 + 按钮额外触发，互不排斥。
+      const anim = ElementAnimation(
+        type: ElementAnimationType.glowPulse,
+        timestamp: 1000,
+        durationMs: 600,
+      );
+      expect(anim.isActiveAt(1100), isTrue);
+      expect(autoPlayTypes.contains(anim.type), isTrue);
+    });
+  });
+
   group('序列化往返', () {
     test('配置往返不丢字段', () {
       const before = ElementAnimation(

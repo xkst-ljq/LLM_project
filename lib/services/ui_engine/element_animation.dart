@@ -304,3 +304,97 @@ class ElementAnimation {
     return true;
   }
 }
+
+/// 「值变化时自动播放动画」的包裹层。
+///
+/// ## 为什么需要它
+///
+/// 数值跳动的自然语义是「进度条的值变了，它自己弹一下」，
+/// 不该还要额外接一条 `event_to_animation` 连线——
+/// 那等于让作者手动告诉系统「现在数值变了」，系统自己明明知道。
+///
+/// ## 为什么不写 props
+///
+/// 最直接的做法是渲染时比较新旧值、变了就打时间戳。但这违反
+/// **「渲染函数只读不写」**（见 ASSEMBLY_HANDOFF）：
+/// 写进 props 的时间戳会被 `_persistAssemblyElements` 存进角色卡，
+/// 既污染产物，又会让作者下次打开时凭空看到一次动画。
+/// 配额归零就是这么踩过一次的。
+///
+/// 因此改用 **StatefulWidget 的本地状态**记住上一次的值：
+/// 它随 widget 树存活，不进入任何持久化路径。
+class ValueChangeAnimator extends StatefulWidget {
+  /// 参与比较的值。变化即触发一次动画。
+  final Object? value;
+
+  /// 元件配置的动画；为 null 时直接透传 child。
+  final ElementAnimation? animation;
+
+  /// 动画帧的绘制回调。由渲染器传入，避免这里依赖具体绘制实现。
+  final Widget Function(
+    BuildContext context,
+    ElementAnimation animation,
+    double progress,
+    Widget child,
+  ) frameBuilder;
+
+  final Widget child;
+
+  const ValueChangeAnimator({
+    super.key,
+    required this.value,
+    required this.animation,
+    required this.frameBuilder,
+    required this.child,
+  });
+
+  @override
+  State<ValueChangeAnimator> createState() => _ValueChangeAnimatorState();
+}
+
+class _ValueChangeAnimatorState extends State<ValueChangeAnimator> {
+  Object? _lastValue;
+  int _playToken = 0;
+  bool _initialized = false;
+
+  @override
+  void didUpdateWidget(covariant ValueChangeAnimator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncValue();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _lastValue = widget.value;
+    // 首帧不播：刚进页面时所有值都是「从无到有」，
+    // 全部弹一遍会像页面在抽搐。
+    _initialized = true;
+  }
+
+  void _syncValue() {
+    if (!_initialized) return;
+    if (widget.value == _lastValue) return;
+    _lastValue = widget.value;
+    if (widget.animation == null) return;
+    // 换 token 即重新起播：TweenAnimationBuilder 靠 key 变化重启，
+    // 参数不变时它会停在末态。
+    setState(() => _playToken++);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final animation = widget.animation;
+    if (animation == null || _playToken == 0) return widget.child;
+
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('value_change_$_playToken'),
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: animation.durationMs),
+      curve: animation.curve.curve,
+      builder: (ctx, t, inner) =>
+          widget.frameBuilder(ctx, animation, t, inner!),
+      child: widget.child,
+    );
+  }
+}

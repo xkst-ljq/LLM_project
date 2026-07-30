@@ -73,6 +73,11 @@ class UIRenderer {
       if (!isIndicatorFlash) {
         widget = _wrapWithAnimation(widget, module, element.size);
       }
+      // A12-2：值变化自动播放。
+      //
+      // 与上面的连线触发是两条独立通路，可以并存：
+      // 前者由 button/timer 打时间戳，后者由「值自己变了」驱动。
+      widget = _wrapWithValueChangeAnimation(widget, module, element.size);
     }
 
     final bool shouldBlockInteraction =
@@ -436,6 +441,75 @@ class UIRenderer {
       },
       child: child,
     );
+  }
+
+  /// A12-2：值变化自动播放动画。
+  ///
+  /// 数值跳动的自然语义是「值变了就自己弹一下」，不该还要额外接一条
+  /// `event_to_animation` 连线——那等于让作者手动告诉系统
+  /// 「现在数值变了」，而系统自己明明知道。
+  ///
+  /// 只对**显示数值/文本**的组件生效：面板、按钮之类没有「值」可言，
+  /// 它们的动画仍由连线触发。
+  ///
+  /// 注意这里**不写 props**：时间戳交给 `ValueChangeAnimator` 的本地状态，
+  /// 写进 props 会被 `_persistAssemblyElements` 存进角色卡
+  /// （见「渲染函数只读不写」）。
+  static Widget _wrapWithValueChangeAnimation(
+    Widget child,
+    UIModule module,
+    Size size,
+  ) {
+    const valueDrivenTypes = {'progress', 'text', 'slider', 'select', 'input'};
+    if (!valueDrivenTypes.contains(module.type)) return child;
+
+    final animation = ElementAnimation.readFrom(module.properties);
+    if (animation == null) return child;
+
+    // 只有明确「跟着数值动」的动画类型才自动播。
+    // 按压/涟漪是交互反馈，值变了自己涟漪一下会很怪。
+    const autoPlayTypes = {
+      ElementAnimationType.numberPop,
+      ElementAnimationType.glowPulse,
+      ElementAnimationType.flash,
+    };
+    if (!autoPlayTypes.contains(animation.type)) return child;
+
+    return ValueChangeAnimator(
+      value: _currentDisplayValueOf(module),
+      animation: animation,
+      frameBuilder: (ctx, anim, progress, inner) => _paintAnimationFrame(
+        type: anim.type,
+        progress: progress,
+        intensity: anim.intensity,
+        accent: anim.colorValue != null
+            ? Color(anim.colorValue!)
+            : module.color,
+        borderRadius: module.borderRadius,
+        size: size,
+        child: inner,
+      ),
+      child: child,
+    );
+  }
+
+  /// 取组件当前展示的值，用于变化检测。
+  ///
+  /// 必须取**解析后**的值而不是 `properties['current']`——
+  /// 联动驱动的组件属性里存的是初始值，真正显示的来自
+  /// `LinkerService.resolveTargetValue`，比较原始属性永远不会变。
+  static Object? _currentDisplayValueOf(UIModule module) {
+    final controls = LinkerService.resolveTargetControlState(module);
+    if (controls.frozen) return null;
+    final linked = LinkerService.resolveTargetValue(module);
+    if (linked != null) return linked;
+    return switch (module.type) {
+      'progress' || 'slider' => module.properties['current'],
+      'text' => module.properties['text'],
+      'input' => module.properties['text'],
+      'select' => module.properties['current'],
+      _ => null,
+    };
   }
 
   /// 单帧绘制。按类型分派，每种动画只关心「给定进度画成什么样」。
