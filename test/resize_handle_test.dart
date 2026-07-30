@@ -238,6 +238,66 @@ void main() {
     });
   });
 
+  group('选中虚线框贴合缩放后的容器面', () {
+    // 用户反馈：复合组件放大或缩小到一定程度，边框不贴合容器面。
+    // 具体表现为圆角半径——容器面被 Transform.scale 一起缩放，
+    // 视觉圆角是「原始值 × 缩放比」，而虚线框画在未缩放的外框上、
+    // 用的是原始值，两者对不上。
+
+    double outlineRadius(double boundaryRadius, double scale) =>
+        boundaryRadius * scale;
+
+    test('未缩放时与容器面原始圆角一致', () {
+      expect(outlineRadius(16, 1.0), 16);
+    });
+
+    test('放大后虚线框圆角同比放大', () {
+      // scale=1.8 时容器面视觉圆角 28.8，虚线框不跟就差了 12.8。
+      expect(outlineRadius(16, 1.8), closeTo(28.8, 1e-9));
+    });
+
+    test('缩小后虚线框圆角同比缩小', () {
+      expect(outlineRadius(16, 0.45), closeTo(7.2, 1e-9));
+    });
+
+    test('只有 rounded 形状受影响', () {
+      // rectangle / circle / capsule / heart / star 的路径都由 rect
+      // 自适应推导（capsule 用 shortestSide/2、circle 用 min(w,h)），
+      // 跟着盒子走，缩放不会让它们脱节。
+      const scaleDependentShapes = {'rounded'};
+      const selfAdaptiveShapes = {
+        'rectangle',
+        'circle',
+        'capsule',
+        'heart',
+        'star5',
+        'star4',
+      };
+      for (final shape in selfAdaptiveShapes) {
+        expect(scaleDependentShapes.contains(shape), isFalse, reason: shape);
+      }
+      expect(scaleDependentShapes.contains('rounded'), isTrue);
+    });
+
+    test('等比缩放下内容恰好填满外框，边框无空隙', () {
+      // 复合件强制等比，因此 natural*scale == el.size，
+      // 虚线框画在外框上不会与内容之间留出空白。
+      const natural = Size(200, 100);
+      for (final size in [
+        const Size(360, 180),
+        const Size(90, 45),
+        const Size(250, 125),
+      ]) {
+        final scale = math.min(
+          size.width / natural.width,
+          size.height / natural.height,
+        );
+        expect(natural.width * scale, closeTo(size.width, 1e-9));
+        expect(natural.height * scale, closeTo(size.height, 1e-9));
+      }
+    });
+  });
+
   group('形变锚点（旋转后图形到处跑的根因）', () {
     // 用户反馈：旋转 90° 后拖把手，形变没有锚点、图形到处跑。
     //

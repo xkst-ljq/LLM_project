@@ -1477,9 +1477,20 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   /// 热区用 `Listener.onPointerDown` 而非 `GestureDetector.onPanStart`：
   /// pan 需要先跨过 kTouchSlop 才触发，那段距离里手指已经移开，
   /// 起点会不准；而且会与外层的画布平移进入手势竞技场互相抢。
+  /// linker 的三段式交互节点。
+  ///
+  /// ⚠️ **不画选中虚线框**，两个原因：
+  ///
+  /// 1. 与 Studio 一致——它的 `isTransformationActive && !isLinker`
+  ///    明确把 linker 排除在虚线框之外（用户反馈指出这一点）。
+  ///    linker 本身就是个有边框的卡片，再套一圈虚线只是噪声。
+  /// 2. 更要紧的是：虚线框曾作为**条件子节点**排在手势节点**之前**，
+  ///    首次拖动未选中的 linker 时，选中会插入这个节点、
+  ///    使后面所有子节点索引后移一位 → GestureDetector 被当成新 widget
+  ///    重建 → 正在进行的 pan 被中断（用户观察到「已选中时拖动就正常」，
+  ///    正因为那时节点已经存在、索引不变）。
+  ///    这是「手势进行中不能改变自身所在树结构」的第三个变体。
   Widget _buildLinkerElementWidget(UIElement el) {
-    final isSelected = _selectedElementId == el.id;
-
     Widget portZone(String port) {
       return Listener(
         behavior: HitTestBehavior.opaque,
@@ -1514,19 +1525,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               ),
             ),
           ),
-          if (isSelected)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: DashedSelectionBorderPainter(
-                    strokeWidth: 1.2,
-                    shape: _outlineShapeOf(el),
-                    borderRadius: _outlineBorderRadiusOf(el),
-                    isPerfectCircle: _isPerfectCircleOutlineOf(el),
-                  ),
-                ),
-              ),
-            ),
           Positioned.fill(
             child: Row(
               children: [

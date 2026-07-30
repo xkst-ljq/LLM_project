@@ -847,8 +847,18 @@ A14-1g 第一轮我验了「四周等量扩张所以旋转中心不变」，
 （直接 body / SizedBox+Stack）。结构一变，Flutter 认定不是同一个
 widget，就会销毁重建，正在进行的手势随之取消。
 
+| 3 | 未选中的 linker 拖动被打断 | 选中框是**条件子节点且排在手势节点之前** → 插入后其余子节点索引后移 → GestureDetector 重建 |
+
+第 3 次尤其隐蔽：其他元件的 `GestureDetector` 是**最外层包裹**，
+内部子节点怎么增减都不影响它；只有 linker 把手势放在 `Stack` 内部
+（三段式布局需要），才会被前面插入的兄弟节点顶掉索引。
+用户观察到「已选中时拖动就正常」——正因为那时节点已存在、索引不变。
+
 **规则：凡是在手势回调里 setState 的路径，必须保证 build 出来的
 树结构不变**，只允许改数值或增减「不影响手势节点」的子节点。
+
+推论：**条件子节点务必排在手势节点之后**；
+若手势节点本身在 Stack 内部，前面就不该有任何 `if (...)` 子节点。
 
 具体做法：
 * padding 恒定撑开（`_handlePaddingOf` 恒返回 12），
@@ -856,6 +866,25 @@ widget，就会销毁重建，正在进行的手势随之取消。
 * 把手作为 Stack 的可选子节点追加，body 恒为 `children[0]`
 * 渲染器里 `Transform.rotate` / `Transform.scale` 即使参数为
   恒等值也保留包裹（`ui_renderer` 里早有同样的注释）
+
+### linker 不画选中虚线框
+
+与 Studio 一致（它的 `isTransformationActive && !isLinker` 明确排除）。
+linker 本身就是有边框的卡片，再套一圈虚线只是噪声。
+这同时消除了上面第 3 类手势中断。
+
+### 复合件缩放后，选中虚线框的圆角要乘缩放比
+
+容器面被 `Transform.scale` 一起缩放，它的**视觉**圆角是
+`原始值 × scale`；而虚线框画在**未缩放**的外框上。
+不乘系数就会出现「边框不贴合容器面」（用户反馈）。
+
+只有 `UIModuleShape.rounded` 受影响——`rectangle` / `circle` /
+`capsule` / `heart` / `star` 的路径都由 `rect` 自适应推导
+（capsule 用 `shortestSide/2`、circle 用 `min(w,h)`），跟着盒子走。
+
+因为复合件强制等比缩放，`natural × scale == el.size`，
+内容恰好填满外框，边框与内容之间不会留空隙。
 
 ### 复合件的连线连的是「暴露子元素」，不是外壳
 

@@ -1408,10 +1408,34 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return mod.shape;
   }
 
+  /// 复合件内容相对其自然尺寸的缩放比。
+  ///
+  /// 与 `UIRenderer._renderComposite` 里的计算保持一致：等比取较小值。
+  double _compositeContentScale(UIElement el) {
+    final data = el.composite;
+    if (data == null) return 1.0;
+    final natural = UIRenderer.compositeNaturalSize(data);
+    if (natural.width <= 0 || natural.height <= 0) return 1.0;
+    return math.min(
+      el.size.width / natural.width,
+      el.size.height / natural.height,
+    );
+  }
+
   double _outlineBorderRadiusOf(UIElement el) {
     if (el.isComposite) {
       final boundary = _compositeBoundaryOf(el);
-      if (boundary != null) return _outlineBorderRadiusOf(boundary);
+      if (boundary != null) {
+        // 容器面被 Transform.scale 一起缩放了，它的**视觉**圆角是
+        // 原始值 × 缩放比；而虚线框画在未缩放的外框上。
+        // 不乘这个系数，放大/缩小后虚线框的圆角就与容器面对不上
+        // （用户反馈：边框不贴合容器面）。
+        //
+        // 只有 rounded 形状受影响——rectangle / circle / capsule /
+        // heart / star 的路径都由 rect 自适应推导，跟着盒子走。
+        return _outlineBorderRadiusOf(boundary) *
+            _compositeContentScale(el);
+      }
       return 12;
     }
     final mod = el.module;
