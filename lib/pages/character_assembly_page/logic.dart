@@ -3441,8 +3441,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           ),
                         ),
                         if (sourceGesture != 'tap' &&
-                            (scheme == 'click_to_surface_press' ||
-                                scheme == 'click_to_surface_ripple'))
+                            scheme == 'click_to_surface_press')
                           const Padding(
                             padding: EdgeInsets.only(top: 6),
                             child: Text(
@@ -7541,7 +7540,221 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     });
   }
 
+  // ===== 画布级撤销 =====
+  //
+  // 此前完全没有撤销机制，删除对话框只能写「删除后无法撤销」。
+  //
+  // 快照打在 `_persistAssemblyElements` 里而不是逐个操作点：
+  // 所有改动最终都汇到这个函数，逐个改调用点必然漏。
+  // 代价是连续拖动会产生大量快照，用时间去重解决（见 _pushHistory）。
+
+  /// 历史栈。每项是一次 `_persistAssemblyElements` 之前的画布状态。
+  final List<String> _history = <String>[];
+
+  /// 栈深上限。角色卡的元素 JSON 可能不小，无限堆会吃内存。
+  static const int _maxHistory = 40;
+
+  /// 正在应用撤销，期间不记录新快照（否则撤销本身会入栈）。
+  bool _applyingHistory = false;
+
+  DateTime? _lastSnapshotAt;
+
+  bool get _canUndo => _history.isNotEmpty;
+
+  /// 记录当前状态。
+  ///
+  /// 在**改动写入之前**调用，存的是「改之前」的样子。
+  void _pushHistory() {
+    if (_applyingHistory) return;
+
+    // 连续拖动每帧都会 persist，300ms 内的连续改动只留第一张。
+    // 否则撤销一次只退回一帧，作者要点几十下才回到起点。
+    final now = DateTime.now();
+    final last = _lastSnapshotAt;
+    if (last != null &&
+        now.difference(last) < const Duration(milliseconds: 300)) {
+      return;
+    }
+    _lastSnapshotAt = now;
+
+    final snapshot = jsonEncode(
+      _orderedPages().map((page) => page.toJson()).toList(),
+    );
+    // 与栈顶相同就不重复入栈（比如只是点了下没真改）。
+    if (_history.isNotEmpty && _history.last == snapshot) return;
+
+    _history.add(snapshot);
+    while (_history.length > _maxHistory) {
+      _history.removeAt(0);
+    }
+  }
+
+  /// 撤销一步。
+  void _undo() {
+    if (_history.isEmpty) return;
+    final snapshot = _history.removeLast();
+    _applyingHistory = true;
+    try {
+      final decoded = jsonDecode(snapshot);
+      if (decoded is! List) return;
+      final restored = decoded
+          .whereType<Map>()
+          .map((e) => AssemblyPage.fromJson(e.cast<String, dynamic>()))
+          .toList();
+      if (restored.isEmpty) return;
+
+      setState(() {
+        _pages
+          ..clear()
+          ..addAll(restored);
+        // 当前页可能已被删掉，回落到第一页。
+        if (!_pages.any((p) => p.id == _activePageId)) {
+          _activePageId = _pages.first.id;
+        }
+        _selectedCompositeId = null;
+        _showNudgePad = false;
+        _loadActivePageState();
+      });
+      _setupEventBusListener();
+      // 撤销结果要落盘，否则退出后又变回去了。
+      _persistAssemblyElements();
+    } catch (_) {
+      // 快照损坏就放弃这一步，不要炸掉页面。
+    } finally {
+      _applyingHistory = false;
+    }
+  }
+
+  // ===== 画布级操作 =====
+
+  /// 批量删除模式：选中多个元件一次删掉。
+  ///
+  /// 与单选删除并存——单选走左侧操作栏的删除按钮，
+  /// 批量走这里。两者都不碰锁定元件。
+  bool _multiDeleteMode = false;
+  final Set<String> _pendingDeleteIds = <String>{};
+
+  void _toggleMultiDeleteMode() {
+    setState(() {
+      _multiDeleteMode = !_multiDeleteMode;
+      _pendingDeleteIds.clear();
+      if (_multiDeleteMode) {
+        // 进入批量模式先取消单选，否则两套选中态会同时显示。
+        _selectedCompositeId = null;
+        _showNudgePad = false;
+      }
+    });
+  }
+
+  void _togglePendingDelete(UIElement element) {
+    // 锁定的元件不参与批量删除——锁定的语义就是「别动它」。
+    if (element.layoutLocked || element.sealed) {
+      _showSnack('「${element.module?.name ?? element.id}」已锁定，请先解锁');
+      return;
+    }
+    setState(() {
+      if (!_pendingDeleteIds.remove(element.id)) {
+        _pendingDeleteIds.add(element.id);
+      }
+    });
+  }
+
+  Future<void> _confirmBatchDelete() async {
+    if (_pendingDeleteIds.isEmpty) return;
+    final count = _pendingDeleteIds.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量删除'),
+        content: Text('将删除选中的 $count 个组件。可用左侧「撤销」找回。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC62828),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    // 先记快照再改，撤销才能回到删除前。
+    _pushHistory();
+    final removeIds = Set<String>.from(_pendingDeleteIds);
+    setState(() {
+      _elements.removeWhere((e) => removeIds.contains(e.id));
+      // A14-1c：删掉的若是容器面，组员会指向一个不存在的父级，
+      // 导致运行时 `isElementVisibleInSurfaceHierarchy` 判定失败而整组隐身。
+      // 解除它们的归属，就地留在当前层级。
+      for (var i = 0; i < _elements.length; i++) {
+        final parent = _elements[i].parentSurfaceId;
+        if (parent != null && removeIds.contains(parent)) {
+          _elements[i] = _elements[i].copyWith(clearParentSurface: true);
+        }
+      }
+      // 覆写槽位随组件一起消失，否则会留下指向不存在组件的孤儿配置。
+      _activePropertyOverrides
+          .removeWhere((o) => removeIds.contains(o.componentId));
+      _pendingDeleteIds.clear();
+      _multiDeleteMode = false;
+      _selectedCompositeId = null;
+    });
+    _setupEventBusListener();
+    _persistAssemblyElements();
+  }
+
+  /// 清空当前页的所有元件。
+  Future<void> _confirmClearCanvas() async {
+    if (_elements.isEmpty) {
+      _showSnack('当前页面还没有组件');
+      return;
+    }
+    final count = _elements.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清空画布'),
+        content: Text(
+          '将删除当前页面的全部 $count 个组件（含已锁定的）。\n'
+          '只影响当前页，其他页面不变。可用左侧「撤销」找回。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC62828),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    _pushHistory();
+    setState(() {
+      _elements.clear();
+      _activePropertyOverrides.clear();
+      _selectedCompositeId = null;
+      _showNudgePad = false;
+      _multiDeleteMode = false;
+      _pendingDeleteIds.clear();
+    });
+    _persistAssemblyElements();
+  }
+
   void _persistAssemblyElements() {
+    _pushHistory();
     _sanitizeActivePropertyOverrides();
     _syncCanvasStateIntoActivePage();
     _info.elementsJson = jsonEncode(

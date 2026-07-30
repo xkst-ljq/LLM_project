@@ -612,6 +612,19 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     child: _buildElementActionRail(_selectedElement!),
                   ),
 
+                // ===== 2.5b 画布级操作栏 =====
+                //
+                // 未选中任何组件时占用同一片区域：
+                // 元件级与画布级操作互斥，同屏出现两条竖栏会挤掉画布，
+                // 作者也分不清哪个按钮作用于谁。
+                if (_selectedElement == null && !_showLayerPanel)
+                  Positioned(
+                    left: 8,
+                    top: 104,
+                    bottom: 160,
+                    child: _buildCanvasActionRail(),
+                  ),
+
                 // ===== 2.6 精确位移方向键（A14-1d）=====
                 //
                 // 底部居中的 3×3 D-Pad，与 Studio 一致。
@@ -1013,6 +1026,94 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     );
   }
 
+  /// 画布级操作栏（未选中组件时显示）。
+  ///
+  /// 与元件级操作栏共用同一片区域、互斥出现：
+  /// 同屏两条竖栏会挤掉画布，作者也分不清哪个按钮作用于谁。
+  ///
+  /// 批量删除模式下换成「已选 N 项 / 确认 / 退出」，
+  /// 避免在同一栏里堆更多按钮。
+  Widget _buildCanvasActionRail() {
+    if (_multiDeleteMode) {
+      return SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 46,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF37474F).withValues(alpha: 0.94),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    '${_pendingDeleteIds.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const Text(
+                    '已选',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _buildRailButton(
+              icon: Icons.delete_forever_rounded,
+              label: '删除',
+              color: const Color(0xFFC62828),
+              onTap:
+                  _pendingDeleteIds.isEmpty ? null : _confirmBatchDelete,
+            ),
+            _buildRailButton(
+              icon: Icons.close_rounded,
+              label: '退出',
+              color: const Color(0xFF546E7A),
+              onTap: _toggleMultiDeleteMode,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildRailButton(
+            icon: Icons.undo_rounded,
+            label: '撤销',
+            color: const Color(0xFF00897B),
+            // 没有历史时置灰，而不是点了没反应。
+            onTap: _canUndo ? _undo : null,
+          ),
+          _buildRailButton(
+            icon: Icons.checklist_rounded,
+            label: '多选删',
+            color: const Color(0xFF8B4B4B),
+            onTap: _elements.isEmpty ? null : _toggleMultiDeleteMode,
+          ),
+          _buildRailButton(
+            icon: Icons.layers_clear_rounded,
+            label: '清空页',
+            color: const Color(0xFFC62828),
+            onTap: _elements.isEmpty ? null : _confirmClearCanvas,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRailButton({
     required IconData icon,
     required String label,
@@ -1125,6 +1226,43 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               bottom: 0,
               child: _buildResizeHandle(el),
             ),
+          // 批量删除模式下的勾选标记。
+          //
+          // 加在这里而不是 body 内部：body 有多个分支（原子 / 复合 /
+          // 页面路由器 / linker），逐个加必然漏掉某一种。
+          if (_multiDeleteMode)
+            Positioned(
+              left: pad,
+              top: pad,
+              width: el.size.width,
+              height: el.size.height,
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _pendingDeleteIds.contains(el.id)
+                        ? const Color(0xFFC62828).withValues(alpha: 0.28)
+                        : Colors.black.withValues(alpha: 0.06),
+                    border: Border.all(
+                      color: _pendingDeleteIds.contains(el.id)
+                          ? const Color(0xFFC62828)
+                          : Colors.black.withValues(alpha: 0.18),
+                      width: _pendingDeleteIds.contains(el.id) ? 2 : 1,
+                    ),
+                  ),
+                  alignment: Alignment.topRight,
+                  child: _pendingDeleteIds.contains(el.id)
+                      ? const Padding(
+                          padding: EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.check_circle_rounded,
+                            size: 14,
+                            color: Color(0xFFC62828),
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1191,7 +1329,13 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       );
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _selectComposite(el.id),
+        onTap: () {
+          if (_multiDeleteMode) {
+            _togglePendingDelete(el);
+            return;
+          }
+          _selectComposite(el.id);
+        },
         onDoubleTap: () {
           _selectComposite(el.id);
           _showCompositeOverrideEntryDialog(el);
@@ -1358,6 +1502,11 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         // A14-1a：点击即选中，左侧操作栏据此显示。
         // button 仍要给出编辑态提示，避免作者以为点击没反应。
         onTap: () {
+          // 批量删除模式下点击是「勾选」，不是选中。
+          if (_multiDeleteMode) {
+            _togglePendingDelete(el);
+            return;
+          }
           _selectElement(el.id);
           if (el.module!.type == 'button') _showEditModeHint();
         },

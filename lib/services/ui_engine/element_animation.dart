@@ -30,7 +30,10 @@ enum ElementAnimationType {
   /// 按压凹陷。原 `click_to_surface_press`。
   press,
 
-  /// 水波纹扩散。原 `click_to_surface_ripple`。
+  /// 水波折射（片元着色器实现）。
+  ///
+  /// 早期由已废弃的 `click_to_surface_ripple` 方案驱动，
+  /// 现在改为在元件外观页配置、用 `event_to_animation` 触发。
   ripple,
 
   /// 短暂高亮。原 indicator 的 `eventFlash*`。
@@ -118,6 +121,8 @@ extension ElementAnimationTypeX on ElementAnimationType {
     // 兼容旧数据：`anim_trigger` 存的是完整方案 id。
     return switch (raw) {
       'click_to_surface_press' => ElementAnimationType.press,
+      // 方案本身已移除，但老卡的 props 里仍可能存着这个字符串，
+      // 迁移映射必须保留，否则旧数据读不出动画类型。
       'click_to_surface_ripple' => ElementAnimationType.ripple,
       _ => null,
     };

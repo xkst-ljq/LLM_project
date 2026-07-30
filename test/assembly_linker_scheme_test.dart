@@ -41,7 +41,7 @@ String schemeTargetPort(String scheme) {
 
 void main() {
   group('方案矩阵可用性', () {
-    test('button → surface 能选到按压/涟漪方案', () {
+    test('button → surface 能选到按压方案', () {
       // 这是本次移植的直接动因：button 本身不显形，
       // 必须靠联动 surface 才能做出按下反馈。
       final schemes = LinkerMatrixEngine.getAvailableSchemes(
@@ -50,7 +50,29 @@ void main() {
       );
       final ids = schemes.map((e) => e.id).toSet();
       expect(ids, contains('click_to_surface_press'));
-      expect(ids, contains('click_to_surface_ripple'));
+    });
+
+    test('涟漪方案已移除', () {
+      // 它是「盖一个扩大的白圈」，与 A12 反复推翻的前几版水波同源。
+      // 真正的折射水波已由片元着色器实现，配在元件外观页里、
+      // 用 event_to_animation 触发，不必再为 surface 单独维护一份。
+      expect(
+        LinkerMatrixEngine.isSchemeSelectable('click_to_surface_ripple'),
+        isFalse,
+      );
+      final ids = LinkerMatrixEngine.getAvailableSchemes('button', 'surface')
+          .map((e) => e.id)
+          .toSet();
+      expect(ids, isNot(contains('click_to_surface_ripple')));
+    });
+
+    test('surface 仍可用通用动画方案播水波', () {
+      // 移除涟漪不等于 surface 不能有水波——
+      // 改走 event_to_animation，动画类型在元件自己的外观页里选。
+      final ids = LinkerMatrixEngine.getAvailableSchemes('button', 'surface')
+          .map((e) => e.id)
+          .toSet();
+      expect(ids, contains('event_to_animation'));
     });
 
     test('button → switch 能选到开关切换', () {

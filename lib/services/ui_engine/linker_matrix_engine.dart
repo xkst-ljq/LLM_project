@@ -266,28 +266,16 @@ class LinkerMatrixEngine {
         ),
       ],
     ),
-    SchemeDefinition(
-      id: 'click_to_surface_ripple',
-      label: '点击触发涟漪动画 (click → surface_ripple)',
-      description: 'button 点击脉冲触发 surface 水波纹扩散动画',
-      sourceType: 'button',
-      targetType: 'surface',
-      isPulse: true,
-      params: [
-        SchemeParamField(
-          key: 'rippleRadius',
-          label: '扩散半径 (px)',
-          type: SchemeParamType.doubleVal,
-          defaultValue: 150.0,
-        ),
-        SchemeParamField(
-          key: 'durationMs',
-          label: '动画时长 (ms)',
-          type: SchemeParamType.number,
-          defaultValue: 300,
-        ),
-      ],
-    ),
+    // ⚠️ `click_to_surface_ripple` 已移除（用户决定）。
+    //
+    // 它是「在 surface 上盖一个扩大的白圈」，与 A12 反复推翻的
+    // 前几版水波是同一套敷衍做法；真正的折射水波已由
+    // `ElementAnimationType.ripple` + 片元着色器实现，
+    // 配在**元件自己的外观页**里，用 `event_to_animation` 触发即可。
+    // 再单独为 surface 维护一个白圈方案划不来。
+    //
+    // 老卡里已配的这条连线会被 `isSchemeSelectable` 判为非法、
+    // 运行端静默跳过，不会崩；作者重新配一次即可。
     SchemeDefinition(
       id: 'click_to_switch_toggle',
       label: '翻转开关状态 (click → switch_toggle)',
@@ -1201,6 +1189,7 @@ class LinkerMatrixEngine {
   static String userFacingDescription(SchemeDefinition definition) {
     const custom = <String, String>{
       'click_to_surface_press': '触发条件：点击按钮。\n目标变化：目标面板播放一次按压反馈。\n典型用途：为透明按钮或图片热区增加按下手感。',
+      // 涟漪方案已移除，改用 event_to_animation + 元件外观页里的水波配置。
       'click_to_math_trigger': '触发条件：点击按钮。\n目标变化：目标计算节点立即重新计算。\n典型用途：制作确认计算、提交表单或手动刷新。',
       'timer_tick_to_math_trigger': '触发条件：定时器每次触发。\n目标变化：目标计算节点重新计算。\n典型用途：周期刷新状态、倒计时或自动数值计算。',
       'input_value_to_select_match': '触发条件：输入内容与选项显示名称或逻辑值完全匹配。\n目标变化：下拉选择自动切换到匹配选项。\n典型用途：根据输入指令或外部变量自动选择模式。',

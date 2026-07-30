@@ -1559,7 +1559,7 @@ class UIRenderer {
 
   static String _linkerDisplayScheme(String scheme) {
     const labels = <String, String>{
-      'click_to_surface_press': '按压反馈', 'click_to_surface_ripple': '涟漪反馈',
+      'click_to_surface_press': '按压反馈',
       'click_to_switch_toggle': '切换开关', 'click_to_switch_set_true': '开启开关',
       'click_to_switch_set_false': '关闭开关', 'click_to_input_clear': '清空输入',
       'click_to_slider_reset': '重置滑块', 'click_to_timer_toggle': '切换定时器',

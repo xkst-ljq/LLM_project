@@ -251,7 +251,6 @@ class LinkerService {
 
     final type = switch (scheme) {
       'click_to_surface_press' => ElementAnimationType.press,
-      'click_to_surface_ripple' => ElementAnimationType.ripple,
       'event_to_indicator' => ElementAnimationType.flash,
       // event_to_animation 刻意不给兜底：它是 A12 之后才有的方案，
       // 不存在「老卡兼容」问题。作者没在外观页配动画就什么都不播——
@@ -319,8 +318,8 @@ class LinkerService {
             event.eventType == 'double_tap' ||
             event.eventType == 'long_press';
         final bool isImmediateVisualEvent = event.eventType == 'tap_down';
-        final bool isSurfaceVisualScheme = scheme == 'click_to_surface_press' ||
-            scheme == 'click_to_surface_ripple';
+        // 涟漪方案已移除，只剩按压。
+        final bool isSurfaceVisualScheme = scheme == 'click_to_surface_press';
 
         bool isMatch = false;
         if (srcId == event.sourceModuleId) {
@@ -424,8 +423,7 @@ class LinkerService {
                 );
               } else if (scheme == 'event_to_animation' ||
                   scheme == 'event_to_indicator' ||
-                  scheme == 'click_to_surface_press' ||
-                  scheme == 'click_to_surface_ripple') {
+                  scheme == 'click_to_surface_press') {
                 // A12：动画统一走 `__anim` 通道。
                 //
                 // 连线只负责「什么时候触发」，「播什么、播多久」
