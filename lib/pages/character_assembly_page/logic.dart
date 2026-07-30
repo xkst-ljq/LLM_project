@@ -4403,38 +4403,46 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  RadioListTile<String?>(
-                    value: null,
+                  // Radio 的 groupValue / onChanged 自 3.32 起废弃，
+                  // 改由 RadioGroup 统一管理选中值与回调。
+                  RadioGroup<String?>(
                     groupValue: selected,
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: const Text('顶层元素（不属于任何面板）'),
                     onChanged: (v) => setDialogState(() => selected = v),
-                  ),
-                  const Divider(height: 1),
-                  if (surfaces.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Text(
-                        '当前页面还没有可作容器的面板。'
-                        '请先从「基础显示」拖入一个面板。',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFFE65100),
-                          height: 1.35,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const RadioListTile<String?>(
+                          value: null,
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: Text('顶层元素（不属于任何面板）'),
                         ),
-                      ),
-                    )
-                  else
-                    for (final surface in surfaces)
-                      RadioListTile<String?>(
-                        value: surface.id,
-                        groupValue: selected,
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: Text(surface.module?.name ?? surface.id),
-                        onChanged: (v) => setDialogState(() => selected = v),
-                      ),
+                        const Divider(height: 1),
+                        if (surfaces.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Text(
+                              '当前页面还没有可作容器的面板。'
+                              '请先从「基础显示」拖入一个面板。',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFFE65100),
+                                height: 1.35,
+                              ),
+                            ),
+                          )
+                        else
+                          for (final surface in surfaces)
+                            RadioListTile<String?>(
+                              value: surface.id,
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: Text(surface.module?.name ?? surface.id),
+                            ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   const Text(
                     '归属后：面板隐藏时组内组件一起隐藏；'

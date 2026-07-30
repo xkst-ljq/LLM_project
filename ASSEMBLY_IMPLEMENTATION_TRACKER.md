@@ -3847,6 +3847,18 @@ press / flash / glowPulse / ripple / particle 全部改用它。
 数学不变量已全部数值校验，但实际观感、性能、
 `toImageSync` 在真机上的表现需要本地测试。
 
+**编译错误修复（analyze 反馈）**
+
+| 错误 | 原因 | 处置 |
+|---|---|---|
+| `RenderRepaintBoundary` 未定义 | 它由 `rendering.dart` 导出，`material.dart` **不转出**；连带 `debugNeedsPaint` / `toImageSync` 被判为对 null 调用 | 补 `import 'package:flutter/rendering.dart'` |
+| `Vertices.vertexCount` 不存在 | `ui.Vertices` 构造后不暴露顶点数 | 公开 `RippleMeshDistortion.vertexCount` 常量，同时用于分配缓冲区，两处不会漂移 |
+| `Matrix4.scale(x,y,z)` 已废弃 | 3.32 起改名 | 改用 `scaleByDouble(sx, sy, 1, 1)` |
+| `RadioListTile.groupValue/onChanged` 已废弃 | 3.32 起改由祖先 `RadioGroup` 管理 | 容器归属对话框包一层 `RadioGroup<String?>`，子项只留 `value` |
+
+`backup_restore_page.dart` 与 `ui_studio_page/logic.dart` 也有同类
+Radio 废弃告警，但不在本次报错清单内、属既有代码，本轮不动以免扩大范围。
+
 ### A12-4：剩余打磨（未开始）
 
 * 粒子在小 PCB 上的实际观感（可能要调参）

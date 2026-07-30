@@ -142,15 +142,22 @@ void main() {
 
   group('顶点生成', () {
     test('顶点数与网格规格一致', () {
-      final v = RippleMeshDistortion.buildVertices(
-        size: const Size(200, 12),
-        progress: 0.3,
-        intensity: 0.6,
+      // ui.Vertices 构造后不暴露顶点数，改为断言公开常量，
+      // 它同时被 buildVertices 用于分配缓冲区，两者不会漂移。
+      expect(
+        RippleMeshDistortion.vertexCount,
+        RippleMeshDistortion.cols * RippleMeshDistortion.rows * 6,
       );
-      // 每个网格单元 2 个三角形 × 3 个顶点。
-      const expected =
-          RippleMeshDistortion.cols * RippleMeshDistortion.rows * 6;
-      expect(v.vertexCount, expected);
+      expect(RippleMeshDistortion.vertexCount, 1152);
+      // 构造本身要能跑通。
+      expect(
+        () => RippleMeshDistortion.buildVertices(
+          size: const Size(200, 12),
+          progress: 0.3,
+          intensity: 0.6,
+        ),
+        returnsNormally,
+      );
     });
 
     test('零尺寸不崩溃', () {

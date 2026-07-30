@@ -3,6 +3,9 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+// RenderRepaintBoundary / RenderObject 由 rendering.dart 导出，
+// material.dart 并不转出它们。
+import 'package:flutter/rendering.dart';
 
 /// 水波折射：网格变形实现（方案 C）。
 ///
@@ -46,6 +49,12 @@ class RippleMeshDistortion {
   /// 2.5 = 外行 → 撞壁 → 回弹 → 再外行，撞壁发生在 t≈0.42。
   /// 用户要求「像波浪一样碰到壁面会反弹」，这是瞬时事件的典型手感。
   static const double bounces = 2.5;
+
+  /// 生成的顶点总数。
+  ///
+  /// 每个网格单元 2 个三角形、每个三角形 3 个顶点。
+  /// `ui.Vertices` 构造后不暴露顶点数，测试与性能评估都要靠这个常量。
+  static const int vertexCount = cols * rows * 6;
 
   /// 位移强度上限（相对该方向半径的比例）。
   ///
@@ -151,8 +160,8 @@ class RippleMeshDistortion {
     }
 
     // 每个网格单元两个三角形。
-    final positions = Float32List((cols * rows * 6) * 2);
-    final texCoords = Float32List((cols * rows * 6) * 2);
+    final positions = Float32List(vertexCount * 2);
+    final texCoords = Float32List(vertexCount * 2);
     var i = 0;
 
     void put(int r, int c) {
@@ -193,7 +202,8 @@ class RippleMeshDistortion {
     final a = 0.09 * intensity.clamp(0.0, 1.0) * damping(progress);
     final sx = 1.0 + a * osc;
     final sy = 1.0 - a * osc;
-    return Matrix4.identity()..scale(sx, sy, 1.0);
+    // scale(x, y, z) 已废弃，改用 scaleByDouble（需要第四个 w 分量）。
+    return Matrix4.identity()..scaleByDouble(sx, sy, 1.0, 1.0);
   }
 }
 
