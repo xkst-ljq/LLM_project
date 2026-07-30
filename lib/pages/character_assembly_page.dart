@@ -546,6 +546,17 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     child: _buildElementActionRail(_selectedElement!),
                   ),
 
+                // ===== 2.6 精确位移方向键（A14-1d）=====
+                //
+                // 底部居中的 3×3 D-Pad，与 Studio 一致。
+                // 抬高到资产栏之上：资产栏约 150 高，压在它上面点不到。
+                if (_selectedElement != null && _showNudgePad)
+                  Positioned(
+                    left: MediaQuery.of(context).size.width / 2 - 72,
+                    bottom: 168,
+                    child: _buildNudgePad(_selectedElement!),
+                  ),
+
                 // ===== 3. 图层弹出窗 =====
                 if (_showLayerPanel)
                   Positioned(top: 48, right: 8, child: _buildLayerPanel()),
@@ -786,6 +797,24 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 ],
               ],
             ),
+            // 精确几何：X / Y / 宽 / 高 / 旋转，与 Studio 同一套表单。
+            _buildRailButton(
+              icon: Icons.straighten_rounded,
+              label: '几何',
+              color: const Color(0xFF00838F),
+              onTap: locked ? null : () => _showGeometryEditorDialog(element),
+            ),
+            // 精确位移：展开屏幕底部的方向键盘。
+            _buildRailButton(
+              icon: Icons.open_with_rounded,
+              label: _showNudgePad ? '收起' : '微调',
+              color: _showNudgePad
+                  ? const Color(0xFF00838F)
+                  : const Color(0xFF546E7A),
+              onTap: locked
+                  ? null
+                  : () => setState(() => _showNudgePad = !_showNudgePad),
+            ),
             // 锁定后禁止改动结构：这正是锁定的目的。
             _buildRailButton(
               icon: Icons.copy_rounded,
@@ -818,6 +847,83 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           ],
         ),
       ),
+    );
+  }
+
+  /// A14-1d：精确位移方向键（3×3 D-Pad）。
+  ///
+  /// 中心按钮显示当前坐标，兼作「这是哪个组件」的确认。
+  Widget _buildNudgePad(UIElement element) {
+    Widget arrow(IconData icon, Offset delta) => Material(
+          color: const Color(0xFF37474F),
+          shape: const CircleBorder(),
+          elevation: 3,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _nudgeElement(element, delta),
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: Icon(icon, color: Colors.white, size: 26),
+            ),
+          ),
+        );
+
+    const gap = SizedBox(width: 12, height: 12);
+    // 占位宽 = 箭头 40 + 间距 12，才能让上下行的箭头与中间行对齐。
+    const blank = SizedBox(width: 52, height: 40);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            blank,
+            arrow(Icons.keyboard_arrow_up_rounded, const Offset(0, -1)),
+            blank,
+          ],
+        ),
+        gap,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            arrow(Icons.keyboard_arrow_left_rounded, const Offset(-1, 0)),
+            gap,
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFF546E7A),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${element.offset.dx.toStringAsFixed(0)}\n'
+                '${element.offset.dy.toStringAsFixed(0)}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  height: 1.15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            gap,
+            arrow(Icons.keyboard_arrow_right_rounded, const Offset(1, 0)),
+          ],
+        ),
+        gap,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            blank,
+            arrow(Icons.keyboard_arrow_down_rounded, const Offset(0, 1)),
+            blank,
+          ],
+        ),
+      ],
     );
   }
 

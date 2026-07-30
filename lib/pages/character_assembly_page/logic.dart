@@ -15,6 +15,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   UIAssemblyInfo? _runtimePreviewInfo;
   Offset _canvasOffset = Offset.zero;
   bool _showLayerPanel = false;
+
+  /// A14-1d：精确位移方向键是否展开。
+  /// 跟着选中元素走——换个元素就收起，避免对着别的组件误按。
+  bool _showNudgePad = false;
   bool _showAssetDrawer = false;
   String _activeAssetCategory = 'logic';
   int _generatedElementIdSeed = 0;
@@ -393,7 +397,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   void _selectElement(String id) {
     if (_selectedCompositeId == id) return;
-    setState(() => _selectedCompositeId = id);
+    setState(() {
+      _selectedCompositeId = id;
+      // 换了元素就收起方向键：否则手指还停在原处，
+      // 下一次点击会挪动刚选中的另一个组件。
+      _showNudgePad = false;
+    });
   }
 
   /// 兼容旧调用点：复合组件的选中语义与通用选中已合并。
@@ -401,7 +410,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   void _clearElementSelection() {
     if (_selectedCompositeId == null) return;
-    setState(() => _selectedCompositeId = null);
+    setState(() {
+      _selectedCompositeId = null;
+      _showNudgePad = false;
+    });
   }
 
   void _clearCompositeSelection() => _clearElementSelection();
@@ -3027,6 +3039,151 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'image',
       'message_flow',
     }.contains(type);
+  }
+
+  // ========== A14-1d：精确几何 / 精确位移 ==========
+
+  /// 是否禁止改动几何（半锁与全锁都禁）。
+  bool _isGeometryLocked(UIElement element) =>
+      element.layoutLocked || element.sealed;
+
+  /// 精确几何编辑器。与 Studio 的「精确几何」保持一致：
+  /// X / Y / 宽 / 高 / 旋转五项，面类组件放宽尺寸上限。
+  Future<void> _showGeometryEditorDialog(UIElement element) async {
+    if (_isGeometryLocked(element)) {
+      _showSnack('该组件已锁定，请先解除锁定');
+      return;
+    }
+
+    const surfaceTypes = {'surface', 'surface_art', 'primitive_art', 'base_box'};
+    final isSurface = surfaceTypes.contains(element.module?.type);
+    // 面类是容器，允许远大于画布；其余组件限制在合理范围内，
+    // 免得手滑输入 9999 把整个方案撑坏。
+    final maxWidth = isSurface ? 4096.0 : 600.0;
+    final maxHeight = isSurface ? 4096.0 : 400.0;
+    final minWidth = element.module?.type == 'progress' ? 12.0 : 20.0;
+    final minHeight = element.module?.type == 'progress' ? 6.0 : 20.0;
+
+    var x = element.offset.dx;
+    var y = element.offset.dy;
+    var w = element.size.width;
+    var h = element.size.height;
+    var r = element.rotation;
+
+    final xc = TextEditingController(text: x.toStringAsFixed(0));
+    final yc = TextEditingController(text: y.toStringAsFixed(0));
+    final wc = TextEditingController(text: w.toStringAsFixed(0));
+    final hc = TextEditingController(text: h.toStringAsFixed(0));
+    final rc = TextEditingController(text: r.toStringAsFixed(0));
+
+    Widget field(
+      TextEditingController controller,
+      String label,
+      ValueChanged<double> onChanged,
+    ) {
+      return TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(
+          decimal: true,
+          signed: true,
+        ),
+        decoration: InputDecoration(labelText: label, isDense: true),
+        onChanged: (v) {
+          final parsed = double.tryParse(v.trim());
+          if (parsed != null) onChanged(parsed);
+        },
+      );
+    }
+
+    final applied = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('精确几何'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: field(xc, 'X', (v) => x = v)),
+                  const SizedBox(width: 8),
+                  Expanded(child: field(yc, 'Y', (v) => y = v)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(child: field(wc, '宽度', (v) => w = v)),
+                  const SizedBox(width: 8),
+                  Expanded(child: field(hc, '高度', (v) => h = v)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              field(rc, '旋转角度', (v) => r = v),
+              const SizedBox(height: 10),
+              Text(
+                '坐标以 PCB 左上角为原点。'
+                '尺寸范围：宽 ${minWidth.toStringAsFixed(0)}~'
+                '${maxWidth.toStringAsFixed(0)}，'
+                '高 ${minHeight.toStringAsFixed(0)}~'
+                '${maxHeight.toStringAsFixed(0)}。',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF777783),
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('应用'),
+          ),
+        ],
+      ),
+    );
+
+    if (applied == true && mounted) {
+      final index = _elements.indexWhere((e) => e.id == element.id);
+      if (index != -1) {
+        setState(() {
+          _elements[index] = _elements[index].copyWith(
+            offset: Offset(x, y),
+            size: Size(
+              w.clamp(minWidth, maxWidth).toDouble(),
+              h.clamp(minHeight, maxHeight).toDouble(),
+            ),
+            rotation: r,
+          );
+        });
+        _persistAssemblyElements();
+      }
+    }
+
+    xc.dispose();
+    yc.dispose();
+    wc.dispose();
+    hc.dispose();
+    rc.dispose();
+  }
+
+  /// 精确位移：按方向键逐像素挪动。
+  void _nudgeElement(UIElement element, Offset delta) {
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return;
+    if (_isGeometryLocked(_elements[index])) return;
+    setState(() {
+      _elements[index] =
+          _elements[index].copyWith(offset: _elements[index].offset + delta);
+    });
+    _persistAssemblyElements();
   }
 
   /// A14-2：定时器编辑器。
