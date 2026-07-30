@@ -115,6 +115,9 @@ class _UIStudioPageState extends State<UIStudioPage>
         if (didPop) _saveWorkspaceDraft(showMessage: false);
       },
       child: Scaffold(
+        // 同 Assembly：画布不随键盘重排，
+        // 否则正在编辑的元件会被挤出可视区。
+        resizeToAvoidBottomInset: false,
         backgroundColor: const Color(0xFFF6F6F9),
         body: Listener(
           behavior: HitTestBehavior.translucent,

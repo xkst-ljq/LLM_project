@@ -151,6 +151,13 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           _exitRuntimePreview();
         },
         child: Scaffold(
+          // 键盘弹出时不重排布局。
+          //
+          // 运行时视图按 `constraints.maxHeight` 等比缩放整张 PCB，
+          // Scaffold 一收缩就会把**整个 UI 缩小**，
+          // 作者摆好的字号与间距全变样——比单纯挤压更糟。
+          // 输入框的可见性由 UIAssemblyRuntimeView 内部处理。
+          resizeToAvoidBottomInset: false,
           backgroundColor: const Color(0xFF202026),
           body: Stack(
             children: [
@@ -204,6 +211,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         _handleBackNavigation();
       },
       child: Scaffold(
+        // 编辑画布不随键盘重排：画布有自己的平移/缩放，
+        // 被压缩后作者正在编辑的元件会跑出可视区。
+        // 带输入框的弹窗自己包了 SingleChildScrollView。
+        resizeToAvoidBottomInset: false,
         backgroundColor: const Color(0xFFE8E8EC),
         body: UILinkerSnapshotScope(
           snapshot: linkerSnapshot,

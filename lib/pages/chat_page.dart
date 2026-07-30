@@ -3265,12 +3265,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     final panelW = panelWidth;
 
+    // 键盘弹出时不压缩场景 UI。
+    //
+    // 聊天页本身**需要** resizeToAvoidBottomInset（输入框要跟着键盘上移），
+    // 但 scene 是全屏接管的 UI：Scaffold body 一收缩，
+    // 它绑定的 `top:0 bottom:0` 也跟着缩，
+    // UIAssemblyRuntimeView 又按可用高度等比缩放整张 PCB——
+    // 结果是作者摆好的界面在打字时整体变小。
+    //
+    // 这里把被键盘吃掉的高度补回去：场景保持原尺寸，
+    // 输入框浮在它上方即可。
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
     // 与聊天主体同步左移：设置页从右侧滑入时，scene 要一起让开，
     // 否则面板会被压在 scene 之下（scene 层排在主体之后）。
     return Positioned(
       left: -panelW * _animController.value,
       top: 0,
-      bottom: 0,
+      bottom: -keyboardInset,
       width: screen.width,
       child: IgnorePointer(
         // 设置页滑出过半后不再接收触摸，避免隔着面板误触场景。

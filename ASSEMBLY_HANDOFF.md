@@ -916,6 +916,33 @@ linker 本身就是有边框的卡片，再套一圈虚线只是噪声。
 夹取顺序：先夹宽度 → 由宽度推高度 → 若高度越界再由高度反推宽度。
 两个维度独立夹取会破坏比例。
 
+### 键盘弹出时的布局策略：不能一刀切
+
+用户反馈「输入法弹出挤压的区域会算进可用屏幕，UI 被压缩」。
+全仓此前**没有任何一处**设置 `resizeToAvoidBottomInset`，
+全部走 Flutter 默认的 `true`。
+
+但**不能全部关掉**——聊天页的输入框必须跟着键盘上移。按类型区分：
+
+| 页面类型 | 策略 | 理由 |
+|---|---|---|
+| 编辑画布（Assembly / Studio） | `resizeToAvoidBottomInset: false` | 画布有自己的平移缩放，压缩后正在编辑的元件跑出可视区 |
+| 全屏运行时预览 | 同上 | `UIAssemblyRuntimeView` 按 `constraints.maxHeight` **等比缩放整张 PCB**，body 一缩整个 UI 变小 |
+| 聊天页 | 保持默认 `true`，但**补偿场景层** | 输入框要跟键盘走；scene 是全屏接管的 UI，不该跟着缩 |
+| 普通表单 | 保持默认 | 本来就该让输入框可见 |
+
+**场景层的补偿手法**：它用 `top: 0, bottom: 0` 绑定 body 高度，
+body 缩多少就用负 bottom 撑回多少：
+
+```dart
+final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+Positioned(top: 0, bottom: -keyboardInset, ...)
+```
+
+⚠️ 常驻 / 伴生挂件**不需要**这个补偿——
+它们用绝对 `top` 定位、高度自适应内容，不受 body 收缩影响。
+盲目给所有图层加补偿会让它们往下跑出屏幕。
+
 ### 沙箱验不出「缺 import」，提交前用脚本扫一遍
 
 括号平衡检查发现不了未定义标识符。`math.sin` / `Offset` /
