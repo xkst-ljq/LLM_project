@@ -207,16 +207,39 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           snapshot: linkerSnapshot,
           child: Listener(
             behavior: HitTestBehavior.translucent,
-            onPointerMove: _handlePlacementPointerMove2,
-            onPointerUp: _finishPlacementPointer2,
-            onPointerCancel: _finishPlacementPointer2,
+            // 接线的移动/抬起要在**最外层**接，而不是挂在 linker 上：
+            // 手指一旦离开 linker 本体，挂在它身上的监听就收不到事件了。
+            onPointerMove: (event) {
+              if (_isDraggingConnection) {
+                _updateConnectionDrag(event.position);
+                return;
+              }
+              _handlePlacementPointerMove2(event);
+            },
+            onPointerUp: (event) {
+              if (_isDraggingConnection) {
+                _updateConnectionDrag(event.position);
+                _completeConnectionDrag();
+                return;
+              }
+              _finishPlacementPointer2(event);
+            },
+            onPointerCancel: (event) {
+              if (_isDraggingConnection) {
+                _cancelConnectionDrag();
+                return;
+              }
+              _finishPlacementPointer2(event);
+            },
             child: Stack(
               children: [
                 // ===== 1. 无限画布 + PCB =====
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onPanUpdate: _showLayerPanel
+                    // 接线进行中时画布不跟着平移，否则线和底图一起动，
+                    // 根本瞄不准目标（Studio 同样处理）。
+                    onPanUpdate: (_showLayerPanel || _isDraggingConnection)
                         ? null
                         : (details) => setState(() => _canvasOffset += details.delta),
                     onTap: () {
@@ -419,6 +442,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                             // 压在元件上面会挡住文本与消息流内容；
                             // 放到 PCB 之下则会被 PCB 底色整块盖掉。
                             ..._buildAssemblyConnectionsLayer(),
+                            // 拖拽中的临时线要盖在元素**之上**——
+                            // 正在操作的东西必须看得见，被元件挡住就没法瞄准。
+                            if (_isDraggingConnection)
+                              _buildDraggingConnectionLine(),
                             ..._elements.map((el) {
                               return Positioned(
                                 left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,
@@ -1178,6 +1205,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         ),
       );
     }
+    // A14-4 第二步：linker 有专属的三段式交互——
+    // 左右两侧是接线热区（拖出连线 / 双击断开），中间才是点击与拖动。
+    // linker 是唯一可以拉出接线的组件（用户明确约束）。
+    if (el.module != null && el.module!.type == 'linker') {
+      return _buildLinkerElementWidget(el);
+    }
     if (el.module != null) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -1191,15 +1224,11 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           _selectElement(el.id);
           if (el.module!.type == 'button') _showEditModeHint();
         },
-        onDoubleTap: el.module!.type == 'linker'
-            ? () {
-                _selectElement(el.id);
-                _showAssemblyLinkerConfigDialog(el);
-              }
-            : () {
-                _selectElement(el.id);
-                _showAtomInstanceEditorDialog(el);
-              },
+        // linker 已在上面提前返回，这里不会再遇到它。
+        onDoubleTap: () {
+          _selectElement(el.id);
+          _showAtomInstanceEditorDialog(el);
+        },
         onPanStart: (d) {
           _selectElement(el.id);
           _startTouchScreenPos = d.globalPosition;
@@ -1293,6 +1322,179 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(6),
+      ),
+    );
+  }
+
+  /// linker 的三段式交互节点。
+  ///
+  /// 布局（与 Studio 同构，热区宽度按 Assembly 收窄）：
+  ///
+  /// ```
+  /// ┌──────┬──────────────┬──────┐
+  /// │ 24px │   中间区域    │ 24px │
+  /// │ 接线 │ 点击弹方案    │ 接线 │
+  /// │ 左侧 │ 拖动挪位置    │ 右侧 │
+  /// └──────┴──────────────┴──────┘
+  /// ```
+  ///
+  /// 热区用 `Listener.onPointerDown` 而非 `GestureDetector.onPanStart`：
+  /// pan 需要先跨过 kTouchSlop 才触发，那段距离里手指已经移开，
+  /// 起点会不准；而且会与外层的画布平移进入手势竞技场互相抢。
+  Widget _buildLinkerElementWidget(UIElement el) {
+    final isSelected = _selectedElementId == el.id;
+
+    Widget portZone(String port) {
+      return Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) =>
+            _beginConnectionDrag(el, port, event.position),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          // 双击该侧热区断开这一端，与 Studio 一致。
+          onDoubleTap: () => _disconnectLinkerPort(el, port),
+          child: SizedBox(
+            width: _AssemblyLogic.kLinkerPortHotZone,
+            height: double.infinity,
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: el.size.width,
+      height: el.size.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: UISceneModeScope(
+                isStudioCreationMode: true,
+                child: Builder(
+                  builder: (ctx) =>
+                      UIRenderer.render(ctx, el.copyWith(rotation: 0.0)),
+                ),
+              ),
+            ),
+          ),
+          if (isSelected)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: DashedSelectionBorderPainter(
+                    strokeWidth: 1.2,
+                    shape: _outlineShapeOf(el),
+                    borderRadius: _outlineBorderRadiusOf(el),
+                    isPerfectCircle: _isPerfectCircleOutlineOf(el),
+                  ),
+                ),
+              ),
+            ),
+          // 接线端点提示：让作者一眼看出「这两侧能拉线」。
+          // 已连上的一侧实心，未连的空心。
+          Positioned.fill(
+            child: IgnorePointer(
+              child: _buildLinkerPortHints(el),
+            ),
+          ),
+          Positioned.fill(
+            child: Row(
+              children: [
+                portZone('input'),
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    // 点击 linker 弹方案选择（用户明确约束）。
+                    onTap: () {
+                      _selectElement(el.id);
+                      _showAssemblyLinkerConfigDialog(el);
+                    },
+                    onPanStart: (d) {
+                      if (_isDraggingConnection) return;
+                      _selectElement(el.id);
+                      _startTouchScreenPos = d.globalPosition;
+                      _startTouchElemOffset = el.offset;
+                    },
+                    onPanUpdate: (el.layoutLocked || el.sealed)
+                        ? null
+                        : (d) {
+                            // 接线进行中不挪元件，否则线的起点跟着跑。
+                            if (_isDraggingConnection) return;
+                            final delta =
+                                d.globalPosition - _startTouchScreenPos;
+                            setState(() {
+                              final i = _elements
+                                  .indexWhere((e) => e.id == el.id);
+                              if (i != -1) {
+                                _elements[i] = el.copyWith(
+                                  offset: _startTouchElemOffset + delta,
+                                );
+                              }
+                            });
+                          },
+                    onPanEnd: (_) {
+                      if (_isDraggingConnection) return;
+                      _persistAssemblyElements();
+                    },
+                  ),
+                ),
+                portZone('output'),
+              ],
+            ),
+          ),
+          if (_topBadgesOf(el).isNotEmpty)
+            Positioned(
+              left: 2,
+              right: 2,
+              top: -14,
+              child: IgnorePointer(child: _buildBadgeRow(_topBadgesOf(el))),
+            ),
+          if (_bottomBadgesOf(el).isNotEmpty)
+            Positioned(
+              left: 2,
+              right: 2,
+              bottom: -14,
+              child: IgnorePointer(child: _buildBadgeRow(_bottomBadgesOf(el))),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// linker 两侧的接线端点提示。
+  ///
+  /// 实心 = 该端已连；空心 = 未连。作者不必打开对话框就能看出
+  /// 「这条还差哪一端」，配合连线本身形成完整反馈。
+  Widget _buildLinkerPortHints(UIElement el) {
+    final data = el.module?.properties['linker'];
+    final map = data is Map ? data : const {};
+    final hasSource =
+        (map['sourceModuleId']?.toString() ?? '').isNotEmpty;
+    final hasTarget =
+        (map['targetModuleId']?.toString() ?? '').isNotEmpty;
+
+    Widget dot(bool filled, Color color) => Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: filled ? color : Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 1.5),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // 垂直居中：端口在元件的左中 / 右中，与连线端点位置对应
+        // （见 _assemblyPortOffset）。
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          dot(hasSource, LinkerLineColors.input),
+          dot(hasTarget, LinkerLineColors.output),
+        ],
       ),
     );
   }

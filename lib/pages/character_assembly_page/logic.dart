@@ -496,6 +496,363 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
   }
 
+  // ===== A14-4 第二步：拖拽画线 =====
+  //
+  // 与 Studio 同构，但有两处按 Assembly 的实际情况调整：
+  // 1. 热区左右各 24px（Studio 32px）。Assembly 的 linker 是 132×44，
+  //    切 32 之后中间只剩 68px，手指拖动元件时容易偏进热区。
+  //    24px 仍比手指宽，接线不会难点，中间留 84px 好按（用户选定）。
+  // 2. 坐标要叠加 `_canvasOffset + _pcbOffset`（见 _assemblyPortOffset）。
+
+  /// linker 两侧接线热区的宽度。
+  static const double kLinkerPortHotZone = 24.0;
+
+  bool _isDraggingConnection = false;
+  String? _draggingSourceId;
+
+  /// 'input' = 从 linker 左侧拉出（找数据来源）；
+  /// 'output' = 从右侧拉出（找作用目标）。
+  String? _draggingSourcePort;
+  Offset? _dragConnectionEnd;
+  String? _hoveringTargetId;
+
+  /// 可作为连线一端的候选元素。
+  ///
+  /// 与配置式对话框的 `_linkerCandidates` 同口径：排除 linker 自身、
+  /// 复合黑盒与全锁元素。全锁的语义就是「连线不可改」，
+  /// 因此它既不能作为新连线的目标，也不该被拖拽命中。
+  bool _canBeConnectionEndpoint(UIElement el) {
+    final module = el.module;
+    if (module == null) return false;
+    if (el.isComposite) return false;
+    if (module.type == 'linker') return false;
+    if (el.sealed) return false;
+    return true;
+  }
+
+  /// 命中检测：落点是否在元素（含旋转）的矩形内。
+  ///
+  /// 与 Studio 的 `_isPointInsideRotatedRect` 同构——把落点逆旋转回
+  /// 元素的局部坐标系再做矩形包含判断。
+  /// 额外留 12px 容差，手指没那么精准。
+  bool _isPointInsideAssemblyElement(Offset point, UIElement el) {
+    final base = _canvasOffset + _pcbOffset;
+    final elLeft = base.dx + el.offset.dx;
+    final elTop = base.dy + el.offset.dy;
+    final cx = elLeft + el.size.width / 2;
+    final cy = elTop + el.size.height / 2;
+    const pad = 12.0;
+    final rect = Rect.fromLTWH(
+      elLeft - pad,
+      elTop - pad,
+      el.size.width + pad * 2,
+      el.size.height + pad * 2,
+    );
+
+    if (el.rotation == 0.0) return rect.contains(point);
+
+    final rad = -el.rotation * math.pi / 180.0;
+    final dx = point.dx - cx;
+    final dy = point.dy - cy;
+    return rect.contains(
+      Offset(
+        cx + dx * math.cos(rad) - dy * math.sin(rad),
+        cy + dx * math.sin(rad) + dy * math.cos(rad),
+      ),
+    );
+  }
+
+  void _beginConnectionDrag(UIElement linkerElement, String port, Offset at) {
+    // 全锁的 linker 连线不可改（与配置式对话框同一条规则）。
+    if (linkerElement.sealed) {
+      _showSnack('该联动器已全锁定，需先解除全锁才能改接线');
+      return;
+    }
+    _selectElement(linkerElement.id);
+    setState(() {
+      _isDraggingConnection = true;
+      _draggingSourceId = linkerElement.id;
+      _draggingSourcePort = port;
+      _dragConnectionEnd = at;
+      _hoveringTargetId = null;
+    });
+  }
+
+  void _updateConnectionDrag(Offset globalPosition) {
+    if (!_isDraggingConnection) return;
+    String? hit;
+    // 逆序遍历：_elements 越靠后越上层，命中应优先取最上面那个，
+    // 与作者看到的层级一致。
+    for (var i = _elements.length - 1; i >= 0; i--) {
+      final el = _elements[i];
+      if (el.id == _draggingSourceId) continue;
+      if (!_canBeConnectionEndpoint(el)) continue;
+      // 无需再筛页面：_elements 本就只含当前页的元素。
+      if (_isPointInsideAssemblyElement(globalPosition, el)) {
+        hit = el.id;
+        break;
+      }
+    }
+    setState(() {
+      _dragConnectionEnd = globalPosition;
+      _hoveringTargetId = hit;
+    });
+  }
+
+  void _cancelConnectionDrag() {
+    if (!_isDraggingConnection) return;
+    setState(() {
+      _isDraggingConnection = false;
+      _draggingSourceId = null;
+      _draggingSourcePort = null;
+      _dragConnectionEnd = null;
+      _hoveringTargetId = null;
+    });
+  }
+
+  /// 落点成线。
+  ///
+  /// 只写入被拖动的那一端（左侧写 sourceModuleId、右侧写 targetModuleId），
+  /// 另一端保持原样——作者可能是在改接一条已配好的连线。
+  Future<void> _completeConnectionDrag() async {
+    final linkerId = _draggingSourceId;
+    final port = _draggingSourcePort;
+    final targetId = _hoveringTargetId;
+    if (linkerId == null || port == null || targetId == null) {
+      _cancelConnectionDrag();
+      return;
+    }
+
+    final linkerIndex = _elements.indexWhere((e) => e.id == linkerId);
+    final target = _assemblyElementById(targetId);
+    if (linkerIndex == -1 || target == null) {
+      _cancelConnectionDrag();
+      return;
+    }
+
+    final linkerElement = _elements[linkerIndex];
+    final linkerModule = linkerElement.module;
+    if (linkerModule == null) {
+      _cancelConnectionDrag();
+      return;
+    }
+
+    final existing = _linkerDataOf(linkerModule);
+    final otherEndId = port == 'input'
+        ? existing['targetModuleId']?.toString() ?? ''
+        : existing['sourceModuleId']?.toString() ?? '';
+
+    // 自连没有意义：来源与目标是同一个元素时，方案矩阵也算不出东西。
+    if (otherEndId.isNotEmpty && otherEndId == targetId) {
+      _cancelConnectionDrag();
+      _showSnack('联动器的两端不能是同一个组件');
+      return;
+    }
+
+    // 另一端已被全锁时，这条连线整体不可改。
+    final otherEnd =
+        otherEndId.isEmpty ? null : _assemblyElementById(otherEndId);
+    if (otherEnd != null && otherEnd.sealed) {
+      _cancelConnectionDrag();
+      _showSnack(
+        '「${otherEnd.module?.name ?? otherEnd.id}」已全锁定，'
+        '需先解除全锁才能修改这条联动',
+      );
+      return;
+    }
+
+    setState(() {
+      final props = Map<String, dynamic>.from(
+        _deepCloneValue(linkerModule.properties) as Map,
+      );
+      final linkerData = Map<String, dynamic>.from(
+        props['linker'] is Map ? props['linker'] as Map : const {},
+      );
+      if (port == 'input') {
+        linkerData['sourceModuleId'] = targetId;
+      } else {
+        linkerData['targetModuleId'] = targetId;
+      }
+      // 换了端点，旧方案未必还适用；等下面的方案选择重新落定。
+      // 这里先不清 scheme——若作者取消选择，保留原样比清空更不突兀。
+      props['linker'] = linkerData;
+      _elements[linkerIndex] = linkerElement.copyWith(
+        module: linkerModule.copyWith(properties: props),
+      );
+    });
+
+    _cancelConnectionDrag();
+    _persistAssemblyElements();
+
+    // 两端齐了才弹方案选择（用户选定）。
+    //
+    // 只接了一半时方案根本算不出来——可用方案取决于「来源类型 + 目标类型」
+    // 的组合，缺一端就是空列表，弹出来也是空的。
+    await _maybePromptSchemeAfterWiring(linkerId);
+  }
+
+  /// 接线后按需弹出方案选择。
+  ///
+  /// 与 Studio 同样处理：两端齐备后先查方案矩阵，
+  /// 若这对类型之间根本没有可用方案，自动断开并提示——
+  /// 留着一条永远不会生效的连线只会让作者困惑。
+  Future<void> _maybePromptSchemeAfterWiring(String linkerId) async {
+    if (!mounted) return;
+    final index = _elements.indexWhere((e) => e.id == linkerId);
+    if (index == -1) return;
+    final element = _elements[index];
+    final module = element.module;
+    if (module == null) return;
+
+    final data = _linkerDataOf(module);
+    final sourceId = data['sourceModuleId']?.toString() ?? '';
+    final targetId = data['targetModuleId']?.toString() ?? '';
+    if (sourceId.isEmpty || targetId.isEmpty) return;
+
+    final source = _assemblyElementById(sourceId);
+    final target = _assemblyElementById(targetId);
+    final schemes = LinkerMatrixEngine.getAvailableSchemes(
+      source?.module?.type,
+      target?.module?.type,
+    );
+    if (schemes.isEmpty) {
+      _disconnectLinkerBothEnds(element);
+      _showSnack('这两个组件之间没有可用的联动方案，已自动断开');
+      return;
+    }
+
+    await _showAssemblyLinkerConfigDialog(element);
+  }
+
+  /// 断开 linker 两端。双击端口热区也走这里的单端版本。
+  void _disconnectLinkerBothEnds(UIElement element) {
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return;
+    final module = element.module;
+    if (module == null) return;
+    setState(() {
+      final props = Map<String, dynamic>.from(
+        _deepCloneValue(module.properties) as Map,
+      );
+      final linkerData = Map<String, dynamic>.from(
+        props['linker'] is Map ? props['linker'] as Map : const {},
+      );
+      linkerData
+        ..remove('sourceModuleId')
+        ..remove('sourcePort')
+        ..remove('sourceType')
+        ..remove('sourceGesture')
+        ..remove('targetModuleId')
+        ..remove('targetPort')
+        ..remove('targetType')
+        ..remove('inputConnection')
+        ..remove('outputConnection')
+        ..remove('schemeParams');
+      linkerData['scheme'] = '未配置';
+      linkerData['enabled'] = false;
+      props['linker'] = linkerData;
+      _elements[index] =
+          element.copyWith(module: module.copyWith(properties: props));
+    });
+    _persistAssemblyElements();
+  }
+
+  /// 断开 linker 的单侧端口（双击该侧热区）。
+  void _disconnectLinkerPort(UIElement element, String port) {
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return;
+    final module = element.module;
+    if (module == null) return;
+    if (element.sealed) {
+      _showSnack('该联动器已全锁定，需先解除全锁才能断开连线');
+      return;
+    }
+    setState(() {
+      final props = Map<String, dynamic>.from(
+        _deepCloneValue(module.properties) as Map,
+      );
+      final linkerData = Map<String, dynamic>.from(
+        props['linker'] is Map ? props['linker'] as Map : const {},
+      );
+      if (port == 'input') {
+        linkerData
+          ..remove('sourceModuleId')
+          ..remove('sourcePort')
+          ..remove('sourceType')
+          ..remove('sourceGesture')
+          ..remove('inputConnection');
+      } else {
+        linkerData
+          ..remove('targetModuleId')
+          ..remove('targetPort')
+          ..remove('targetType')
+          ..remove('outputConnection');
+      }
+      // 少了一端，方案必然不再成立。
+      linkerData['scheme'] = '未配置';
+      linkerData['enabled'] = false;
+      linkerData.remove('schemeParams');
+      props['linker'] = linkerData;
+      _elements[index] =
+          element.copyWith(module: module.copyWith(properties: props));
+    });
+    _persistAssemblyElements();
+  }
+
+  /// 拖拽中的临时线。
+  ///
+  /// 与已落定的连线不同，这条**不调淡**——正在操作的东西需要看清。
+  Widget _buildDraggingConnectionLine() {
+    final sourceId = _draggingSourceId;
+    final end = _dragConnectionEnd;
+    if (!_isDraggingConnection || sourceId == null || end == null) {
+      return const SizedBox.shrink();
+    }
+    final sourceEl = _assemblyElementById(sourceId);
+    if (sourceEl == null) return const SizedBox.shrink();
+
+    final isInputSide = _draggingSourcePort == 'input';
+    final start = _assemblyPortOffset(sourceEl, isInputSide);
+    final startDirection = _assemblyPortDirection(sourceEl, isInputSide);
+
+    var lineEnd = end;
+    var endDirection = _freeEndDirectionOf(start, end);
+    final hoverEl =
+        _hoveringTargetId == null ? null : _assemblyElementById(_hoveringTargetId!);
+    if (hoverEl != null) {
+      // 吸附到目标：端点落到它对侧的端口上。
+      // 从 linker 左侧拉出时，我们要的是目标的**输出**口。
+      lineEnd = _assemblyPortOffset(hoverEl, !isInputSide);
+      endDirection = _assemblyPortDirection(hoverEl, !isInputSide);
+    }
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: CustomPaint(
+          painter: LinkerConnectionPainter(
+            start: start,
+            end: lineEnd,
+            color: hoverEl != null
+                ? LinkerLineColors.hitTarget
+                : LinkerLineColors.resolve(isInput: isInputSide),
+            strokeWidth: 2.0,
+            arrowSize: 7.0,
+            startDirection: startDirection,
+            endDirection: endDirection,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 自由端（跟着手指、尚未吸附）的入线方向：朝来路收束。
+  Offset _freeEndDirectionOf(Offset start, Offset end) {
+    final delta = start - end;
+    final distance = delta.distance;
+    if (distance < 1e-3) return LinkerConnectionPainter.defaultEndDirection;
+    return delta / distance;
+  }
+
   /// 端口的**朝向**（单位向量，指向元件外侧）。
   ///
   /// 与 `_assemblyPortOffset` 配套：那个算端口在哪，这个算线该往哪冒。
