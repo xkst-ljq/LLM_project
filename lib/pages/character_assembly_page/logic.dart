@@ -458,6 +458,24 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return null;
   }
 
+  /// 按 id 查找连线端点，含复合件内部的暴露子元素。
+  ///
+  /// 连线存的可能是复合件内部子元素的 id，它不在 `_elements` 顶层，
+  /// 必须深入 `composite.children` 才找得到。
+  /// 配置面板要显示端点名称与类型，靠 `_assemblyElementById` 会漏掉这类。
+  UIElement? _wiringEndpointById(String id) {
+    final top = _assemblyElementById(id);
+    if (top != null) return top;
+    for (final element in _elements) {
+      final data = element.composite;
+      if (data == null) continue;
+      for (final child in data.children) {
+        if (child.id == id) return child;
+      }
+    }
+    return null;
+  }
+
   /// 画线用的锚点元素。
   ///
   /// 连线存的可能是复合件**内部**子元素的 id（暴露端口）。
@@ -732,7 +750,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   /// 可作为连线一端的候选元素。
   ///
-  /// 与配置式对话框的 `_linkerCandidates` 同口径：排除 linker 自身、
+  /// 排除 linker 自身、
   /// 复合黑盒与全锁元素。全锁的语义就是「连线不可改」，
   /// 因此它既不能作为新连线的目标，也不该被拖拽命中。
   bool _canBeConnectionEndpoint(UIElement el) {
@@ -3137,32 +3155,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
     return 'value';
   }
-
-  /// 可作为 linker 来源 / 目标的候选组件。
-  ///
-  /// 排除 linker 自身（不支持 linker 串 linker）。
-  /// 复合组件内部的暴露项后续再接，当前只取顶层原子。
-  /// 可作为联动器源 / 目标的元素。
-  ///
-  /// 全锁定（`sealed`）的元素被排除：这正是全锁与半锁的区别——
-  /// 有连线时不能切换或断开，没连线时连不上，配置界面直接跳过它。
-  List<UIElement> _linkerCandidates() {
-    final result = <UIElement>[];
-    for (final element in _elements) {
-      if (element.sealed) continue;
-      if (element.isComposite) {
-        // 复合件以「暴露的子元素」形式进入候选，
-        // 这样方案矩阵能按子元素的真实类型算可用方案。
-        result.addAll(_exposedPortTargetsOf(element));
-        continue;
-      }
-      final module = element.module;
-      if (module == null || module.type == 'linker') continue;
-      result.add(element);
-    }
-    return result;
-  }
-
   /// 该联动器是否因两端存在全锁元素而不可编辑。
   ///
   /// 已配好的连线若有一端后来被全锁，必须阻止改动——
@@ -3186,6 +3178,68 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return name.isEmpty ? module.type : '$name · ${module.type}';
   }
 
+  /// 连线端点的只读展示行。
+  ///
+  /// 取代原来的下拉选择器：两端由画线决定，这里只告诉作者
+  /// 「现在连的是谁」，以及没连时该怎么连。
+  Widget _buildLinkerEndpointRow({
+    required String label,
+    required UIElement? element,
+    required Color color,
+    required String emptyHint,
+  }) {
+    final connected = element != null;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: connected
+            ? color.withValues(alpha: 0.08)
+            : const Color(0xFFF3F3F6),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: connected
+              ? color.withValues(alpha: 0.45)
+              : Colors.black.withValues(alpha: 0.06),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: connected ? color : const Color(0xFFBDBDBD),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF555562),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              connected ? _linkerCandidateLabel(element) : emptyHint,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: connected
+                    ? const Color(0xFF111116)
+                    : const Color(0xFF9999A5),
+                fontStyle: connected ? FontStyle.normal : FontStyle.italic,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 配置 Assembly 联动器。
   ///
   /// 与 Studio 共用 `LinkerMatrixEngine` 的方案矩阵，
@@ -3206,10 +3260,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       return;
     }
 
-    final candidates = _linkerCandidates();
     final existing = _linkerDataOf(module);
-    var sourceId = existing['sourceModuleId']?.toString() ?? '';
-    var targetId = existing['targetModuleId']?.toString() ?? '';
+    // 两端只读：由画线写入，配置面板不再提供选择器。
+    final sourceId = existing['sourceModuleId']?.toString() ?? '';
+    final targetId = existing['targetModuleId']?.toString() ?? '';
     var scheme = existing['scheme']?.toString() ?? '';
     // 方案参数（如消息操作要执行哪个动作）。与 Studio 侧一致地按 key 存取，
     // 这样同一条 linker 在两边打开看到的配置完全相同。
@@ -3224,17 +3278,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     // 'tap' / 'double_tap' / 'long_press' 三个端口名分派，无需改动。
     // 好处是同一个按钮可以挂三条连线，三种触控各接各的目标。
     var sourceGesture = existing['sourceGesture']?.toString() ?? '';
-    if (!candidates.any((element) => element.id == sourceId)) sourceId = '';
-    if (!candidates.any((element) => element.id == targetId)) targetId = '';
 
-    UIElement? byId(String id) {
-      for (final element in candidates) {
-        if (element.id == id) return element;
-      }
-      return null;
-    }
+    // 两端由画线决定，这里只做展示与校验。
+    //
+    // 端点可能已被删除，或是复合件内部的暴露子元素——
+    // 后者不在 `_elements` 顶层，要走 `_wiringEndpointById` 深查。
+    UIElement? byId(String id) => id.isEmpty ? null : _wiringEndpointById(id);
 
-    final saved = await showDialog<bool>(
+    final saved = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -3247,7 +3298,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                   target.module!.type,
                 )
               : const <SchemeDefinition>[];
-          // 换了源/目标后，旧方案可能不再适用。
+          // 端点可能在画线时被改接到别的组件，旧方案未必还适用。
           if (schemes.every((def) => def.id != scheme)) {
             scheme = '';
             // 参数属于具体方案，方案没了就必须清掉——
@@ -3256,33 +3307,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           }
 
           final canSave = source != null && target != null && scheme.isNotEmpty;
-
-          Widget picker({
-            required String label,
-            required String value,
-            required ValueChanged<String> onChanged,
-          }) {
-            return DropdownButtonFormField<String>(
-              initialValue: value.isEmpty ? null : value,
-              isExpanded: true,
-              decoration: InputDecoration(labelText: label, isDense: true),
-              items: candidates
-                  .map(
-                    (element) => DropdownMenuItem(
-                      value: element.id,
-                      child: Text(
-                        _linkerCandidateLabel(element),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (next) {
-                if (next == null) return;
-                setDialogState(() => onChanged(next));
-              },
-            );
-          }
 
           return AlertDialog(
             title: const Text('配置联动器'),
@@ -3293,27 +3317,27 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (candidates.length < 2)
-                      const Text(
-                        '至少需要两个非联动器组件才能建立连接。',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFFE65100),
-                        ),
-                      )
-                    else ...[
-                      picker(
-                        label: '来源组件',
-                        value: sourceId,
-                        onChanged: (v) => sourceId = v,
-                      ),
-                      const SizedBox(height: 12),
-                      picker(
-                        label: '目标组件',
-                        value: targetId,
-                        onChanged: (v) => targetId = v,
-                      ),
-                      const SizedBox(height: 16),
+                    // 两端只读展示。
+                    //
+                    // 来源 / 目标由**画线**决定，不再给下拉选择——
+                    // 同一件事有两个入口时，作者会困惑「哪个才算数」，
+                    // 而且下拉列表在元件一多时根本找不到目标。
+                    // 画线是所见即所得的，端点关系一眼就能看清。
+                    _buildLinkerEndpointRow(
+                      label: '来源',
+                      element: source,
+                      color: LinkerLineColors.input,
+                      emptyHint: '拖动联动器左侧接出',
+                    ),
+                    const SizedBox(height: 8),
+                    _buildLinkerEndpointRow(
+                      label: '目标',
+                      element: target,
+                      color: LinkerLineColors.output,
+                      emptyHint: '拖动联动器右侧接出',
+                    ),
+                    const SizedBox(height: 16),
+                    ...[
                       const Text(
                         '联动方案',
                         style: TextStyle(
@@ -3325,7 +3349,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       const SizedBox(height: 6),
                       if (source == null || target == null)
                         const Text(
-                          '请先选择来源与目标组件。',
+                          '两端都接好后才能选择联动方案。',
                           style: TextStyle(
                             fontSize: 11,
                             color: Color(0xFF777783),
@@ -3446,21 +3470,22 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
+                onPressed: () => Navigator.pop(ctx, 'cancel'),
                 child: const Text('取消'),
               ),
               TextButton(
-                onPressed: () {
-                  setDialogState(() {
-                    sourceId = '';
-                    targetId = '';
-                    scheme = '';
-                  });
-                },
+                // 直接断开并关闭，不再靠「清空下拉 + 保存」。
+                //
+                // 旧写法只把两个下拉设空，但 canSave 要求两端非空，
+                // 保存按钮会立刻变灰、提交不了——清除等于失效
+                // （移除下拉时才发现的既存 bug）。
+                onPressed: (sourceId.isEmpty && targetId.isEmpty)
+                    ? null
+                    : () => Navigator.pop(ctx, 'clear'),
                 child: const Text('清除连接'),
               ),
               FilledButton(
-                onPressed: canSave ? () => Navigator.pop(ctx, true) : null,
+                onPressed: canSave ? () => Navigator.pop(ctx, 'save') : null,
                 child: const Text('保存'),
               ),
             ],
@@ -3469,7 +3494,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ),
     );
 
-    if (saved == true && mounted) {
+    if (saved == 'clear' && mounted) {
+      _disconnectLinkerBothEnds(linkerElement);
+      return;
+    }
+
+    if (saved == 'save' && mounted) {
       final index =
           _elements.indexWhere((element) => element.id == linkerElement.id);
       if (index == -1) return;
@@ -3484,21 +3514,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           props['linker'] is Map ? props['linker'] as Map : const {},
         );
 
-        if (sourceId.isEmpty || targetId.isEmpty || scheme.isEmpty) {
-          linkerData
-            ..remove('sourceModuleId')
-            ..remove('sourcePort')
-            ..remove('sourceType')
-            ..remove('targetModuleId')
-            ..remove('targetPort')
-            ..remove('targetType')
-            ..remove('inputConnection')
-            ..remove('outputConnection')
-            ..remove('sourceGesture')
-            ..remove('schemeParams');
-          linkerData['scheme'] = '未配置';
-          linkerData['enabled'] = false;
-        } else {
+        {
+          // 两端由画线写入、此处只读，且 canSave 已保证三者非空，
+          // 因此不再需要「清空」分支——断开一律走「清除连接」按钮，
+          // 它直接调用 _disconnectLinkerBothEnds。
           final def = LinkerMatrixEngine.getSchemeDefinition(scheme);
           linkerData['sourceModuleId'] = sourceId;
           linkerData['targetModuleId'] = targetId;

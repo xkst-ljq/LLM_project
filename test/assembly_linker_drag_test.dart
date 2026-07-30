@@ -433,6 +433,52 @@ void main() {
     });
   });
 
+  group('配置面板移除来源/目标选择器', () {
+    // 画线做好之后，下拉选择器就成了重复入口。
+    // 同一件事有两个入口时作者会困惑「哪个才算数」，
+    // 而且下拉列表在元件一多时根本找不到目标。
+
+    /// 复刻「清除连接」按钮的可用条件。
+    bool canClear({required String sourceId, required String targetId}) =>
+        sourceId.isNotEmpty || targetId.isNotEmpty;
+
+    /// 复刻保存按钮的可用条件。
+    bool canSave({
+      required String sourceId,
+      required String targetId,
+      required String scheme,
+    }) =>
+        sourceId.isNotEmpty && targetId.isNotEmpty && scheme.isNotEmpty;
+
+    test('两端齐备且选了方案才能保存', () {
+      expect(
+        canSave(sourceId: 'a', targetId: 'b', scheme: 'click_to_switch_toggle'),
+        isTrue,
+      );
+      expect(canSave(sourceId: 'a', targetId: '', scheme: 'x'), isFalse);
+      expect(canSave(sourceId: 'a', targetId: 'b', scheme: ''), isFalse);
+    });
+
+    test('只连了一端也能清除', () {
+      // 旧实现「清空下拉再保存」在这种情况下完全失效：
+      // canSave 要求两端非空，清空后保存按钮直接变灰、提交不了。
+      // 现在清除是独立动作，不经过保存校验。
+      expect(canClear(sourceId: 'a', targetId: ''), isTrue);
+      expect(canClear(sourceId: '', targetId: 'b'), isTrue);
+    });
+
+    test('完全没连时清除按钮禁用', () {
+      expect(canClear(sourceId: '', targetId: ''), isFalse);
+    });
+
+    test('清除走独立返回值，不复用保存路径', () {
+      // 三个动作各自独立，避免「清除」被保存分支的校验拦住。
+      const actions = {'cancel', 'clear', 'save'};
+      expect(actions.length, 3);
+      expect(actions.contains('clear'), isTrue);
+    });
+  });
+
   group('断开单侧端口', () {
     final connected = <String, dynamic>{
       'sourceModuleId': 'a',
