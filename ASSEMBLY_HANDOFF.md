@@ -916,6 +916,26 @@ linker 本身就是有边框的卡片，再套一圈虚线只是噪声。
 夹取顺序：先夹宽度 → 由宽度推高度 → 若高度越界再由高度反推宽度。
 两个维度独立夹取会破坏比例。
 
+### 沙箱验不出「缺 import」，提交前用脚本扫一遍
+
+括号平衡检查发现不了未定义标识符。`math.sin` / `Offset` /
+`RenderRepaintBoundary` 这类漏 import 只有 analyze 才报，
+而沙箱没有 Dart SDK——已经因此让用户多跑了几轮 analyze。
+
+提交前跑这个扫描（要点：**排除 `part of` 文件**，
+它们继承父库的 import，否则全是误报）：
+
+```python
+# 对每个非 part-of 的 .dart：
+#   用到 math.*            -> 必须 import 'dart:math'
+#   用到 Offset/Size/Rect  -> 必须 import flutter/material|widgets|painting
+#   用到 ui.*              -> 必须 import 'dart:ui'
+#   用到 RenderRepaintBoundary -> 必须 import 'flutter/rendering.dart'
+```
+
+新写的**测试文件**最容易漏——它们不像 lib 里的文件那样
+早就有一堆 import 垫底。
+
 ### RenderRepaintBoundary 需要单独导入 rendering.dart（已犯两次）
 
 `material.dart` 转出了 `RenderBox` / `RenderObject`，
