@@ -122,92 +122,10 @@ class StudioAlternatingDashedBorderPainter extends CustomPainter {
   }
 }
 
-class LinkerConnectionPainter extends CustomPainter {
-  final Offset start;
-  final Offset end;
-  final Color color;
-  final bool isControlLine;
-
-  LinkerConnectionPainter({
-    required this.start,
-    required this.end,
-    required this.color,
-    this.isControlLine = false,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    final path = Path()..moveTo(start.dx, start.dy);
-    late Offset arrowCenter;
-    late double arrowAngle;
-
-    final controlOffset = (end.dx - start.dx).abs() * 0.4;
-    final cp1 = Offset(start.dx + controlOffset, start.dy);
-    // 普通端口以水平方向进入；顶部 Gate 仅调整末端切线为垂直向下。
-    // 这仍是一条连续贝塞尔曲线，不再添加生硬的固定长度引导段。
-    final cp2 = isControlLine
-        ? Offset(end.dx, end.dy - math.max(24.0, controlOffset * 0.55))
-        : Offset(end.dx - controlOffset, end.dy);
-    path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, end.dx, end.dy);
-
-    const t = 0.5;
-    arrowCenter = Offset(
-      _bezierPoint(start.dx, cp1.dx, cp2.dx, end.dx, t),
-      _bezierPoint(start.dy, cp1.dy, cp2.dy, end.dy, t),
-    );
-    final dx = _bezierDerivative(start.dx, cp1.dx, cp2.dx, end.dx, t);
-    final dy = _bezierDerivative(start.dy, cp1.dy, cp2.dy, end.dy, t);
-    arrowAngle = math.atan2(dy, dx);
-    canvas.drawPath(path, paint);
-
-    final arrowPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    const arrowSize = 9.0;
-    final arrowPath = Path()
-      ..moveTo(arrowCenter.dx, arrowCenter.dy)
-      ..lineTo(
-        arrowCenter.dx - arrowSize * math.cos(arrowAngle - 0.5),
-        arrowCenter.dy - arrowSize * math.sin(arrowAngle - 0.5),
-      )
-      ..lineTo(
-        arrowCenter.dx - arrowSize * math.cos(arrowAngle + 0.5),
-        arrowCenter.dy - arrowSize * math.sin(arrowAngle + 0.5),
-      )
-      ..close();
-    canvas.drawPath(arrowPath, arrowPaint);
-  }
-
-  double _bezierPoint(double p0, double p1, double p2, double p3, double t) {
-    final mt = 1 - t;
-    return mt * mt * mt * p0 +
-        3 * mt * mt * t * p1 +
-        3 * mt * t * t * p2 +
-        t * t * t * p3;
-  }
-
-  double _bezierDerivative(
-      double p0, double p1, double p2, double p3, double t) {
-    final mt = 1 - t;
-    return 3 * mt * mt * (p1 - p0) +
-        6 * mt * t * (p2 - p1) +
-        3 * t * t * (p3 - p2);
-  }
-
-  @override
-  bool shouldRepaint(covariant LinkerConnectionPainter oldDelegate) {
-    return oldDelegate.start != start ||
-        oldDelegate.end != end ||
-        oldDelegate.color != color ||
-        oldDelegate.isControlLine != isControlLine;
-  }
-}
+// LinkerConnectionPainter 已提取到
+// `services/ui_engine/linker_connection_painter.dart`，
+// 由 Studio 与 Assembly 共用——两边各留一份实现必然漂移，
+// 而连线配色的语义一致性是作者建立肌肉记忆的前提。
 
 class ConnectionLinePainter extends CustomPainter {
   final Offset start;

@@ -687,6 +687,40 @@ Studio 的「手势触发模式」下拉存在已久、界面完整、
 不能看编辑器里有没有入口。两者都属于
 「不影响就留下了」的遗留，越留越难分辨哪个是真功能。
 
+### 连线配色是跨编辑器契约，不能各画各的（A14-4）
+
+Studio 与 Assembly 的连线**必须共用同一套颜色语义**：
+接收线青 `0xFF00ACC1` / 输出线绿 `0xFF66BB6A` /
+算数操控线橙 `0xFFFFB300` / 复合件粉 `0xFFFF4081` 与浅蓝 `0xFF4FC3F7` /
+命中高亮 `0xFF00E676`。
+
+同一条连线在两个编辑器里如果是两个颜色，作者无法建立肌肉记忆，
+「对齐 Studio」的意义就丢了一半。
+
+因此 `LinkerConnectionPainter` 与 `LinkerLineColors` 提取到
+`services/ui_engine/linker_connection_painter.dart` 共用，
+**不要在任一侧另写一份**。
+
+Assembly 画布更挤（PCB 最窄 212），缓解办法是
+**减小线宽（2.5→1.4）、降低不透明度（1.0→0.55）、缩小箭头（9→6）**，
+不是换颜色。
+
+`LinkerLineColors.resolve` 的优先级
+**控制线 > 复合件 > 普通输入/输出** 不能调换：
+接入 `gate_in` 的线即使一端在复合件里，也应显示为控制线。
+
+### Assembly 的画布坐标要叠加两个偏移（A14-4 易错点）
+
+Studio 的元素屏幕位置 = `_workspaceOffset + el.offset`。
+
+Assembly 的元素坐标是**相对 PCB** 的，屏幕位置 =
+`_canvasOffset + _pcbOffset + el.offset`（见画布里每个元素的
+`Positioned`）。算连线端点、命中检测时漏掉 `_pcbOffset`，
+整层会错位一个 PCB 的距离。
+
+连线层要插在**元素之下、PCB 之上**：
+压在元件上会挡住文本与消息流内容，放到 PCB 之下会被底色整块盖掉。
+
 ### A14-1 / A14-2 / A14-3 已完成（均测试通过）
 
 A14-3 的结论值得记一笔：**「实例编辑器分文件」最终判定为不做**。

@@ -39,13 +39,12 @@ mixin _UIStudioLinker on _UIStudioLogic {
       // 检查端点是否在复合件内部（复合件端口连线用粉红/浅蓝）
       final isCompositePort = (_isInsideComposite(fromEl.id) || _isInsideComposite(toEl.id));
       final isControlLine = conn['toPort'] == 'gate_in';
-      final lineColor = isControlLine
-          ? const Color(0xFFFFB300)
-          : isCompositePort
-              ? (lineType == 'input' ? const Color(0xFFFF4081) : const Color(0xFF4FC3F7))
-              : lineType == 'input'
-                  ? const Color(0xFF00ACC1)
-                  : const Color(0xFF66BB6A);
+      // 配色收拢到 LinkerLineColors，与 Assembly 共用同一套语义。
+      final lineColor = LinkerLineColors.resolve(
+        isInput: lineType == 'input',
+        isControlLine: isControlLine,
+        isCompositePort: isCompositePort,
+      );
 
       widgets.add(
         CustomPaint(
@@ -164,23 +163,19 @@ mixin _UIStudioLinker on _UIStudioLogic {
     final isCompositePort = srcIsComposite || tgtIsComposite;
     final isControlLine = _hoveringTargetPort == 'gate_in' ||
         _draggingSourcePort == 'gate_in';
-    final dragColor = isControlLine
-        ? const Color(0xFFFFB300)
-        : isCompositePort
-            ? (isLeftPort
-                ? const Color(0xFFFF4081)
-                : const Color(0xFF4FC3F7))
-            : isLeftPort
-                ? const Color(0xFF00ACC1)
-                : const Color(0xFF66BB6A);
+    final dragColor = LinkerLineColors.resolve(
+      isInput: isLeftPort,
+      isControlLine: isControlLine,
+      isCompositePort: isCompositePort,
+    );
     final lineColor =
         (_hoveringTargetId != null || _hoveringCompositeTargetId != null) &&
                 !isControlLine
             ? (isCompositePort
                 ? (_draggingSourceType == 'input'
-                    ? const Color(0xFFFF4081)
-                    : const Color(0xFF4FC3F7))
-                : const Color(0xFF00E676))
+                    ? LinkerLineColors.compositeInput
+                    : LinkerLineColors.compositeOutput)
+                : LinkerLineColors.hitTarget)
             : dragColor;
 
     Offset endOffset = _dragConnectionEnd!;

@@ -667,8 +667,76 @@ surface 按压 / 涟漪选非单击时给橙色提示——
 A11-2 漏参数编辑器、A13-2 入口藏太深都是这个根因。
 应在 A14-1 之后做，否则一边重构编辑器一边加画布操作容易互相干扰。
 
-**A14-4 linker 画线交互**
-理由：独立性最强，可随时插入。当前配置式已能用，只是体验差。
+#### A14-4 第一步：连线可视化（已完成，待本地测试）
+
+**方案决策：采用 Studio 的连线方式**（用户明确要求，推翻此前
+「改为增强配置式」的建议）。用户理由：
+
+> 这套方案无论在操作性上、可视性上，以及与端口设计的匹配度上，
+> 无疑都是更佳的选择。
+
+画布拥挤的顾虑，用户给出的解法是**减小连线直径、减淡连线颜色**，
+而**不是换配色**——颜色语义必须与 Studio 匹配
+（接收线 / 输出线 / 算数操控线 / 复合组件输入输出线）。
+
+这一条很重要，写进 HANDOFF：同一条连线在两个编辑器里如果是两个颜色，
+作者就无法建立肌肉记忆，「对齐 Studio」的意义就丢了一半。
+
+**提取共享画笔。** `LinkerConnectionPainter` 原本是
+`ui_studio_page/painters.dart` 里的 part 类，移到
+`services/ui_engine/linker_connection_painter.dart`，两边共用。
+曲线形态与箭头位置完全不变，只额外开放三个参数：
+`strokeWidth` / `opacity` / `arrowSize`。
+
+| | Studio | Assembly | 理由 |
+|---|---|---|---|
+| 线宽 | 2.5 | 1.4 | PCB 最窄 212，2.5 实色线会盖住元件 |
+| 不透明度 | 1.0 | 0.55 | 淡到不抢视觉，但仍能分辨颜色语义 |
+| 箭头 | 9.0 | 6.0 | 细线配大箭头很突兀 |
+
+同时新增 `LinkerLineColors`，把原先散落在 Studio 里的颜色字面量收拢成
+常量 + `resolve()`。优先级 **控制线 > 复合件 > 普通输入/输出**，
+顺序不能调换：接入 `gate_in` 的线即使一端在复合件里也该显示为控制线，
+因为「这是触发通路」比「这一端在复合件里」更需要被一眼看出。
+Studio 两处调用点同步改用常量，消除重复字面量。
+
+**Assembly 侧新增**（`logic.dart`）：
+`_assemblyLinkerConnections()` 与 Studio 的
+`_getAllLinkerConnections` 同构；`_assemblyPortOffset()` 算端口位置。
+
+⚠️ **坐标体系与 Studio 不同**：Studio 只有 `_workspaceOffset` 一个偏移，
+Assembly 的元素坐标相对 PCB，屏幕位置要叠加
+`_canvasOffset + _pcbOffset`。漏一个会整体错位一个 PCB 的距离。
+
+**连线层的插入位置**：元素**之下**、PCB 之上。
+压在元件上会挡住文本与消息流；放 PCB 之下会被底色整块盖掉。
+
+其他与 Studio 对齐的细节：
+- 只连了一半的 linker 也画出已连的那半条（作者需要看到「还没接完」）
+- 旧草稿的 `click_to_math_trigger` / `timer_tick_to_math_trigger`
+  即使没写 `gate_in` 也按控制端口绘制，否则同一张卡两边线型不同
+- 端点已被删除时跳过，不抛异常
+
+新增 `test/assembly_linker_wire_test.dart`（16 例）：
+连线派生、端口几何（含旋转不变量）、配色语义、重绘判定。
+
+#### A14-4 第二步：拖拽画线交互（未开始）
+
+第一步只画线、不能拖。第二步补 Studio 的拖拽：
+linker 左右各 32px 热区 `Listener` 起拖、`_updateConnectionHover`
+命中检测、`_completeConnection` 落点成线、双击端口断开。
+
+用户明确的两条约束：
+- **linker 依旧是唯一可以拉出接线的组件**
+- **点击 linker 弹出方案选择；接通线路也弹出方案选择**
+
+风险点（Assembly 画布已有的手势）：画布平移 `onPanUpdate`、
+元素拖动 `onPanStart/Update`、资产栏拖放 `_handlePlacementPointerMove2`。
+Studio 用「`_isDraggingConnection` 为真时所有 pan 提前 return」隔离，
+Assembly 要照做并逐一核对。
+
+**A14-4 原三选项已作废**（用户选定完整画线）：
+①增强配置式 ②完整画线 ③搁置。
 
 **A14-5 PCB 自定义增强 / 灵感池**
 理由：锦上添花，无阻塞。

@@ -378,6 +378,175 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         .toList();
   }
 
+  // ===== A14-4：linker 连线可视化 =====
+  //
+  // 采用 Studio 的连线方式（用户明确要求）：操作性、可视性、
+  // 与端口设计的匹配度都优于配置式。
+  //
+  // 画布拥挤的问题**不靠换配色解决**——连线颜色的语义必须与 Studio 一致，
+  // 否则同一条线在两个编辑器里是两个颜色。改为减小线宽、降低不透明度。
+  // 见 `_kAssemblyLineWidth` / `_kAssemblyLineOpacity`。
+
+  /// Assembly 画布的连线线宽。Studio 用 2.5。
+  ///
+  /// PCB 最窄只有 212（伴生 UI），元件间距远比 Studio 紧，
+  /// 2.5 的实色线会盖住元件本体。
+  static const double _kAssemblyLineWidth = 1.4;
+
+  /// Assembly 画布的连线不透明度。
+  ///
+  /// 淡到不抢视觉，但仍能分辨颜色语义（接收青 / 输出绿 / 控制橙 /
+  /// 复合粉蓝）。拖拽中的临时线不适用此值——那条线需要看清。
+  static const double _kAssemblyLineOpacity = 0.55;
+
+  /// 箭头随线宽一起缩小，否则细线配大箭头很突兀。
+  static const double _kAssemblyArrowSize = 6.0;
+
+  /// 汇总当前页所有 linker 的连线。
+  ///
+  /// 与 Studio 的 `_getAllLinkerConnections` 同构：一个 linker 最多产生
+  /// 两条线——来源→linker（input）与 linker→目标（output）。
+  /// 只连了一半的 linker 也会画出已连的那半条，这正是作者需要看到的
+  /// 「这条还没接完」。
+  List<Map<String, dynamic>> _assemblyLinkerConnections() {
+    final connections = <Map<String, dynamic>>[];
+    for (final el in _elements) {
+      if (el.isComposite || el.module?.type != 'linker') continue;
+      final linkerData = el.module!.properties['linker'];
+      if (linkerData is! Map) continue;
+
+      final sourceId = linkerData['sourceModuleId']?.toString();
+      final targetId = linkerData['targetModuleId']?.toString();
+      final sourcePort = linkerData['sourcePort']?.toString() ?? 'current';
+      final storedTargetPort = linkerData['targetPort']?.toString() ?? 'text';
+      final scheme = linkerData['scheme']?.toString();
+      // 兼容早期草稿：触发方案即使旧数据未写 gate_in，也按控制端口绘制。
+      // 与 Studio 同样处理，否则同一张卡两边画出的线型不同。
+      final targetPort = (scheme == 'click_to_math_trigger' ||
+              scheme == 'timer_tick_to_math_trigger')
+          ? 'gate_in'
+          : storedTargetPort;
+
+      if (sourceId != null && sourceId.isNotEmpty) {
+        connections.add({
+          'from': sourceId,
+          'fromPort': sourcePort,
+          'to': el.id,
+          'toPort': 'input',
+          'linkerId': el.id,
+          'type': 'input',
+        });
+      }
+      if (targetId != null && targetId.isNotEmpty) {
+        connections.add({
+          'from': el.id,
+          'fromPort': 'output',
+          'to': targetId,
+          'toPort': targetPort,
+          'linkerId': el.id,
+          'type': 'output',
+        });
+      }
+    }
+    return connections;
+  }
+
+  UIElement? _assemblyElementById(String id) {
+    for (final el in _elements) {
+      if (el.id == id) return el;
+    }
+    return null;
+  }
+
+  /// 元素某个端口在画布坐标系中的位置。
+  ///
+  /// 注意与 Studio 的差异：Studio 用 `_workspaceOffset` 一个偏移量，
+  /// Assembly 的元素坐标是相对 PCB 的，屏幕位置要叠加
+  /// `_canvasOffset + _pcbOffset`（见画布里每个元素的 Positioned）。
+  /// 这两个偏移不能漏，否则线会整体错位一个 PCB 的距离。
+  Offset _assemblyPortOffset(UIElement el, bool isInput, [String? portName]) {
+    final base = _canvasOffset + _pcbOffset;
+    final elLeft = base.dx + el.offset.dx;
+    final elTop = base.dy + el.offset.dy;
+    final cx = elLeft + el.size.width / 2;
+    final cy = elTop + el.size.height / 2;
+
+    // math_node 的触发端口在顶部中央，不在左右两侧。
+    if (portName == 'gate_in') {
+      if (el.rotation == 0.0) return Offset(cx, elTop + 7.0);
+      final rad = el.rotation * math.pi / 180.0;
+      final distance = math.max(0.0, el.size.height / 2 - 7.0);
+      return Offset(
+        cx + distance * math.sin(rad),
+        cy - distance * math.cos(rad),
+      );
+    }
+
+    if (el.rotation == 0.0) {
+      return Offset(isInput ? elLeft : elLeft + el.size.width, cy);
+    }
+
+    // 旋转后端口跟着转：把「中心 ± 半宽」这个向量按角度旋转。
+    final rad = el.rotation * math.pi / 180.0;
+    final sign = isInput ? -1.0 : 1.0;
+    final halfWidth = el.size.width / 2;
+    return Offset(
+      cx + sign * halfWidth * math.cos(rad),
+      cy + sign * halfWidth * math.sin(rad),
+    );
+  }
+
+  /// 连线层。放在元素之下、PCB 之上——
+  /// 压在元件上面会挡住内容，尤其是文本与消息流。
+  List<Widget> _buildAssemblyConnectionsLayer() {
+    final connections = _assemblyLinkerConnections();
+    if (connections.isEmpty) return const [];
+
+    final widgets = <Widget>[];
+    for (final conn in connections) {
+      final fromId = conn['from'] as String?;
+      final toId = conn['to'] as String?;
+      if (fromId == null || toId == null) continue;
+      final fromEl = _assemblyElementById(fromId);
+      final toEl = _assemblyElementById(toId);
+      // 端点可能已被删除（删元素时 linker 里的引用未必同步清理），
+      // 画不出来就跳过，不要抛异常。
+      if (fromEl == null || toEl == null) continue;
+
+      final lineType = conn['type'] as String? ?? 'input';
+      final toPort = conn['toPort'] as String?;
+      final isControlLine = toPort == 'gate_in';
+      final isCompositePort = fromEl.isComposite || toEl.isComposite;
+
+      widgets.add(
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: LinkerConnectionPainter(
+                start: _assemblyPortOffset(
+                  fromEl,
+                  false,
+                  conn['fromPort'] as String?,
+                ),
+                end: _assemblyPortOffset(toEl, true, toPort),
+                color: LinkerLineColors.resolve(
+                  isInput: lineType == 'input',
+                  isControlLine: isControlLine,
+                  isCompositePort: isCompositePort,
+                ),
+                isControlLine: isControlLine,
+                strokeWidth: _kAssemblyLineWidth,
+                opacity: _kAssemblyLineOpacity,
+                arrowSize: _kAssemblyArrowSize,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return widgets;
+  }
+
   /// A14-1a：当前选中的元素（原子与复合共用）。
   ///
   /// 此前只有 `_selectedCompositeId`，且仅用于展开复合组件的覆写槽位——

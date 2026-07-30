@@ -11,6 +11,7 @@ import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/dashed_selection_border_painter.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
+import '../services/ui_engine/linker_connection_painter.dart';
 import '../services/ui_engine/linker_matrix_engine.dart';
 import '../services/ui_engine/message_action.dart';
 import '../services/ui_engine/linker_service.dart';
@@ -412,6 +413,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                   ),
                                 ),
                               ),
+                            // A14-4：linker 连线层。
+                            //
+                            // 位置很关键：必须在元素**之下**、PCB 之上。
+                            // 压在元件上面会挡住文本与消息流内容；
+                            // 放到 PCB 之下则会被 PCB 底色整块盖掉。
+                            ..._buildAssemblyConnectionsLayer(),
                             ..._elements.map((el) {
                               return Positioned(
                                 left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,
