@@ -4256,6 +4256,32 @@ rippleAnim.isActiveAt(DateTime.now().millisecondsSinceEpoch)
 同样带初速度衰减、重力下坠、index 派生的伪随机
 （`Random()` 会让粒子逐帧乱跳）。
 
+**边缘喷射未生效：通用粒子层盖在上面（已修）**
+
+用户「粒子动画没有区别，还是以中点为喷射中心，也不分前后」。
+
+`_EdgeBurstProgressBar` 确实在画，但 `_paintAnimationFrame` 的
+`particleBurst` 分支对**所有组件**都叠加中心爆发——
+进度条上是两层粒子，中心那层完全盖住了边缘喷射。
+
+修法：`render()` 里检测「进度条 + 粒子动画」时跳过通用粒子层。
+
+⚠️ **两条通路都要跳过**：
+* `_wrapWithAnimation`（连线触发）
+* `_wrapWithValueChangeAnimation`（值变化自动播）
+
+拖 slider 走的是**后者**，只改前者不够。
+这与之前「波浪边界只看 timestamp 导致值变化通路失效」
+是同一类疏漏——改动画相关逻辑时必须同时检查两条通路。
+
+顺带把 `_buildProgressBar` 里的 `rippleAnim` 改名为 `barAnim`
+（它承载的是该进度条配置的动画，不只是 ripple），
+并去掉一层多余的 `rippleAnim == null` 嵌套。
+
+**水波已获用户确认**：「水波的动画可以了，
+文字的震荡效果还有一种电子失真感，很可以」。
+第六版（片元着色器 + 降分辨率采样）定稿。
+
 ### A12-4：剩余打磨（未开始）
 
 * 粒子在小 PCB 上的实际观感（可能要调参）

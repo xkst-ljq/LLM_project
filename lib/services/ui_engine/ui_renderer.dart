@@ -71,14 +71,27 @@ class UIRenderer {
       final isIndicatorFlash = module.type == 'indicator' &&
           ElementAnimation.readFrom(module.properties)?.type ==
               ElementAnimationType.flash;
-      if (!isIndicatorFlash) {
+      // 进度条的粒子由它自己从填充边缘喷射
+      // （见 _EdgeBurstProgressBar），这里必须跳过通用的中心爆发，
+      // 否则两层粒子叠加，中心那层会完全盖住边缘喷射
+      // ——用户反馈「还是以中点为喷射中心，也不分前后」正是这个。
+      final selfHandlesBurst = module.type == 'progress' &&
+          ElementAnimation.readFrom(module.properties)?.type ==
+              ElementAnimationType.particleBurst;
+
+      if (!isIndicatorFlash && !selfHandlesBurst) {
         widget = _wrapWithAnimation(widget, module, element.size);
       }
       // A12-2：值变化自动播放。
       //
       // 与上面的连线触发是两条独立通路，可以并存：
       // 前者由 button/timer 打时间戳，后者由「值自己变了」驱动。
-      widget = _wrapWithValueChangeAnimation(widget, module, element.size);
+      //
+      // ⚠️ 拖 slider 走的是**这一条**。进度条自带边缘喷射时同样要跳过，
+      // 否则中心爆发照样会盖在上面（只改上面那条不够）。
+      if (!selfHandlesBurst) {
+        widget = _wrapWithValueChangeAnimation(widget, module, element.size);
+      }
     }
 
     final bool shouldBlockInteraction =
@@ -733,17 +746,16 @@ class UIRenderer {
     //
     // 改为让进度条**自己**成为一个带 Ticker 的组件：
     // 检测到值变化就自行起波，不依赖任何外部时序。
-    final rippleAnim = ElementAnimation.readFrom(module.properties);
-    if (rippleAnim != null &&
-        rippleAnim.type == ElementAnimationType.ripple) {
+    final barAnim = ElementAnimation.readFrom(module.properties);
+    if (barAnim != null && barAnim.type == ElementAnimationType.ripple) {
       return ClipRRect(
         borderRadius: radius,
         child: _WavyProgressBar(
           progress: progress.clamp(0.0, 1.0),
           fillColor: fillColor,
           trackColor: trackColor,
-          intensity: rippleAnim.intensity,
-          durationMs: rippleAnim.durationMs,
+          intensity: barAnim.intensity,
+          durationMs: barAnim.durationMs,
           size: size,
         ),
       );
@@ -760,23 +772,21 @@ class UIRenderer {
     // 拿不到数值进度；而 `_buildProgressBar` 在 `_renderModule` 阶段
     // 执行、早于所有动画包裹层，反向传值行不通
     // （波浪边界已经踩过这个坑）。
-    if (rippleAnim == null) {
-      final burstAnim = ElementAnimation.readFrom(module.properties);
-      if (burstAnim != null &&
-          burstAnim.type == ElementAnimationType.particleBurst) {
-        return _EdgeBurstProgressBar(
-          progress: progress.clamp(0.0, 1.0),
-          fillColor: fillColor,
-          trackColor: trackColor,
-          radius: radius,
-          intensity: burstAnim.intensity,
-          durationMs: burstAnim.durationMs,
-          particleColor: burstAnim.colorValue != null
-              ? Color(burstAnim.colorValue!)
-              : fillColor,
-          size: size,
-        );
-      }
+    // 与上面的 ripple 读同一份配置（上面已 return，这里必然是别的类型）。
+    if (barAnim != null &&
+        barAnim.type == ElementAnimationType.particleBurst) {
+      return _EdgeBurstProgressBar(
+        progress: progress.clamp(0.0, 1.0),
+        fillColor: fillColor,
+        trackColor: trackColor,
+        radius: radius,
+        intensity: barAnim.intensity,
+        durationMs: barAnim.durationMs,
+        particleColor: barAnim.colorValue != null
+            ? Color(barAnim.colorValue!)
+            : fillColor,
+        size: size,
+      );
     }
 
     return Container(
