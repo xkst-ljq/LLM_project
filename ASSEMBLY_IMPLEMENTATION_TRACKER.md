@@ -302,6 +302,19 @@ Assembly 导不了；且 Studio 版还带图层选择与坐标微调，
 `isRunning` 仅在 manual 下被读取。
 初版把开关标成「进入运行时自动启动」是错的，已改为说明三种启停方式。
 
+**4. 默认尺寸必须与 Studio 一致（测试后修正）。**
+
+Assembly 原先给 `math_node` 120×56、`timer` 112×52，
+而 Studio 是 180×44 / 140×54。
+
+两边**共用 `UIRenderer` 的同一套渲染**，画的是一行公式
+（`3 + 5 = 8`）或一行状态文本，**宽而扁**才放得下。
+Assembly 那套偏窄偏高，`FittedBox` 会把公式压得很小，
+观感与 Studio 差很多。已改为与 Studio 相同。
+
+> 通用规则：**共用渲染器的组件，两边的默认尺寸表也必须同步。**
+> 渲染逻辑一致不代表观感一致——尺寸决定了内容如何被缩放。
+
 测试：`test/assembly_logic_atoms_test.dart`。
 
 **A14-3 实例编辑器分文件**（对齐 Studio 的 `editors/`）

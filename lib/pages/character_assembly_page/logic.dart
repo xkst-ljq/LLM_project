@@ -5651,8 +5651,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'line' => const Size(120, 20),
       'surface' => const Size(160, 80),
       'base_box' => const Size(160, 80),
-      'math_node' => const Size(120, 56),
-      'timer' => const Size(112, 52),
+      // 与 Studio 保持一致（`ui_studio_page/logic.dart` 的同名表）：
+      // 这两个逻辑件共用 UIRenderer 的同一套渲染，画的是一行公式 /
+      // 一行状态文本，**宽而扁**才放得下。Assembly 原先给的
+      // 120×56 / 112×52 偏窄偏高，公式会被 FittedBox 压得很小。
+      'math_node' => const Size(180, 44),
+      'timer' => const Size(140, 54),
       _ => const Size(96, 48),
     };
   }

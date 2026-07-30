@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:llm_project/services/ui_engine/linker_matrix_engine.dart';
@@ -7,6 +8,14 @@ import 'package:llm_project/services/ui_engine/ui_asset_service.dart';
 ///
 /// 这两个组件的渲染、尺寸预设、linker 方案早就齐了，
 /// 唯独没有资产栏入口，导致「定时触发剧情」「属性公式计算」做不了。
+
+/// 复刻 `_moduleDefaultSize` 中两个逻辑件的取值，
+/// 与 `ui_studio_page/logic.dart` 的同名表保持一致。
+Size assemblyLogicAtomSize(String type) => switch (type) {
+      'math_node' => const Size(180, 44),
+      'timer' => const Size(140, 54),
+      _ => const Size(96, 48),
+    };
 
 void main() {
   final service = UIAssetService();
@@ -80,6 +89,26 @@ void main() {
       final ids = LinkerMatrixEngine.getAvailableSchemes('button', 'timer')
           .map((s) => s.id);
       expect(ids, contains('click_to_timer_toggle'));
+    });
+  });
+
+  group('默认尺寸与 Studio 一致', () {
+    // 两边共用 UIRenderer 的同一套渲染，画的是一行公式 / 一行状态文本，
+    // 宽而扁才放得下。偏窄偏高会被 FittedBox 压得很小。
+    // 这里锁定数值，避免日后单边调整又出现观感差异。
+    test('计算节点 180x44', () {
+      expect(assemblyLogicAtomSize('math_node'), const Size(180, 44));
+    });
+
+    test('定时器 140x54', () {
+      expect(assemblyLogicAtomSize('timer'), const Size(140, 54));
+    });
+
+    test('两者都是宽大于高', () {
+      for (final type in ['math_node', 'timer']) {
+        final size = assemblyLogicAtomSize(type);
+        expect(size.width > size.height, isTrue, reason: type);
+      }
     });
   });
 
