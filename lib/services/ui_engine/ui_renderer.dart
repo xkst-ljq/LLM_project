@@ -606,6 +606,10 @@ class UIRenderer {
       case ElementAnimationType.flash:
         // 三角波：中点最亮，两端归零，避免结束时突然掉色。
         final double wave = waveOf(0.5);
+        // 蒙版上限从 0.55 提到 0.85：
+        // 默认 intensity=0.6 时原来只有 0.33，几乎看不出「闪了一下」。
+        final double flashAlpha =
+            (wave * 0.85 * intensity).clamp(0.0, 1.0);
         return Stack(
           children: [
             child,
@@ -614,8 +618,19 @@ class UIRenderer {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(borderRadius),
                   child: Container(
-                    color: accent.withValues(
-                        alpha: (wave * 0.55 * intensity).clamp(0.0, 1.0)),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: flashAlpha),
+                      borderRadius: BorderRadius.circular(borderRadius),
+                      // 外发光让高亮「溢出」组件轮廓，
+                      // 单纯蒙一层色在深色背景上依然不显眼。
+                      boxShadow: [
+                        BoxShadow(
+                          color: accent.withValues(alpha: flashAlpha * 0.7),
+                          blurRadius: 18 * wave * intensity,
+                          spreadRadius: 3 * wave * intensity,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -624,28 +639,64 @@ class UIRenderer {
         );
 
       case ElementAnimationType.numberPop:
-        // 先放大后回落。幅度随 intensity，最大 +30%。
-        // 这里**不夹取**：Transform.scale 允许过冲，
+        // 先放大后回落。
+        //
+        // 幅度系数从 0.3 提到 0.55：默认 intensity=0.6 时
+        // 原来峰值只有 +18%，在一行数字上几乎察觉不到。
+        // 现在 +33%，是「跳了一下」该有的量级。
+        //
+        // 这里**不夹取** rawWave：Transform.scale 允许过冲，
         // 回弹曲线的弹性观感正来自于此。只兜住负缩放。
         final double rawWave =
             t < 0.4 ? t / 0.4 : (1.0 - t) / 0.6;
-        return Transform.scale(
-          scale: (1.0 + 0.3 * intensity * rawWave).clamp(0.05, 4.0),
-          child: child,
+        // 顺带一点上浮：数值跳动配合轻微抬起更像「弹出来」，
+        // 纯缩放会显得只是在原地胀大。
+        final double lift = -6.0 * intensity * rawWave;
+        return Transform.translate(
+          offset: Offset(0, lift),
+          child: Transform.scale(
+            scale: (1.0 + 0.55 * intensity * rawWave).clamp(0.05, 4.0),
+            child: child,
+          ),
         );
 
       case ElementAnimationType.glowPulse:
-        final double wave = waveOf(0.5);
+        // 呼吸两次而不是一次。
+        //
+        // 「脉冲」的语感本就是一下一下的；单次三角波起落一回就结束，
+        // 观感更接近「闪了下」而不是「在发光」。
+        // 频率 2 让它在同样时长内跳动两轮，明显得多。
+        final double breathe = (math.sin(t * math.pi * 2 * 2 - math.pi / 2) +
+                1.0) /
+            2.0;
+        final double wave = breathe * math.pow(1.0 - t, 0.8).toDouble();
         return Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(borderRadius),
             boxShadow: [
+              // 三层叠加：紧贴组件的亮边 + 中层光晕 + 大范围弥散。
+              //
+              // 单层阴影在深色背景上几乎不可见（用户反馈）——
+              // 深色底本来就吃光，只有把亮边收紧、同时把弥散铺开，
+              // 才能同时读出「轮廓在发亮」与「光在扩散」。
               BoxShadow(
                 color: accent.withValues(
-                    alpha: (wave * 0.75).clamp(0.0, 1.0)),
+                    alpha: (wave * 0.95).clamp(0.0, 1.0)),
+                blurRadius: 6 * intensity * wave,
+                spreadRadius: 1.5 * intensity * wave,
+              ),
+              BoxShadow(
+                color: accent.withValues(
+                    alpha: (wave * 0.6).clamp(0.0, 1.0)),
                 // blurRadius / spreadRadius 必须非负，见上方夹取说明。
-                blurRadius: 24 * intensity * wave,
-                spreadRadius: 6 * intensity * wave,
+                blurRadius: 26 * intensity * wave,
+                spreadRadius: 7 * intensity * wave,
+              ),
+              BoxShadow(
+                color: accent.withValues(
+                    alpha: (wave * 0.28).clamp(0.0, 1.0)),
+                blurRadius: 54 * intensity * wave,
+                spreadRadius: 14 * intensity * wave,
               ),
             ],
           ),

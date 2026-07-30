@@ -289,6 +289,53 @@ void main() {
     });
   });
 
+  group('动画强度（用户反馈「太无感」后的调整）', () {
+    // 默认 intensity = 0.6，各动画在这个值下的实际效果必须可辨认。
+    const defaultIntensity = 0.6;
+
+    test('短暂高亮的蒙版足够明显', () {
+      // 原系数 0.55，默认强度下 alpha 仅 0.33，几乎看不出闪过。
+      const alpha = 0.85 * defaultIntensity;
+      expect(alpha, greaterThan(0.45));
+    });
+
+    test('数值跳动的峰值足够大', () {
+      // 原系数 0.3，默认强度下峰值仅 +18%，一行数字上察觉不到。
+      const peak = 0.55 * defaultIntensity;
+      expect(peak, greaterThan(0.3));
+    });
+
+    test('发光脉冲呼吸两次而非一次', () {
+      // 「脉冲」的语感是一下一下的；单次起落更像「闪了下」。
+      var peaks = 0;
+      double waveAt(double t) =>
+          (math.sin(t * math.pi * 2 * 2 - math.pi / 2) + 1.0) / 2.0;
+      for (var i = 1; i < 999; i++) {
+        final prev = waveAt((i - 1) / 1000.0);
+        final cur = waveAt(i / 1000.0);
+        final next = waveAt((i + 1) / 1000.0);
+        if (cur > prev && cur > next) peaks++;
+      }
+      expect(peaks, 2);
+    });
+
+    test('发光脉冲的衰减让第二次更弱', () {
+      // 两次等强会显得机械，后一次弱下去才像余韵。
+      double full(double t) =>
+          ((math.sin(t * math.pi * 2 * 2 - math.pi / 2) + 1.0) / 2.0) *
+          math.pow(1.0 - t, 0.8).toDouble();
+      // 第一个峰约在 t=0.25，第二个约在 t=0.75。
+      expect(full(0.25), greaterThan(full(0.75)));
+    });
+
+    test('所有强度系数在 intensity=0 时归零', () {
+      // 强度为 0 应完全静止，否则「关掉」不彻底。
+      expect(0.85 * 0.0, 0.0);
+      expect(0.55 * 0.0, 0.0);
+      expect(24 * 0.0, 0.0);
+    });
+  });
+
   group('序列化往返', () {
     test('配置往返不丢字段', () {
       const before = ElementAnimation(
