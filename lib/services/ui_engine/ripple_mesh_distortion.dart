@@ -36,13 +36,19 @@ class RippleMeshDistortion {
 
   /// 网格密度。
   ///
-  /// 32×6 时相邻顶点最大位移差约 1.9px，肉眼看不出折线；
-  /// 顶点 1152 个，远少于像素数，性能可接受。
-  static const int cols = 32;
-  static const int rows = 6;
+  /// 首版用 32×6，实测折射看不出来。原因是环带要窄才像「一圈环扫过」，
+  /// 而窄环带跨越的顶点太少，波形被采样成折线。
+  /// 64×8 时环带能跨约 26 列，跳变/峰值 ≈ 0.37，既锐利又平滑。
+  static const int cols = 64;
+  static const int rows = 8;
 
   /// 环带宽度（归一化距离单位）。
-  static const double ringWidth = 0.6;
+  ///
+  /// ⚠️ 首版取 0.6，是「看不出水波、只觉得在抖」的主因之一：
+  /// 波前在 0.5 时影响范围是 -0.1~1.1，**整个组件都在环带内**，
+  /// 表现为整体缓慢起伏而非一圈环扫过。
+  /// 0.4 时环带只占组件的一段，才有波纹推进的观感。
+  static const double ringWidth = 0.4;
 
   /// 波在组件内来回反弹的次数。
   ///
@@ -58,9 +64,11 @@ class RippleMeshDistortion {
 
   /// 位移强度上限（相对该方向半径的比例）。
   ///
-  /// 0.12 约等于「石头砸进水里」；水面微澜可降到 0.05。
-  /// 实际值还要再乘 intensity 与衰减包络。
-  static const double maxStrength = 0.12;
+  /// 首版 0.12 时折射峰值只有 4.7px，而同期本体形变让整个组件
+  /// 横向移动 9.2px——**全局运动压过局部扭曲**，
+  /// 眼睛只看得到「整体在抖」，这是用户反馈的直接原因。
+  /// 提到 0.28 后折射峰值约 10.6px，成为视觉主角。
+  static const double maxStrength = 0.28;
 
   /// 波前位置：在 [0,1] 之间折返行进。
   ///
@@ -89,7 +97,10 @@ class RippleMeshDistortion {
   }
 
   /// 衰减包络：越到后面波越平息。
-  static double damping(double t) => math.pow(1.0 - t.clamp(0.0, 1.0), 1.5).toDouble();
+  ///
+  /// 指数从 1.5 降到 1.2：1.5 衰减太快，波还没扫到边缘就没劲了。
+  static double damping(double t) =>
+      math.pow(1.0 - t.clamp(0.0, 1.0), 1.2).toDouble();
 
   /// 构建变形后的顶点。
   ///
@@ -198,8 +209,13 @@ class RippleMeshDistortion {
   /// **反相**才有被挤压又回弹的果冻感（近似体积守恒）。
   static Matrix4 bodyDistortion(double progress, double intensity) {
     final osc = math.sin(2 * math.pi * bounces * progress);
-    // 上限 9%：再大文字会明显糊。
-    final a = 0.09 * intensity.clamp(0.0, 1.0) * damping(progress);
+    // 上限从 9% 降到 3%。
+    //
+    // 形变是**全局**运动、折射是**局部**扭曲，两者量级相近时
+    // 眼睛只会注意到前者——首版 9% 让 200px 宽的组件整体横移 9.2px，
+    // 盖过了 4.7px 的折射，用户因此只看到「抖动」。
+    // 现在形变退为辅助，只提供轻微的介质回弹感。
+    final a = 0.03 * intensity.clamp(0.0, 1.0) * damping(progress);
     final sx = 1.0 + a * osc;
     final sy = 1.0 - a * osc;
     // scale(x, y, z) 已废弃，改用 scaleByDouble（需要第四个 w 分量）。

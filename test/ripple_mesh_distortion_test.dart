@@ -55,20 +55,33 @@ void main() {
       }
     });
 
-    test('相邻网格点之间的剖面变化足够平缓', () {
-      // 32 列时若剖面跳变过大，会看出多边形折线。
+    test('环带跨越足够多的顶点，不会被采样成折线', () {
+      // 衡量的是「跳变相对峰值」而非绝对跳变——
+      // 波峰本来就陡，绝对跳变大是正常的，
+      // 关键是环带要跨越足够多的列。
       const front = 0.5;
       double worst = 0;
+      double peak = 0;
       double? prev;
       for (var c = 0; c <= RippleMeshDistortion.cols; c++) {
-        // 中线上的归一化距离：从 1.0 递减到 0 再回到 1.0。
         final x = c / RippleMeshDistortion.cols;
         final d = (x - 0.5).abs() * 2;
         final v = RippleMeshDistortion.ringProfile(d, front);
+        peak = math.max(peak, v.abs());
         if (prev != null) worst = math.max(worst, (v - prev).abs());
         prev = v;
       }
-      expect(worst, lessThan(0.35));
+      expect(worst / peak, lessThan(0.4));
+    });
+
+    test('环带只覆盖组件的一段，不笼罩全局', () {
+      // 首版 ringWidth=0.6 时，波前在 0.5 的影响范围是 -0.1~1.1，
+      // 整个组件都在环带内，表现为整体起伏而非一圈环扫过——
+      // 这是「看不出水波」的另一个主因。
+      expect(RippleMeshDistortion.ringWidth, lessThan(0.5));
+      // 波前居中时，组件两端应当在环带之外。
+      expect(RippleMeshDistortion.ringProfile(0.0, 0.5), 0.0);
+      expect(RippleMeshDistortion.ringProfile(1.0, 0.5), 0.0);
     });
   });
 
@@ -148,7 +161,7 @@ void main() {
         RippleMeshDistortion.vertexCount,
         RippleMeshDistortion.cols * RippleMeshDistortion.rows * 6,
       );
-      expect(RippleMeshDistortion.vertexCount, 1152);
+      expect(RippleMeshDistortion.vertexCount, 3072);
       // 构造本身要能跑通。
       expect(
         () => RippleMeshDistortion.buildVertices(
@@ -196,12 +209,41 @@ void main() {
       expect((sx - 1.0) * (sy - 1.0), lessThan(0));
     });
 
-    test('幅度不超过 9%', () {
-      // 再大文字会明显糊。
+    test('幅度不超过 3%，让折射当主角', () {
+      // 形变是全局运动、折射是局部扭曲，量级相近时眼睛只看得到前者。
+      // 首版 9% 让 200px 组件整体横移 9.2px，盖过 4.7px 的折射，
+      // 用户反馈「就是抖动了，没看出有水波」。
       for (var i = 0; i <= 100; i++) {
         final m = RippleMeshDistortion.bodyDistortion(i / 100.0, 1.0);
-        expect((m.storage[0] - 1.0).abs(), lessThanOrEqualTo(0.09 + 1e-9));
+        expect((m.storage[0] - 1.0).abs(), lessThanOrEqualTo(0.03 + 1e-9));
       }
+    });
+
+    test('折射位移显著大于本体形变', () {
+      // 这是「能看出水波」的必要条件，锁死两者的主次关系。
+      const size = Size(200, 12);
+      var maxRefraction = 0.0;
+      var maxBodyShift = 0.0;
+      for (var i = 0; i <= 40; i++) {
+        final t = i / 40.0;
+        final front = RippleMeshDistortion.waveFront(t);
+        final amp = RippleMeshDistortion.maxStrength *
+            0.6 *
+            RippleMeshDistortion.damping(t);
+        for (var c = 0; c <= RippleMeshDistortion.cols; c++) {
+          final x = size.width * c / RippleMeshDistortion.cols;
+          final d = (x - size.width / 2).abs() / (size.width / 2);
+          if (d < 1e-6) continue;
+          final shift =
+              (RippleMeshDistortion.ringProfile(d, front) * amp * size.width / 2)
+                  .abs();
+          if (shift > maxRefraction) maxRefraction = shift;
+        }
+        final m = RippleMeshDistortion.bodyDistortion(t, 0.6);
+        final bodyShift = ((m.storage[0] - 1.0).abs() * size.width / 2);
+        if (bodyShift > maxBodyShift) maxBodyShift = bodyShift;
+      }
+      expect(maxRefraction, greaterThan(maxBodyShift * 2));
     });
 
     test('结束时回到原始比例', () {
