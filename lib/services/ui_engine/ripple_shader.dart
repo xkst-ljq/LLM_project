@@ -82,11 +82,24 @@ class RippleShaderLoader {
 
 /// 用着色器对子组件施加水波折射。
 ///
-/// 纹理**只在动画开始时抓一次**，整段动画复用。
-/// 代价是这 600ms 内组件内容冻结——对瞬时事件（点击反馈）无感知；
-/// 换来的是不必每帧离屏渲染，也彻底避开了方案 C 那种
-/// 「抓取 → 重绘 → 再抓取」的循环陷阱。
-class RippleShaderView extends StatefulWidget {
+/// ## 为什么必须自定义 RenderObject
+///
+/// 曾用 `GlobalKey` + `toImageSync` 在 `addPostFrameCallback` 里抓纹理，
+/// **只抓一次**、整段动画复用。两个后果：
+///
+/// 1. 显示的是动画开始那一刻的**冻结画面**，
+///    组件内容（比如被 slider 驱动的进度值）在动画期间不更新，
+///    结束时才跳到最新值——用户描述的「一顿一顿」正是这个；
+/// 2. 子组件自己的动画（如进度条的波浪边界）全被冻结的纹理盖住，
+///    等于没做。
+///
+/// 每帧重抓又不能走 setState：那会变成
+/// 「抓取 → setState → 重建 → 再抓取」的死循环。
+///
+/// 正解是在**绘制阶段**抓：把子树画进一个离屏 `OffsetLayer`，
+/// 同步转成图像，再用着色器画出来。全程在 `paint()` 内完成，
+/// 不触发布局与重建，内容永远是最新的。
+class RippleShaderView extends StatelessWidget {
   final Widget child;
   final double progress;
   final double intensity;
@@ -101,135 +114,150 @@ class RippleShaderView extends StatefulWidget {
   });
 
   @override
-  State<RippleShaderView> createState() => _RippleShaderViewState();
-}
-
-class _RippleShaderViewState extends State<RippleShaderView> {
-  final GlobalKey _boundaryKey = GlobalKey();
-  ui.Image? _snapshot;
-  bool _captureScheduled = false;
-
-  @override
-  void initState() {
-    super.initState();
-    RippleShaderLoader.ensureLoaded().then((_) {
-      if (mounted) setState(() {});
-    });
-    _scheduleCapture();
-  }
-
-  @override
-  void dispose() {
-    _snapshot?.dispose();
-    super.dispose();
-  }
-
-  void _scheduleCapture() {
-    if (_captureScheduled || _snapshot != null) return;
-    _captureScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final obj = _boundaryKey.currentContext?.findRenderObject();
-      if (obj is! RenderRepaintBoundary || obj.debugNeedsPaint) {
-        // 这一帧还没画完，下一帧再试。
-        _captureScheduled = false;
-        if (mounted) _scheduleCapture();
-        return;
-      }
-      try {
-        final image = obj.toImageSync(
-          pixelRatio: MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0,
-        );
-        // ⚠️ 必须 setState。方案 C 正是漏了这一步，
-        // 纹理抓到了却永远不重绘，等于整个特效没运行。
-        if (mounted) {
-          setState(() => _snapshot = image);
-        } else {
-          image.dispose();
-        }
-      } catch (_) {
-        // 抓取失败就一直显示原图，不要炸掉页面。
-      }
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final snapshot = _snapshot;
-    final useShader = snapshot != null && RippleShaderLoader.isReady;
-
-    // ⚠️ RepaintBoundary 必须**恒定存在于同一位置**。
+    // 着色器未就绪时原样显示，不崩溃也不让组件消失。
     //
-    // 曾写成「未就绪时 return RepaintBoundary，就绪后 return CustomPaint」，
-    // 两个分支在同一位置是不同的 widget 类型：一旦切换，
-    // 原来的 RepaintBoundary 被销毁、GlobalKey 脱离，
-    // 下次就再也抓不到纹理了。
-    // 这与「手势进行中改变树结构」是同一类陷阱。
-    return Stack(
-      children: [
-        // 纹理来源。
-        //
-        // ⚠️ 不能用 Offstage（跳过绘制就抓不到图），
-        // 也**不能用 Opacity(0)**——Flutter 对全透明子树有优化，
-        // 同样可能跳过绘制，导致抓到空图或过期内容，
-        // 表现为动画「一顿一顿」。
-        //
-        // 改用 ShaderMask 之类会更重，这里用最朴素的办法：
-        // 让它照常绘制，再用上层的着色器结果完全覆盖。
-        // 多画一遍的代价远小于一次离屏抓取。
-        RepaintBoundary(
-          key: _boundaryKey,
-          child: widget.child,
-        ),
-        if (useShader)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: _RippleShaderPainter(
-                  image: snapshot,
-                  progress: widget.progress,
-                  intensity: widget.intensity,
-                  tint: widget.tint,
-                  // 不透明覆盖：底层原图被完全遮住，
-                  // 因此不会出现「原图 + 折射图」重影。
-                  opaque: true,
-                ),
-              ),
-            ),
-          ),
-      ],
+    // 加载是异步的，但动画本身每帧都在重建这棵子树，
+    // 因此加载完成后的下一帧会自动切到着色器分支，
+    // 不需要额外的 setState。
+    if (!RippleShaderLoader.isReady) {
+      RippleShaderLoader.ensureLoaded();
+      return child;
+    }
+
+    return _ShaderSampler(
+      progress: progress,
+      intensity: intensity,
+      tint: tint,
+      child: child,
     );
   }
 }
 
-class _RippleShaderPainter extends CustomPainter {
-  final ui.Image image;
+/// 把子树采样成纹理并交给着色器绘制。
+class _ShaderSampler extends SingleChildRenderObjectWidget {
   final double progress;
   final double intensity;
   final Color tint;
 
-  /// 是否用不透明方式覆盖底层。
-  ///
-  /// 底层的原始 child 仍在绘制（不能隐藏，否则抓不到纹理），
-  /// 因此这一层必须完全盖住它，否则会看到原图与折射图重影。
-  final bool opaque;
-
-  const _RippleShaderPainter({
-    required this.image,
+  const _ShaderSampler({
     required this.progress,
     required this.intensity,
     required this.tint,
-    this.opaque = false,
-  });
+    required Widget child,
+  }) : super(child: child);
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderShaderSampler(
+      progress: progress,
+      intensity: intensity,
+      tint: tint,
+      devicePixelRatio: MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderShaderSampler renderObject,
+  ) {
+    renderObject
+      ..progress = progress
+      ..intensity = intensity
+      ..tint = tint
+      ..devicePixelRatio =
+          MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
+  }
+}
+
+/// 可访问受保护成员的绘制上下文。
+///
+/// `stopRecordingIfNeeded` 是 `@protected` 的，
+/// 通过子类调用才不会触发分析告警。
+class _CaptureContext extends PaintingContext {
+  _CaptureContext(super.containerLayer, super.estimatedBounds);
+
+  void finishRecording() => stopRecordingIfNeeded();
+}
+
+class _RenderShaderSampler extends RenderProxyBox {
+  _RenderShaderSampler({
+    required double progress,
+    required double intensity,
+    required Color tint,
+    required double devicePixelRatio,
+  })  : _progress = progress,
+        _intensity = intensity,
+        _tint = tint,
+        _devicePixelRatio = devicePixelRatio;
+
+  double _progress;
+  set progress(double value) {
+    if (_progress == value) return;
+    _progress = value;
+    markNeedsPaint();
+  }
+
+  double _intensity;
+  set intensity(double value) {
+    if (_intensity == value) return;
+    _intensity = value;
+    markNeedsPaint();
+  }
+
+  Color _tint;
+  set tint(Color value) {
+    if (_tint == value) return;
+    _tint = value;
+    markNeedsPaint();
+  }
+
+  double _devicePixelRatio;
+  set devicePixelRatio(double value) {
+    if (_devicePixelRatio == value) return;
+    _devicePixelRatio = value;
+    markNeedsPaint();
+  }
+
+  final LayerHandle<OffsetLayer> _layerHandle = LayerHandle<OffsetLayer>();
+
+  @override
+  bool get alwaysNeedsCompositing => child != null;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final target = child;
+    if (target == null || size.isEmpty) return;
+
     final shader = RippleShaderLoader.createShader();
-    if (shader == null) return;
+    if (shader == null) {
+      // 着色器不可用就原样画出子树，绝不让组件消失。
+      super.paint(context, offset);
+      return;
+    }
+
+    // 把子树画进离屏图层。每帧都做，因此内容始终是最新的。
+    final layer = _layerHandle.layer ??= OffsetLayer();
+    layer.removeAllChildren();
+    final childContext = _CaptureContext(layer, Offset.zero & size);
+    super.paint(childContext, Offset.zero);
+    childContext.finishRecording();
+
+    ui.Image? image;
+    try {
+      image = layer.toImageSync(
+        Offset.zero & size,
+        pixelRatio: _devicePixelRatio,
+      );
+    } catch (_) {
+      super.paint(context, offset);
+      shader.dispose();
+      return;
+    }
 
     // 纵向压缩：仅在极扁组件上轻微收一点，下限 0.55。
-    // 完全跟随长宽比会让波纹退化成扁线（第三版的错误）。
+    // 完全跟随长宽比会让波纹退化成扁线。
     final aspect = size.height / size.width;
     final squash =
         aspect >= 1.0 ? 1.0 : (0.55 + 0.45 * aspect).clamp(0.55, 1.0);
@@ -239,34 +267,29 @@ class _RippleShaderPainter extends CustomPainter {
     shader
       ..setFloat(0, size.width)
       ..setFloat(1, size.height)
-      ..setFloat(2, progress.clamp(0.0, 1.0))
-      ..setFloat(3, intensity.clamp(0.0, 1.0))
+      ..setFloat(2, _progress.clamp(0.0, 1.0))
+      ..setFloat(3, _intensity.clamp(0.0, 1.0))
       ..setFloat(4, squash)
-      ..setFloat(5, tint.r)
-      ..setFloat(6, tint.g)
-      ..setFloat(7, tint.b)
-      ..setFloat(8, tint.a)
+      ..setFloat(5, _tint.r)
+      ..setFloat(6, _tint.g)
+      ..setFloat(7, _tint.b)
+      ..setFloat(8, _tint.a)
       ..setImageSampler(0, image);
 
-    final paint = Paint()..shader = shader;
-    if (opaque) {
-      // src 模式直接替换目标像素，把下面的原图整块盖掉。
-      // 需要先开一个图层，否则会连同背景一起清掉。
-      canvas.saveLayer(Offset.zero & size, Paint());
-      canvas.drawRect(Offset.zero & size, paint);
-      canvas.restore();
-    } else {
-      canvas.drawRect(Offset.zero & size, paint);
-    }
+    final canvas = context.canvas;
+    canvas.save();
+    canvas.translate(offset.dx, offset.dy);
+    canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
+    canvas.restore();
+
+    image.dispose();
     shader.dispose();
   }
 
   @override
-  bool shouldRepaint(covariant _RippleShaderPainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.intensity != intensity ||
-        oldDelegate.tint != tint ||
-        !identical(oldDelegate.image, image);
+  void dispose() {
+    _layerHandle.layer = null;
+    super.dispose();
   }
 }
 

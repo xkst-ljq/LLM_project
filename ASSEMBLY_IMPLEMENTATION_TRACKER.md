@@ -4165,6 +4165,35 @@ rippleAnim.isActiveAt(DateTime.now().millisecondsSinceEpoch)
 ——`_renderModule` 早于所有动画包裹层，
 任何「从外层传状态进去」的方案都不成立。
 
+**第四轮：仍然一顿一顿，边界动画也没有——纹理被冻结了**
+
+两个症状**同一个根因**。
+
+`RippleShaderView` 用 `GlobalKey` + `addPostFrameCallback` 抓纹理，
+且**只抓一次**、整段动画复用。后果：
+
+1. 显示的是动画开始那一刻的**冻结画面**。组件内容
+   （被 slider 驱动的进度值）在动画期间不更新，
+   结束才跳到最新值——这就是「一顿一顿」；
+2. 进度条自己的波浪边界确实在动，但**被上层不透明的旧纹理整块盖住**，
+   等于白做。
+
+每帧重抓又不能走 setState，那会变成
+「抓取 → setState → 重建 → 再抓取」的死循环
+（方案 C 就是卡在这个两难上）。
+
+**正解：在绘制阶段抓。**
+改为自定义 `RenderProxyBox`：`paint()` 里把子树画进离屏
+`OffsetLayer`，同步 `toImageSync` 转图，再用着色器画出来。
+全程在绘制阶段完成，不触发布局与重建，内容永远是最新的。
+
+`stopRecordingIfNeeded` 是 `@protected`，通过 `_CaptureContext`
+子类调用，避免分析告警。
+
+`RippleShaderView` 随之从 StatefulWidget 简化为 StatelessWidget——
+不再需要维护快照状态。着色器异步加载完成后，
+动画本身每帧都在重建这棵子树，下一帧自动切过去。
+
 ### A12-4：剩余打磨（未开始）
 
 * 粒子在小 PCB 上的实际观感（可能要调参）
