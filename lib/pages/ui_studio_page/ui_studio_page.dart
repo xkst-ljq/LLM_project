@@ -1034,11 +1034,23 @@ class _UIStudioPageState extends State<UIStudioPage>
 
     final shouldPassThrough = el.sealed ||
         (el.layoutLocked && !isLinker && !_isMultiDeleteMode);
-    final transformedNode = IgnorePointer(
-      ignoring: shouldPassThrough,
-      child: Transform.rotate(
-        angle: el.rotation * math.pi / 180.0,
-        alignment: Alignment.center,
+    // ⚠️ IgnorePointer 必须在 Transform.rotate **内层**，顺序不能反。
+    //
+    // `RenderTransform.hitTest` 特意**不检查自身尺寸**，而是直接把落点
+    // 逆变换后交给子树——这正是旋转后仍能命中的原因。
+    // 但 IgnorePointer 是普通 RenderProxyBox，会按 `_size.contains(position)`
+    // 做轴对齐边界检查。它一旦包在外层，检查就发生在**旋转后**的坐标系里：
+    // 右下角的形变/旋转把手转出了那个未旋转的 W×H 盒子，
+    // 点击落在盒外直接被判定为未命中，把手看起来就「失效」了。
+    // 角度越大、元件长宽比越悬殊，失效越明显（首轮测试反馈）。
+    //
+    // 放到内层后，边界检查发生在旋转**前**的局部坐标系，
+    // 把手始终在盒内，命中恢复正常；ignoring 的语义完全不变。
+    final transformedNode = Transform.rotate(
+      angle: el.rotation * math.pi / 180.0,
+      alignment: Alignment.center,
+      child: IgnorePointer(
+        ignoring: shouldPassThrough,
         child: rootTree,
       ),
     );

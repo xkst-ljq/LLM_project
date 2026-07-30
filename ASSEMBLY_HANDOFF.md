@@ -721,6 +721,52 @@ Assembly 的元素坐标是**相对 PCB** 的，屏幕位置 =
 连线层要插在**元素之下、PCB 之上**：
 压在元件上会挡住文本与消息流内容，放到 PCB 之下会被底色整块盖掉。
 
+### IgnorePointer / Opacity 之类的代理盒不能包在 Transform.rotate 外层
+
+**这是 Studio 旋转把手「失效」的真凶，会反复回归，务必记住。**
+
+`RenderTransform.hitTest` 特意**不检查自身尺寸**，而是把落点做逆变换后
+直接交给子树——这正是元件旋转后仍能被点中的原因。
+
+但 `IgnorePointer`（以及 `Opacity`、`ColoredBox` 等普通
+`RenderProxyBox`）会执行 `_size.contains(position)` 这一步
+**轴对齐**边界检查。一旦它包在 `Transform.rotate` 外层，
+这个检查就发生在**旋转后**的坐标系里，而它的 size 仍是未旋转的 W×H。
+
+后果：右下角的形变/旋转把手一旦转出那个未旋转的盒子，
+点击就在最外层被判未命中，把手看起来像「失效」了。
+
+实测（240×100 的节点，把手在右下角）：
+
+| 角度 | 把手是否仍在未旋转盒内 |
+|---|---|
+| 0° | ✅ |
+| **15°** | ❌ 已经出界 |
+| 30° / 45° / 90° | ❌ |
+
+**15° 就失效**，与用户「旋转一定角度后把手就失效」的描述完全吻合。
+
+正确写法是把代理盒放到 `Transform.rotate` **内层**：
+
+```dart
+Transform.rotate(
+  angle: ...,
+  child: IgnorePointer(ignoring: ..., child: rootTree),
+)
+```
+
+这样边界检查发生在旋转**前**的局部坐标系，把手永远在盒内，
+而 `ignoring` 的语义完全不变。
+
+同理，画布里那个 `Positioned(width: el.size.width, ...)`
+也是未旋转尺寸，但 `Positioned` 不做命中裁剪，
+`Stack` 用的是 `clipBehavior: Clip.none`，所以它不是问题；
+**问题只出在带边界检查的代理盒上**。
+
+排查提示：症状是「旋转后能看见但点不到」时，
+先从最外层往里数一遍有没有 proxy box 抢在 Transform 前面，
+不要先怀疑坐标计算——坐标往往是对的。
+
 ### A14-1 / A14-2 / A14-3 已完成（均测试通过）
 
 A14-3 的结论值得记一笔：**「实例编辑器分文件」最终判定为不做**。
