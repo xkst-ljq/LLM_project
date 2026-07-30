@@ -749,6 +749,36 @@ class UIRenderer {
       );
     }
 
+    // 粒子迸发：从**填充边缘**朝数值变化的方向喷射（用户提议）。
+    //
+    // 通用的中心爆发只表达「这个组件有事发生」，
+    // 而进度条有明确的「数值位置」——从那里喷粒子，
+    // 语义直接变成「数值在这里推进了」，与组件本身的含义吻合。
+    //
+    // 必须做成进度条**自己的一部分**而不是外层叠加：
+    // `_paintAnimationFrame` 只拿得到动画进度（时间轴 0→1），
+    // 拿不到数值进度；而 `_buildProgressBar` 在 `_renderModule` 阶段
+    // 执行、早于所有动画包裹层，反向传值行不通
+    // （波浪边界已经踩过这个坑）。
+    if (rippleAnim == null) {
+      final burstAnim = ElementAnimation.readFrom(module.properties);
+      if (burstAnim != null &&
+          burstAnim.type == ElementAnimationType.particleBurst) {
+        return _EdgeBurstProgressBar(
+          progress: progress.clamp(0.0, 1.0),
+          fillColor: fillColor,
+          trackColor: trackColor,
+          radius: radius,
+          intensity: burstAnim.intensity,
+          durationMs: burstAnim.durationMs,
+          particleColor: burstAnim.colorValue != null
+              ? Color(burstAnim.colorValue!)
+              : fillColor,
+          size: size,
+        );
+      }
+    }
+
     return Container(
       decoration: BoxDecoration(color: trackColor, borderRadius: radius),
       child: ClipRRect(
@@ -3653,5 +3683,216 @@ class _WavyProgressPainter extends CustomPainter {
         oldDelegate.intensity != intensity ||
         oldDelegate.fillColor != fillColor ||
         oldDelegate.trackColor != trackColor;
+  }
+}
+
+/// 进度条的边缘喷射粒子。
+///
+/// ## 为什么不用通用的中心爆发
+///
+/// 通用粒子从组件正中心向四周炸开，表达的是
+/// 「这个组件有事发生」。而进度条有明确的**数值位置**——
+/// 从填充边缘喷射，语义直接变成「数值在这里推进了」，
+/// 与组件本身的含义吻合（用户提议）。
+///
+/// ## 为什么是自驱动
+///
+/// 和 `_WavyProgressBar` 同样的理由：
+/// `_buildProgressBar` 在 `_renderModule` 阶段执行，
+/// 早于所有动画包裹层，拿不到外层的动画时序，
+/// 也无法把数值进度反向传给外层。
+/// 所以让它自己持有 `AnimationController`，
+/// 检测到数值变化就起一轮喷射。
+class _EdgeBurstProgressBar extends StatefulWidget {
+  final double progress;
+  final Color fillColor;
+  final Color trackColor;
+  final BorderRadius radius;
+  final double intensity;
+  final int durationMs;
+  final Color particleColor;
+  final Size size;
+
+  const _EdgeBurstProgressBar({
+    required this.progress,
+    required this.fillColor,
+    required this.trackColor,
+    required this.radius,
+    required this.intensity,
+    required this.durationMs,
+    required this.particleColor,
+    required this.size,
+  });
+
+  @override
+  State<_EdgeBurstProgressBar> createState() => _EdgeBurstProgressBarState();
+}
+
+class _EdgeBurstProgressBarState extends State<_EdgeBurstProgressBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  /// 粒子飞出的方向：+1 数值增长（向前），-1 数值减少（向后）。
+  ///
+  /// 用户选定「跟随数值变化方向」：扣血时粒子应该往回飞，
+  /// 一律向前会让减少也看起来像增长。
+  double _direction = 1.0;
+
+  /// 起喷位置（归一化 0..1）。
+  ///
+  /// 记录**变化发生那一刻**的边缘，而不是实时进度——
+  /// 否则连续拖动时喷射点会跟着手指跑，看不出是从哪儿溅出来的。
+  double _originProgress = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: widget.durationMs),
+    );
+    _originProgress = widget.progress;
+  }
+
+  @override
+  void didUpdateWidget(covariant _EdgeBurstProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.durationMs != oldWidget.durationMs) {
+      _controller.duration = Duration(milliseconds: widget.durationMs);
+    }
+    final delta = widget.progress - oldWidget.progress;
+    if (delta == 0.0) return;
+
+    // 连续拖动时不打断当前这一轮——`forward(from: 0)` 会重置，
+    // 粒子永远停在刚喷出的状态（值变化动画那边踩过同样的坑）。
+    if (_controller.isAnimating) return;
+
+    _direction = delta > 0 ? 1.0 : -1.0;
+    // 从变化前的边缘起喷：那才是「推进的起点」。
+    _originProgress = oldWidget.progress;
+    _controller.forward(from: 0.0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (ctx, _) {
+        return Stack(
+          // 粒子允许飞出组件边界，否则在细长的进度条上施展不开。
+          clipBehavior: Clip.none,
+          children: [
+            // 进度条本体照常裁切圆角。
+            ClipRRect(
+              borderRadius: widget.radius,
+              child: Container(
+                decoration: BoxDecoration(color: widget.trackColor),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: widget.progress,
+                    heightFactor: 1.0,
+                    child: Container(color: widget.fillColor),
+                  ),
+                ),
+              ),
+            ),
+            // 粒子层不裁切。
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _EdgeBurstPainter(
+                    animProgress: _controller.value,
+                    originProgress: _originProgress,
+                    direction: _direction,
+                    intensity: widget.intensity,
+                    color: widget.particleColor,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EdgeBurstPainter extends CustomPainter {
+  final double animProgress;
+  final double originProgress;
+  final double direction;
+  final double intensity;
+  final Color color;
+
+  const _EdgeBurstPainter({
+    required this.animProgress,
+    required this.originProgress,
+    required this.direction,
+    required this.intensity,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = animProgress;
+    if (t <= 0.0 || t >= 1.0 || size.isEmpty) return;
+
+    final originX = size.width * originProgress;
+    final cy = size.height / 2;
+
+    final fade = (1.0 - t).clamp(0.0, 1.0);
+    // 初速度衰减：先快后慢，比匀速外飞自然。
+    final travel = 1.0 - math.pow(1.0 - t, 2.2).toDouble();
+    // 重力下坠，随时间平方累积。
+    final gravity = size.height * 1.2 * intensity * t * t;
+
+    // 喷射距离以组件高度为基准而非宽度——
+    // 进度条很扁，用宽度会让粒子飞得离谱地远。
+    final reachBase = size.height * (2.2 + 2.6 * intensity);
+
+    const count = 16;
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (var i = 0; i < count; i++) {
+      // 由 index 派生的伪随机：CustomPainter 每帧重建，
+      // 用 Random() 会让粒子逐帧乱跳。
+      final h1 = ((i * 73) % 101) / 101.0;
+      final h2 = ((i * 149) % 97) / 97.0;
+      final h3 = ((i * 37) % 89) / 89.0;
+
+      // 扇形张角：以水平方向为主轴，上下各散开约 55°。
+      // 纯直线喷射太机械，全向又失去方向感。
+      final spreadAngle = (h1 - 0.5) * (math.pi * 0.62);
+      final speed = 0.55 + h2 * 0.65;
+
+      final dx = math.cos(spreadAngle) * reachBase * speed * travel * direction;
+      final dy = math.sin(spreadAngle) * reachBase * speed * travel * 0.55 +
+          gravity;
+
+      final sizeJitter = 0.55 + h3 * 0.9;
+      final r = (1.9 * intensity * sizeJitter + 0.6) * fade;
+      if (r <= 0.12) continue;
+
+      paint.color = color.withValues(
+        alpha: (fade * (0.5 + 0.5 * sizeJitter)).clamp(0.0, 1.0),
+      );
+      canvas.drawCircle(Offset(originX + dx, cy + dy), r, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _EdgeBurstPainter oldDelegate) {
+    return oldDelegate.animProgress != animProgress ||
+        oldDelegate.originProgress != originProgress ||
+        oldDelegate.direction != direction ||
+        oldDelegate.intensity != intensity ||
+        oldDelegate.color != color;
   }
 }
