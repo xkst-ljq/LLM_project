@@ -3604,8 +3604,16 @@ class _WavyProgressPainter extends CustomPainter {
     final envelope = (t <= 0.0 || t >= 1.0)
         ? 0.0
         : math.pow(1.0 - t, 1.2).toDouble();
-    // 波幅上限取组件高度的一半：再大边界会甩出组件、看着像断裂。
-    final amp = size.height * 0.5 * intensity * envelope;
+    // 波幅。
+    //
+    // 曾取组件高度的一半，但进度条通常只有 12px 高，
+    // 折算下来波幅仅 3.6px——叠加在折射之上根本分辨不出来
+    // （用户反馈「进度条的边界没有那种效果」）。
+    //
+    // 改为以高度为基准但允许超出：边界左右摆动本就不受高度约束，
+    // 真正的限制是「不能甩出组件宽度」。
+    // 1.6 倍高度对 12px 的条约等于 ±11px，明显可见又不至于失真。
+    final amp = size.height * 1.6 * intensity * envelope;
 
     if (amp <= 0.3 || progress >= 1.0) {
       canvas.drawRect(
@@ -3618,6 +3626,9 @@ class _WavyProgressPainter extends CustomPainter {
     final path = Path()
       ..moveTo(0, 0)
       ..lineTo(0, size.height);
+    // 边界摆动不能越过组件左右边缘，否则填充会凭空断开。
+    final minX = 0.0;
+    final maxX = size.width;
 
     // 沿纵向起伏，相位随时间推进，让边界在「荡」而不是整体平移。
     const steps = 24;
@@ -3628,7 +3639,7 @@ class _WavyProgressPainter extends CustomPainter {
       // 两个不同频率叠加，避免规整正弦显得机械。
       final wave = math.sin(n * math.pi * 2.2 - phase) * 0.7 +
           math.sin(n * math.pi * 3.7 - phase * 1.3) * 0.3;
-      path.lineTo(edgeX + wave * amp, y);
+      path.lineTo((edgeX + wave * amp).clamp(minX, maxX), y);
     }
 
     path.close();

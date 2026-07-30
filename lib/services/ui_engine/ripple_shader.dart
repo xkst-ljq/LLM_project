@@ -244,11 +244,22 @@ class _RenderShaderSampler extends RenderProxyBox {
     super.paint(childContext, Offset.zero);
     childContext.finishRecording();
 
+    // ⚠️ 采样分辨率必须降下来。
+    //
+    // `toImageSync` 会**同步阻塞等待 GPU 光栅化**，
+    // 按设备像素比（常见 2.5~3.0）每帧抓一张全分辨率图，
+    // 开销足以让动画掉到几帧一跳——用户反馈的「一顿一顿」。
+    //
+    // 折射只是把像素搬来搬去、不产生新细节，
+    // 半分辨率纹理放大后的模糊完全被波纹的扭曲掩盖。
+    // 上限 1.5 兼顾清晰度与开销；下限 1.0 保证小组件不糊成一团。
+    final samplePixelRatio = _devicePixelRatio.clamp(1.0, 1.5);
+
     ui.Image? image;
     try {
       image = layer.toImageSync(
         Offset.zero & size,
-        pixelRatio: _devicePixelRatio,
+        pixelRatio: samplePixelRatio,
       );
     } catch (_) {
       super.paint(context, offset);
