@@ -374,14 +374,191 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         .toList();
   }
 
-  void _selectComposite(String id) {
+  /// A14-1a：当前选中的元素（原子与复合共用）。
+  ///
+  /// 此前只有 `_selectedCompositeId`，且仅用于展开复合组件的覆写槽位——
+  /// 原子组件根本没有选中态，导致「选中后弹出针对性工具」无从谈起。
+  /// 这是补齐画布操作（删除 / 复制 / 层级…）的前提。
+  String? get _selectedElementId => _selectedCompositeId;
+
+  /// 选中的元素本体；未选中或已被删除时为 null。
+  UIElement? get _selectedElement {
+    final id = _selectedCompositeId;
+    if (id == null) return null;
+    for (final element in _elements) {
+      if (element.id == id) return element;
+    }
+    return null;
+  }
+
+  void _selectElement(String id) {
     if (_selectedCompositeId == id) return;
     setState(() => _selectedCompositeId = id);
   }
 
-  void _clearCompositeSelection() {
+  /// 兼容旧调用点：复合组件的选中语义与通用选中已合并。
+  void _selectComposite(String id) => _selectElement(id);
+
+  void _clearElementSelection() {
     if (_selectedCompositeId == null) return;
     setState(() => _selectedCompositeId = null);
+  }
+
+  void _clearCompositeSelection() => _clearElementSelection();
+
+  // ========== A14-1b：画布元素操作 ==========
+
+  /// 找出指向某元素的所有 linker（作为源或目标都算）。
+  List<UIElement> _linkersReferencing(String elementId) {
+    return _elements.where((element) {
+      final module = element.module;
+      if (module == null || module.type != 'linker') return false;
+      final data =
+          (module.properties['linker'] as Map?)?.cast<String, dynamic>();
+      if (data == null) return false;
+      return data['sourceModuleId']?.toString() == elementId ||
+          data['targetModuleId']?.toString() == elementId;
+    }).toList();
+  }
+
+  /// 删除元素，并连带清理指向它的联动器。
+  ///
+  /// 留着悬空连线比删掉更糟：`isSchemeSelectable` 仍判为合法，
+  /// 运行端却找不到源/目标，表现为「配了但没反应」，极难排查。
+  Future<void> _confirmDeleteElement(UIElement element) async {
+    final orphans = _linkersReferencing(element.id);
+    final name = element.module?.name ?? element.composite?.name ?? '该组件';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('删除「$name」？'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('删除后无法撤销。'),
+            if (orphans.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '还有 ${orphans.length} 个联动器连着它，会一并删除。\n'
+                  '（保留悬空连线会导致运行时静默失效，比删掉更难排查）',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFE65100),
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC62828),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final removeIds = {element.id, ...orphans.map((e) => e.id)};
+    setState(() {
+      _elements.removeWhere((e) => removeIds.contains(e.id));
+      // 覆写槽位随复合组件一起消失，否则会留下指向不存在组件的孤儿配置。
+      _activePropertyOverrides
+          .removeWhere((o) => removeIds.contains(o.componentId));
+      _selectedCompositeId = null;
+    });
+    _setupEventBusListener();
+    _persistAssemblyElements();
+  }
+
+  /// 复制元素。新元素稍作偏移，避免与原件完全重叠而看不出来。
+  void _duplicateElement(UIElement element) {
+    // 联动器不复制：它的源/目标指向具体元素，复制出来必然是重复连线，
+    // 作者要的几乎总是「再连一条新的」而不是「同一条来两遍」。
+    if (element.module?.type == 'linker') {
+      _showSnack('联动器请重新拖入并配置，复制会产生重复连线');
+      return;
+    }
+
+    final copy = _cloneElementWithNewIds(element);
+    setState(() {
+      _elements.add(copy.copyWith(
+        offset: element.offset + const Offset(12, 12),
+      ));
+      _selectedCompositeId = copy.id;
+    });
+    _persistAssemblyElements();
+  }
+
+  /// 深拷贝元素并重新分配 id（含复合组件内部子元素）。
+  UIElement _cloneElementWithNewIds(UIElement source) {
+    final json = _deepCloneValue(source.toJson()) as Map;
+    final clone = UIElement.fromJson(Map<String, dynamic>.from(json));
+    return clone.copyWith(id: _generateElementId());
+  }
+
+  /// 调整元素在绘制顺序中的位置。
+  ///
+  /// `_elements` 的顺序即 Stack 的绘制顺序：**越靠后越上层**。
+  /// 因此界面上的「上移一层」= 在列表里往后挪一位（delta = +1）。
+  void _moveElementLayer(UIElement element, int delta) {
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return;
+    final target = index + delta;
+    if (target < 0 || target >= _elements.length) return;
+    setState(() {
+      final moved = _elements.removeAt(index);
+      _elements.insert(target, moved);
+    });
+    _persistAssemblyElements();
+  }
+
+  /// 切换锁定。锁定后禁止删除 / 复制 / 层级调整。
+  ///
+  /// 位置锁定（禁拖动）在 `_buildElementWidget` 的手势里判断。
+  void _toggleElementLocked(UIElement element) {
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return;
+    final module = element.module;
+    if (module == null) return;
+
+    final props = Map<String, dynamic>.from(
+      _deepCloneValue(module.properties) as Map,
+    );
+    final next = props['locked'] != true;
+    if (next) {
+      props['locked'] = true;
+    } else {
+      props.remove('locked');
+    }
+    setState(() {
+      _elements[index] =
+          element.copyWith(module: module.copyWith(properties: props));
+    });
+    _persistAssemblyElements();
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _propertyOverrideStatusText(PropertyOverride override) {

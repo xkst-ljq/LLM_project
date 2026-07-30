@@ -531,6 +531,20 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   ),
                 ),
 
+                // ===== 2.5 选中元素的左侧操作栏（A14-1b）=====
+                //
+                // 放左侧而不是像 Studio 那样分列两侧：
+                // PCB 的形变把手在右侧与下侧，左边是唯一没被占用的边。
+                // 且 Assembly 的 PCB 有固定边界、作者要频繁贴边摆元件，
+                // 两侧都放会直接压住最需要精确操作的区域。
+                if (_selectedElement != null)
+                  Positioned(
+                    left: 8,
+                    top: 104,
+                    bottom: 160,
+                    child: _buildElementActionRail(_selectedElement!),
+                  ),
+
                 // ===== 3. 图层弹出窗 =====
                 if (_showLayerPanel)
                   Positioned(top: 48, right: 8, child: _buildLayerPanel()),
@@ -701,6 +715,105 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         color: color,
         fontSize: 8,
         fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  /// A14-1b：选中元素的左侧操作栏。
+  ///
+  /// 竖列可滚动——左侧整条边都可用，但小屏 + 未来继续加按钮时
+  /// 仍可能溢出，滚动比裁切安全。
+  Widget _buildElementActionRail(UIElement element) {
+    final locked = element.module?.properties['locked'] == true;
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    // 列表越靠后越上层：能上移 = 后面还有位置。
+    final canMoveUp = index != -1 && index < _elements.length - 1;
+    final canMoveDown = index > 0;
+
+    return Material(
+      color: Colors.transparent,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildRailButton(
+              icon: locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+              label: locked ? '已锁定' : '锁定',
+              color: locked ? const Color(0xFFE65100) : const Color(0xFF546E7A),
+              onTap: () => _toggleElementLocked(element),
+            ),
+            // 锁定后禁止改动结构：这正是锁定的目的。
+            _buildRailButton(
+              icon: Icons.copy_rounded,
+              label: '复制',
+              color: const Color(0xFF00897B),
+              onTap: locked ? null : () => _duplicateElement(element),
+            ),
+            _buildRailButton(
+              icon: Icons.arrow_upward_rounded,
+              label: '上移',
+              color: const Color(0xFF3949AB),
+              onTap: locked || !canMoveUp
+                  ? null
+                  : () => _moveElementLayer(element, 1),
+            ),
+            _buildRailButton(
+              icon: Icons.arrow_downward_rounded,
+              label: '下移',
+              color: const Color(0xFF3949AB),
+              onTap: locked || !canMoveDown
+                  ? null
+                  : () => _moveElementLayer(element, -1),
+            ),
+            _buildRailButton(
+              icon: Icons.delete_outline_rounded,
+              label: '删除',
+              color: const Color(0xFFC62828),
+              onTap: locked ? null : () => _confirmDeleteElement(element),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRailButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback? onTap,
+  }) {
+    final disabled = onTap == null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: disabled
+            ? const Color(0xFFBDBDBD).withValues(alpha: 0.55)
+            : color.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: SizedBox(
+            width: 46,
+            height: 46,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 18, color: Colors.white),
+                const SizedBox(height: 1),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -902,25 +1015,40 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         // 制作与预览分离：编辑时的点击 / 拖动很容易误触发，
         // 且组件状态会被 _persistAssemblyElements 一并存下，污染保存结果。
         // 切页请用图层面板，联动效果请进运行时预览。
-        onTap: el.module!.type == 'button'
-            ? () => _showEditModeHint()
-            : null,
+        // A14-1a：点击即选中，左侧操作栏据此显示。
+        // button 仍要给出编辑态提示，避免作者以为点击没反应。
+        onTap: () {
+          _selectElement(el.id);
+          if (el.module!.type == 'button') _showEditModeHint();
+        },
         onDoubleTap: el.module!.type == 'linker'
-            ? () => _showAssemblyLinkerConfigDialog(el)
-            : () => _showAtomInstanceEditorDialog(el),
+            ? () {
+                _selectElement(el.id);
+                _showAssemblyLinkerConfigDialog(el);
+              }
+            : () {
+                _selectElement(el.id);
+                _showAtomInstanceEditorDialog(el);
+              },
         onPanStart: (d) {
+          _selectElement(el.id);
           _startTouchScreenPos = d.globalPosition;
           _startTouchElemOffset = el.offset;
         },
-        onPanUpdate: (d) {
-          final delta = d.globalPosition - _startTouchScreenPos;
-          setState(() {
-            final i = _elements.indexWhere((e) => e.id == el.id);
-            if (i != -1) {
-              _elements[i] = el.copyWith(offset: _startTouchElemOffset + delta);
-            }
-          });
-        },
+        // A14-1b：锁定后禁止拖动。仍允许选中与双击编辑——
+        // 锁定针对的是「误拖走位」，不是「不让改配置」。
+        onPanUpdate: el.module!.properties['locked'] == true
+            ? null
+            : (d) {
+                final delta = d.globalPosition - _startTouchScreenPos;
+                setState(() {
+                  final i = _elements.indexWhere((e) => e.id == el.id);
+                  if (i != -1) {
+                    _elements[i] =
+                        el.copyWith(offset: _startTouchElemOffset + delta);
+                  }
+                });
+              },
         onPanEnd: (_) => _persistAssemblyElements(),
         child: SizedBox(
           width: el.size.width,
@@ -938,6 +1066,39 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   ),
                 ),
               ),
+              // A14-1a：选中外框。用 Positioned.fill 叠一层描边而不是给
+              // 容器加 border——后者会改变布局尺寸，让组件在选中/取消时跳动。
+              if (_selectedElementId == el.id)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: const Color(0xFF651FFF),
+                          width: 1.6,
+                        ),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                ),
+              // 锁定标记：让作者知道这个组件为什么拖不动。
+              if (el.module!.properties['locked'] == true)
+                Positioned(
+                  left: 2,
+                  top: -13,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE65100),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Icon(Icons.lock_rounded,
+                          size: 9, color: Colors.white),
+                    ),
+                  ),
+                ),
               if (_dataChannelOf(el.module) != null)
                 Positioned(
                   right: 2,
