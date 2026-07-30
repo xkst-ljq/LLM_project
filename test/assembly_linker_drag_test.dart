@@ -369,6 +369,70 @@ void main() {
     });
   });
 
+  group('复合组件的连线支持', () {
+    // 首轮测试反馈：linker 连不上复合件。
+    //
+    // 复合是黑盒，作者无法选中它内部的组件；制作时勾选的「暴露端口」
+    // 就是它与外界的唯一接口。连线连的是**被暴露的子元素**，
+    // 而不是复合件外壳——外壳没有 module，方案矩阵拿它算不出东西。
+
+    /// 复刻 `_canBeConnectionEndpoint` 中复合件的分支。
+    bool compositeCanConnect({
+      required List<String> exposedChildTypes,
+      bool sealed = false,
+    }) {
+      if (sealed) return false;
+      return exposedChildTypes.isNotEmpty;
+    }
+
+    test('有暴露端口的复合件可作为连线目标', () {
+      expect(
+        compositeCanConnect(exposedChildTypes: ['progress']),
+        isTrue,
+      );
+    });
+
+    test('没有暴露端口的复合件连不了', () {
+      // 没开放接口就是不想被外部连，这是复合件作者的设计意图。
+      expect(compositeCanConnect(exposedChildTypes: []), isFalse);
+    });
+
+    test('全锁的复合件连不了', () {
+      expect(
+        compositeCanConnect(exposedChildTypes: ['progress'], sealed: true),
+        isFalse,
+      );
+    });
+
+    test('连线存的是子元素 id，不是复合外壳 id', () {
+      // 存外壳 id 的话，运行端 LinkerService 找不到对应 module，
+      // 这条连线会静默失效。
+      const shellId = 'composite_1';
+      const childId = 'child_progress';
+      final stored = applyWiring(
+        before: {},
+        port: 'output',
+        targetId: childId,
+      );
+      expect(stored['targetModuleId'], childId);
+      expect(stored['targetModuleId'], isNot(shellId));
+    });
+
+    test('画线锚点回落到复合外壳', () {
+      // 子元素的 offset 相对复合件，直接当画布坐标会错位一整个复合件。
+      String anchorFor(String id, Map<String, String> childToShell) {
+        return childToShell[id] ?? id;
+      }
+
+      expect(
+        anchorFor('child_progress', {'child_progress': 'composite_1'}),
+        'composite_1',
+      );
+      // 顶层元素不受影响。
+      expect(anchorFor('text_1', {'child_progress': 'composite_1'}), 'text_1');
+    });
+  });
+
   group('断开单侧端口', () {
     final connected = <String, dynamic>{
       'sourceModuleId': 'a',

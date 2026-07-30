@@ -834,6 +834,59 @@ newOffset = offset - (dW, dH) + rot(dW, dH)
 A14-1g 第一轮我验了「四周等量扩张所以旋转中心不变」，
 那句话本身没错，但完全没覆盖形变锚点，于是漏掉了这个 bug。
 
+### 手势进行中不能改变自身所在的树结构（已踩两次）
+
+**症状各异，根因相同**，第三次再遇到请直接查这里。
+
+| 次数 | 症状 | 触发链 |
+|---|---|---|
+| 1 | 双击断开连线崩溃 | `onPointerDown` 起拖 → setState → linker 子树重建 → 双击识别器 dispose |
+| 2 | 未选中的元件拖不动 | `onPanStart` 里选中 → setState → pad 由 0 变 12 → **返回的 widget 结构变了** → GestureDetector 重建 → pan 被取消 |
+
+第 2 次的具体错误：`_buildElementWidget` 曾按「是否选中」返回两种结构
+（直接 body / SizedBox+Stack）。结构一变，Flutter 认定不是同一个
+widget，就会销毁重建，正在进行的手势随之取消。
+
+**规则：凡是在手势回调里 setState 的路径，必须保证 build 出来的
+树结构不变**，只允许改数值或增减「不影响手势节点」的子节点。
+
+具体做法：
+* padding 恒定撑开（`_handlePaddingOf` 恒返回 12），
+  不按选中状态在 0/12 之间跳
+* 把手作为 Stack 的可选子节点追加，body 恒为 `children[0]`
+* 渲染器里 `Transform.rotate` / `Transform.scale` 即使参数为
+  恒等值也保留包裹（`ui_renderer` 里早有同样的注释）
+
+### 复合件的连线连的是「暴露子元素」，不是外壳
+
+复合是黑盒，外壳没有 `module`，方案矩阵拿它算不出任何东西。
+制作复合件时勾选的 `exposedPorts` 就是它与外界的唯一接口。
+
+因此：
+* `_linkerCandidates` 把复合件**展开为它暴露的子元素**加入候选
+* 连线里存的是**子元素 id**（存外壳 id 会让运行端找不到 module、静默失效）
+* 但**画线锚点要回落到外壳**（`_wireAnchorElementById`）——
+  子元素的 offset 相对复合件，直接当画布坐标会错位一整个复合件
+* 命中复合件时若有多个暴露端口，**必须让作者选**，
+  静默取第一个会让「连错端口」变成查不出来的问题
+
+### 复合件缩放要缩内容，不只是外框
+
+`_renderComposite` 用**绝对坐标**摆子元素，改外框 `size` 内部纹丝不动。
+必须按内容包围盒（`UIRenderer.compositeNaturalSize`）算比例，
+再用 `Transform.scale(alignment: topLeft)` 整体缩放。
+
+用 `Transform.scale` 而非 `FittedBox`：后者的 contain 会自动居中，
+把作者摆好的左上留白吃掉。
+
+复合件的形变**必须等比**（它是搭好的成品，单独拉宽会让内部比例失真），
+且夹取比原子件更严：
+* 上限 = PCB 尺寸（溢出画布运行时会被裁或等比缩小，编辑器里的比例就白费了）
+* 下限 = 包围盒 × `kMinCompositeScale`(0.45)，保证内部文字仍可辨认
+
+夹取顺序：先夹宽度 → 由宽度推高度 → 若高度越界再由高度反推宽度。
+两个维度独立夹取会破坏比例。
+
 ### A14-1 / A14-2 / A14-3 已完成（均测试通过）
 
 A14-3 的结论值得记一笔：**「实例编辑器分文件」最终判定为不做**。

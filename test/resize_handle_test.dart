@@ -124,7 +124,120 @@ Offset anchorScreenPos(Offset offset, Size size, double rotation) {
   );
 }
 
+/// 复刻 `UIRenderer.compositeNaturalSize`：子元素包围盒的右下边界。
+Size compositeNaturalSize(List<({Offset offset, Size size})> children) {
+  var maxX = 0.0;
+  var maxY = 0.0;
+  for (final c in children) {
+    final right = c.offset.dx + c.size.width;
+    final bottom = c.offset.dy + c.size.height;
+    if (right > maxX) maxX = right;
+    if (bottom > maxY) maxY = bottom;
+  }
+  return Size(maxX <= 0 ? 1.0 : maxX, maxY <= 0 ? 1.0 : maxY);
+}
+
+const double kMinCompositeScale = 0.45;
+
+/// 复刻复合件的等比缩放夹取。
+Size resizeComposite({
+  required Size natural,
+  required Size startSize,
+  required double localDx,
+  required Size pcb,
+}) {
+  final aspect = natural.height / natural.width;
+  final minSize = Size(
+    natural.width * kMinCompositeScale,
+    natural.height * kMinCompositeScale,
+  );
+  var w = (startSize.width + localDx).clamp(minSize.width, pcb.width).toDouble();
+  var h = w * aspect;
+  if (h > pcb.height) {
+    h = pcb.height;
+    w = h / aspect;
+  } else if (h < minSize.height) {
+    h = minSize.height;
+    w = h / aspect;
+  }
+  return Size(w, h);
+}
+
 void main() {
+  group('复合组件等比缩放', () {
+    // 用户反馈：形变把手给复合组件只能形变边框，内部纹丝不动。
+    // 根因是 _renderComposite 用绝对坐标摆子元素，
+    // 改外框 size 不影响内容。改为按内容包围盒等比 Transform.scale。
+
+    test('自然尺寸取子元素包围盒的右下边界', () {
+      final natural = compositeNaturalSize([
+        (offset: const Offset(10, 20), size: const Size(80, 30)),
+        (offset: const Offset(0, 60), size: const Size(120, 40)),
+      ]);
+      // 取右下边界而非 max-min：左上留白也是布局的一部分，
+      // 减掉会让内容贴边。
+      expect(natural.width, 120);
+      expect(natural.height, 100);
+    });
+
+    test('空复合件有非零兜底，避免除零', () {
+      final natural = compositeNaturalSize([]);
+      expect(natural.width, 1.0);
+      expect(natural.height, 1.0);
+    });
+
+    test('缩放严格等比，宽高比恒定', () {
+      const natural = Size(200, 100);
+      const pcb = Size(360, 800);
+      for (final d in [1000.0, -1000.0, 50.0, 0.0]) {
+        final s = resizeComposite(
+          natural: natural,
+          startSize: natural,
+          localDx: d,
+          pcb: pcb,
+        );
+        expect(s.height / s.width, closeTo(0.5, 1e-9), reason: '$d');
+      }
+    });
+
+    test('最大不超过 PCB 宽度', () {
+      final s = resizeComposite(
+        natural: const Size(200, 100),
+        startSize: const Size(200, 100),
+        localDx: 1000,
+        pcb: const Size(360, 800),
+      );
+      expect(s.width, 360);
+    });
+
+    test('高瘦复合件放大时撞的是 PCB 高度上限', () {
+      // 宽度还没到 360，高度先到 800，此时应由高度反推宽度，
+      // 否则比例会被破坏。
+      final s = resizeComposite(
+        natural: const Size(100, 400),
+        startSize: const Size(100, 400),
+        localDx: 1000,
+        pcb: const Size(360, 800),
+      );
+      expect(s.height, 800);
+      expect(s.width, closeTo(200, 1e-9));
+    });
+
+    test('最小比例保证内部文字仍可辨认', () {
+      // 复合件内常见字号 9~12，乘 0.45 后约 4~5.4px，再小就糊了。
+      const natural = Size(200, 100);
+      final s = resizeComposite(
+        natural: natural,
+        startSize: natural,
+        localDx: -1000,
+        pcb: const Size(360, 800),
+      );
+      expect(s.width / natural.width, closeTo(kMinCompositeScale, 1e-9));
+      expect(s.width, 90);
+      expect(s.height, 45);
+    });
+  });
+
   group('形变锚点（旋转后图形到处跑的根因）', () {
     // 用户反馈：旋转 90° 后拖把手，形变没有锚点、图形到处跑。
     //

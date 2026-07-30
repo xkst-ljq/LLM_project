@@ -212,6 +212,27 @@ class UIRenderer {
     }
   }
 
+  /// 复合组件内容的自然尺寸（子元素包围盒的右下边界）。
+  ///
+  /// 复合件没有单独的「设计尺寸」字段，子元素用绝对坐标摆放，
+  /// 因此以包围盒作为缩放基准：外框被拉到多大，
+  /// 内容就整体缩放多少倍，而不是只有边框在变。
+  ///
+  /// 取右下边界而非 `max - min`：子元素坐标以复合件左上角为原点，
+  /// 左上留白也是布局的一部分，减掉会让内容贴边。
+  static Size compositeNaturalSize(UIComposite composite) {
+    var maxX = 0.0;
+    var maxY = 0.0;
+    for (final child in composite.children) {
+      final right = child.offset.dx + child.size.width;
+      final bottom = child.offset.dy + child.size.height;
+      if (right > maxX) maxX = right;
+      if (bottom > maxY) maxY = bottom;
+    }
+    // 空复合件给个非零兜底，避免除零。
+    return Size(maxX <= 0 ? 1.0 : maxX, maxY <= 0 ? 1.0 : maxY);
+  }
+
   static Widget _renderComposite(BuildContext context, UIComposite composite, Size size) {
     // 复合组件渲染其子元素（当前简化实现：stack 布局）
     final children = <Widget>[];
@@ -236,13 +257,40 @@ class UIRenderer {
       );
     }
 
-    return SizedBox(
-      width: size.width,
-      height: size.height,
+    // 内容按外框尺寸等比缩放。
+    //
+    // 此前直接把 children 摆进 size 的 Stack 里，子元素用的是绝对坐标，
+    // 于是拉伸外框只有边框在变、内容纹丝不动（用户反馈）。
+    //
+    // 用 Transform.scale 而非 FittedBox：等比因子取宽高比例中的较小值，
+    // 内容始终完整可见且不变形；FittedBox 的 contain 虽然也等比，
+    // 但会自动居中，导致作者摆好的左上留白被吃掉。
+    final natural = compositeNaturalSize(composite);
+    final scaleX = size.width / natural.width;
+    final scaleY = size.height / natural.height;
+    final scale = math.min(scaleX, scaleY);
+
+    Widget content = SizedBox(
+      width: natural.width,
+      height: natural.height,
       child: Stack(
         clipBehavior: Clip.none,
         children: children,
       ),
+    );
+
+    // scale 恒为 1 时也保留 Transform：树结构不随缩放比突变，
+    // 避免拖动过程中 widget 被销毁重建、手势中断。
+    content = Transform.scale(
+      scale: scale,
+      alignment: Alignment.topLeft,
+      child: content,
+    );
+
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: content,
     );
   }
 

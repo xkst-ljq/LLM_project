@@ -458,6 +458,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return null;
   }
 
+  /// 画线用的锚点元素。
+  ///
+  /// 连线存的可能是复合件**内部**子元素的 id（暴露端口）。
+  /// 子元素的 offset 是相对复合件的，直接当画布坐标用会错位一整个
+  /// 复合件的距离，因此回落到复合件外壳作为锚点。
+  UIElement? _wireAnchorElementById(String id) {
+    return _assemblyElementById(id) ?? _compositeOwnerOfChild(id);
+  }
+
   /// 元素某个端口在画布坐标系中的位置。
   ///
   /// 注意与 Studio 的差异：Studio 用 `_workspaceOffset` 一个偏移量，
@@ -518,17 +527,41 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   Size _resizeStartSize = Size.zero;
   Offset _resizeStartGlobal = Offset.zero;
 
+  /// 复合组件缩放后，内部文字仍可辨认的最小比例。
+  ///
+  /// 复合件内常见字号是 9~12，乘 0.45 后约 4~5.4px，
+  /// 再小就完全糊成一团了。用户要求「最小不可让内部文字不可见」。
+  static const double kMinCompositeScale = 0.45;
+
   /// 各类组件的最小尺寸。
   ///
   /// 与 Studio 的 clamp 口径一致：进度条可以做得很细（血条），
   /// 面板类允许铺满整页，其余控件保底 40×20 以免拉成看不见的一条。
-  Size _minResizeFor(String? type) {
+  ///
+  /// 复合件另有一套（用户要求更严格）：按内容包围盒 × 最小可读比例，
+  /// 保证缩到底时内部文字仍能看清。
+  Size _minResizeFor(String? type, {UIElement? element}) {
+    if (element != null && element.isComposite && element.composite != null) {
+      final natural = UIRenderer.compositeNaturalSize(element.composite!);
+      return Size(
+        natural.width * kMinCompositeScale,
+        natural.height * kMinCompositeScale,
+      );
+    }
     if (type == 'progress') return const Size(12, 6);
     if (_isSurfaceLikeType(type)) return const Size(20, 20);
     return const Size(40, 20);
   }
 
-  Size _maxResizeFor(String? type) {
+  /// 各类组件的最大尺寸。
+  ///
+  /// 复合件不得超出 PCB（用户要求）：它是成品部件，
+  /// 溢出画布的部分在运行时会被裁掉或触发等比缩小，
+  /// 作者在编辑器里摆好的比例就白费了。
+  Size _maxResizeFor(String? type, {UIElement? element}) {
+    if (element != null && element.isComposite) {
+      return Size(_pcbSize.width, _pcbSize.height);
+    }
     if (_isSurfaceLikeType(type)) return const Size(4096, 4096);
     return const Size(600, 400);
   }
@@ -602,14 +635,38 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final localDy = -rawDx * sinR + rawDy * cosR;
 
     final type = current.module?.type;
-    final minSize = _minResizeFor(type);
-    final maxSize = _maxResizeFor(type);
-    final nextWidth = (_resizeStartSize.width + localDx)
-        .clamp(minSize.width, maxSize.width)
-        .toDouble();
-    final nextHeight = (_resizeStartSize.height + localDy)
-        .clamp(minSize.height, maxSize.height)
-        .toDouble();
+    final minSize = _minResizeFor(type, element: current);
+    final maxSize = _maxResizeFor(type, element: current);
+
+    double nextWidth;
+    double nextHeight;
+    if (current.isComposite && current.composite != null) {
+      // 复合件**等比**缩放（用户要求）：它是搭好的成品，
+      // 单独拉宽会让内部布局比例失真。
+      // 以水平位移为主导——把手在右下角，横向拖拽的意图最明确。
+      final natural = UIRenderer.compositeNaturalSize(current.composite!);
+      final aspect = natural.height / natural.width;
+      var w = _resizeStartSize.width + localDx;
+      // 先夹宽度，再由宽度推高度，保证比例不被两次独立夹取破坏。
+      w = w.clamp(minSize.width, maxSize.width).toDouble();
+      var h = w * aspect;
+      if (h > maxSize.height) {
+        h = maxSize.height;
+        w = h / aspect;
+      } else if (h < minSize.height) {
+        h = minSize.height;
+        w = h / aspect;
+      }
+      nextWidth = w;
+      nextHeight = h;
+    } else {
+      nextWidth = (_resizeStartSize.width + localDx)
+          .clamp(minSize.width, maxSize.width)
+          .toDouble();
+      nextHeight = (_resizeStartSize.height + localDy)
+          .clamp(minSize.height, maxSize.height)
+          .toDouble();
+    }
 
     final nextSize = Size(nextWidth, nextHeight);
     // 以**当前**尺寸为基准修正，而不是拖动起点的尺寸——
@@ -679,12 +736,54 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   /// 复合黑盒与全锁元素。全锁的语义就是「连线不可改」，
   /// 因此它既不能作为新连线的目标，也不该被拖拽命中。
   bool _canBeConnectionEndpoint(UIElement el) {
+    if (el.sealed) return false;
+    // 复合件本身没有 module，但只要暴露了端口就能作为连线目标——
+    // 实际连的是它内部那个被暴露的子元素（见 _exposedPortTargetsOf）。
+    if (el.isComposite) return _exposedPortTargetsOf(el).isNotEmpty;
     final module = el.module;
     if (module == null) return false;
-    if (el.isComposite) return false;
     if (module.type == 'linker') return false;
-    if (el.sealed) return false;
     return true;
+  }
+
+  /// 复合件对外暴露的可连接子元素。
+  ///
+  /// 复合是黑盒，作者不该、也无法直接选中它内部的组件；
+  /// 制作复合件时勾选的「暴露端口」就是它与外界的唯一接口。
+  /// 连线连的是这些子元素，而不是复合件外壳——
+  /// 外壳没有 module，方案矩阵拿它算不出任何东西。
+  List<UIElement> _exposedPortTargetsOf(UIElement composite) {
+    final data = composite.composite;
+    if (data == null) return const [];
+    final ports = data.exposedPorts;
+    if (ports == null || ports.isEmpty) return const [];
+    final result = <UIElement>[];
+    for (final port in ports) {
+      for (final child in data.children) {
+        if (child.id != port.elementId) continue;
+        // 后端逻辑件不作为可视连接点（与画布渲染的过滤口径一致）。
+        if (child.module == null) continue;
+        result.add(child);
+        break;
+      }
+    }
+    return result;
+  }
+
+  /// 找出某个 id 所属的复合件（若它是复合内部的子元素）。
+  ///
+  /// 连线存的是子元素 id，但画线时要以复合件外壳为锚点——
+  /// 子元素在复合内部的坐标是相对复合件的，直接拿去当画布坐标会错位。
+  UIElement? _compositeOwnerOfChild(String childId) {
+    for (final element in _elements) {
+      if (!element.isComposite) continue;
+      final data = element.composite;
+      if (data == null) continue;
+      for (final child in data.children) {
+        if (child.id == childId) return element;
+      }
+    }
+    return null;
   }
 
   /// 命中检测：落点是否在元素（含旋转）的矩形内。
@@ -810,6 +909,50 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     });
   }
 
+  /// 把命中的元素解析为真正要写入连线的那一端。
+  ///
+  /// 命中复合件时，实际连的是它暴露的子元素：
+  /// 只有一个就直接用，多个则让作者选——
+  /// 静默挑第一个会让「连错了端口」变成一个查不出来的问题。
+  Future<UIElement?> _resolveWiringTarget(UIElement hit) async {
+    if (!hit.isComposite) return hit;
+    final candidates = _exposedPortTargetsOf(hit);
+    if (candidates.isEmpty) return null;
+    if (candidates.length == 1) return candidates.first;
+    return _showExposedPortPicker(hit, candidates);
+  }
+
+  Future<UIElement?> _showExposedPortPicker(
+    UIElement composite,
+    List<UIElement> candidates,
+  ) async {
+    return showDialog<UIElement>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text('选择「${composite.composite?.name ?? '复合组件'}」的端口'),
+        children: [
+          for (final child in candidates)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, child),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  '${child.module?.name.trim().isNotEmpty == true
+                      ? child.module!.name
+                      : child.id} · ${child.module?.type ?? ''}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('取消', style: TextStyle(fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _cancelConnectionDrag() {
     _clearPendingWire();
     if (!_isDraggingConnection) return;
@@ -836,11 +979,18 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
 
     final linkerIndex = _elements.indexWhere((e) => e.id == linkerId);
-    final target = _assemblyElementById(targetId);
-    if (linkerIndex == -1 || target == null) {
+    final hitElement = _assemblyElementById(targetId);
+    if (linkerIndex == -1 || hitElement == null) {
       _cancelConnectionDrag();
       return;
     }
+    // 命中复合件时解析到具体的暴露子元素（可能弹选择框）。
+    final target = await _resolveWiringTarget(hitElement);
+    if (!mounted || target == null) {
+      _cancelConnectionDrag();
+      return;
+    }
+    final resolvedTargetId = target.id;
 
     final linkerElement = _elements[linkerIndex];
     final linkerModule = linkerElement.module;
@@ -855,7 +1005,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         : existing['sourceModuleId']?.toString() ?? '';
 
     // 自连没有意义：来源与目标是同一个元素时，方案矩阵也算不出东西。
-    if (otherEndId.isNotEmpty && otherEndId == targetId) {
+    if (otherEndId.isNotEmpty && otherEndId == resolvedTargetId) {
       _cancelConnectionDrag();
       _showSnack('联动器的两端不能是同一个组件');
       return;
@@ -881,9 +1031,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         props['linker'] is Map ? props['linker'] as Map : const {},
       );
       if (port == 'input') {
-        linkerData['sourceModuleId'] = targetId;
+        linkerData['sourceModuleId'] = resolvedTargetId;
       } else {
-        linkerData['targetModuleId'] = targetId;
+        linkerData['targetModuleId'] = resolvedTargetId;
       }
       // 换了端点，旧方案未必还适用；等下面的方案选择重新落定。
       // 这里先不清 scheme——若作者取消选择，保留原样比清空更不突兀。
@@ -1029,8 +1179,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     var lineEnd = end;
     var endDirection = _freeEndDirectionOf(start, end);
-    final hoverEl =
-        _hoveringTargetId == null ? null : _assemblyElementById(_hoveringTargetId!);
+    final hoverEl = _hoveringTargetId == null
+        ? null
+        : _wireAnchorElementById(_hoveringTargetId!);
     if (hoverEl != null) {
       // 吸附到目标：端点落到它对侧的端口上。
       // 从 linker 左侧拉出时，我们要的是目标的**输出**口。
@@ -1090,8 +1241,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       final fromId = conn['from'] as String?;
       final toId = conn['to'] as String?;
       if (fromId == null || toId == null) continue;
-      final fromEl = _assemblyElementById(fromId);
-      final toEl = _assemblyElementById(toId);
+      final fromEl = _wireAnchorElementById(fromId);
+      final toEl = _wireAnchorElementById(toId);
       // 端点可能已被删除（删元素时 linker 里的引用未必同步清理），
       // 画不出来就跳过，不要抛异常。
       if (fromEl == null || toEl == null) continue;
@@ -1099,6 +1250,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       final lineType = conn['type'] as String? ?? 'input';
       final toPort = conn['toPort'] as String?;
       final isControlLine = toPort == 'gate_in';
+      // 端点解析到复合外壳，说明这条连的是复合件的暴露端口，
+      // 用粉/浅蓝配色与普通连线区分（与 Studio 一致）。
       final isCompositePort = fromEl.isComposite || toEl.isComposite;
 
       widgets.add(
@@ -2970,13 +3123,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   /// 全锁定（`sealed`）的元素被排除：这正是全锁与半锁的区别——
   /// 有连线时不能切换或断开，没连线时连不上，配置界面直接跳过它。
   List<UIElement> _linkerCandidates() {
-    return _elements
-        .where((element) =>
-            !element.isComposite &&
-            element.module != null &&
-            element.module!.type != 'linker' &&
-            !element.sealed)
-        .toList();
+    final result = <UIElement>[];
+    for (final element in _elements) {
+      if (element.sealed) continue;
+      if (element.isComposite) {
+        // 复合件以「暴露的子元素」形式进入候选，
+        // 这样方案矩阵能按子元素的真实类型算可用方案。
+        result.addAll(_exposedPortTargetsOf(element));
+        continue;
+      }
+      final module = element.module;
+      if (module == null || module.type == 'linker') continue;
+      result.add(element);
+    }
+    return result;
   }
 
   /// 该联动器是否因两端存在全锁元素而不可编辑。

@@ -1066,12 +1066,22 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   }
 
   // ========== 组件渲染 ==========
-  /// 选中且可形变的元件，四周撑出的边距宽度。
+  /// 元件四周恒定撑出的边距，给形变把手站位。
   ///
-  /// 只在需要时撑：未选中 / 锁定 / 逻辑件都返回 0，
-  /// 避免平时白白扩大每个元件的命中区域、互相抢点击。
-  double _handlePaddingOf(UIElement el) =>
-      _supportsResizeHandle(el) ? _AssemblyLogic.kResizeHandlePadding : 0.0;
+  /// ⚠️ **必须恒定，不能按「是否选中」动态返回 0**。
+  ///
+  /// 曾按需撑开，结果引入一个回归：未选中的元件拖不动。
+  /// 链路是——`onPanStart` 里 `_selectElement` 触发 setState →
+  /// pad 由 0 变 12 → `_buildElementWidget` 的返回结构从「直接 body」
+  /// 变成「SizedBox + Stack」→ 该位置的 widget 类型变了 →
+  /// GestureDetector 被销毁重建 → **正在进行的 pan 被取消**。
+  /// 与双击断开那次崩溃同源：手势进行中不能改变自身所在的树结构。
+  ///
+  /// 恒定撑开后结构始终一致，只有把手这个 Stack 子节点按需增减；
+  /// 多子节点按索引复用，body 恒为 children[0]，不受影响。
+  /// padding 环是透明的，且没有子节点占位，点击会自然落到下层，
+  /// 不会白白扩大命中区域。
+  double _handlePaddingOf(UIElement el) => _AssemblyLogic.kResizeHandlePadding;
 
   /// 该元件是否显示形变把手。
   ///
@@ -1093,32 +1103,30 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
 
   Widget _buildElementWidget(UIElement el) {
     final pad = _handlePaddingOf(el);
-    if (pad > 0) {
-      // 撑开后内容仍要落在原来的位置上，因此整体内移 pad。
-      // 把手画在 padding 区域内，不遮挡元件本体。
-      return SizedBox(
-        width: el.size.width + pad * 2,
-        height: el.size.height + pad * 2,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              left: pad,
-              top: pad,
-              width: el.size.width,
-              height: el.size.height,
-              child: _buildElementBody(el),
-            ),
+    // 结构恒定（见 _handlePaddingOf 的说明）：
+    // body 恒为 children[0]，把手按需追加为 children[1]。
+    return SizedBox(
+      width: el.size.width + pad * 2,
+      height: el.size.height + pad * 2,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: pad,
+            top: pad,
+            width: el.size.width,
+            height: el.size.height,
+            child: _buildElementBody(el),
+          ),
+          if (_supportsResizeHandle(el))
             Positioned(
               right: 0,
               bottom: 0,
               child: _buildResizeHandle(el),
             ),
-          ],
-        ),
-      );
-    }
-    return _buildElementBody(el);
+        ],
+      ),
+    );
   }
 
   /// 右下角形变把手。

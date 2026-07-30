@@ -1045,6 +1045,41 @@ Assembly 逐帧增量修正、Studio 起点快照一次性修正，
 测试增至 22 例，新增「形变锚点」组，含
 「不修正时锚点确实会跑」的反向断言。
 
+#### A14-1g 第二轮反馈（四项，已全部处理）
+
+**1. 未选中的元件拖不动（我上一步引入的回归）**
+
+Studio 可以直接拖未选中的元件并自动选中，Assembly 却要先点一下。
+根因是 `_buildElementWidget` 按「是否选中」返回**两种不同结构**：
+`onPanStart` 里选中 → setState → pad 由 0 变 12 → 结构从
+「直接 body」变成「SizedBox+Stack」→ GestureDetector 被销毁重建
+→ 正在进行的 pan 被取消。
+
+与双击断开那次崩溃**同源**：手势进行中不能改变自身所在的树结构。
+改为 padding 恒定撑开、把手作为可选子节点追加，结构始终一致。
+已在 HANDOFF 立为通用规则。
+
+**2. 复合组件只能形变边框，内容不动**
+
+`_renderComposite` 用绝对坐标摆子元素。改为按内容包围盒
+`compositeNaturalSize` 算比例 + `Transform.scale(topLeft)` 整体缩放。
+
+**3. 复合件缩放的严格限制**（用户要求）
+
+* 等比缩放：它是搭好的成品，单独拉宽会让内部布局失真
+* 上限 = PCB 宽/高
+* 下限 = 包围盒 × 0.45，保证内部文字仍可辨认
+* 夹取顺序：先夹宽 → 推高 → 高越界再反推宽（两维独立夹会破坏比例）
+
+**4. linker 连不上复合组件**
+
+`_canBeConnectionEndpoint` 与 `_linkerCandidates` 都硬性排除了
+`isComposite`。改为展开成「暴露的子元素」：连线存子元素 id，
+画线锚点回落到外壳，多端口时弹选择框。详见 HANDOFF。
+
+测试：`resize_handle_test.dart` 增至 28 例（新增复合等比缩放组），
+`assembly_linker_drag_test.dart` 增至 29 例（新增复合连线组）。
+
 #### A14-5 灵感池盘点结论
 
 逐条核实后，六项里只有两项仍然有效：
