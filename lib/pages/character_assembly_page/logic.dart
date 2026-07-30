@@ -4005,12 +4005,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
 
     final nameController = TextEditingController(text: module.name);
-    final widthController = TextEditingController(
-      text: element.size.width.toStringAsFixed(0),
-    );
-    final heightController = TextEditingController(
-      text: element.size.height.toStringAsFixed(0),
-    );
     final textController = TextEditingController(
       text: module.properties['text']?.toString() ?? '',
     );
@@ -4110,8 +4104,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         CardEntryTarget.fromJson(existingChannel?['cardEntryTarget']) ??
             const CardEntryTarget(
                 group: CardEntryTarget.groupIntro, entryId: '', fieldKey: '');
-    final channelCardTitleController = TextEditingController(
-        text: channelCardTarget.isCustomEntry ? channelCardTarget.fieldKey : '');
     var isKeyAction = UISemanticRole.isKeyAction(module);
     var sendsMessage = UISemanticRole.sendsMessage(module);
     var textOverflow = switch (module.properties['overflow']?.toString()) {
@@ -4233,18 +4225,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       controller: nameController,
                       decoration: const InputDecoration(labelText: '实例名称'),
                     ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(child: numberField(widthController, '宽度')),
-                        const SizedBox(width: 10),
-                        Expanded(child: numberField(heightController, '高度')),
-                      ],
-                    ),
+                    // A14-3：宽 / 高移交「精确几何」。
+                    //
+                    // 那里还能改 X / Y / 旋转，且带按类型的取值范围与
+                    // clamp，比这里两个裸输入框完整。留在这里只是重复，
+                    // 还把真正该突出的内容参数挤到了下面。
                     if (!_supportsAtomInstanceEditor(type)) ...[
                       const SizedBox(height: 12),
                       const Text(
-                        '该原子专属编辑器将在后续批次开放；当前可编辑名称、尺寸与数据通道。',
+                        '该原子专属编辑器将在后续批次开放；'
+                        '当前可编辑名称与数据通道，尺寸位置请用左侧「几何」。',
                         style: TextStyle(
                           fontSize: 11,
                           color: Color(0xFFE65100),
@@ -4617,7 +4607,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           ),
                           if (!channelEnabled)
                             const Text(
-                              '关闭时保存将清除该组件的数据通道配置。开启后可命名语义、选择存放位置与 AI 读写策略。',
+                              '关闭时保存将清除该组件的数据通道配置。'
+                              '开启后可进入专项页面配置语义、存放位置与 AI 读写策略。',
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Color(0xFF777783),
@@ -4625,58 +4616,33 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                               ),
                             )
                           else ...[
-                            const Text(
-                              '当前仅保存配置，不写入 SessionState、不注入 Prompt。',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF777783),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            ..._buildDataChannelFormFields(
-                              labels: channelLabels,
-                              fallbackName: module.name,
-                              nameController: channelNameController,
-                              semanticSource: channelSource,
-                              labelElementId: channelLabelId,
-                              targetKind: channelTargetKind,
-                              visibility: channelVisibility,
-                              llmReadPolicy: channelReadPolicy,
-                              llmWritePolicy: channelWritePolicy,
-                              applyPolicy: channelApplyPolicy,
-                              promptSection: channelPromptSection,
-                              cardTarget: channelCardTarget,
-                              cardCustomTitleController:
-                                  channelCardTitleController,
-                              onCardTarget: (value) => setDialogState(
-                                  () => channelCardTarget = value),
-                              onSemanticSource: (value) =>
-                                  setDialogState(() => channelSource = value),
-                              onLabelElementId: (value) =>
-                                  setDialogState(() => channelLabelId = value),
-                              onTargetKind: (value) => setDialogState(
-                                  () => channelTargetKind = value),
-                              onVisibility: (value) => setDialogState(
-                                  () => channelVisibility = value),
-                              onReadPolicy: (value) => setDialogState(
-                                  () => channelReadPolicy = value),
-                              onWritePolicy: (value) => setDialogState(
-                                  () => channelWritePolicy = value),
-                              onApplyPolicy: (value) => setDialogState(
-                                  () => channelApplyPolicy = value),
-                              onPromptSection: (value) => setDialogState(
-                                  () => channelPromptSection = value),
-                              onNormalizeLabelId: (value) =>
-                                  channelLabelId = value,
-                              onNameChanged: () => setDialogState(() {}),
-                            ),
-                            const SizedBox(height: 8),
+                            // A14-3：表单移到独立页面。
+                            //
+                            // 通道配置有十来项（语义来源 / 存放位置 / 三级
+                            // 卡片定位 / 读写策略 / 注入位置…），内嵌在实例
+                            // 编辑器里会把对话框撑得又长又乱，
+                            // 也是此前「参数编辑器漏做」「三级选择器藏太深」
+                            // 的根因。开关留在这里，细节进专项页。
                             Text(
-                              '最终语义：${channelPreviewName.isEmpty ? '未命名' : channelPreviewName}',
+                              '最终语义：'
+                              '${channelPreviewName.isEmpty ? '未命名' : channelPreviewName}',
                               style: const TextStyle(
                                 fontSize: 11,
                                 color: Color(0xFF00897B),
                                 fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.tune_rounded, size: 16),
+                                label: const Text('配置数据通道'),
+                                onPressed: () async {
+                                  final changed =
+                                      await _openDataChannelPage(module);
+                                  if (changed) setDialogState(() {});
+                                },
                               ),
                             ),
                           ],
@@ -4705,8 +4671,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     if (!mounted) {
       _disposeAtomEditorControllers([
         nameController,
-        widthController,
-        heightController,
         textController,
         fontSizeController,
         radiusController,
@@ -4822,12 +4786,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 readDouble(radiusController, 8.0).clamp(0.0, 999.0).toDouble();
           }
 
-          final nextWidth = readDouble(widthController, current.size.width)
-              .clamp(8.0, 2000.0)
-              .toDouble();
-          final nextHeight = readDouble(heightController, current.size.height)
-              .clamp(8.0, 2000.0)
-              .toDouble();
           final nextRadius = readDouble(radiusController, currentModule.borderRadius)
               .clamp(0.0, 999.0)
               .toDouble();
@@ -4853,9 +4811,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             labels: channelLabels,
             fallbackName: currentModule.name,
           ).trim();
-          if (!channelEnabled || channelName.isEmpty) {
+          // A14-3：通道细节由专项页面直接写入 props，这里只管开关。
+          //
+          // 不能再从本对话框的状态变量重建 payload——专项页保存后，
+          // 这些变量仍是打开实例编辑器那一刻的旧值，
+          // 重建会把刚配好的内容覆盖掉。
+          if (!channelEnabled) {
             props.remove('dataChannel');
-          } else {
+          } else if (props['dataChannel'] == null && channelName.isNotEmpty) {
+            // 刚打开开关、还没进专项页配置：先落一份最小可用配置，
+            // 免得开了开关却什么都没保存。
             props['dataChannel'] = _buildDataChannelPayload(
               name: channelName,
               semanticSource: channelSource,
@@ -4872,8 +4837,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             );
           }
 
+          // 不再改 size：尺寸归「精确几何」管，这里只碰内容。
           _elements[index] = current.copyWith(
-            size: Size(nextWidth, nextHeight),
             module: currentModule.copyWith(
               name: nameController.text.trim().isEmpty
                   ? currentModule.name
@@ -4890,8 +4855,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     _disposeAtomEditorControllers([
       nameController,
-      widthController,
-      heightController,
       textController,
       fontSizeController,
       radiusController,
@@ -5293,6 +5256,183 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       (value) => onChanged(target.copyWith(group: group, fieldKey: value)),
     ));
     return widgets;
+  }
+
+  /// A14-3：数据通道专项页。
+  ///
+  /// 从实例编辑器里抽出来单独成页——通道配置有十来项
+  /// （语义来源 / 存放位置 / 卡片三级定位 / 读写策略 / 注入位置…），
+  /// 内嵌会把对话框撑得又长又乱，此前「方案参数编辑器漏做」
+  /// 与「三级选择器藏太深」都是这么来的。
+  ///
+  /// 内容先原样承接现有表单，后续再做优化（用户要求）。
+  /// 返回 true 表示配置有改动。
+  Future<bool> _openDataChannelPage(UIModule module) async {
+    final elementIndex =
+        _elements.indexWhere((e) => e.module?.id == module.id);
+    final element = elementIndex == -1 ? null : _elements[elementIndex];
+    if (element == null) return false;
+
+    final existing = _dataChannelOf(module);
+    final labels = _textLabelCandidates();
+
+    final nameController = TextEditingController(
+      text: existing?['semanticLabel']?.toString() ?? module.name,
+    );
+    var semanticSource = existing?['semanticSource']?.toString() ?? 'manual';
+    var labelElementId = existing?['labelElementId']?.toString() ?? '';
+    var targetKind = existing?['targetKind']?.toString() ?? 'local_ui_state';
+    var visibility = existing?['visibility']?.toString() ?? 'ui_only';
+    var readPolicy = existing?['llmReadPolicy']?.toString() ?? 'none';
+    var writePolicy = existing?['llmWritePolicy']?.toString() ?? 'none';
+    var applyPolicy =
+        existing?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
+    var promptSection = existing?['promptSection']?.toString() ??
+        DataChannelPromptItem.sectionUiData;
+    var cardTarget = CardEntryTarget.fromJson(existing?['cardEntryTarget']) ??
+        const CardEntryTarget(
+            group: CardEntryTarget.groupIntro, entryId: '', fieldKey: '');
+    final cardTitleController = TextEditingController(
+      text: cardTarget.isCustomEntry ? cardTarget.fieldKey : '',
+    );
+
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, setPageState) {
+            final previewName = _resolveDataChannelName(
+              semanticSource: semanticSource,
+              manualName: nameController.text,
+              labelElementId: labelElementId,
+              labels: labels,
+              fallbackName: module.name,
+            ).trim();
+
+            return Scaffold(
+              appBar: AppBar(
+                title: Text('数据通道 · ${module.name}'),
+                actions: [
+                  TextButton(
+                    onPressed: () async {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      await Future<void>.delayed(
+                          const Duration(milliseconds: 16));
+                      if (!pageContext.mounted) return;
+                      Navigator.pop(pageContext, true);
+                    },
+                    child: const Text('保存'),
+                  ),
+                ],
+              ),
+              body: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF6F6F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '最终语义：${previewName.isEmpty ? '未命名' : previewName}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF00897B),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  ..._buildDataChannelFormFields(
+                    labels: labels,
+                    fallbackName: module.name,
+                    nameController: nameController,
+                    semanticSource: semanticSource,
+                    labelElementId: labelElementId,
+                    targetKind: targetKind,
+                    visibility: visibility,
+                    llmReadPolicy: readPolicy,
+                    llmWritePolicy: writePolicy,
+                    applyPolicy: applyPolicy,
+                    promptSection: promptSection,
+                    cardTarget: cardTarget,
+                    cardCustomTitleController: cardTitleController,
+                    onCardTarget: (v) => setPageState(() => cardTarget = v),
+                    onSemanticSource: (v) =>
+                        setPageState(() => semanticSource = v),
+                    onLabelElementId: (v) =>
+                        setPageState(() => labelElementId = v),
+                    onTargetKind: (v) => setPageState(() => targetKind = v),
+                    onVisibility: (v) => setPageState(() => visibility = v),
+                    onReadPolicy: (v) => setPageState(() => readPolicy = v),
+                    onWritePolicy: (v) => setPageState(() => writePolicy = v),
+                    onApplyPolicy: (v) => setPageState(() => applyPolicy = v),
+                    onPromptSection: (v) =>
+                        setPageState(() => promptSection = v),
+                    onNormalizeLabelId: (v) => labelElementId = v,
+                    onNameChanged: () => setPageState(() {}),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    var changed = false;
+    if (saved == true && mounted) {
+      final name = _resolveDataChannelName(
+        semanticSource: semanticSource,
+        manualName: nameController.text,
+        labelElementId: labelElementId,
+        labels: labels,
+        fallbackName: module.name,
+      ).trim();
+
+      final index = _elements.indexWhere((e) => e.id == element.id);
+      if (index != -1) {
+        final current = _elements[index];
+        final currentModule = current.module;
+        if (currentModule != null) {
+          final props = Map<String, dynamic>.from(
+            _deepCloneValue(currentModule.properties) as Map,
+          );
+          if (name.isEmpty) {
+            props.remove('dataChannel');
+          } else {
+            props['dataChannel'] = _buildDataChannelPayload(
+              name: name,
+              semanticSource: semanticSource,
+              labelElementId: labelElementId,
+              sourceComponentId: current.id,
+              module: currentModule,
+              targetKind: targetKind,
+              visibility: visibility,
+              llmReadPolicy: readPolicy,
+              llmWritePolicy: writePolicy,
+              applyPolicy: applyPolicy,
+              promptSection: promptSection,
+              cardTarget: cardTarget,
+            );
+          }
+          setState(() {
+            _elements[index] = current.copyWith(
+              module: currentModule.copyWith(properties: props),
+            );
+          });
+          _persistAssemblyElements();
+          changed = true;
+        }
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameController.dispose();
+      cardTitleController.dispose();
+    });
+    return changed;
   }
 
   /// 数据通道表单字段，供原子实例编辑器与复合暴露项实例编辑器共用。
