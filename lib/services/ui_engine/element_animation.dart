@@ -352,30 +352,38 @@ class ValueChangeAnimator extends StatefulWidget {
   State<ValueChangeAnimator> createState() => _ValueChangeAnimatorState();
 }
 
-class _ValueChangeAnimatorState extends State<ValueChangeAnimator> {
+class _ValueChangeAnimatorState extends State<ValueChangeAnimator>
+    with TickerProviderStateMixin {
   Object? _lastValue;
-  int _playToken = 0;
   bool _initialized = false;
 
-  /// 当前这一轮动画是否还在播。
+  /// 同时在播的波次。
   ///
-  /// 播放期间**不重启**，这是「不打断」的核心：
-  /// 拖滑块时值每帧都在变，若每次变化都换 key，
-  /// `TweenAnimationBuilder` 会不断从头重建，动画被反复掐死在第一帧，
-  /// 只有松手后最后那次才播得完（首轮测试反馈）。
-  bool _playing = false;
-
-  /// 播放期间是否又发生过值变化。
+  /// ## 为什么要多波次
   ///
-  /// 记下来，等这一轮播完再补一次，
-  /// 这样连续变值会得到「一段接一段的完整动画」而不是一直被截断。
-  bool _pendingReplay = false;
+  /// 最初只有一个「正在播」的标记：播放期间的新变化只记一个 bool，
+  /// 等这一轮播完再补一轮。那是**串行排队**——
+  /// 每次触发都得等满一个 duration，用户反馈「每次的动画等待时间太长」。
+  ///
+  /// 现在改为并发：新变化立刻起一道新波，与仍在播的旧波**叠加**，
+  /// 各自独立走完自己的生命周期。连续变值会得到层层叠起的涟漪，
+  /// 而不是一段接一段的等待。
+  ///
+  /// 上限 [_maxConcurrent]：波次太多会糊成一团，也白耗性能。
+  /// 超出时淘汰最老的一道——它本来也快结束了。
+  final List<AnimationController> _waves = <AnimationController>[];
 
-  @override
-  void didUpdateWidget(covariant ValueChangeAnimator oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncValue();
-  }
+  /// 同时存在的波次上限。
+  ///
+  /// 3 道足够表达「连续变化」的层次感；再多在小组件上会互相盖住。
+  static const int _maxConcurrent = 3;
+
+  /// 两次起波的最小间隔。
+  ///
+  /// 拖滑块时值每帧都在变，不限流会每帧起一道波，
+  /// 瞬间堆满上限且彼此相位几乎相同，看起来只是一道很粗的波。
+  static const Duration _minGap = Duration(milliseconds: 90);
+  DateTime? _lastSpawn;
 
   @override
   void initState() {
@@ -386,57 +394,89 @@ class _ValueChangeAnimatorState extends State<ValueChangeAnimator> {
     _initialized = true;
   }
 
+  @override
+  void didUpdateWidget(covariant ValueChangeAnimator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncValue();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _waves) {
+      c.dispose();
+    }
+    _waves.clear();
+    super.dispose();
+  }
+
   void _syncValue() {
     if (!_initialized) return;
     if (widget.value == _lastValue) return;
     _lastValue = widget.value;
-    if (widget.animation == null) return;
+    final animation = widget.animation;
+    if (animation == null) return;
 
-    if (_playing) {
-      // 正在播就不打断，只记一笔，播完再补。
-      _pendingReplay = true;
-      return;
+    // 限流：见 _minGap 的说明。
+    final now = DateTime.now();
+    final last = _lastSpawn;
+    if (last != null && now.difference(last) < _minGap) return;
+    _lastSpawn = now;
+
+    _spawnWave(animation.durationMs);
+  }
+
+  void _spawnWave(int durationMs) {
+    // 超出上限就淘汰最老的一道（它本来也快结束了）。
+    while (_waves.length >= _maxConcurrent) {
+      final oldest = _waves.removeAt(0);
+      oldest.dispose();
     }
-    _startPlay();
-  }
 
-  void _startPlay() {
-    setState(() {
-      _playToken++;
-      _playing = true;
-      _pendingReplay = false;
-    });
-  }
+    final controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: durationMs),
+    );
+    _waves.add(controller);
 
-  void _onPlayEnd() {
-    if (!mounted) return;
-    // 动画结束回调发生在构建过程中，直接 setState 会撞上
-    // 「widget tree was locked」——与双击断开那次崩溃同源。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_pendingReplay) {
-        // 播放期间值又变过，紧接着补一轮完整动画。
-        _startPlay();
-        return;
-      }
-      setState(() => _playing = false);
+    controller.addStatusListener((status) {
+      if (status != AnimationStatus.completed) return;
+      // 结束回调发生在构建过程中，直接 setState 会撞上
+      // 「widget tree was locked」——与双击断开那次崩溃同源。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          controller.dispose();
+          return;
+        }
+        if (_waves.remove(controller)) {
+          controller.dispose();
+          setState(() {});
+        }
+      });
     });
+
+    controller.forward(from: 0.0);
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final animation = widget.animation;
-    if (animation == null || _playToken == 0) return widget.child;
+    if (animation == null || _waves.isEmpty) return widget.child;
 
-    return TweenAnimationBuilder<double>(
-      key: ValueKey('value_change_$_playToken'),
-      tween: Tween<double>(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: animation.durationMs),
-      curve: animation.curve.curve,
-      onEnd: _onPlayEnd,
-      builder: (ctx, t, inner) =>
-          widget.frameBuilder(ctx, animation, t, inner!),
-      child: widget.child,
+    // 逐层包裹：最老的波在最内层，新波叠在外面。
+    //
+    // 这样多道波的效果自然复合——比如两道数值跳动会叠出更大的幅度，
+    // 两道水波会前后错开地扫过，正是「重叠播放」想要的观感。
+    return AnimatedBuilder(
+      animation: Listenable.merge(_waves),
+      builder: (ctx, _) {
+        var result = widget.child;
+        for (final c in _waves) {
+          result = widget.frameBuilder(ctx, animation, c.value, result);
+        }
+        return result;
+      },
     );
   }
 }
+

@@ -215,93 +215,77 @@ void main() {
     });
   });
 
-  group('连续变值不打断动画', () {
-    // 首轮测试反馈：拖滑动条改进度条数值时，
-    // 只有停下来后才会有完整动画——播到一半就被下一次变值掐断。
-    //
-    // 根因：每次值变化都换 key，TweenAnimationBuilder 从头重建，
-    // 而拖滑块时值每帧都在变，动画被反复掐死在第一帧。
+  group('多波次并发叠加', () {
+    // 迭代历程：
+    // 1. 每次变值都重启 → 拖滑块时动画被反复掐死在第一帧；
+    // 2. 改为「播放期间不重启、播完再补一轮」→ 不断了，
+    //    但那是**串行排队**，每次触发都要等满一个 duration，
+    //    用户反馈「每次的动画等待时间太长」；
+    // 3. 现在：新变化立刻起一道新波，与旧波叠加并发。
 
-    /// 复刻 _ValueChangeAnimatorState 的播放调度。
-    ///
-    /// 播放期间不重启，只记一笔待补；播完若有待补则紧接着再播一轮。
-    /// 这样连续变值得到「一段接一段的完整动画」而不是一直被截断。
-    List<String> simulate(List<String> events) {
-      final log = <String>[];
-      var playing = false;
-      var pending = false;
+    const maxConcurrent = 3;
+    const minGapMs = 90;
 
-      void onValueChange() {
-        if (playing) {
-          pending = true;
-          return;
+    /// 复刻并发调度器。
+    ({int spawns, int peak}) simulate({
+      required int totalMs,
+      required int stepMs,
+      required int durationMs,
+    }) {
+      final waves = <int>[];
+      var spawns = 0;
+      var peak = 0;
+      int? lastSpawn;
+
+      for (var t = 0; t < totalMs; t += stepMs) {
+        // 过期的波自然退场。
+        waves.removeWhere((start) => t - start >= durationMs);
+        // 限流。
+        if (lastSpawn != null && t - lastSpawn < minGapMs) continue;
+        lastSpawn = t;
+        // 超上限淘汰最老的一道。
+        while (waves.length >= maxConcurrent) {
+          waves.removeAt(0);
         }
-        playing = true;
-        pending = false;
-        log.add('start');
+        waves.add(t);
+        spawns++;
+        if (waves.length > peak) peak = waves.length;
       }
-
-      void onEnd() {
-        log.add('end');
-        if (pending) {
-          playing = true;
-          pending = false;
-          log.add('start');
-          return;
-        }
-        playing = false;
-      }
-
-      for (final e in events) {
-        if (e == 'change') {
-          onValueChange();
-        } else {
-          onEnd();
-        }
-      }
-      return log;
+      return (spawns: spawns, peak: peak);
     }
 
-    test('单次变值播放一段完整动画', () {
-      expect(simulate(['change', 'end']), ['start', 'end']);
+    test('连续拖动能持续起波，不再排队等待', () {
+      // 500ms 拖动、每帧 16ms 变一次值。
+      final r = simulate(totalMs: 500, stepMs: 16, durationMs: 600);
+      // 旧的串行方案在 600ms duration 下只会播 1 次。
+      expect(r.spawns, greaterThan(1));
+      expect(r.spawns, 6);
     });
 
-    test('播放期间的连续变值不会打断当前这一段', () {
-      // 拖滑块的典型情形：一次 start 后来了一堆 change。
-      final log = simulate([
-        'change',
-        'change',
-        'change',
-        'change',
-        'end',
-      ]);
-      // 中途没有多余的 start，说明第一段完整播完了。
-      expect(log.sublist(0, 2), ['start', 'end']);
+    test('并发数不超过上限', () {
+      final r = simulate(totalMs: 2000, stepMs: 16, durationMs: 600);
+      // 波次太多会糊成一团，也白耗性能。
+      expect(r.peak, lessThanOrEqualTo(maxConcurrent));
     });
 
-    test('播放期间变过值，播完会补一段完整动画', () {
-      // 不能直接丢弃——那样拖动结束后画面会毫无反馈。
-      final log = simulate(['change', 'change', 'end', 'end']);
-      expect(log, ['start', 'end', 'start', 'end']);
+    test('限流阻止每帧起波', () {
+      // 不限流的话每 16ms 一道，瞬间堆满上限且相位几乎相同，
+      // 看起来只是一道很粗的波。
+      final r = simulate(totalMs: 900, stepMs: 16, durationMs: 600);
+      final maxPossible = 900 ~/ minGapMs;
+      expect(r.spawns, lessThanOrEqualTo(maxPossible));
     });
 
-    test('拖动过程中不会产生大量重启', () {
-      // 模拟拖动 20 帧，每帧都变值。
-      final events = <String>[];
-      for (var i = 0; i < 20; i++) {
-        events.add('change');
-      }
-      events.add('end');
-      final starts = simulate(events).where((e) => e == 'start').length;
-      // 旧实现会产生 20 次 start（每次都掐断前一次）。
-      // 现在只有两次：拖动中的第一段，加上松手后补的那一段。
-      expect(starts, 2);
+    test('单次变化只起一道波', () {
+      final r = simulate(totalMs: 16, stepMs: 16, durationMs: 600);
+      expect(r.spawns, 1);
+      expect(r.peak, 1);
     });
 
-    test('播完且期间无变化则回到空闲', () {
-      final log = simulate(['change', 'end', 'end']);
-      // 第二个 end 不该再触发 start——没有待补的变化。
-      expect(log.where((e) => e == 'start').length, 1);
+    test('间隔足够长时不会积压', () {
+      // 每次变化都在上一道播完之后，峰值应始终为 1。
+      final r = simulate(totalMs: 3000, stepMs: 700, durationMs: 600);
+      expect(r.peak, 1);
     });
   });
 

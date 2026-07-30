@@ -3565,6 +3565,9 @@ class _WavyProgressBarState extends State<_WavyProgressBar>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
+  /// 上次起波时刻，用于限流（见 didUpdateWidget 的说明）。
+  DateTime? _lastRestart;
+
   @override
   void initState() {
     super.initState();
@@ -3582,10 +3585,24 @@ class _WavyProgressBarState extends State<_WavyProgressBar>
     }
     // 值变了就起一轮波。
     //
-    // 连续拖动时不打断当前这一段——`forward(from: 0)` 会重置，
-    // 导致波永远停在第一帧（值变化动画那边踩过同样的坑）。
-    if (widget.progress != oldWidget.progress && !_controller.isAnimating) {
-      _controller.forward(from: 0.0);
+    // ⚠️ 这里**不能**用 `!isAnimating` 拦住新波。
+    //
+    // 那样是串行排队：一轮播完才允许下一轮，
+    // 连续拖动时每次都要等满一个 duration，
+    // 用户反馈「每次的动画等待时间太长」。
+    //
+    // 波浪边界是**连续相位**的（正弦随 t 推进），
+    // 从头重启不会出现跳变，因此可以随时刷新。
+    // 真正要避免的是每帧都重启——那会让相位永远停在起点，
+    // 所以用时间限流而不是「播完再说」。
+    if (widget.progress != oldWidget.progress) {
+      final now = DateTime.now();
+      final last = _lastRestart;
+      if (last == null ||
+          now.difference(last) >= const Duration(milliseconds: 90)) {
+        _lastRestart = now;
+        _controller.forward(from: 0.0);
+      }
     }
   }
 
@@ -3738,61 +3755,121 @@ class _EdgeBurstProgressBar extends StatefulWidget {
   State<_EdgeBurstProgressBar> createState() => _EdgeBurstProgressBarState();
 }
 
-class _EdgeBurstProgressBarState extends State<_EdgeBurstProgressBar>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  /// 粒子飞出的方向：+1 数值增长（向前），-1 数值减少（向后）。
-  ///
-  /// 用户选定「跟随数值变化方向」：扣血时粒子应该往回飞，
-  /// 一律向前会让减少也看起来像增长。
-  double _direction = 1.0;
+/// 一次喷射的记录。
+///
+/// 粒子是**离散**的：重启控制器会让上一批粒子瞬间消失，
+/// 与波浪边界那种连续相位不同，所以必须每次喷射各自持有一个控制器。
+class _BurstWave {
+  final AnimationController controller;
 
   /// 起喷位置（归一化 0..1）。
   ///
   /// 记录**变化发生那一刻**的边缘，而不是实时进度——
   /// 否则连续拖动时喷射点会跟着手指跑，看不出是从哪儿溅出来的。
-  double _originProgress = 0.0;
+  final double originProgress;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: widget.durationMs),
-    );
-    _originProgress = widget.progress;
-  }
+  /// 飞出方向：+1 数值增长（向前），-1 数值减少（向后）。
+  ///
+  /// 用户选定「跟随数值变化方向」：扣血时粒子应该往回飞，
+  /// 一律向前会让减少也看起来像增长。
+  final double direction;
+
+  const _BurstWave({
+    required this.controller,
+    required this.originProgress,
+    required this.direction,
+  });
+}
+
+class _EdgeBurstProgressBarState extends State<_EdgeBurstProgressBar>
+    with TickerProviderStateMixin {
+  /// 同时在飞的几批粒子。
+  ///
+  /// 曾用单个控制器 + `if (isAnimating) return`，那是串行排队：
+  /// 一批飞完才允许下一批，连续拖动时每次都要等满一个 duration
+  /// （用户反馈「每次的动画等待时间太长」）。
+  /// 改为并发后，连续变化会喷出层层叠起的粒子流。
+  final List<_BurstWave> _waves = <_BurstWave>[];
+
+  /// 同时存在的批次上限。超出时淘汰最老的一批。
+  static const int _maxConcurrent = 3;
+
+  /// 两次喷射的最小间隔。
+  ///
+  /// 拖滑块时值每帧都在变，不限流会每帧喷一批、瞬间堆满上限，
+  /// 且彼此位置几乎重合，看起来只是一团更密的粒子。
+  static const Duration _minGap = Duration(milliseconds: 90);
+  DateTime? _lastSpawn;
 
   @override
   void didUpdateWidget(covariant _EdgeBurstProgressBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.durationMs != oldWidget.durationMs) {
-      _controller.duration = Duration(milliseconds: widget.durationMs);
-    }
     final delta = widget.progress - oldWidget.progress;
     if (delta == 0.0) return;
 
-    // 连续拖动时不打断当前这一轮——`forward(from: 0)` 会重置，
-    // 粒子永远停在刚喷出的状态（值变化动画那边踩过同样的坑）。
-    if (_controller.isAnimating) return;
+    final now = DateTime.now();
+    final last = _lastSpawn;
+    if (last != null && now.difference(last) < _minGap) return;
+    _lastSpawn = now;
 
-    _direction = delta > 0 ? 1.0 : -1.0;
-    // 从变化前的边缘起喷：那才是「推进的起点」。
-    _originProgress = oldWidget.progress;
-    _controller.forward(from: 0.0);
+    _spawn(
+      origin: oldWidget.progress,
+      direction: delta > 0 ? 1.0 : -1.0,
+    );
+  }
+
+  void _spawn({required double origin, required double direction}) {
+    while (_waves.length >= _maxConcurrent) {
+      final oldest = _waves.removeAt(0);
+      oldest.controller.dispose();
+    }
+
+    final controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: widget.durationMs),
+    );
+    final wave = _BurstWave(
+      controller: controller,
+      originProgress: origin,
+      direction: direction,
+    );
+    _waves.add(wave);
+
+    controller.addStatusListener((status) {
+      if (status != AnimationStatus.completed) return;
+      // 结束回调发生在构建过程中，直接 setState 会撞上
+      // 「widget tree was locked」。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          controller.dispose();
+          return;
+        }
+        if (_waves.remove(wave)) {
+          controller.dispose();
+          setState(() {});
+        }
+      });
+    });
+
+    controller.forward(from: 0.0);
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    for (final w in _waves) {
+      w.controller.dispose();
+    }
+    _waves.clear();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _controller,
+      animation: Listenable.merge(
+        _waves.map((w) => w.controller).toList(),
+      ),
       builder: (ctx, _) {
         return Stack(
           // 粒子允许飞出组件边界，否则在细长的进度条上施展不开。
@@ -3813,20 +3890,21 @@ class _EdgeBurstProgressBarState extends State<_EdgeBurstProgressBar>
                 ),
               ),
             ),
-            // 粒子层不裁切。
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _EdgeBurstPainter(
-                    animProgress: _controller.value,
-                    originProgress: _originProgress,
-                    direction: _direction,
-                    intensity: widget.intensity,
-                    color: widget.particleColor,
+            // 粒子层不裁切；每批各画各的。
+            for (final w in _waves)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _EdgeBurstPainter(
+                      animProgress: w.controller.value,
+                      originProgress: w.originProgress,
+                      direction: w.direction,
+                      intensity: widget.intensity,
+                      color: widget.particleColor,
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         );
       },
