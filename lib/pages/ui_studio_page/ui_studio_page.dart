@@ -976,6 +976,23 @@ class _UIStudioPageState extends State<UIStudioPage>
                     .contains(el.module?.type);
                 final newWidth = (_startTouchWidth + dx).clamp(isProgress ? 12.0 : (isSurface ? 20.0 : 40.0), isSurface ? 4096.0 : 600.0);
                 final newHeight = (_startTouchHeight + dy).clamp(isProgress ? 6.0 : 20.0, isSurface ? 4096.0 : 400.0);
+                final newSize = Size(newWidth, newHeight);
+                // 修正 offset，让把手的对角保持不动。
+                //
+                // Transform.rotate 绕**中心**旋转，而 offset 是**左上角**。
+                // 改尺寸时若 offset 不动，中心就跟着移动，
+                // 旋转后的图形等于绕一个正在移动的中心转，视觉上四处乱窜。
+                // 未旋转时中心也在动，只是增长方向与屏幕轴对齐、
+                // 左上角看着没变，所以一直没暴露。
+                //
+                // 这里以拖动起点快照 el 为基准（newWidth/newHeight 也基于
+                // _startTouchWidth/Height），保证同一基准、不重复累加。
+                final newOffset = _offsetKeepingResizeAnchor(
+                  offset: el.offset,
+                  oldSize: el.size,
+                  newSize: newSize,
+                  rotation: el.rotation,
+                );
                 setState(() {
                   final idx = _currentElements.indexWhere((e) => e.id == el.id);
                   if (idx != -1) {
@@ -984,7 +1001,8 @@ class _UIStudioPageState extends State<UIStudioPage>
                       curEl.module!.properties['autoFit'] = false;
                     }
                     _currentElements[idx] = el.copyWith(
-                      size: Size(newWidth, newHeight),
+                      size: newSize,
+                      offset: newOffset,
                     );
                   }
                 });
@@ -1111,6 +1129,33 @@ class _UIStudioPageState extends State<UIStudioPage>
   }
 
 
+
+  /// 形变后修正 offset，让**把手的对角保持不动**。
+  ///
+  /// 与 Assembly 的同名方法保持同一份推导（两边都用形变把手）：
+  /// ```
+  /// anchor    = offset + (w/2, h/2) + rot(-w/2, -h/2)
+  /// newOffset = offset - (dW, dH) + rot(dW, dH)
+  ///             其中 dW = (nw - w) / 2, dH = (nh - h) / 2
+  /// ```
+  /// 0° 时 rot 为恒等变换，两项抵消、offset 不变，向后兼容。
+  Offset _offsetKeepingResizeAnchor({
+    required Offset offset,
+    required Size oldSize,
+    required Size newSize,
+    required double rotation,
+  }) {
+    if (rotation == 0.0) return offset;
+    final dW = (newSize.width - oldSize.width) / 2;
+    final dH = (newSize.height - oldSize.height) / 2;
+    final rad = rotation * math.pi / 180.0;
+    final cosR = math.cos(rad);
+    final sinR = math.sin(rad);
+    return Offset(
+      offset.dx - dW + (dW * cosR - dH * sinR),
+      offset.dy - dH + (dW * sinR + dH * cosR),
+    );
+  }
 
   void _nudgeElement(String id, Offset delta) {
     final index = _currentElements.indexWhere((element) => element.id == id);

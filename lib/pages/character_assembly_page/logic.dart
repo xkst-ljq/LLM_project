@@ -540,13 +540,53 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         'base_box',
       }.contains(type);
 
+  /// 形变后修正 offset，让**把手的对角保持不动**。
+  ///
+  /// 这是旋转后「图形到处跑」的根因（首轮测试反馈）：
+  /// `Transform.rotate` 绕**中心**旋转，而 `offset` 定义的是**左上角**。
+  /// 改尺寸时若 offset 不动，中心就会跟着移动，
+  /// 旋转后的图形等于绕着一个正在移动的中心转，视觉上四处乱窜。
+  ///
+  /// 未旋转时中心其实也在动，只是增长方向恰好与屏幕轴对齐、
+  /// 左上角看着没变，所以一直没暴露。
+  ///
+  /// 推导：设锚点为局部左上角在屏幕上的位置
+  /// ```
+  /// anchor = offset + (w/2, h/2) + rot(-w/2, -h/2)
+  /// ```
+  /// 令新尺寸下 anchor 不变，解出
+  /// ```
+  /// newOffset = offset - (dW, dH) + rot(dW, dH)
+  /// 其中 dW = (nw - w) / 2, dH = (nh - h) / 2
+  /// ```
+  /// 0° 时 rot 为恒等变换，两项抵消、offset 不变，向后兼容。
+  Offset _offsetKeepingResizeAnchor({
+    required Offset offset,
+    required Size oldSize,
+    required Size newSize,
+    required double rotation,
+  }) {
+    final dW = (newSize.width - oldSize.width) / 2;
+    final dH = (newSize.height - oldSize.height) / 2;
+    if (rotation == 0.0) return offset;
+    final rad = rotation * math.pi / 180.0;
+    final cosR = math.cos(rad);
+    final sinR = math.sin(rad);
+    return Offset(
+      offset.dx - dW + (dW * cosR - dH * sinR),
+      offset.dy - dH + (dW * sinR + dH * cosR),
+    );
+  }
+
   /// 应用一次形变拖动。
   ///
-  /// 关键：把屏幕位移**投影到元件的局部轴**。
-  /// 把手随元件一起旋转，若仍拿屏幕 dx/dy 当宽高增量，
-  /// 转 90° 后朝屏幕右边拖改的却是 width，视觉上元件在往下长——
-  /// 把手转了、数学没转，两者不一致怎么用都拧巴。
-  /// 投影之后，把手朝哪个视觉方向，就朝哪个方向拖、元件朝那个方向长。
+  /// 两个关键点，缺一个都会让旋转后的形变不可用：
+  ///
+  /// 1. 把屏幕位移**投影到元件的局部轴**。把手随元件一起旋转，
+  ///    若仍拿屏幕 dx/dy 当宽高增量，转 90° 后朝屏幕右边拖改的却是
+  ///    width，视觉上元件在往下长——把手转了、数学没转。
+  /// 2. 改完尺寸**修正 offset 保持把手对角不动**，
+  ///    见 `_offsetKeepingResizeAnchor`。
   void _applyResizeDrag(UIElement element, Offset globalPosition) {
     final index = _elements.indexWhere((e) => e.id == element.id);
     if (index == -1) return;
@@ -571,6 +611,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         .clamp(minSize.height, maxSize.height)
         .toDouble();
 
+    final nextSize = Size(nextWidth, nextHeight);
+    // 以**当前**尺寸为基准修正，而不是拖动起点的尺寸——
+    // 这里每帧都在增量修正，用起点尺寸会把偏移重复累加。
+    final nextOffset = _offsetKeepingResizeAnchor(
+      offset: current.offset,
+      oldSize: current.size,
+      newSize: nextSize,
+      rotation: current.rotation,
+    );
+
     setState(() {
       final module = current.module;
       // 手动改过尺寸就关掉自适应，否则下一帧又被算回去。
@@ -580,13 +630,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         );
         props['autoFit'] = false;
         _elements[index] = current.copyWith(
-          size: Size(nextWidth, nextHeight),
+          size: nextSize,
+          offset: nextOffset,
           module: module.copyWith(properties: props),
         );
         return;
       }
       _elements[index] = current.copyWith(
-        size: Size(nextWidth, nextHeight),
+        size: nextSize,
+        offset: nextOffset,
       );
     });
   }

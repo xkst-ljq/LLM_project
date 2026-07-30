@@ -88,7 +88,147 @@ Size applyResize({
   );
 }
 
+/// 复刻 `_offsetKeepingResizeAnchor`。
+Offset offsetKeepingAnchor({
+  required Offset offset,
+  required Size oldSize,
+  required Size newSize,
+  required double rotation,
+}) {
+  if (rotation == 0.0) return offset;
+  final dW = (newSize.width - oldSize.width) / 2;
+  final dH = (newSize.height - oldSize.height) / 2;
+  final rad = rotation * math.pi / 180.0;
+  final cosR = math.cos(rad);
+  final sinR = math.sin(rad);
+  return Offset(
+    offset.dx - dW + (dW * cosR - dH * sinR),
+    offset.dy - dH + (dW * sinR + dH * cosR),
+  );
+}
+
+/// 局部左上角（把手对角）在屏幕上的位置。
+///
+/// `Transform.rotate` 绕中心旋转，因此要先到中心、再转半尺寸向量。
+Offset anchorScreenPos(Offset offset, Size size, double rotation) {
+  final cx = offset.dx + size.width / 2;
+  final cy = offset.dy + size.height / 2;
+  final rad = rotation * math.pi / 180.0;
+  final cosR = math.cos(rad);
+  final sinR = math.sin(rad);
+  final hx = -size.width / 2;
+  final hy = -size.height / 2;
+  return Offset(
+    cx + hx * cosR - hy * sinR,
+    cy + hx * sinR + hy * cosR,
+  );
+}
+
 void main() {
+  group('形变锚点（旋转后图形到处跑的根因）', () {
+    // 用户反馈：旋转 90° 后拖把手，形变没有锚点、图形到处跑。
+    //
+    // 根因：Transform.rotate 绕**中心**旋转，而 offset 定义的是**左上角**。
+    // 改尺寸时若 offset 不动，中心就跟着移动，
+    // 旋转后的图形等于绕一个正在移动的中心转。
+    // 未旋转时中心也在动，只是增长方向与屏幕轴对齐、左上角看着没变。
+
+    test('不修正 offset 时，旋转 90 度后锚点确实会跑', () {
+      const off = Offset(100, 100);
+      const oldSize = Size(80, 40);
+      const newSize = Size(100, 40);
+      final before = anchorScreenPos(off, oldSize, 90);
+      final after = anchorScreenPos(off, newSize, 90);
+      // 加宽 20，锚点跑了 (10, -10)——这就是「到处跑」的观感来源。
+      expect(after.dx - before.dx, closeTo(10, 1e-9));
+      expect(after.dy - before.dy, closeTo(-10, 1e-9));
+    });
+
+    test('修正后锚点在各角度都严格不动', () {
+      const off = Offset(100, 100);
+      const oldSize = Size(80, 40);
+      const newSize = Size(100, 60);
+      for (final angle in [0.0, 45.0, 90.0, 180.0, 213.0, -30.0]) {
+        final fixed = offsetKeepingAnchor(
+          offset: off,
+          oldSize: oldSize,
+          newSize: newSize,
+          rotation: angle,
+        );
+        final before = anchorScreenPos(off, oldSize, angle);
+        final after = anchorScreenPos(fixed, newSize, angle);
+        expect(after.dx, closeTo(before.dx, 1e-9), reason: '$angle');
+        expect(after.dy, closeTo(before.dy, 1e-9), reason: '$angle');
+      }
+    });
+
+    test('未旋转时 offset 完全不变，向后兼容', () {
+      // 0° 时 rot 是恒等变换，两项抵消。
+      // 这条保证老行为一字不改。
+      const off = Offset(100, 100);
+      final fixed = offsetKeepingAnchor(
+        offset: off,
+        oldSize: const Size(80, 40),
+        newSize: const Size(500, 300),
+        rotation: 0,
+      );
+      expect(fixed, off);
+    });
+
+    test('缩小时锚点同样不动', () {
+      const off = Offset(100, 100);
+      const oldSize = Size(120, 80);
+      const newSize = Size(60, 30);
+      final fixed = offsetKeepingAnchor(
+        offset: off,
+        oldSize: oldSize,
+        newSize: newSize,
+        rotation: 90,
+      );
+      final before = anchorScreenPos(off, oldSize, 90);
+      final after = anchorScreenPos(fixed, newSize, 90);
+      expect(after.dx, closeTo(before.dx, 1e-9));
+      expect(after.dy, closeTo(before.dy, 1e-9));
+    });
+
+    test('逐帧增量修正与一次性修正等价', () {
+      // Assembly 每帧以当前尺寸为基准增量修正，
+      // Studio 以拖动起点快照一次性修正。
+      // 变换是线性的，两者必须给出同一结果，否则两边手感会分叉。
+      const deg = 37.0;
+      const startOff = Offset(100, 100);
+      const startSize = Size(80, 40);
+      const finalSize = Size(140, 90);
+
+      final oneShot = offsetKeepingAnchor(
+        offset: startOff,
+        oldSize: startSize,
+        newSize: finalSize,
+        rotation: deg,
+      );
+
+      var off = startOff;
+      var cur = startSize;
+      for (final f in [
+        const Size(95, 52),
+        const Size(110, 65),
+        const Size(125, 78),
+        finalSize,
+      ]) {
+        off = offsetKeepingAnchor(
+          offset: off,
+          oldSize: cur,
+          newSize: f,
+          rotation: deg,
+        );
+        cur = f;
+      }
+
+      expect(off.dx, closeTo(oneShot.dx, 1e-9));
+      expect(off.dy, closeTo(oneShot.dy, 1e-9));
+    });
+  });
+
   group('局部轴投影（旋转后手感的关键）', () {
     test('未旋转时与直接用屏幕位移等价', () {
       final r = projectToLocalAxes(const Offset(20, 0), 0);
