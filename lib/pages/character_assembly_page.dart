@@ -1085,27 +1085,20 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 ),
               if (el.composite!.exposedPorts != null)
                 ..._buildExposedPorts(el),
+              // 选中外框：与原子组件同一套虚线框。
+              //
+              // 原先是左上角一枚「实例黑盒」文字标签——它既占地方，
+              // 又和其他标签抢位置，且没有指示实际边界。
+              // 形状参考复合内部的容器面（见 `_compositeBoundaryOf`）。
               if (isSelected)
-                Positioned(
-                  left: 6,
-                  top: 6,
+                Positioned.fill(
                   child: IgnorePointer(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF5E35B1),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        '实例黑盒',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    child: CustomPaint(
+                      painter: DashedSelectionBorderPainter(
+                        strokeWidth: 1.2,
+                        shape: _outlineShapeOf(el),
+                        borderRadius: _outlineBorderRadiusOf(el),
+                        isPerfectCircle: _isPerfectCircleOutlineOf(el),
                       ),
                     ),
                   ),

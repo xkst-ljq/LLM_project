@@ -1800,19 +1800,18 @@ class UIRenderer {
     Size size,
   ) {
     final props = module.properties;
-    final live = MessageFlowScope.maybeOf(context);
+    final scope = MessageFlowScope.maybeOf(context);
     final isStudio = UISceneModeScope.of(context);
 
-    // 编辑态用示例消息，避免作者面对一块空白无从判断排版。
-    // 运行时**绝不**回落到示例：拿不到作用域时宁可显示「暂无消息」，
-    // 也不能让玩家看见三句假对话。
-    final messages = isStudio
-        ? const [
-            FlowMessage(role: 'assistant', content: '你好，旅者。'),
-            FlowMessage(role: 'user', content: '这里是哪里？'),
-            FlowMessage(role: 'assistant', content: '星雾边境的白鸦环。'),
-          ]
-        : (live ?? const <FlowMessage>[]);
+    // 编辑态与预览都用示例消息，只有真实聊天里才显示真实历史。
+    //
+    // 判定依据是作用域上的 isLive 标记，不能看列表是否为空——
+    // 运行时预览与「真实聊天但历史为空」都是空列表，
+    // 前者该显示示例，后者该显示「暂无消息」。
+    //
+    // 真实聊天里**绝不**回落到示例，不能让玩家看见假对话。
+    final useSample = isStudio || scope == null || !scope.isLive;
+    final messages = useSample ? kMessageFlowSampleMessages : scope.messages;
 
     final showUser = props['showUser'] != false;
     final showAssistant = props['showAssistant'] != false;

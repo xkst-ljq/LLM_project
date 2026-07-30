@@ -424,8 +424,27 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   // 选中外框长得一样。直接照搬 `ui_studio_page/logic.dart` 的实现——
   // 这三个函数是纯查表，抽公共模块的收益不抵引入依赖的成本。
 
+  /// 复合组件的容器面：选中外框以它为形状参考。
+  ///
+  /// 复合是黑盒，本身没有形状；但作者摆它时看到的就是那个容器面，
+  /// 外框贴合容器面才不会出现「框是方的、组件是圆的」。
+  UIElement? _compositeBoundaryOf(UIElement el) {
+    if (!el.isComposite || el.composite == null) return null;
+    for (final child in el.composite!.children) {
+      if (!child.isComposite &&
+          child.module?.properties['is_container_boundary'] == true) {
+        return child;
+      }
+    }
+    return null;
+  }
+
   UIModuleShape _outlineShapeOf(UIElement el) {
-    if (el.isComposite) return UIModuleShape.rounded;
+    if (el.isComposite) {
+      final boundary = _compositeBoundaryOf(el);
+      if (boundary != null) return _outlineShapeOf(boundary);
+      return UIModuleShape.rounded;
+    }
     final mod = el.module;
     if (mod == null) return UIModuleShape.rounded;
     if (mod.type == 'progress') {
@@ -460,7 +479,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   double _outlineBorderRadiusOf(UIElement el) {
-    if (el.isComposite) return 12;
+    if (el.isComposite) {
+      final boundary = _compositeBoundaryOf(el);
+      if (boundary != null) return _outlineBorderRadiusOf(boundary);
+      return 12;
+    }
     final mod = el.module;
     if (mod == null) return 12;
     if (mod.type == 'progress') {
@@ -490,7 +513,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   bool _isPerfectCircleOutlineOf(UIElement el) {
-    if (el.isComposite) return false;
+    if (el.isComposite) {
+      final boundary = _compositeBoundaryOf(el);
+      if (boundary != null) return _isPerfectCircleOutlineOf(boundary);
+      return false;
+    }
     final mod = el.module;
     if (mod == null) return false;
     if (mod.type == 'indicator' || (mod.type == 'progress' && mod.properties['progressShape'] == 'ring')) {

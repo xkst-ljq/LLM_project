@@ -170,6 +170,8 @@ class ChatAssemblyMount extends StatelessWidget {
         enablePageGestures: enablePageGestures,
         onDismissRequested: onDismissRequested,
         messages: messages,
+        // 挂载点一律是真实聊天页，与编辑器预览区分开。
+        liveMessages: true,
         onSendMessage: onSendMessage,
         onMessageAction: onMessageAction,
         characterAvatar: characterAvatar,

@@ -72,6 +72,12 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 用户头像本地路径。
   final String userAvatar;
 
+  /// 这些消息是否来自真实对话。
+  ///
+  /// 编辑器的运行时预览不传（false），消息流会显示示例对话——
+  /// 预览一块空白无从判断排版效果。
+  final bool liveMessages;
+
   /// 供消息流组件显示的对话历史。
   ///
   /// 不塞进 `module.properties`：消息是会话数据而非组件配置，
@@ -105,6 +111,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.enablePageGestures = true,
     this.onDismissRequested,
     this.messages = const <FlowMessage>[],
+    this.liveMessages = false,
     this.onSendMessage,
     this.highlightRules,
     this.onMessageAction,
@@ -761,6 +768,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
 
     return MessageFlowScope(
       messages: widget.messages,
+      // 只有真实聊天页会传 liveMessages；编辑器预览不传，
+      // 消息流据此显示示例对话而不是「暂无消息」。
+      isLive: widget.liveMessages,
       child: AvatarScope(
       characterAvatar: widget.characterAvatar,
       userAvatar: widget.userAvatar,
