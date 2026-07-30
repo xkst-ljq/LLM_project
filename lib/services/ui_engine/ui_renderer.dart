@@ -3434,16 +3434,21 @@ class _ParticleBurstPainter extends CustomPainter {
   }
 }
 
-/// 水波：椭圆同心环扩散 + 壁面反弹。
+/// 水波：同心圆环扩散 + 壁面反弹。
 ///
-/// ## 为什么是椭圆
+/// ## 为什么是正圆而不是椭圆
 ///
-/// 旧版画正圆再用 ClipRRect 裁切。进度条 200×12 时，
-/// 直径 300px 的圆只剩中间一条 12px 高的窄带——
-/// 用户描述的「只有中点很小一个部分有白圈动画」正是这个。
+/// 上一版让椭圆完全跟随组件长宽比，进度条 200×12 时
+/// 环的长宽比恒为 **16.7:1**——那是一条扁线，用户评价
+/// 「几圈极其扁的椭圆光圈，一点也不像波纹」。
 ///
-/// 改用椭圆归一化距离后，环沿组件长宽比拉伸，
-/// 波前到达两端与上下边缘的时刻一致，扁长组件也能扫满。
+/// 真实水波是**同心圆**。在窄容器里之所以看起来特别，
+/// 是因为圆被上下边界裁掉了，只剩左右两段近乎垂直的弧向两端扫过。
+/// 那才是水波在窄槽里的真实样子。
+///
+/// 因此这里画正圆（半径按对角线归一），靠 `ClipRRect` 自然裁切。
+/// 只在长宽比过于悬殊时做温和的纵向压缩，避免圆环在小方块上
+/// 大得离谱，但压缩比封顶，绝不退化成扁线。
 class _RippleRingsPainter extends CustomPainter {
   final double progress;
   final double intensity;
@@ -3458,9 +3463,9 @@ class _RippleRingsPainter extends CustomPainter {
   /// 波前在 [0,1] 之间折返：撞到边界原路弹回。
   ///
   /// 用户要求「像波浪一样碰到壁面会反弹」，
-  /// 瞬时事件正需要这种「敲一下、整个组件荡一荡」的手感。
+  /// 瞬时事件正需要「敲一下、整个组件荡一荡」的手感。
   static double _front(double t, double phaseOffset) {
-    final d = (t * 2.5 + phaseOffset) * 1.0;
+    final d = t * 2.5 + phaseOffset;
     final k = d.floor();
     final f = d - k;
     return k.isEven ? f : 1.0 - f;
@@ -3470,12 +3475,18 @@ class _RippleRingsPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty || progress <= 0 || progress >= 1) return;
 
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final halfW = size.width / 2;
-    final halfH = size.height / 2;
+    final center = Offset(size.width / 2, size.height / 2);
+    // 以对角线为基准，波前到 1.0 时刚好覆盖整个组件的四角。
+    final maxRadius = math.sqrt(
+      (size.width / 2) * (size.width / 2) +
+          (size.height / 2) * (size.height / 2),
+    );
 
-    // 整体衰减：越到后面波越平息。
+    // 纵向压缩：仅在极扁的组件上轻微收一点，下限 0.55——
+    // 完全跟随长宽比就会退化成扁线（上一版的错误）。
+    final aspect = size.height / size.width;
+    final squash = aspect >= 1.0 ? 1.0 : (0.55 + 0.45 * aspect).clamp(0.55, 1.0);
+
     final envelope = math.pow(1.0 - progress, 1.2).toDouble();
     if (envelope <= 0.01) return;
 
@@ -3483,33 +3494,38 @@ class _RippleRingsPainter extends CustomPainter {
     const phases = [0.0, 0.22, 0.44];
     for (var i = 0; i < phases.length; i++) {
       final front = _front(progress, phases[i]);
-      // 后发的波更淡。
       final fade = envelope * (1.0 - i * 0.28).clamp(0.0, 1.0);
       if (fade <= 0.01) continue;
 
-      // 环带本身有厚度，用描边宽度表达。
-      final strokeWidth = (1.5 + 2.5 * intensity) * fade;
-      if (strokeWidth <= 0.1) continue;
+      final r = maxRadius * front;
+      if (r <= 0.5) continue;
+
+      final strokeWidth = (1.6 + 2.8 * intensity) * fade;
+      if (strokeWidth <= 0.15) continue;
 
       final rect = Rect.fromCenter(
-        center: Offset(cx, cy),
-        width: halfW * 2 * front,
-        height: halfH * 2 * front,
+        center: center,
+        width: r * 2,
+        height: r * 2 * squash,
       );
-      if (rect.width <= 0.5 || rect.height <= 0.5) continue;
 
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..color = color.withValues(alpha: (0.75 * fade).clamp(0.0, 1.0));
-      canvas.drawOval(rect, paint);
+      canvas.drawOval(
+        rect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..color = color.withValues(alpha: (0.8 * fade).clamp(0.0, 1.0)),
+      );
 
-      // 内侧再描一道更亮的细边，让波纹有「水面反光」的层次。
-      final innerPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = (strokeWidth * 0.45).clamp(0.4, 3.0)
-        ..color = Colors.white.withValues(alpha: (0.5 * fade).clamp(0.0, 1.0));
-      canvas.drawOval(rect.deflate(strokeWidth * 0.5), innerPaint);
+      // 内侧一道更亮的细边，做出水面反光的层次。
+      canvas.drawOval(
+        rect.deflate(strokeWidth * 0.5),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (strokeWidth * 0.4).clamp(0.4, 3.0)
+          ..color =
+              Colors.white.withValues(alpha: (0.55 * fade).clamp(0.0, 1.0)),
+      );
     }
   }
 
