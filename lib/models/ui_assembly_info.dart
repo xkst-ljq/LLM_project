@@ -15,6 +15,14 @@ class UIAssemblyInfo {
   static const double minPcbHeight = 64.0;
   static const double maxPcbHeight = 2000.0;
 
+  /// PCB 圆角半径的默认值与上限。
+  ///
+  /// 默认 20 与早期布尔 `pcbRounded == true` 的观感保持一致，
+  /// 旧卡迁移后外观不变。上限 40 是经验值——PCB 最窄 120，
+  /// 再大圆角会把四角啃掉太多可用面积。
+  static const double defaultPcbRadius = 20.0;
+  static const double kMaxPcbRadius = 40.0;
+
   /// 伴生 UI 的宽度上限。
   ///
   /// 伴生内嵌在 AI 消息气泡里，宽度不能超出气泡的可显示区域，
@@ -55,7 +63,13 @@ class UIAssemblyInfo {
   double pcbWidth;
   double pcbHeight;
   int pcbColorValue;
-  bool pcbRounded;
+
+  /// PCB 圆角半径（0~kMaxPcbRadius）。
+  ///
+  /// 取代早期的布尔 `pcbRounded`（只能在 20 与 0 之间二选一，
+  /// 做不出「微圆角 8」这类效果）。旧卡按 true→20 / false→0 迁移，
+  /// 见 `fromJson`。
+  double pcbRadius;
   DateTime createdAt;
 
   UIAssemblyInfo({
@@ -67,7 +81,7 @@ class UIAssemblyInfo {
     this.pcbWidth = defaultPcbWidth,
     this.pcbHeight = 800,
     this.pcbColorValue = 0xFFFFFFFF,
-    this.pcbRounded = true,
+    this.pcbRadius = defaultPcbRadius,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -99,7 +113,9 @@ class UIAssemblyInfo {
     'pcbWidth': pcbWidth,
     'pcbHeight': pcbHeight,
     'pcbColorValue': pcbColorValue,
-    'pcbRounded': pcbRounded,
+    'pcbRadius': pcbRadius,
+    // 继续写出布尔字段：老版本读到新卡时仍能得到一个合理的圆角形态。
+    'pcbRounded': pcbRadius > 0,
     'createdAt': createdAt.millisecondsSinceEpoch,
   };
 
@@ -112,7 +128,12 @@ class UIAssemblyInfo {
     pcbWidth: (json['pcbWidth'] as num?)?.toDouble() ?? defaultPcbWidth,
     pcbHeight: (json['pcbHeight'] as num?)?.toDouble() ?? 800,
     pcbColorValue: (json['pcbColorValue'] as num?)?.toInt() ?? 0xFFFFFFFF,
-    pcbRounded: json['pcbRounded'] != false,
+    // 优先读新字段；旧卡没有它，则按布尔迁移（true→20 / false→0）。
+    pcbRadius: (json['pcbRadius'] as num?)?.toDouble().clamp(
+              0.0,
+              kMaxPcbRadius,
+            ) ??
+        (json['pcbRounded'] != false ? defaultPcbRadius : 0.0),
     createdAt: DateTime.fromMillisecondsSinceEpoch(
       (json['createdAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
     ),

@@ -264,7 +264,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: _pcbColor,
-                                  borderRadius: BorderRadius.circular(_pcbRounded ? 20 : 0),
+                                  borderRadius: BorderRadius.circular(_pcbRadius),
                                   border: Border.all(
                                     color: _hasIllegalPcbElements
                                         ? const Color(0xFFE53935)
@@ -400,7 +400,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                 child: IgnorePointer(
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(
-                                      _pcbRounded ? 20 : 0,
+                                      _pcbRadius,
                                     ),
                                     child: Container(
                                       color: const Color(0xFF000000)
@@ -558,6 +558,11 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                         _buildTopIconBtn(
                           Icons.visibility_rounded,
                           _enterRuntimePreview,
+                        ),
+                        // A14-5：画布设置（底色 / 圆角 / 精确尺寸）。
+                        _buildTopIconBtn(
+                          Icons.dashboard_customize_outlined,
+                          _showPcbSettingsDialog,
                         ),
                         _buildTopIconBtn(
                           Icons.layers_outlined,

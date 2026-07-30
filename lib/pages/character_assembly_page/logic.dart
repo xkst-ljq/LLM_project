@@ -30,7 +30,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   late Size _pcbSize;
   late Offset _pcbOffset;
   late Color _pcbColor;
-  late bool _pcbRounded;
+  late double _pcbRadius;
   bool _didInitialViewportCenter = false;
   double _pcbResizeStartHeight = _defaultPcbSize.height;
   double _pcbResizeStartWidth = _defaultPcbSize.width;
@@ -157,7 +157,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       info.pcbHeight.clamp(_pcbMinHeight, _pcbMaxHeight).toDouble(),
     );
     _pcbColor = Color(info.pcbColorValue);
-    _pcbRounded = info.pcbRounded;
+    _pcbRadius = info.pcbRadius;
     _pcbOffset = Offset.zero;
     _canvasOffset = Offset.zero;
     _restoreAssemblyPages();
@@ -7072,7 +7072,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _info.pcbWidth = _pcbSize.width;
     _info.pcbHeight = _pcbSize.height;
     _info.pcbColorValue = _pcbColor.toARGB32();
-    _info.pcbRounded = _pcbRounded;
+    _info.pcbRadius = _pcbRadius;
   }
 
   String _exportAssemblyInfoJson() {
@@ -7250,6 +7250,182 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _pcbSize.width,
     _pcbSize.height,
   );
+
+  /// A14-5：PCB 自定义面板。
+  ///
+  /// 补的是一个**真缺口**：`pcbColorValue` / 圆角这两个字段
+  /// 数据结构、序列化、渲染全都齐了，但全局没有任何赋值点，
+  /// 只在初始化时读一次——PCB 永远是白色圆角，作者根本改不了。
+  /// 与 A14-3 之前「Assembly 一个取色器都没有」是同一类缺口。
+  ///
+  /// 尺寸虽然能拖手柄改，但拖不出精确值（想要正好 300 宽只能碰运气），
+  /// 因此这里一并给出数值输入，与 A14-2 给元件补精确几何同理。
+  Future<void> _showPcbSettingsDialog() async {
+    var color = _pcbColor;
+    var radius = _pcbRadius;
+    final widthController = TextEditingController(
+      text: _pcbSize.width.toStringAsFixed(0),
+    );
+    final heightController = TextEditingController(
+      text: _pcbSize.height.toStringAsFixed(0),
+    );
+
+    Future<void> closeDialog(BuildContext ctx, bool value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('画布设置'),
+          // 带 TextField 的弹窗一律包滚动：键盘弹出时会 overflow。
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '底色',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  _buildColorPalette(
+                    color,
+                    (picked) => setDialogState(() => color = picked),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text(
+                        '圆角',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                      const Spacer(),
+                      Text(
+                        radius.toStringAsFixed(0),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF777783),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: radius.clamp(0.0, UIAssemblyInfo.kMaxPcbRadius),
+                    min: 0,
+                    max: UIAssemblyInfo.kMaxPcbRadius,
+                    divisions: UIAssemblyInfo.kMaxPcbRadius.toInt(),
+                    onChanged: (v) => setDialogState(() => radius = v),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '尺寸',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2, bottom: 6),
+                    child: Text(
+                      '也可以直接拖画布右侧与底部的手柄；'
+                      '这里用于填精确数值。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF777783),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: widthController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: '宽',
+                            isDense: true,
+                            helperText: '${_pcbMinWidth.toStringAsFixed(0)}'
+                                '~${_pcbMaxWidthForMode.toStringAsFixed(0)}',
+                            helperStyle: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: heightController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: '高',
+                            isDense: true,
+                            helperText: '${_pcbMinHeight.toStringAsFixed(0)}'
+                                '~${_pcbMaxHeight.toStringAsFixed(0)}',
+                            helperStyle: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_info.mode == 'extra_companion')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: Text(
+                        '伴生 UI 内嵌在 AI 消息气泡里，宽度上限比其余模式更窄；'
+                        '超出会被运行时等比缩小，字号与间距都会变样。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFE65100),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => closeDialog(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => closeDialog(ctx, true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true && mounted) {
+      // 输入非法（空 / 非数字）时保留原值，不要跳回默认尺寸——
+      // 作者辛苦拖出来的画布不该因为手滑清空输入框就没了。
+      final nextWidth = _clampPcbWidth(
+        double.tryParse(widthController.text.trim()) ?? _pcbSize.width,
+      );
+      final nextHeight = _clampPcbHeight(
+        double.tryParse(heightController.text.trim()) ?? _pcbSize.height,
+      );
+      setState(() {
+        _pcbColor = color;
+        _pcbRadius = radius.clamp(0.0, UIAssemblyInfo.kMaxPcbRadius);
+        _pcbSize = Size(nextWidth, nextHeight);
+      });
+      _persistAssemblyElements();
+    }
+
+    // 控制器延后释放：弹窗退场动画期间仍会读它。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widthController.dispose();
+      heightController.dispose();
+    });
+  }
 
   double _clampPcbHeight(double value) =>
       value.clamp(_pcbMinHeight, _pcbMaxHeight).toDouble();

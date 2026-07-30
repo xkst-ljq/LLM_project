@@ -764,7 +764,8 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       ...activePage.elements,
     ];
     final snapshot = LinkerSnapshot.fromElements(elementsForSnapshot);
-    final borderRadius = BorderRadius.circular(widget.assemblyInfo.pcbRounded ? 20 : 0);
+    final borderRadius =
+        BorderRadius.circular(widget.assemblyInfo.pcbRadius);
 
     return MessageFlowScope(
       messages: widget.messages,
