@@ -599,6 +599,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final removeIds = {element.id, ...orphans.map((e) => e.id)};
     setState(() {
       _elements.removeWhere((e) => removeIds.contains(e.id));
+      // A14-1c：删掉的若是容器面，组员会指向一个不存在的父级，
+      // 导致运行时 `isElementVisibleInSurfaceHierarchy` 判定失败而整组隐身。
+      // 解除它们的归属，就地留在当前层级（与「出组保留显示层级」一致）。
+      for (var i = 0; i < _elements.length; i++) {
+        final parent = _elements[i].parentSurfaceId;
+        if (parent != null && removeIds.contains(parent)) {
+          _elements[i] = _elements[i].copyWith(clearParentSurface: true);
+        }
+      }
       // 覆写槽位随复合组件一起消失，否则会留下指向不存在组件的孤儿配置。
       _activePropertyOverrides
           .removeWhere((o) => removeIds.contains(o.componentId));
@@ -648,11 +657,126 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   ///
   /// `_elements` 的顺序即 Stack 的绘制顺序：**越靠后越上层**。
   /// 因此界面上的「上移一层」= 在列表里往后挪一位（delta = +1）。
+  ///
+  /// A14-1c 之后分三种情况：
+  ///   - 组内成员 → 只在同组兄弟之间移动（规则 1）
+  ///   - 父级面   → 整组一起移动（规则 2）
+  ///   - 顶层元素 → 在顶层元素之间移动，跨组时整组跳过
   void _moveElementLayer(UIElement element, int delta) {
+    final parentId = element.parentSurfaceId;
+    if (parentId != null && parentId.isNotEmpty) {
+      _moveMemberWithinGroup(element, parentId, delta);
+      return;
+    }
+    if (_isSurfaceElement(element) && _surfaceGroupIds(element.id).length > 1) {
+      _moveSurfaceGroupOrder(element.id, delta);
+      return;
+    }
+    _moveTopLevelElement(element, delta);
+  }
+
+  /// 该元素在其所属层级里还能否朝指定方向移动。
+  ///
+  /// 与 `_moveElementLayer` 用同一套分支，避免按钮可点却没反应。
+  bool _canMoveElementLayer(UIElement element, int delta) {
+    final parentId = element.parentSurfaceId;
+    if (parentId != null && parentId.isNotEmpty) {
+      final siblings =
+          _elements.where((e) => e.parentSurfaceId == parentId).toList();
+      final i = siblings.indexWhere((e) => e.id == element.id);
+      final t = i + delta;
+      return i != -1 && t >= 0 && t < siblings.length;
+    }
+
+    if (_isSurfaceElement(element) && _surfaceGroupIds(element.id).length > 1) {
+      final groupIds = _surfaceGroupIds(element.id);
+      final others = _elements.where((e) => !groupIds.contains(e.id)).length;
+      final firstIndex = _elements.indexWhere((e) => groupIds.contains(e.id));
+      if (firstIndex == -1) return false;
+      final blockStart = _elements
+          .take(firstIndex)
+          .where((e) => !groupIds.contains(e.id))
+          .length;
+      final target = blockStart + delta;
+      return target >= 0 && target <= others;
+    }
+
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return false;
+    return index + delta >= 0 && index + delta < _elements.length;
+  }
+
+  /// 规则 1：组内成员只与同组兄弟换位，不会窜出组外。
+  void _moveMemberWithinGroup(UIElement element, String parentId, int delta) {
+    final siblings = _elements
+        .where((e) => e.parentSurfaceId == parentId)
+        .toList();
+    final memberIndex = siblings.indexWhere((e) => e.id == element.id);
+    final targetMember = memberIndex + delta;
+    if (memberIndex == -1 ||
+        targetMember < 0 ||
+        targetMember >= siblings.length) {
+      return;
+    }
+
+    final fromIndex = _elements.indexWhere((e) => e.id == element.id);
+    final toIndex =
+        _elements.indexWhere((e) => e.id == siblings[targetMember].id);
+    if (fromIndex == -1 || toIndex == -1) return;
+
+    setState(() {
+      final moved = _elements.removeAt(fromIndex);
+      _elements.insert(toIndex, moved);
+      // 换位后重整一次，保证父面仍在块首（规则 3）。
+      _normalizeSurfaceGroupOrder(parentId);
+    });
+    _persistAssemblyElements();
+  }
+
+  /// 规则 2：父级面变换层级 = 整组一起变换。
+  void _moveSurfaceGroupOrder(String surfaceId, int delta) {
+    _normalizeSurfaceGroupOrder(surfaceId);
+    final groupIds = _surfaceGroupIds(surfaceId);
+    final grouped = _elements.where((e) => groupIds.contains(e.id)).toList();
+    if (grouped.isEmpty) return;
+
+    final others = _elements.where((e) => !groupIds.contains(e.id)).toList();
+    final firstIndex = _elements.indexWhere((e) => groupIds.contains(e.id));
+    final blockStart =
+        _elements.take(firstIndex).where((e) => !groupIds.contains(e.id)).length;
+    // 整块在 others 中的落点前后各挪一格。
+    final target = blockStart + delta;
+    if (target < 0 || target > others.length) return;
+
+    setState(() {
+      _elements
+        ..clear()
+        ..addAll(others.take(target))
+        ..addAll(grouped)
+        ..addAll(others.skip(target));
+    });
+    _persistAssemblyElements();
+  }
+
+  /// 顶层元素之间移动。跨越某个组时整组一起跳过，
+  /// 避免顶层元素卡在别人的组中间把组切断。
+  void _moveTopLevelElement(UIElement element, int delta) {
     final index = _elements.indexWhere((e) => e.id == element.id);
     if (index == -1) return;
-    final target = index + delta;
+
+    var target = index + delta;
+    while (target >= 0 && target < _elements.length) {
+      final crossed = _elements[target];
+      final crossedRoot = _rootSurfaceOf(crossed) ??
+          (_isSurfaceElement(crossed) ? crossed.id : null);
+      if (crossedRoot == null) break;
+      // 落点在某个组内部：继续往同方向跨，直到越过整组。
+      final groupIds = _surfaceGroupIds(crossedRoot);
+      if (groupIds.length <= 1) break;
+      target += delta;
+    }
     if (target < 0 || target >= _elements.length) return;
+
     setState(() {
       final moved = _elements.removeAt(index);
       _elements.insert(target, moved);
@@ -3066,6 +3190,237 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'image',
       'message_flow',
     }.contains(type);
+  }
+
+  // ========== A14-1c：容器归属（分组）==========
+
+  static const Set<String> _surfaceTypes = {
+    'surface',
+    'surface_art',
+    'primitive_art',
+    'base_box',
+  };
+
+  bool _isSurfaceElement(UIElement element) =>
+      !element.isComposite && _surfaceTypes.contains(element.module?.type);
+
+  /// 能否被指派归属。
+  ///
+  /// 纯逻辑件排除在外：它们运行时不渲染，谈不上「在某个面板里」。
+  bool _canAssignSurfaceMembership(UIElement element) =>
+      !_isLogicOnlyElement(element);
+
+  /// 防环：不能把 A 挂到自己的后代下面。
+  bool _wouldCreateSurfaceParentCycle(String childId, String parentId) {
+    var currentId = parentId;
+    final visited = <String>{};
+    while (currentId.isNotEmpty && visited.add(currentId)) {
+      if (currentId == childId) return true;
+      final index = _elements.indexWhere((e) => e.id == currentId);
+      if (index == -1) return false;
+      currentId = _elements[index].parentSurfaceId ?? '';
+    }
+    return false;
+  }
+
+  /// 组内全部 id（父面 + 递归后代）。
+  Set<String> _surfaceGroupIds(String surfaceId) {
+    final ids = <String>{surfaceId};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final element in _elements) {
+        final parent = element.parentSurfaceId;
+        if (parent != null && ids.contains(parent) && ids.add(element.id)) {
+          grew = true;
+        }
+      }
+    }
+    return ids;
+  }
+
+  /// 组内元素按「父面在前、成员依次在后」排列。
+  ///
+  /// 这是规则 3 的落点：子组件恒高于父级面，
+  /// 因为 `_elements` 越靠后越上层，父面排在块首即为最底。
+  List<UIElement> _orderedSurfaceGroupElements(String surfaceId) {
+    final byId = {for (final e in _elements) e.id: e};
+    final ordered = <UIElement>[];
+    void visit(String id) {
+      final surface = byId[id];
+      if (surface == null) return;
+      ordered.add(surface);
+      for (final child in _elements) {
+        if (child.parentSurfaceId != id) continue;
+        if (_isSurfaceElement(child)) {
+          visit(child.id);
+        } else {
+          ordered.add(child);
+        }
+      }
+    }
+
+    visit(surfaceId);
+    return ordered;
+  }
+
+  /// 把整组收拢成连续块并置于父面原位。
+  ///
+  /// 规则 4：进组 / 出组的**那一刻**就重整，而不是等作者手动切一次层级。
+  /// Studio 是事后补救（`_moveMemberWithinSurfaceGroup` 里发现顺序颠倒才修），
+  /// 导致必须多切一下才能真正进入组层级。
+  void _normalizeSurfaceGroupOrder(String surfaceId) {
+    final groupIds = _surfaceGroupIds(surfaceId);
+    if (groupIds.length <= 1) return;
+    final grouped = _orderedSurfaceGroupElements(surfaceId);
+    if (grouped.isEmpty) return;
+
+    final firstIndex =
+        _elements.indexWhere((e) => groupIds.contains(e.id));
+    if (firstIndex == -1) return;
+    // 组块插回「原先第一个组成员之前有多少个非组成员」的位置，
+    // 这样整组在画布上的相对高度不变。
+    final insertAt =
+        _elements.take(firstIndex).where((e) => !groupIds.contains(e.id)).length;
+    final others =
+        _elements.where((e) => !groupIds.contains(e.id)).toList();
+
+    _elements
+      ..clear()
+      ..addAll(others.take(insertAt))
+      ..addAll(grouped)
+      ..addAll(others.skip(insertAt));
+  }
+
+  /// 元素所属组的根父面 id；无归属返回 null。
+  String? _rootSurfaceOf(UIElement element) {
+    var parent = element.parentSurfaceId;
+    if (parent == null || parent.isEmpty) return null;
+    final visited = <String>{element.id};
+    while (true) {
+      if (!visited.add(parent!)) return null;
+      final index = _elements.indexWhere((e) => e.id == parent);
+      if (index == -1) return null;
+      final next = _elements[index].parentSurfaceId;
+      if (next == null || next.isEmpty) return parent;
+      parent = next;
+    }
+  }
+
+  /// 设置 / 解除归属。
+  Future<void> _showSurfaceMembershipDialog(UIElement element) async {
+    if (!_canAssignSurfaceMembership(element)) {
+      _showSnack('逻辑组件不参与容器归属');
+      return;
+    }
+
+    final surfaces = _elements.where((candidate) {
+      if (candidate.id == element.id) return false;
+      if (!_isSurfaceElement(candidate)) return false;
+      return !_wouldCreateSurfaceParentCycle(element.id, candidate.id);
+    }).toList();
+
+    var selected = element.parentSurfaceId;
+
+    final applied = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('容器归属'),
+          content: SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RadioListTile<String?>(
+                    value: null,
+                    groupValue: selected,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('顶层元素（不属于任何面板）'),
+                    onChanged: (v) => setDialogState(() => selected = v),
+                  ),
+                  const Divider(height: 1),
+                  if (surfaces.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text(
+                        '当前页面还没有可作容器的面板。'
+                        '请先从「基础显示」拖入一个面板。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFE65100),
+                          height: 1.35,
+                        ),
+                      ),
+                    )
+                  else
+                    for (final surface in surfaces)
+                      RadioListTile<String?>(
+                        value: surface.id,
+                        groupValue: selected,
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text(surface.module?.name ?? surface.id),
+                        onChanged: (v) => setDialogState(() => selected = v),
+                      ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '归属后：面板隐藏时组内组件一起隐藏；'
+                    '调整面板层级会带动整组；'
+                    '组内组件只能在面板之上调整层级。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('应用'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (applied != true || !mounted) return;
+    if (selected == element.parentSurfaceId) return;
+
+    final previousParent = element.parentSurfaceId;
+    setState(() {
+      final index = _elements.indexWhere((e) => e.id == element.id);
+      if (index == -1) return;
+      _elements[index] = _elements[index].copyWith(
+        parentSurfaceId: selected,
+        clearParentSurface: selected == null,
+      );
+
+      // 规则 4：进组立即重整，作者不用再手动切一次层级。
+      if (selected != null) {
+        _normalizeSurfaceGroupOrder(selected!);
+      }
+      // 出组时**不移动位置**（规则 5）：保留它在组内的显示层级，
+      // 而不是弹回进组前的旧位置——所见即所得。
+      // 但原组仍需重整，因为成员少了一个。
+      if (previousParent != null && previousParent.isNotEmpty) {
+        final stillExists =
+            _elements.any((e) => e.id == previousParent);
+        if (stillExists) _normalizeSurfaceGroupOrder(previousParent);
+      }
+    });
+    _persistAssemblyElements();
   }
 
   // ========== A14-1d：精确几何 / 精确位移 ==========

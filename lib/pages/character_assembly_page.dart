@@ -750,10 +750,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     final layoutLocked = element.layoutLocked;
     final sealed = element.sealed;
     final locked = _isStructureLocked(element);
-    final index = _elements.indexWhere((e) => e.id == element.id);
-    // 列表越靠后越上层：能上移 = 后面还有位置。
-    final canMoveUp = index != -1 && index < _elements.length - 1;
-    final canMoveDown = index > 0;
+    // 能否上/下移要按「同层邻居」判断，不能看全局下标——
+    // 组内成员只与同组兄弟换位，看全局会误判为还能移动。
+    final canMoveUp = _canMoveElementLayer(element, 1);
+    final canMoveDown = _canMoveElementLayer(element, -1);
 
     return Material(
       color: Colors.transparent,
@@ -808,6 +808,19 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 ],
               ],
             ),
+            // 容器归属：把组件放进某个面板，或移出到顶层。
+            if (_canAssignSurfaceMembership(element))
+              _buildRailButton(
+                icon: element.parentSurfaceId != null
+                    ? Icons.folder_rounded
+                    : Icons.folder_open_rounded,
+                label: element.parentSurfaceId != null ? '已归属' : '归属',
+                color: element.parentSurfaceId != null
+                    ? const Color(0xFF6A1B9A)
+                    : const Color(0xFF546E7A),
+                onTap:
+                    locked ? null : () => _showSurfaceMembershipDialog(element),
+              ),
             // 精确几何：X / Y / 宽 / 高 / 旋转，与 Studio 同一套表单。
             //
             // 逻辑件不给这个按钮：它们运行时不渲染，画布上的位置只是

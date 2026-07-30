@@ -448,7 +448,47 @@ Assembly 版比 Studio 更紧凑（间距 12 vs 16），
 Studio 的中心键是纯色方块，无信息。
 **待办：把这个形态同步回 `ui_studio_page`。**
 
-#### A14-1c 容器归属（待做，需求已明确）
+#### A14-1c 容器归属（已完成，待本地测试）
+
+核心不变式：**`_elements` 里每个组是一段连续块，父面永远在块首**。
+因为列表越靠后越上层，父面在块首即为整组最底——规则 3 由此自动成立，
+不需要每次比较父子下标。
+
+五条规则的落点：
+
+| 规则 | 实现 |
+|---|---|
+| 1 组内层级独立 | `_moveMemberWithinGroup` 只在同组兄弟间换位 |
+| 2 父面带动整组 | `_moveSurfaceGroupOrder` 整块挪动 |
+| 3 子恒高于父 | `_orderedSurfaceGroupElements` 父面置于块首 |
+| 4 进出组立即重整 | `_normalizeSurfaceGroupOrder`，在归属变更那一刻调用 |
+| 5 出组保留显示层级 | 解除归属时**不移动位置**，只清 `parentSurfaceId` |
+
+运行时作用**已有基础**，不需新建：
+`LinkerService.isElementVisibleInSurfaceHierarchy` 早已按
+`parentSurfaceId` 递归判定可见性，`UIRenderer` 在非编辑态调用它，
+父面隐藏时组内组件一起隐藏。`LinkerSnapshot` 也已带上 parents 映射。
+
+#### 三处容易漏的地方
+
+**1. 「能否移动」的判断要与移动逻辑同分支。**
+初版按全局下标判断，组内成员会出现「按钮可点但没反应」——
+它在全局还有后继，在组内却已是最后一个。
+新增 `_canMoveElementLayer`，与 `_moveElementLayer` 用同一套分支。
+
+**2. 顶层元素跨组时要整组跳过。**
+否则顶层元素会卡进别人的组中间，把连续块切断，
+破坏「组是连续块」的不变式。
+
+**3. 删除容器面必须清理组员的 `parentSurfaceId`。**
+留下悬空父级会让 `isElementVisibleInSurfaceHierarchy`
+沿链查不到父级而返回 false——**整组在运行时凭空消失**。
+清理后组员就地留在当前层级，与规则 5 一致。
+
+逻辑件不参与归属（`_canAssignSurfaceMembership`）：
+它们运行时不渲染，谈不上「在某个面板里」。
+
+测试：`test/assembly_surface_group_test.dart`。
 
 用户明确了这不只是编辑期分组，**要有实际运行时作用**，
 且层级规则比 Studio 更严格：
