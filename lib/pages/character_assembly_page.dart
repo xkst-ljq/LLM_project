@@ -738,38 +738,54 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          // 靠左对齐：锁定那一行在展开时会变宽，
+          // 不指定的话其余按钮会跟着居中，整列看起来在左右晃。
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 锁定：两档共用一栏，按当前状态决定露几个按钮。
+            // 锁定：两档共用一格，全锁**向右展开**而非向下。
             //
             //   未锁   → 只有「半锁定」
-            //   半锁   → 「已半锁」+ 追加「全锁定」
+            //   半锁   → 「已半锁」+ 右侧追加「全锁定」
             //   全锁   → 只有「已全锁」（顶替到半锁的位置）
             //
-            // 这样默认只占一格，需要时才展开第二个，
-            // 省下一整栏的常驻占位。
-            if (!sealed)
-              _buildRailButton(
-                icon: layoutLocked
-                    ? Icons.lock_outline_rounded
-                    : Icons.lock_open_rounded,
-                label: layoutLocked ? '已半锁' : '半锁定',
-                color: layoutLocked
-                    ? const Color(0xFF0288D1)
-                    : const Color(0xFF546E7A),
-                onTap: () => _toggleElementLayoutLock(element),
-              ),
-            // 全锁按钮只在「已半锁」或「已全锁」时出现。
-            // 未锁状态下不显示——避免作者跳过半锁直接全锁，
-            // 那样解锁时会突然回落到半锁态，显得没来由。
-            if (layoutLocked || sealed)
-              _buildRailButton(
-                icon: sealed ? Icons.lock_rounded : Icons.lock_person_rounded,
-                label: sealed ? '已全锁' : '全锁定',
-                color: sealed
-                    ? const Color(0xFFE65100)
-                    : const Color(0xFF546E7A),
-                onTap: () => _toggleElementSealed(element),
-              ),
+            // 向右而不是向下的两个理由：
+            //   - 并排更能体现「同一组的两个档位」，向下会被当成
+            //     与复制 / 删除并列的独立功能；
+            //   - 向下插入会把下方所有按钮推移一格，
+            //     手指刚点完半锁，复制键就跑到了原本删除键的位置。
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!sealed)
+                  _buildRailButton(
+                    icon: layoutLocked
+                        ? Icons.lock_outline_rounded
+                        : Icons.lock_open_rounded,
+                    label: layoutLocked ? '已半锁' : '半锁定',
+                    color: layoutLocked
+                        ? const Color(0xFF0288D1)
+                        : const Color(0xFF546E7A),
+                    onTap: () => _toggleElementLayoutLock(element),
+                  ),
+                // 全锁按钮只在「已半锁」或「已全锁」时出现。
+                // 未锁状态下不显示——避免作者跳过半锁直接全锁，
+                // 那样解锁时会突然回落到半锁态，显得没来由。
+                if (layoutLocked || sealed) ...[
+                  // 间距收到 4：展开态会临时压住 PCB 左缘，
+                  // 能省一点是一点（它只在半锁时出现，不是常驻）。
+                  if (!sealed) const SizedBox(width: 4),
+                  _buildRailButton(
+                    icon:
+                        sealed ? Icons.lock_rounded : Icons.lock_person_rounded,
+                    label: sealed ? '已全锁' : '全锁定',
+                    color: sealed
+                        ? const Color(0xFFE65100)
+                        : const Color(0xFF546E7A),
+                    onTap: () => _toggleElementSealed(element),
+                  ),
+                ],
+              ],
+            ),
             // 锁定后禁止改动结构：这正是锁定的目的。
             _buildRailButton(
               icon: Icons.copy_rounded,
