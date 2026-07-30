@@ -109,7 +109,99 @@ bool shouldPromptScheme(Map<String, dynamic> data) {
   return s.isNotEmpty && t.isNotEmpty;
 }
 
+/// 复刻「待定起拖」状态机。
+///
+/// 按下只记待定，位移超过阈值才真正起拖。
+/// 这是为了让双击可用：按下即 setState 会让 linker 子树重建、
+/// GestureDetector 被 unmount，双击的第二次按下永远等不到。
+class WireDragMachine {
+  static const double slop = 6.0;
+
+  Offset? pendingOrigin;
+  bool dragging = false;
+  int setStateCount = 0;
+
+  void pointerDown(Offset at) {
+    pendingOrigin = at;
+    // 关键：这里绝不 setState。
+  }
+
+  bool pointerMove(Offset at) {
+    if (dragging) return true;
+    final origin = pendingOrigin;
+    if (origin == null) return false;
+    if ((at - origin).distance < slop) return true;
+    dragging = true;
+    pendingOrigin = null;
+    setStateCount++;
+    return true;
+  }
+
+  bool pointerUp(Offset at) {
+    if (dragging) {
+      dragging = false;
+      pendingOrigin = null;
+      setStateCount++;
+      return true;
+    }
+    final had = pendingOrigin != null;
+    pendingOrigin = null;
+    return had;
+  }
+}
+
 void main() {
+  group('待定起拖（双击可用性的前提）', () {
+    test('纯点击全程不触发任何重建', () {
+      // 按下即 setState 会重建 linker 子树、卸载其 GestureDetector，
+      // 双击的第二次按下就永远等不到了，还会引发
+      // 「setState called when widget tree was locked」崩溃。
+      final m = WireDragMachine();
+      m.pointerDown(const Offset(100, 100));
+      m.pointerUp(const Offset(100, 100));
+      expect(m.setStateCount, 0);
+      expect(m.dragging, isFalse);
+    });
+
+    test('双击的两次按下都不会起拖', () {
+      final m = WireDragMachine();
+      for (var i = 0; i < 2; i++) {
+        m.pointerDown(const Offset(100, 100));
+        m.pointerUp(const Offset(100, 100));
+      }
+      expect(m.setStateCount, 0);
+    });
+
+    test('阈值内的抖动不算起拖', () {
+      // 手指按下时的轻微抖动不应该被当成接线。
+      final m = WireDragMachine();
+      m.pointerDown(const Offset(100, 100));
+      m.pointerMove(const Offset(103, 102));
+      expect(m.dragging, isFalse);
+      expect(m.setStateCount, 0);
+    });
+
+    test('超过阈值才真正起拖', () {
+      final m = WireDragMachine();
+      m.pointerDown(const Offset(100, 100));
+      m.pointerMove(const Offset(120, 100));
+      expect(m.dragging, isTrue);
+      expect(m.setStateCount, 1);
+    });
+
+    test('起拖阈值小于 kTouchSlop，接线优先于拖动元件', () {
+      // Flutter 的 kTouchSlop 是 18。接线要更早被判定，
+      // 否则手指刚动就把 linker 整个拖走了。
+      expect(WireDragMachine.slop, lessThan(18.0));
+    });
+
+    test('没按下过热区时不消费移动事件', () {
+      // 返回 false 才能让资产栏拖放等其他逻辑继续处理。
+      final m = WireDragMachine();
+      expect(m.pointerMove(const Offset(50, 50)), isFalse);
+    });
+  });
+
   group('热区划分', () {
     test('左右热区之外仍有足够的拖动区', () {
       // linker 在 Assembly 是 132×44。

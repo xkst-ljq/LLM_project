@@ -516,6 +516,27 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   Offset? _dragConnectionEnd;
   String? _hoveringTargetId;
 
+  // ===== 待定起拖（按下先不算数）=====
+  //
+  // 起初把 `_beginConnectionDrag` 直接绑在 `onPointerDown` 上，
+  // 结果**双击断开彻底不可用并且崩溃**：
+  // 双击的第一次按下就会启动一轮拖拽 → setState → linker 子树重建
+  // （配置徽标随连线状态增减，Stack 子节点位置错位）→ GestureDetector
+  // 被 unmount → DoubleTapGestureRecognizer.dispose → 竞技场清扫 →
+  // 画布的 onTap 意外获胜 → 在树锁定期间 setState → 断言崩溃。
+  //
+  // 根本矛盾：「按下即起拖」与「双击」互斥——双击的两次按下
+  // 每次都会启动一轮拖拽状态。
+  // 因此按下只**记下待定**，位移超过阈值才真正起拖；
+  // 纯点击（无位移）全程不改状态，把手势干净地留给 tap / doubleTap。
+  String? _pendingWireSourceId;
+  String? _pendingWirePort;
+  Offset? _pendingWireOrigin;
+
+  /// 起拖位移阈值。略小于 kTouchSlop(18)，
+  /// 让接线比「拖动元件」更早被判定，避免手指刚动就把 linker 拖走。
+  static const double _kWireDragSlop = 6.0;
+
   /// 可作为连线一端的候选元素。
   ///
   /// 与配置式对话框的 `_linkerCandidates` 同口径：排除 linker 自身、
@@ -562,20 +583,74 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
   }
 
-  void _beginConnectionDrag(UIElement linkerElement, String port, Offset at) {
+  /// 按下端口热区：只记下待定，**不改任何状态**。
+  ///
+  /// 一旦在这里 setState，双击就会被自身引发的重建打断（见上方说明）。
+  void _armConnectionDrag(UIElement linkerElement, String port, Offset at) {
+    if (linkerElement.sealed) return; // 提示留到真正起拖时再给
+    _pendingWireSourceId = linkerElement.id;
+    _pendingWirePort = port;
+    _pendingWireOrigin = at;
+  }
+
+  void _clearPendingWire() {
+    _pendingWireSourceId = null;
+    _pendingWirePort = null;
+    _pendingWireOrigin = null;
+  }
+
+  /// 位移达到阈值，把待定升级为真正的拖拽。
+  void _beginConnectionDrag(Offset at) {
+    final id = _pendingWireSourceId;
+    final port = _pendingWirePort;
+    if (id == null || port == null) return;
+    final element = _assemblyElementById(id);
+    _clearPendingWire();
+    if (element == null) return;
+
     // 全锁的 linker 连线不可改（与配置式对话框同一条规则）。
-    if (linkerElement.sealed) {
+    if (element.sealed) {
       _showSnack('该联动器已全锁定，需先解除全锁才能改接线');
       return;
     }
-    _selectElement(linkerElement.id);
+    _selectElement(id);
     setState(() {
       _isDraggingConnection = true;
-      _draggingSourceId = linkerElement.id;
+      _draggingSourceId = id;
       _draggingSourcePort = port;
       _dragConnectionEnd = at;
       _hoveringTargetId = null;
     });
+  }
+
+  /// 指针移动：先判断待定是否该升级，再更新拖拽。
+  ///
+  /// 返回 true 表示这次移动被接线逻辑消费，调用方不应再做别的处理。
+  bool _handleWirePointerMove(Offset position) {
+    if (_isDraggingConnection) {
+      _updateConnectionDrag(position);
+      return true;
+    }
+    final origin = _pendingWireOrigin;
+    if (origin == null) return false;
+    if ((position - origin).distance < _kWireDragSlop) return true;
+    _beginConnectionDrag(position);
+    if (_isDraggingConnection) _updateConnectionDrag(position);
+    return true;
+  }
+
+  /// 指针抬起。返回 true 表示被接线逻辑消费。
+  bool _handleWirePointerUp(Offset position) {
+    if (_isDraggingConnection) {
+      _updateConnectionDrag(position);
+      _completeConnectionDrag();
+      return true;
+    }
+    // 没起拖 = 这是一次点击，交给 tap / doubleTap 识别器，
+    // 这里必须什么状态都不改，否则又会打断双击。
+    final hadPending = _pendingWireOrigin != null;
+    _clearPendingWire();
+    return hadPending;
   }
 
   void _updateConnectionDrag(Offset globalPosition) {
@@ -600,6 +675,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   void _cancelConnectionDrag() {
+    _clearPendingWire();
     if (!_isDraggingConnection) return;
     setState(() {
       _isDraggingConnection = false;
@@ -957,6 +1033,24 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   void _clearElementSelection() {
     if (_selectedCompositeId == null) return;
+    // 兜底：这个回调可能在 widget 树锁定期间被触发——
+    // 手势竞技场清扫（GestureArenaManager.sweep）发生在
+    // BuildOwner.finalizeTree 卸载子树的过程中，
+    // 此刻 setState 会抛「widget tree was locked」。
+    // 实测路径：接线导致 linker 子树重建 → 其 GestureDetector 被 unmount
+    // → DoubleTapGestureRecognizer.dispose → sweep → 画布 onTap 获胜。
+    // 已在调用侧加了拦截，这里再兜一层，避免同类路径再次崩溃。
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _selectedCompositeId == null) return;
+        setState(() {
+          _selectedCompositeId = null;
+          _showNudgePad = false;
+        });
+      });
+      return;
+    }
     setState(() {
       _selectedCompositeId = null;
       _showNudgePad = false;

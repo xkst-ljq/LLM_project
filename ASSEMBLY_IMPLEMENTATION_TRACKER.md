@@ -847,6 +847,48 @@ pan 要先跨过 kTouchSlop 才触发，那段距离里手指已经移开、起�
 热区划分、端点资格、命中检测（含旋转与「漏掉 pcbOffset 会错位」）、
 落点只改单端、方案弹出时机、断开单侧。
 
+**首轮测试反馈：两个问题（已修）**
+
+**1. linker 左右多出两个圆点 —— 我自作主张加的，已移除。**
+
+用户没要求过，Studio 的 linker 也没有。更糟的是它造成**错误暗示**：
+让人以为必须抓着圆点才能拉线，实际整条 24px 边都能拉，
+线只是恰好从左中/右中的端口位置画出，视觉上像从圆点出发。
+违背了「与 Studio 一致」的前提。
+
+教训：**移植时自己加的「改进」要格外警惕**，
+它可能引入原方案没有的错误心智模型。
+
+**2. 双击断不开且崩溃 —— 设计层面的互斥，不是小 bug。**
+
+报错 `setState() called when widget tree was locked`，
+栈：`DoubleTapGestureRecognizer.dispose` → `arena.sweep` →
+画布 `onTap` → `_clearElementSelection` → setState，
+发生在 `BuildOwner.finalizeTree` 卸载子树期间。
+
+根因链：起拖绑在 `onPointerDown` → 双击的**第一次**按下就启动拖拽
+→ setState → linker 子树重建（配置徽标随连线状态增减）
+→ 其 `GestureDetector` 被 unmount → 双击识别器 dispose
+→ 竞技场清扫 → 画布 onTap 意外获胜 → 树锁定期间 setState → 崩。
+
+**根本矛盾：「按下即起拖」与「双击」互斥**——
+双击的两次按下每次都会启动一轮拖拽状态。
+
+改法：按下只记**待定**（`_pendingWireSourceId/Port/Origin`），
+**不改任何状态**；位移超过 `_kWireDragSlop = 6.0` 才真正起拖。
+纯点击全程零 setState，手势干净地留给 tap / doubleTap。
+
+阈值取 6 而非 Flutter 的 `kTouchSlop`(18)：接线要比「拖动元件」
+更早被判定，否则手指刚动就把 linker 拖走了。
+
+另加两道防线：
+- 画布 `onTap` 在接线中/待定中直接 return
+- `_clearElementSelection` 检测 `SchedulerPhase.persistentCallbacks`，
+  处于该阶段则改用 `addPostFrameCallback` 延后
+
+测试增至 24 例，新增「待定起拖」组，用状态机复刻并断言
+**纯点击与双击全程 setState 次数为 0**。
+
 **配置式对话框保留**：从左侧操作栏仍可进入，
 两种方式共用同一份 linker 数据。画线适合快速搭，
 对话框适合精确改方案参数。

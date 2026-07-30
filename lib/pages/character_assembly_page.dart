@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../models/card_entry_target.dart';
@@ -210,22 +211,15 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             // 接线的移动/抬起要在**最外层**接，而不是挂在 linker 上：
             // 手指一旦离开 linker 本体，挂在它身上的监听就收不到事件了。
             onPointerMove: (event) {
-              if (_isDraggingConnection) {
-                _updateConnectionDrag(event.position);
-                return;
-              }
+              if (_handleWirePointerMove(event.position)) return;
               _handlePlacementPointerMove2(event);
             },
             onPointerUp: (event) {
-              if (_isDraggingConnection) {
-                _updateConnectionDrag(event.position);
-                _completeConnectionDrag();
-                return;
-              }
+              if (_handleWirePointerUp(event.position)) return;
               _finishPlacementPointer2(event);
             },
             onPointerCancel: (event) {
-              if (_isDraggingConnection) {
+              if (_isDraggingConnection || _pendingWireOrigin != null) {
                 _cancelConnectionDrag();
                 return;
               }
@@ -243,6 +237,15 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                         ? null
                         : (details) => setState(() => _canvasOffset += details.delta),
                     onTap: () {
+                      // 接线刚结束的那一帧，linker 子树重建会让其
+                      // GestureDetector 被 unmount，竞技场清扫时这里的
+                      // onTap 可能被误判为获胜（栈里能看到
+                      // DoubleTapGestureRecognizer.dispose → arena.sweep）。
+                      // 此时若清空选中会在树锁定期间 setState 而崩溃。
+                      if (_isDraggingConnection ||
+                          _pendingWireOrigin != null) {
+                        return;
+                      }
                       if (_showAssetDrawer) setState(() => _showAssetDrawer = false);
                       if (_showLayerPanel) setState(() => _showLayerPanel = false);
                       _clearCompositeSelection();
@@ -1347,8 +1350,8 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     Widget portZone(String port) {
       return Listener(
         behavior: HitTestBehavior.opaque,
-        onPointerDown: (event) =>
-            _beginConnectionDrag(el, port, event.position),
+        // 只记待定，不改状态——按下即 setState 会打断双击（见 logic 说明）。
+        onPointerDown: (event) => _armConnectionDrag(el, port, event.position),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           // 双击该侧热区断开这一端，与 Studio 一致。
@@ -1391,13 +1394,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 ),
               ),
             ),
-          // 接线端点提示：让作者一眼看出「这两侧能拉线」。
-          // 已连上的一侧实心，未连的空心。
-          Positioned.fill(
-            child: IgnorePointer(
-              child: _buildLinkerPortHints(el),
-            ),
-          ),
           Positioned.fill(
             child: Row(
               children: [
@@ -1457,43 +1453,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               bottom: -14,
               child: IgnorePointer(child: _buildBadgeRow(_bottomBadgesOf(el))),
             ),
-        ],
-      ),
-    );
-  }
-
-  /// linker 两侧的接线端点提示。
-  ///
-  /// 实心 = 该端已连；空心 = 未连。作者不必打开对话框就能看出
-  /// 「这条还差哪一端」，配合连线本身形成完整反馈。
-  Widget _buildLinkerPortHints(UIElement el) {
-    final data = el.module?.properties['linker'];
-    final map = data is Map ? data : const {};
-    final hasSource =
-        (map['sourceModuleId']?.toString() ?? '').isNotEmpty;
-    final hasTarget =
-        (map['targetModuleId']?.toString() ?? '').isNotEmpty;
-
-    Widget dot(bool filled, Color color) => Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: filled ? color : Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(color: color, width: 1.5),
-          ),
-        );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        // 垂直居中：端口在元件的左中 / 右中，与连线端点位置对应
-        // （见 _assemblyPortOffset）。
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          dot(hasSource, LinkerLineColors.input),
-          dot(hasTarget, LinkerLineColors.output),
         ],
       ),
     );
