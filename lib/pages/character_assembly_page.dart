@@ -649,6 +649,20 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     child: _buildNudgePad(_selectedElement!),
                   ),
 
+                // ===== 2.7 后台化拖动提示（灵感池 4.1）=====
+                //
+                // 双阈值滞回是个「看不见的规则」，不给反馈作者根本不知道
+                // 自己现在处在吸附带还是后台区，会以为组件卡住了。
+                if (_backstageHintElementId != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 92,
+                    child: IgnorePointer(
+                      child: Center(child: _buildBackstageDragHint()),
+                    ),
+                  ),
+
                 // ===== 3. 图层弹出窗 =====
                 if (_showLayerPanel)
                   Positioned(top: 48, right: 8, child: _buildLayerPanel()),
@@ -889,6 +903,19 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 ],
               ],
             ),
+            // 灵感池 4.1 的兜底入口：拖出 PCB 是主路径，但锁定的元件
+            // 拖不动，只能靠这个按钮切换；从后台移回时还会自动吸附回内壁。
+            if (_canUseBackgroundRuntimePlacement(element))
+              _buildRailButton(
+                icon: _isBackstageElement(element)
+                    ? Icons.visibility_off_rounded
+                    : Icons.visibility_rounded,
+                label: _isBackstageElement(element) ? '后台中' : '转后台',
+                color: _isBackstageElement(element)
+                    ? const Color(0xFF546E7A)
+                    : const Color(0xFF37474F),
+                onTap: () => _toggleElementBackstage(element),
+              ),
             // 容器归属：把组件放进某个面板，或移出到顶层。
             if (_canAssignSurfaceMembership(element))
               _buildRailButton(
@@ -1530,6 +1557,8 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           _selectElement(el.id);
           _startTouchScreenPos = d.globalPosition;
           _startTouchElemOffset = el.offset;
+          // 灵感池 4.1：重置本次拖动的边界滞回状态。
+          _beginBackstageDragTracking(el);
         },
         // A14-1b：半锁 / 全锁都禁止拖动。仍允许选中与双击编辑——
         // 锁定针对的是「误拖走位」，不是「不让改配置」。
@@ -1537,15 +1566,24 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             ? null
             : (d) {
                 final delta = d.globalPosition - _startTouchScreenPos;
+                // 可后台化的原子在 PCB 边界附近走双阈值滞回：
+                // 吸附带内被拉回内壁，越过脱离阈值才允许拖到外面。
+                final resolved = _resolveBackstageDragOffset(
+                  el,
+                  _startTouchElemOffset + delta,
+                );
                 setState(() {
                   final i = _elements.indexWhere((e) => e.id == el.id);
                   if (i != -1) {
-                    _elements[i] =
-                        el.copyWith(offset: _startTouchElemOffset + delta);
+                    _elements[i] = el.copyWith(offset: resolved);
                   }
                 });
               },
-        onPanEnd: (_) => _persistAssemblyElements(),
+        onPanEnd: (_) {
+          // 先落定后台标记，再持久化——两者进同一次快照，撤销一步到位。
+          setState(() => _commitBackstageDragResult(el.id));
+          _persistAssemblyElements();
+        },
         child: SizedBox(
           width: el.size.width,
           height: el.size.height,
@@ -2569,6 +2607,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       badges.add(_buildTextBadge('容器面', const Color(0xFFE65100)));
     }
 
+    // 灵感池 4.1：后台节点角标。与 Studio 同色（0xFF546E7A），
+    // 这是跨编辑器契约——同一个元件在两个编辑器里不该长得不一样。
+    if (_isBackstageElement(el)) {
+      badges.add(_buildTextBadge('后台', const Color(0xFF546E7A)));
+    }
+
     final channel = _dataChannelOf(el.module);
     if (channel != null) {
       badges.add(_buildDataChannelChip(channel));
@@ -2587,6 +2631,46 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       ));
     }
     return badges;
+  }
+
+  /// 拖动中的后台化状态提示条。
+  ///
+  /// 只在可后台化的原子被拖到 PCB 边界附近时出现，
+  /// 明确告诉作者「现在松手会发生什么」。
+  Widget _buildBackstageDragHint() {
+    final bool willBackstage = _backstageHintWillBackstage;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: (willBackstage
+                ? const Color(0xFF546E7A)
+                : const Color(0xFF37474F))
+            .withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            willBackstage
+                ? Icons.visibility_off_rounded
+                : Icons.center_focus_strong_rounded,
+            size: 15,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            willBackstage ? '松手转为后台节点' : '松手回到画布内',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 标签行：横向排列，超出组件宽度时换行而不是被裁掉。

@@ -7938,6 +7938,238 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   bool _requiresPcbContainment(UIElement element) => element.isComposite;
 
+  // ==========================================================================
+  // 灵感池 4.1：拖出 PCB 自动后台化（双阈值滞回）
+  // ==========================================================================
+  //
+  // 目标是消灭「半进半出」这个尴尬状态：元件要么老实待在 PCB 里，
+  // 要么明确变成后台逻辑节点，中间地带不允许长期停留。
+  //
+  // 两个阈值必须**不相等**，否则元件会在边界上来回抖：
+  // 每帧越界一点点 → 被吸回内壁 → 下一帧手指还在外面 → 又越界。
+  // 滞回（hysteresis）的意思就是「进」和「出」用两条不同的线。
+  //
+  //   |<-- PCB 内 -->|  吸附带  |   后台区
+  //   ---------------+---------+------------→ 越界深度
+  //                  0      _kBackstageDetach(56)
+  //
+  // - 越界深度 ∈ (0, 56)：吸附，元件被拉回内壁，显示"松手回到画布"提示
+  // - 越界深度 ≥ 56：脱离吸附，跟手自由拖动，显示"松手转为后台"
+  // - 从后台区往回拖，越界深度 ≤ 24 时才重新吸附（回吸阈值更小 = 滞回）
+
+  /// 脱离吸附、切换为后台的阈值（元件边界越过 PCB 内壁的距离）。
+  static const double _kBackstageDetachThreshold = 56.0;
+
+  /// 从后台区拖回时重新吸附的阈值。必须 < 脱离阈值，这就是滞回。
+  static const double _kBackstageReattachThreshold = 24.0;
+
+  /// 本次拖动是否已脱离吸附（跨帧状态，onPanStart 重置）。
+  bool _dragDetachedFromPcb = false;
+
+  /// 当前拖动中的元件 id 与它的后台预判结果，仅用于画布提示。
+  String? _backstageHintElementId;
+  bool _backstageHintWillBackstage = false;
+
+  /// 元件是否允许后台化。
+  ///
+  /// 白名单与 Studio 的 `_canUseBackgroundRuntimePlacement` 保持一致——
+  /// 这是跨编辑器契约，两边不一致会出现「Studio 能标 Assembly 不能」的怪事。
+  /// 复合件永远不许出 PCB（3.1 已确认的产品规则），因此直接排除。
+  bool _canUseBackgroundRuntimePlacement(UIElement element) {
+    const backgroundCapableTypes = {
+      'text',
+      'switch',
+      'progress',
+      'indicator',
+      'input',
+    };
+    return !element.isComposite &&
+        backgroundCapableTypes.contains(element.module?.type);
+  }
+
+  bool _isBackstageElement(UIElement element) =>
+      element.module?.properties['runtimePlacement'] == 'background';
+
+  /// linker / math_node / timer / page_router 天生就是后台节点，
+  /// 运行时本来就不渲染，不需要也不应该走后台化标记。
+  bool _isNativeBackendNode(UIElement element) => const {
+        'linker',
+        'math_node',
+        'timer',
+        _pageRouterType,
+      }.contains(element.module?.type);
+
+  /// 元件矩形越过 PCB 内壁的深度（PCB 局部坐标，不含 `_pcbOffset`）。
+  ///
+  /// 返回 0 表示完全在内。四个方向取最大值：只要有一边探出去了，
+  /// 探得最远的那一边决定当前处于哪个带。
+  ///
+  /// 用轴对齐包围盒而非旋转后的真实四角：后台化是个粗判定，
+  /// 旋转元件的精确外接框会让阈值手感随角度漂移，反而不好用。
+  double _pcbOverflowDepth(Offset offset, Size size) {
+    final double left = -offset.dx;
+    final double top = -offset.dy;
+    final double right = offset.dx + size.width - _pcbSize.width;
+    final double bottom = offset.dy + size.height - _pcbSize.height;
+    final double depth = math.max(
+      math.max(left, top),
+      math.max(right, bottom),
+    );
+    return depth <= 0 ? 0.0 : depth;
+  }
+
+  /// 把元件吸附回 PCB 内壁（贴边，不是塞回中心）。
+  Offset _snapOffsetInsidePcb(Offset desired, Size size) {
+    // PCB 比元件还小时 max 会变负，clamp 会抛异常，所以先兜底。
+    final double maxX = math.max(0.0, _pcbSize.width - size.width);
+    final double maxY = math.max(0.0, _pcbSize.height - size.height);
+    return Offset(
+      desired.dx.clamp(0.0, maxX).toDouble(),
+      desired.dy.clamp(0.0, maxY).toDouble(),
+    );
+  }
+
+  /// 拖动开始：重置本次拖动的滞回状态。
+  ///
+  /// **必须在每次 onPanStart 调用**，否则上一次拖动的「已脱离」
+  /// 会泄漏到下一次，导致刚起手就直接判后台。
+  void _beginBackstageDragTracking(UIElement element) {
+    // 已经是后台的元件，起手就算脱离状态——它本来就在外面，
+    // 不该一碰就被吸回画布里。
+    _dragDetachedFromPcb = _isBackstageElement(element);
+    _backstageHintElementId = null;
+    _backstageHintWillBackstage = false;
+  }
+
+  /// 拖动中：按双阈值滞回决定最终 offset，并更新画布提示。
+  ///
+  /// 返回值是**修正后的** offset，调用方应当直接采用它。
+  /// 不允许后台化的元件原样返回（它们可以随便摆在 PCB 外，
+  /// 那是老早就有的行为：「位移不限制负坐标，逻辑件常被特意拖出 PCB」）。
+  Offset _resolveBackstageDragOffset(UIElement element, Offset desired) {
+    if (!_canUseBackgroundRuntimePlacement(element)) return desired;
+
+    final double depth = _pcbOverflowDepth(desired, element.size);
+
+    if (_dragDetachedFromPcb) {
+      // 已脱离：只有拖回到「回吸阈值」以内才重新被吸附。
+      if (depth <= _kBackstageReattachThreshold) {
+        _dragDetachedFromPcb = false;
+      }
+    } else {
+      // 未脱离：越过脱离阈值才放行。
+      if (depth >= _kBackstageDetachThreshold) {
+        _dragDetachedFromPcb = true;
+        // 手感反馈：这一下是状态跳变，值得震一下。
+        HapticFeedback.selectionClick();
+      }
+    }
+
+    final bool willBackstage = _dragDetachedFromPcb;
+    // 提示只在真的贴近/越过边界时出现。元件老老实实在 PCB 中间挪动时
+    // 顶上挂个横条纯属干扰。
+    if (depth > 0) {
+      _backstageHintElementId = element.id;
+      _backstageHintWillBackstage = willBackstage;
+    } else {
+      _backstageHintElementId = null;
+      _backstageHintWillBackstage = false;
+    }
+
+    return willBackstage
+        ? desired
+        : _snapOffsetInsidePcb(desired, element.size);
+  }
+
+  /// 拖动结束：按最终位置落定 `runtimePlacement`。
+  ///
+  /// 调用方在 `_persistAssemblyElements()` **之前**调用它，
+  /// 这样标记变更和位置变更进同一次持久化，撤销时也是一步退回。
+  void _commitBackstageDragResult(String elementId) {
+    _backstageHintElementId = null;
+    _backstageHintWillBackstage = false;
+
+    final index = _elements.indexWhere((e) => e.id == elementId);
+    if (index == -1) {
+      _dragDetachedFromPcb = false;
+      return;
+    }
+    final element = _elements[index];
+    if (!_canUseBackgroundRuntimePlacement(element) || element.module == null) {
+      _dragDetachedFromPcb = false;
+      return;
+    }
+
+    final bool shouldBackstage = _dragDetachedFromPcb;
+    _dragDetachedFromPcb = false;
+
+    if (shouldBackstage == _isBackstageElement(element)) return;
+
+    final props = Map<String, dynamic>.from(element.module!.properties);
+    if (shouldBackstage) {
+      props['runtimePlacement'] = 'background';
+    } else {
+      props.remove('runtimePlacement');
+    }
+    _elements[index] = element.copyWith(
+      module: element.module!.copyWith(properties: props),
+    );
+    HapticFeedback.selectionClick();
+    _showBackstageToggleToast(shouldBackstage);
+  }
+
+  void _showBackstageToggleToast(bool toBackstage) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 1600),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor:
+            toBackstage ? const Color(0xFF546E7A) : const Color(0xFF37474F),
+        content: Text(
+          toBackstage
+              ? '已转为后台节点：运行时不显示，仍参与数据与连线'
+              : '已移回画布：运行时正常显示',
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  /// 手动切换后台标记。拖动之外的兜底入口（比如元件被锁定不能拖）。
+  void _toggleElementBackstage(UIElement element) {
+    if (!_canUseBackgroundRuntimePlacement(element) || element.module == null) {
+      return;
+    }
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return;
+
+    _pushHistory();
+    final bool toBackstage = !_isBackstageElement(element);
+    final props = Map<String, dynamic>.from(element.module!.properties);
+    if (toBackstage) {
+      props['runtimePlacement'] = 'background';
+    } else {
+      props.remove('runtimePlacement');
+      // 从后台移回时，元件很可能还停在 PCB 外面。
+      // 不把它拉回来的话，作者会看到「已移回画布」但屏幕上啥也没多出来。
+      _elements[index] = _elements[index].copyWith(
+        offset: _snapOffsetInsidePcb(element.offset, element.size),
+      );
+    }
+    setState(() {
+      _elements[index] = _elements[index].copyWith(
+        module: _elements[index].module!.copyWith(properties: props),
+      );
+    });
+    HapticFeedback.selectionClick();
+    _showBackstageToggleToast(toBackstage);
+    _persistAssemblyElements();
+  }
+
   Rect get _pcbLocalRect => Rect.fromLTWH(
     _pcbOffset.dx,
     _pcbOffset.dy,
