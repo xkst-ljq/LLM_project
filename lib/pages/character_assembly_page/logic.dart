@@ -4019,9 +4019,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               : module.borderRadius)
           .toStringAsFixed(0),
     );
-    final opacityController = TextEditingController(
-      text: module.opacity.toStringAsFixed(2),
-    );
     final minController = TextEditingController(
       text: (_numProp(module.properties, 'min') ?? 0.0).toStringAsFixed(0),
     );
@@ -4325,11 +4322,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           ),
                         ),
                     ],
-                    if (type == 'surface' || type == 'base_box') ...[
+                    // 圆角 / 透明度 / 颜色 / 材质 / 形状 → 外观专项页。
+                    if (_supportsAppearanceEditor(type)) ...[
                       const SizedBox(height: 12),
-                      numberField(radiusController, '圆角'),
-                      const SizedBox(height: 12),
-                      numberField(opacityController, '透明度', suffix: '0~1'),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.palette_outlined, size: 16),
+                          label: const Text('编辑外观'),
+                          onPressed: () async {
+                            final changed = await _openAppearancePage(element);
+                            if (changed) setDialogState(() {});
+                          },
+                        ),
+                      ),
                     ],
                     if (type == 'progress') ...[
                       const SizedBox(height: 12),
@@ -4674,7 +4680,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         textController,
         fontSizeController,
         radiusController,
-        opacityController,
         minController,
         maxController,
         currentController,
@@ -4786,13 +4791,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 readDouble(radiusController, 8.0).clamp(0.0, 999.0).toDouble();
           }
 
-          final nextRadius = readDouble(radiusController, currentModule.borderRadius)
-              .clamp(0.0, 999.0)
-              .toDouble();
-          final nextOpacity = readDouble(opacityController, currentModule.opacity)
-              .clamp(0.0, 1.0)
-              .toDouble();
-
           if (isKeyAction) {
             props[UISemanticRole.propKey] = true;
           } else {
@@ -4837,15 +4835,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             );
           }
 
-          // 不再改 size：尺寸归「精确几何」管，这里只碰内容。
+          // 只碰内容：尺寸归「精确几何」，圆角 / 透明度 / 颜色归「外观」。
+          //
+          // 关键是**不能**在这里回写 borderRadius / opacity——
+          // 外观页保存后，本对话框的 controller 仍是打开那一刻的旧值，
+          // 回写会把刚调好的外观覆盖掉（与数据通道同一类陷阱）。
           _elements[index] = current.copyWith(
             module: currentModule.copyWith(
               name: nameController.text.trim().isEmpty
                   ? currentModule.name
                   : nameController.text.trim(),
               properties: props,
-              borderRadius: nextRadius,
-              opacity: nextOpacity,
             ),
           );
         });
@@ -4858,7 +4858,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       textController,
       fontSizeController,
       radiusController,
-      opacityController,
       minController,
       maxController,
       currentController,
@@ -5256,6 +5255,379 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       (value) => onChanged(target.copyWith(group: group, fieldKey: value)),
     ));
     return widgets;
+  }
+
+  // ========== A14-3：外观专项页 ==========
+
+  /// 该组件类型有哪些外观字段可调。
+  ///
+  /// 分工上这些属于「这一个实例在这张卡里长什么样」——
+  /// 同一个面板在 A 卡是深蓝、B 卡是暖橙很正常，因此归 Assembly。
+  /// 与之相对，indicator 的状态映射规则那种「颜色怎么随数值变」
+  /// 是零件自带行为，仍只在 Studio 编辑。
+  bool _supportsAppearanceEditor(String type) => const {
+        'surface',
+        'base_box',
+        'text',
+        'button',
+        'progress',
+        'slider',
+        'input',
+        'switch',
+        'select',
+        'indicator',
+        'line',
+        'image',
+        'message_flow',
+      }.contains(type);
+
+  /// 外观专项页。
+  ///
+  /// 统一一页而非每类组件一页：字段按类型显示，
+  /// 共性部分（主色 / 圆角 / 透明度）所有组件通用，
+  /// 拆成十几个页面反而让作者记不住入口在哪。
+  Future<bool> _openAppearancePage(UIElement element) async {
+    final module = element.module;
+    if (module == null) return false;
+    final type = module.type;
+
+    final props = Map<String, dynamic>.from(
+      _deepCloneValue(module.properties) as Map,
+    );
+    var color = module.color;
+    var material = module.material;
+    var shape = module.shape;
+    var radius = module.borderRadius;
+    var opacity = module.opacity;
+
+    int? readColor(String key) => (props[key] as num?)?.toInt();
+
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, setPageState) {
+            Widget colorRow(
+              String label,
+              Color current,
+              ValueChanged<Color> onPick, {
+              String? hint,
+            }) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700)),
+                    if (hint != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(hint,
+                            style: const TextStyle(
+                                fontSize: 11, color: Color(0xFF777783))),
+                      ),
+                    const SizedBox(height: 6),
+                    _buildColorPalette(current, onPick),
+                  ],
+                ),
+              );
+            }
+
+            Widget slider(
+              String label,
+              double value,
+              double min,
+              double max,
+              ValueChanged<double> onChanged, {
+              String? suffix,
+            }) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 76,
+                      child: Text(label,
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: value.clamp(min, max),
+                        min: min,
+                        max: max,
+                        onChanged: onChanged,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text(
+                        suffix ?? value.toStringAsFixed(
+                            max <= 1.0 ? 2 : 0),
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget dropdown<T>(
+              String label,
+              T value,
+              List<DropdownMenuItem<T>> items,
+              ValueChanged<T> onChanged,
+            ) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: DropdownButtonFormField<T>(
+                  initialValue: value,
+                  isExpanded: true,
+                  decoration:
+                      InputDecoration(labelText: label, isDense: true),
+                  items: items,
+                  onChanged: (v) {
+                    if (v != null) onChanged(v);
+                  },
+                ),
+              );
+            }
+
+            return Scaffold(
+              appBar: AppBar(
+                title: Text('外观 · ${module.name}'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(pageContext, true),
+                    child: const Text('保存'),
+                  ),
+                ],
+              ),
+              body: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                children: [
+                  colorRow('主色', color, (c) => setPageState(() => color = c)),
+
+                  // 材质与形状：面类与装饰类才有意义，
+                  // 文本 / 输入框这些自身没有底板可言。
+                  if (const {'surface', 'base_box'}.contains(type)) ...[
+                    dropdown<UIModuleMaterial>(
+                      '材质',
+                      material,
+                      const [
+                        DropdownMenuItem(
+                            value: UIModuleMaterial.glass, child: Text('毛玻璃')),
+                        DropdownMenuItem(
+                            value: UIModuleMaterial.solid, child: Text('纯色')),
+                        DropdownMenuItem(
+                            value: UIModuleMaterial.gradient, child: Text('渐变')),
+                        DropdownMenuItem(
+                            value: UIModuleMaterial.outline, child: Text('描边')),
+                      ],
+                      (v) => setPageState(() => material = v),
+                    ),
+                    dropdown<UIModuleShape>(
+                      '形状',
+                      shape,
+                      const [
+                        DropdownMenuItem(
+                            value: UIModuleShape.rectangle, child: Text('矩形')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.rounded, child: Text('圆角矩形')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.capsule, child: Text('胶囊')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.circle, child: Text('圆形')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.heart, child: Text('心形')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.star5, child: Text('五角星')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.star4, child: Text('四角星')),
+                      ],
+                      (v) => setPageState(() => shape = v),
+                    ),
+                  ],
+
+                  if (type == 'progress') ...[
+                    dropdown<String>(
+                      '进度条形状',
+                      props['progressShape']?.toString() ?? 'rounded',
+                      const [
+                        DropdownMenuItem(value: 'rounded', child: Text('圆角条')),
+                        DropdownMenuItem(value: 'rectangle', child: Text('直角条')),
+                        DropdownMenuItem(value: 'capsule', child: Text('胶囊条')),
+                        DropdownMenuItem(value: 'ring', child: Text('环形')),
+                        DropdownMenuItem(value: 'heart', child: Text('心形')),
+                      ],
+                      (v) => setPageState(() => props['progressShape'] = v),
+                    ),
+                    colorRow(
+                      '轨道底色',
+                      Color(readColor('trackColor') ?? 0xFFEEEEEE),
+                      (c) => setPageState(
+                          () => props['trackColor'] = c.toARGB32()),
+                    ),
+                  ],
+
+                  if (type == 'slider')
+                    dropdown<String>(
+                      '滑块手柄形状',
+                      props['knobShape']?.toString() ?? 'circle',
+                      const [
+                        DropdownMenuItem(value: 'circle', child: Text('圆形')),
+                        DropdownMenuItem(
+                            value: 'rectangle', child: Text('方形')),
+                      ],
+                      (v) => setPageState(() => props['knobShape'] = v),
+                    ),
+
+                  if (const {'input', 'select'}.contains(type)) ...[
+                    dropdown<String>(
+                      '外框样式',
+                      props['visualMode']?.toString() ?? 'filled',
+                      const [
+                        DropdownMenuItem(value: 'filled', child: Text('填充')),
+                        DropdownMenuItem(value: 'outline', child: Text('描边')),
+                        DropdownMenuItem(
+                            value: 'transparent', child: Text('透明')),
+                      ],
+                      (v) => setPageState(() => props['visualMode'] = v),
+                    ),
+                    colorRow(
+                      '占位文字颜色',
+                      Color(readColor('placeholderColor') ?? 0xFF888896),
+                      (c) => setPageState(
+                          () => props['placeholderColor'] = c.toARGB32()),
+                    ),
+                    if (type == 'input')
+                      colorRow(
+                        '输入文字颜色',
+                        Color(readColor('inputTextColor') ?? 0xFF111116),
+                        (c) => setPageState(
+                            () => props['inputTextColor'] = c.toARGB32()),
+                      ),
+                  ],
+
+                  if (type == 'message_flow') ...[
+                    colorRow(
+                      '玩家气泡底色',
+                      Color(readColor('userBubbleColor') ?? 0xFFDCF8C6),
+                      (c) => setPageState(
+                          () => props['userBubbleColor'] = c.toARGB32()),
+                    ),
+                    colorRow(
+                      '角色气泡底色',
+                      Color(readColor('assistantBubbleColor') ?? 0xFFF1F1F4),
+                      (c) => setPageState(
+                          () => props['assistantBubbleColor'] = c.toARGB32()),
+                    ),
+                    slider(
+                      '气泡圆角',
+                      (props['bubbleRadius'] as num?)?.toDouble() ?? 12.0,
+                      0,
+                      32,
+                      (v) => setPageState(() => props['bubbleRadius'] = v),
+                    ),
+                  ],
+
+                  if (type == 'indicator')
+                    colorRow(
+                      '兜底底色',
+                      Color(readColor('defaultColor') ?? 0xFF9E9E9E),
+                      (c) => setPageState(
+                          () => props['defaultColor'] = c.toARGB32()),
+                      hint: '状态规则未命中时显示这个颜色。'
+                          '规则本身请在创作工作室编辑。',
+                    ),
+
+                  // 圆角与透明度对绝大多数组件都有意义，放在最后作为通用项。
+                  if (!const {'line', 'indicator'}.contains(type))
+                    slider('圆角', radius, 0, 48,
+                        (v) => setPageState(() => radius = v)),
+                  slider('透明度', opacity, 0.1, 1.0,
+                      (v) => setPageState(() => opacity = v)),
+
+                  const SizedBox(height: 8),
+                  const Text(
+                    '这里改的是「这一个实例在本张卡里长什么样」。'
+                    '组件自身的行为规则（如状态指示灯的多态映射）'
+                    '仍在创作工作室里编辑。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    if (saved != true || !mounted) return false;
+
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return false;
+    final current = _elements[index];
+    final currentModule = current.module;
+    if (currentModule == null) return false;
+
+    setState(() {
+      _elements[index] = current.copyWith(
+        module: currentModule.copyWith(
+          color: color,
+          material: material,
+          shape: shape,
+          borderRadius: radius,
+          opacity: opacity,
+          properties: props,
+        ),
+      );
+    });
+    _persistAssemblyElements();
+    return true;
+  }
+
+  /// 固定色板。
+  ///
+  /// 用色板而非全色域取色器：作者要的是「几个协调的颜色」，
+  /// 全色域反而容易挑出一堆相近色，且在小屏上难精确操作。
+  Widget _buildColorPalette(Color current, ValueChanged<Color> onPick) {
+    const palette = <int>[
+      0xFFFFFFFF, 0xFFF5F5F7, 0xFFBDBDBD, 0xFF616161, 0xFF111116,
+      0xFFE53935, 0xFFE8833A, 0xFFFFC107, 0xFF4CAF50, 0xFF00897B,
+      0xFF2979FF, 0xFF3949AB, 0xFF7E57C2, 0xFFAD1457, 0xFF6D4C41,
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final value in palette)
+          InkWell(
+            onTap: () => onPick(Color(value)),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: Color(value),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: current.toARGB32() == value
+                      ? const Color(0xFF111116)
+                      : Colors.black26,
+                  width: current.toARGB32() == value ? 2.4 : 1,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   /// A14-3：数据通道专项页。
