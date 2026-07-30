@@ -3382,22 +3382,24 @@ class _ParticleBurstPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (progress <= 0 || progress >= 1 || size.isEmpty) return;
 
-    final center = Offset(size.width / 2, size.height / 2);
-
-    // ⚠️ 扩散半径**不能**用 shortestSide。
-    //
-    // 进度条 200×12 时短边是 12，粒子只飞 14px、占可用横向距离的 14%，
-    // 正是用户说的「只有中点一点点动画，看着太小气」。
-    // 改用椭圆半径：各方向按自己的可用距离伸展，
-    // 扁长组件横向就能飞满。
     final halfW = size.width / 2;
     final halfH = size.height / 2;
+    final cx = halfW;
+    final cy = halfH;
+
+    // ⚠️ 扩散半径不能用 shortestSide。
+    // 进度条 200×12 时短边是 12，粒子只飞 14px、占可用横向距离的 14%，
+    // 即用户说的「只有中点一点点，看着太小气」。
+    // 改用椭圆半径后各方向按自己的可用距离伸展，能飞满约 97%。
     final spread = 0.55 + 0.75 * intensity;
 
-    const count = 14;
-    final fade = (1.0 - progress).clamp(0.0, 1.0);
+    // 粒子数随组件面积增加：小图标不必堆满，长条要够密才不显稀疏。
+    // 用户反馈「量有些少」，基数从 14 提到 22，宽组件最多 40。
+    final areaFactor = (size.width * size.height) / (120.0 * 40.0);
+    final count = (22 + areaFactor * 6).clamp(22, 40).toInt();
 
-    // 初速度衰减：先快后慢，比匀速外扩自然得多。
+    final fade = (1.0 - progress).clamp(0.0, 1.0);
+    // 初速度衰减：先快后慢，比匀速外扩自然。
     final travel = 1.0 - math.pow(1.0 - progress, 2.2).toDouble();
     // 重力下坠（用户要求）：随时间平方累积。
     final gravity = halfH * 1.6 * intensity * progress * progress;
@@ -3405,24 +3407,41 @@ class _ParticleBurstPainter extends CustomPainter {
     final paint = Paint()..style = PaintingStyle.fill;
 
     for (var i = 0; i < count; i++) {
-      // 角度加半格偏移，避免第一颗正好压在水平轴上。
-      final angle = (math.pi * 2 / count) * (i + 0.5);
-      // 交错长短，十几个点才不会连成一个规整圆环。
-      final reach = (i % 3 == 0) ? 1.0 : (i.isEven ? 0.78 : 0.9);
+      // 由 index 派生的伪随机，不能用 Random()——
+      // CustomPainter 每帧重新构造，随机会让粒子逐帧乱跳。
+      final h1 = ((i * 73) % 101) / 101.0; // 0..1
+      final h2 = ((i * 149) % 97) / 97.0;
+      final h3 = ((i * 37) % 89) / 89.0;
+
+      // 角度：均匀分布 + 抖动，避免连成规整圆环。
+      final angle = (math.pi * 2 / count) * (i + 0.5) + (h1 - 0.5) * 0.45;
+
+      // ⚠️ 发射源不是一个点。
+      //
+      // 上一版所有粒子共用正中心，视觉上就是「一个点在爆」（用户反馈）。
+      // 真实迸发的源头有面积，粒子从不同位置飞出。
+      // 这里让起点在中心附近的小椭圆内散开，横向铺得更宽
+      // （长条组件的源头本来就该沿长轴展开）。
+      final originSpread = 0.22 + 0.18 * intensity;
+      final originAngle = h2 * math.pi * 2;
+      final originR = math.sqrt(h3); // sqrt 让点在圆面内均匀而非聚在中心
+      final ox = cx + math.cos(originAngle) * halfW * originSpread * originR;
+      final oy = cy + math.sin(originAngle) * halfH * originSpread * originR;
+
+      // 飞行距离交错，十几颗才不会连成一圈。
+      final reach = 0.62 + h1 * 0.55;
 
       final dx = math.cos(angle) * halfW * spread * reach * travel;
       final dy = math.sin(angle) * halfH * spread * reach * travel + gravity;
 
-      // 粒子大小由 index 派生而非随机——CustomPainter 每帧重新构造，
-      // 用 Random() 会让粒子逐帧乱跳。
-      final sizeJitter = 0.6 + ((i * 37) % 100) / 100.0 * 0.8;
+      final sizeJitter = 0.6 + h3 * 0.8;
       final radius = (2.6 * intensity * sizeJitter + 0.7) * fade;
       if (radius <= 0.15) continue;
 
       paint.color = color.withValues(
         alpha: (fade * (0.55 + 0.45 * sizeJitter)).clamp(0.0, 1.0),
       );
-      canvas.drawCircle(center + Offset(dx, dy), radius, paint);
+      canvas.drawCircle(Offset(ox + dx, oy + dy), radius, paint);
     }
   }
 
@@ -3434,21 +3453,27 @@ class _ParticleBurstPainter extends CustomPainter {
   }
 }
 
-/// 水波：同心圆环扩散 + 壁面反弹。
+/// 水波：同心波纹扩散 + 壁面反弹。
 ///
-/// ## 为什么是正圆而不是椭圆
+/// ## 三次迭代的教训
 ///
-/// 上一版让椭圆完全跟随组件长宽比，进度条 200×12 时
-/// 环的长宽比恒为 **16.7:1**——那是一条扁线，用户评价
-/// 「几圈极其扁的椭圆光圈，一点也不像波纹」。
+/// 1. 单个正圆 + ClipRRect：进度条上只剩中间一条窄带
+///    （「只有中点很小一部分」）。
+/// 2. 椭圆完全跟随组件长宽比：环变成 16.7:1 的扁线
+///    （「极其扁的椭圆，一点也不像波纹」）。
+///    错在把「容器裁切的效果」提前烘焙成了「波的形状」。
+/// 3. 实色描边：`alpha 0.8` 的纯色圆环盖在内容上
+///    （「像在图像上加了几个同心圆环」）。
 ///
-/// 真实水波是**同心圆**。在窄容器里之所以看起来特别，
-/// 是因为圆被上下边界裁掉了，只剩左右两段近乎垂直的弧向两端扫过。
-/// 那才是水波在窄槽里的真实样子。
+/// ## 现在的做法
 ///
-/// 因此这里画正圆（半径按对角线归一），靠 `ClipRRect` 自然裁切。
-/// 只在长宽比过于悬殊时做温和的纵向压缩，避免圆环在小方块上
-/// 大得离谱，但压缩比封顶，绝不退化成扁线。
+/// 波纹**不是描边，是渐变光带**：
+/// 用 `RadialGradient` 在波前位置做一圈亮度渐强再渐弱的环，
+/// 边缘平滑趋于全透明，因此没有生硬的「圆环轮廓」。
+///
+/// 混合模式用 `BlendMode.plus`（加色）而非默认覆盖——
+/// 波纹与底层内容**相加**，亮处更亮、暗处保持，
+/// 看起来是光掠过水面，而不是一个不透明的环压在上面。
 class _RippleRingsPainter extends CustomPainter {
   final double progress;
   final double intensity;
@@ -3476,57 +3501,76 @@ class _RippleRingsPainter extends CustomPainter {
     if (size.isEmpty || progress <= 0 || progress >= 1) return;
 
     final center = Offset(size.width / 2, size.height / 2);
-    // 以对角线为基准，波前到 1.0 时刚好覆盖整个组件的四角。
+    // 以对角线为基准，波前到 1.0 时刚好覆盖四角。
     final maxRadius = math.sqrt(
       (size.width / 2) * (size.width / 2) +
           (size.height / 2) * (size.height / 2),
     );
+    if (maxRadius <= 1.0) return;
 
-    // 纵向压缩：仅在极扁的组件上轻微收一点，下限 0.55——
-    // 完全跟随长宽比就会退化成扁线（上一版的错误）。
+    // 纵向压缩仅在极扁组件上轻微收一点，下限 0.55——
+    // 完全跟随长宽比会退化成扁线（第 2 次迭代的错误）。
     final aspect = size.height / size.width;
-    final squash = aspect >= 1.0 ? 1.0 : (0.55 + 0.45 * aspect).clamp(0.55, 1.0);
+    final squash =
+        aspect >= 1.0 ? 1.0 : (0.55 + 0.45 * aspect).clamp(0.55, 1.0);
 
     final envelope = math.pow(1.0 - progress, 1.2).toDouble();
     if (envelope <= 0.01) return;
 
-    // 三道波错开相位，形成「一圈接一圈荡开」而不是单个圆环。
+    // 光带的相对厚度（占总半径的比例）。
+    final bandWidth = (0.10 + 0.10 * intensity).clamp(0.06, 0.24);
+
+    canvas.save();
+    // 纵向压缩通过画布变换实现，渐变本身保持圆形。
+    canvas.translate(center.dx, center.dy);
+    canvas.scale(1.0, squash);
+    canvas.translate(-center.dx, -center.dy);
+
     const phases = [0.0, 0.22, 0.44];
     for (var i = 0; i < phases.length; i++) {
       final front = _front(progress, phases[i]);
-      final fade = envelope * (1.0 - i * 0.28).clamp(0.0, 1.0);
-      if (fade <= 0.01) continue;
+      final fade = envelope * (1.0 - i * 0.3).clamp(0.0, 1.0);
+      if (fade <= 0.015) continue;
+      if (front <= 0.02) continue;
 
-      final r = maxRadius * front;
-      if (r <= 0.5) continue;
+      // 渐变的三个关键位置：内边缘、波峰、外边缘。
+      final inner = (front - bandWidth).clamp(0.0, 1.0);
+      final outer = (front + bandWidth).clamp(0.0, 1.0);
+      if (outer - inner < 0.01) continue;
 
-      final strokeWidth = (1.6 + 2.8 * intensity) * fade;
-      if (strokeWidth <= 0.15) continue;
+      final peakAlpha = (0.55 * fade * (0.6 + 0.6 * intensity))
+          .clamp(0.0, 1.0)
+          .toDouble();
 
-      final rect = Rect.fromCenter(
-        center: center,
-        width: r * 2,
-        height: r * 2 * squash,
+      final rect = Rect.fromCircle(center: center, radius: maxRadius);
+      final gradient = RadialGradient(
+        center: Alignment.center,
+        // stops 必须递增；两端全透明，中间是光带。
+        colors: [
+          color.withValues(alpha: 0.0),
+          color.withValues(alpha: peakAlpha * 0.35),
+          Colors.white.withValues(alpha: peakAlpha),
+          color.withValues(alpha: peakAlpha * 0.35),
+          color.withValues(alpha: 0.0),
+        ],
+        stops: [
+          inner,
+          (inner + front) / 2,
+          front,
+          (front + outer) / 2,
+          outer,
+        ],
       );
 
-      canvas.drawOval(
+      canvas.drawRect(
         rect,
         Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth
-          ..color = color.withValues(alpha: (0.8 * fade).clamp(0.0, 1.0)),
-      );
-
-      // 内侧一道更亮的细边，做出水面反光的层次。
-      canvas.drawOval(
-        rect.deflate(strokeWidth * 0.5),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = (strokeWidth * 0.4).clamp(0.4, 3.0)
-          ..color =
-              Colors.white.withValues(alpha: (0.55 * fade).clamp(0.0, 1.0)),
+          ..shader = gradient.createShader(rect)
+          // 加色混合：波纹与内容相加，是光掠过而非贴纸盖住。
+          ..blendMode = BlendMode.plus,
       );
     }
+    canvas.restore();
   }
 
   @override
