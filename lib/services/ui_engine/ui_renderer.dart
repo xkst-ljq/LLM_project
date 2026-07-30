@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import 'assembly_rich_text.dart';
 import 'avatar_scope.dart';
+import 'element_animation.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
@@ -54,6 +55,26 @@ class UIRenderer {
     } else {
       widget = const SizedBox();
     }
+    // A12：统一动画通道。
+    //
+    // 放在这里而不是各 case 内部，是为了让**所有可见组件**都能播动画。
+    // 旧实现只在 `case 'surface' / 'base_box'` 里调 `_buildAnimatedSurface`，
+    // 等于只有面板会动；数值跳动的目标是 progress/text、
+    // 发光脉冲可能用在 indicator/image，旧结构根本接不上。
+    //
+    // 编辑期不播：动画依赖真实触发时刻，编辑器里只会看到
+    // 打开页面那一瞬间的残留帧，反而干扰排版。
+    if (!isStudio && module != null) {
+      // indicator 的 flash 由它自己改灯色实现（见 _buildIndicatorBlock），
+      // 这里跳过，否则会在改色之上再盖一层同色蒙版、颜色变浑。
+      final isIndicatorFlash = module.type == 'indicator' &&
+          ElementAnimation.readFrom(module.properties)?.type ==
+              ElementAnimationType.flash;
+      if (!isIndicatorFlash) {
+        widget = _wrapWithAnimation(widget, module, element.size);
+      }
+    }
+
     final bool shouldBlockInteraction =
         !isStudio &&
         !controls.isInteractive &&
@@ -142,19 +163,16 @@ class UIRenderer {
         );
       case 'surface':
       case 'base_box':
-        return _buildAnimatedSurface(
-          context,
-          module,
+        // 动画已上移到 render() 里的统一通道（_wrapWithAnimation），
+        // 这里只负责画静态外观。
+        return _applyMaterialAndShape(
+          module.material,
+          module.shape,
+          module.color,
+          module.opacity,
+          module.borderRadius,
+          _buildBaseBox(),
           size,
-          _applyMaterialAndShape(
-            module.material,
-            module.shape,
-            module.color,
-            module.opacity,
-            module.borderRadius,
-            _buildBaseBox(),
-            size,
-          ),
         );
       case 'linker':
         return SizedBox(
@@ -379,111 +397,194 @@ class UIRenderer {
     return Container(); // 纯视觉表面，内容由外部决定
   }
 
-  static Widget _buildAnimatedSurface(
-    BuildContext context,
-    UIModule module,
-    Size size,
-    Widget baseSurface,
-  ) {
-    final trigger = module.properties['anim_trigger']?.toString();
-    final timestamp = (module.properties['anim_timestamp'] as num?)?.toInt() ?? 0;
-    final durationMs = (module.properties['anim_duration'] as num?)?.toInt() ?? 300;
+  /// A12：统一动画包裹层。
+  ///
+  /// 所有可见组件共用同一条通道，新增动画类型只是多一个 case，
+  /// 不必再各写一套字段与触发判定（见 `element_animation.dart`）。
+  static Widget _wrapWithAnimation(Widget child, UIModule module, Size size) {
+    final animation = ElementAnimation.readFrom(module.properties);
+    if (animation == null) return child;
+
     final now = DateTime.now().millisecondsSinceEpoch;
-    final bool isRecent = (now - timestamp) < (durationMs + 200);
+    if (!animation.isActiveAt(now)) return child;
 
-    if (!isRecent || trigger == null) {
-      return baseSurface;
-    }
+    // key 带上时间戳：同一元件连续触发时必须重新起播，
+    // 否则 TweenAnimationBuilder 会认为参数没变而停在末态。
+    final key = ValueKey(
+      '${animation.type.storageKey}_${animation.timestamp}_'
+      '${animation.durationMs}',
+    );
+    final accent = animation.colorValue != null
+        ? Color(animation.colorValue!)
+        : module.color;
 
-    if (trigger == 'click_to_surface_press') {
-      return TweenAnimationBuilder<double>(
-        key: ValueKey('press_${timestamp}_$durationMs'),
-        tween: Tween<double>(begin: 0.0, end: 1.0),
-        duration: Duration(milliseconds: durationMs),
-        curve: Curves.easeInOut,
-        builder: (ctx, t, child) {
-          double scale;
-          double dimAlpha;
-          if (t < 0.35) {
-            final p = t / 0.35;
-            scale = 1.0 - 0.16 * p;
-            dimAlpha = 0.3 * p;
-          } else {
-            final p = (t - 0.35) / 0.65;
-            scale = 0.84 + 0.16 * p;
-            dimAlpha = 0.3 * (1.0 - p);
-          }
+    return TweenAnimationBuilder<double>(
+      key: key,
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: animation.durationMs),
+      curve: animation.curve.curve,
+      builder: (ctx, t, inner) {
+        return _paintAnimationFrame(
+          type: animation.type,
+          progress: t,
+          intensity: animation.intensity,
+          accent: accent,
+          borderRadius: module.borderRadius,
+          size: size,
+          child: inner!,
+        );
+      },
+      child: child,
+    );
+  }
 
-          return Transform.scale(
-            scale: scale,
-            child: Stack(
-              children: [
-                child!,
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(module.borderRadius),
-                      child: Container(
-                        color: Colors.black.withValues(alpha: dimAlpha),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-        child: baseSurface,
-      );
-    } else if (trigger == 'click_to_surface_ripple') {
-      final double customRadius = (module.properties['anim_radius'] as num?)?.toDouble() ?? 150.0;
-      return TweenAnimationBuilder<double>(
-        key: ValueKey('ripple_${timestamp}_$durationMs'),
-        tween: Tween<double>(begin: 0.0, end: 1.0),
-        duration: Duration(milliseconds: durationMs),
-        curve: Curves.easeOutCubic,
-        builder: (ctx, progress, child) {
-          final double currentRadius = customRadius * progress;
-          final double opacity = (1.0 - progress).clamp(0.0, 1.0);
-          return Stack(
+  /// 单帧绘制。按类型分派，每种动画只关心「给定进度画成什么样」。
+  static Widget _paintAnimationFrame({
+    required ElementAnimationType type,
+    required double progress,
+    required double intensity,
+    required Color accent,
+    required double borderRadius,
+    required Size size,
+    required Widget child,
+  }) {
+    switch (type) {
+      case ElementAnimationType.press:
+        // 前 35% 下沉、后 65% 回弹，与旧 _buildAnimatedSurface 一致。
+        final double depth = 0.16 * intensity / 0.6;
+        double scale;
+        double dim;
+        if (progress < 0.35) {
+          final p = progress / 0.35;
+          scale = 1.0 - depth * p;
+          dim = 0.3 * p;
+        } else {
+          final p = (progress - 0.35) / 0.65;
+          scale = (1.0 - depth) + depth * p;
+          dim = 0.3 * (1.0 - p);
+        }
+        return Transform.scale(
+          scale: scale,
+          child: Stack(
             children: [
-              child!,
+              child,
               Positioned.fill(
                 child: IgnorePointer(
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(module.borderRadius),
-                    child: Center(
-                      child: Container(
-                        width: currentRadius * 2,
-                        height: currentRadius * 2,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withValues(alpha: opacity * 0.55),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: opacity * 0.85),
-                            width: 2.0,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: module.color.withValues(alpha: opacity * 0.4),
-                              blurRadius: 12,
-                              spreadRadius: 3,
-                            ),
-                          ],
-                        ),
-                      ),
+                    borderRadius: BorderRadius.circular(borderRadius),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: dim),
                     ),
                   ),
                 ),
               ),
             ],
-          );
-        },
-        child: baseSurface,
-      );
-    }
+          ),
+        );
 
-    return baseSurface;
+      case ElementAnimationType.ripple:
+        // intensity 换算回半径：旧默认 150px 对应 intensity 0.6。
+        final double radius = 250.0 * intensity * progress;
+        final double opacity = (1.0 - progress).clamp(0.0, 1.0);
+        return Stack(
+          children: [
+            child,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(borderRadius),
+                  child: Center(
+                    child: Container(
+                      width: radius * 2,
+                      height: radius * 2,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: opacity * 0.55),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: opacity * 0.85),
+                          width: 2.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: accent.withValues(alpha: opacity * 0.4),
+                            blurRadius: 12,
+                            spreadRadius: 3,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+
+      case ElementAnimationType.flash:
+        // 三角波：中点最亮，两端归零，避免结束时突然掉色。
+        final double wave =
+            progress < 0.5 ? progress / 0.5 : (1.0 - progress) / 0.5;
+        return Stack(
+          children: [
+            child,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(borderRadius),
+                  child: Container(
+                    color: accent.withValues(alpha: wave * 0.55 * intensity),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+
+      case ElementAnimationType.numberPop:
+        // 先放大后回落。幅度随 intensity，最大 +30%。
+        final double wave =
+            progress < 0.4 ? progress / 0.4 : (1.0 - progress) / 0.6;
+        return Transform.scale(
+          scale: 1.0 + 0.3 * intensity * wave,
+          child: child,
+        );
+
+      case ElementAnimationType.glowPulse:
+        final double wave =
+            progress < 0.5 ? progress / 0.5 : (1.0 - progress) / 0.5;
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(borderRadius),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: wave * 0.75),
+                blurRadius: 24 * intensity * wave,
+                spreadRadius: 6 * intensity * wave,
+              ),
+            ],
+          ),
+          child: child,
+        );
+
+      case ElementAnimationType.particleBurst:
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            child,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _ParticleBurstPainter(
+                    progress: progress,
+                    intensity: intensity,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+    }
   }
 
   static Widget _buildProgressBar(UIModule module, Size size) {
@@ -1790,15 +1891,17 @@ class UIRenderer {
       activeColorInt = 0xFF9E9E9E;
       activeGlow = false;
     } else {
-      final flashTimestamp =
-          (props['eventFlashTimestamp'] as num?)?.toInt() ?? 0;
-      final flashDuration =
-          (props['eventFlashDurationMs'] as num?)?.toInt() ?? 0;
-      final isFlashing = flashTimestamp > 0 &&
-          DateTime.now().millisecondsSinceEpoch - flashTimestamp < flashDuration;
-      if (isFlashing) {
-        activeColorInt =
-            (props['eventFlashColor'] as num?)?.toInt() ?? activeColorInt;
+      // 指示灯的闪烁改读统一动画通道（兼容旧 eventFlash* 字段，
+      // 见 ElementAnimation.readFrom）。
+      //
+      // 这里做的是**改色**而非叠加图层——指示灯本体就是一颗小圆点，
+      // 盖一层半透明色只会让它变浑浊，直接换灯色才有「亮了一下」的观感。
+      // 因此 flash 类型在这里被消费掉，不再走 _wrapWithAnimation。
+      final anim = ElementAnimation.readFrom(props);
+      if (anim != null &&
+          anim.type == ElementAnimationType.flash &&
+          anim.isActiveAt(DateTime.now().millisecondsSinceEpoch)) {
+        activeColorInt = anim.colorValue ?? activeColorInt;
         activeGlow = true;
         glowRadius = 16.0;
       }
@@ -3171,5 +3274,53 @@ class _ScrollableTextBlockState extends State<_ScrollableTextBlock> {
               ),
       ),
     );
+  }
+}
+
+/// 粒子迸发画笔。
+///
+/// 从中心向外抛出一圈小圆点：位置随进度外扩、半径与不透明度随之衰减。
+/// 用固定角度分布而非随机——随机会让每帧重绘时粒子乱跳，
+/// 因为 CustomPainter 每帧都是重新构造的、拿不到上一帧的状态。
+class _ParticleBurstPainter extends CustomPainter {
+  final double progress;
+  final double intensity;
+  final Color color;
+
+  const _ParticleBurstPainter({
+    required this.progress,
+    required this.intensity,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0 || progress >= 1) return;
+    final center = Offset(size.width / 2, size.height / 2);
+    // 扩散半径以元件短边为基准，小元件不会被粒子淹没。
+    final maxRadius = size.shortestSide * (0.6 + intensity);
+    const count = 10;
+    final fade = (1.0 - progress).clamp(0.0, 1.0);
+    final paint = Paint()
+      ..color = color.withValues(alpha: fade * 0.9)
+      ..style = PaintingStyle.fill;
+
+    for (var i = 0; i < count; i++) {
+      final angle = (math.pi * 2 / count) * i;
+      // 交错长短，避免十个点连成一个规整的圆环。
+      final reach = maxRadius * (i.isEven ? 1.0 : 0.72) * progress;
+      final dot = Offset(
+        center.dx + math.cos(angle) * reach,
+        center.dy + math.sin(angle) * reach,
+      );
+      canvas.drawCircle(dot, 3.2 * intensity * fade + 0.6, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ParticleBurstPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.intensity != intensity ||
+        oldDelegate.color != color;
   }
 }

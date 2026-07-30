@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'element_animation.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'math_node_engine.dart';
@@ -232,6 +233,49 @@ class LinkerService {
     return null;
   }
 
+  /// 老卡兜底：元件还没有 `__anim` 配置时，用方案参数现场补一个。
+  ///
+  /// A12 之前动画参数存在**方案**里（`durationMs` / `rippleRadius` /
+  /// `flashColor`），A12 之后归元件。已有角色卡里的元件没有 `__anim`，
+  /// 若直接 stamp 会返回 false、动画彻底消失——那是回归。
+  /// 因此这里按方案 id 推出对应的动画类型，把旧参数搬进新通道。
+  ///
+  /// 只在**首次**触发时写入；之后元件就有自己的配置了，
+  /// 作者在外观页改过的值不会被方案参数覆盖回去。
+  static void _ensureLegacyAnimationConfig(
+    Map<String, dynamic> props,
+    String scheme,
+    Map<String, dynamic> schemeParams,
+  ) {
+    if (ElementAnimation.readFrom(props) != null) return;
+
+    final type = switch (scheme) {
+      'click_to_surface_press' => ElementAnimationType.press,
+      'click_to_surface_ripple' => ElementAnimationType.ripple,
+      'event_to_indicator' => ElementAnimationType.flash,
+      _ => null,
+    };
+    if (type == null) return;
+
+    final duration =
+        (schemeParams['durationMs'] as num?)?.toInt() ?? type.defaultDurationMs;
+    final radius = (schemeParams['rippleRadius'] as num?)?.toDouble();
+    final flashColor = (schemeParams['flashColor'] as num?)?.toInt();
+
+    ElementAnimation.writeConfig(
+      props,
+      ElementAnimation(
+        type: type,
+        durationMs: duration,
+        // 旧的 rippleRadius 是绝对像素（默认 150），换算成相对强度。
+        intensity: radius != null ? (radius / 250.0).clamp(0.0, 1.0) : 0.6,
+        colorValue: type == ElementAnimationType.flash
+            ? (flashColor ?? 0xFFFFA726)
+            : null,
+      ),
+    );
+  }
+
   static void initEventBusListener(List<UIElement> elements, void Function() onStateChanged) {
     _pulseSubscription?.cancel();
     _pulseSubscription = LinkerEventBus().onPulse.listen((event) {
@@ -375,29 +419,34 @@ class LinkerService {
                 (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-              } else if (scheme == 'event_to_indicator') {
-                props['eventFlashColor'] =
-                    (schemeParams['flashColor'] as num?)?.toInt() ?? 0xFFFFA726;
-                final flashDuration =
-                    (schemeParams['durationMs'] as num?)?.toInt() ?? 300;
-                props['eventFlashDurationMs'] = flashDuration;
-                props['eventFlashTimestamp'] =
-                    DateTime.now().millisecondsSinceEpoch;
-                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
-                  module: targetEl.module!.copyWith(properties: props),
-                );
-                Future<void>.delayed(
-                  Duration(milliseconds: flashDuration),
-                  onStateChanged,
-                );
-              } else if (scheme == 'click_to_surface_press' || scheme == 'click_to_surface_ripple') {
-                props['anim_trigger'] = scheme;
-                props['anim_duration'] = (schemeParams['durationMs'] as num?)?.toInt() ?? 300;
-                props['anim_radius'] = (schemeParams['rippleRadius'] as num?)?.toDouble() ?? 150.0;
-                props['anim_timestamp'] = DateTime.now().millisecondsSinceEpoch;
-                (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
-                  module: targetEl.module!.copyWith(properties: props),
-                );
+              } else if (scheme == 'event_to_indicator' ||
+                  scheme == 'click_to_surface_press' ||
+                  scheme == 'click_to_surface_ripple') {
+                // A12：动画统一走 `__anim` 通道。
+                //
+                // 连线只负责「什么时候触发」，「播什么、播多久」
+                // 由元件自己的动画配置决定（外观页设置）。
+                // 作者没给这个元件配动画，stamp 返回 false、什么都不做——
+                // 那说明他不想让它动。
+                //
+                // 方案参数在这里只作**兜底**：老卡的元件还没有 `__anim`
+                // 配置，用方案里的 durationMs 现场补一个，保证行为不变。
+                _ensureLegacyAnimationConfig(props, scheme, schemeParams);
+                final stamped = ElementAnimation.stamp(props);
+                if (stamped) {
+                  (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] =
+                      targetEl.copyWith(
+                    module: targetEl.module!.copyWith(properties: props),
+                  );
+                  // 动画结束后再刷一次，让残留帧被清掉。
+                  final anim = ElementAnimation.readFrom(props);
+                  if (anim != null) {
+                    Future<void>.delayed(
+                      Duration(milliseconds: anim.durationMs + 60),
+                      onStateChanged,
+                    );
+                  }
+                }
               } else if (scheme == 'timer_tick_to_progress_increment' ||
                   scheme == 'timer_tick_to_progress_decrement') {
                 final step = (schemeParams['step'] as num?)?.toDouble() ?? 5.0;

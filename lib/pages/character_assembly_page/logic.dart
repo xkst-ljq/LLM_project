@@ -6439,6 +6439,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var shape = module.shape;
     var radius = module.borderRadius;
     var opacity = module.opacity;
+    // A12：触发动画配置。null 表示不播放。
+    var animation = ElementAnimation.readFrom(props);
 
     int? readColor(String key) => (props[key] as num?)?.toInt();
 
@@ -6690,6 +6692,112 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                   slider('透明度', opacity, 0.1, 1.0,
                       (v) => setPageState(() => opacity = v)),
 
+                  // A12：触发动画。
+                  //
+                  // 参数归元件而非连线——动画是「这个元件在这张卡里
+                  // 怎么表现」，属于 Assembly 的元件配置；
+                  // 连线只负责「什么时候触发」。
+                  // 同一元件被多条连线驱动时也只需在这里配一次。
+                  const SizedBox(height: 6),
+                  const Divider(height: 20),
+                  const Text('触发动画',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700)),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2, bottom: 8),
+                    child: Text(
+                      '被联动器触发时播放。在这里配一次，'
+                      '所有指向它的连线都用这套参数。',
+                      style: TextStyle(
+                          fontSize: 11, color: Color(0xFF777783), height: 1.35),
+                    ),
+                  ),
+                  DropdownButtonFormField<String>(
+                    initialValue: animation?.type.storageKey ?? '',
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                        labelText: '动画类型', isDense: true),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('不播放')),
+                      for (final t in ElementAnimationType.values)
+                        DropdownMenuItem(
+                          value: t.storageKey,
+                          child: Text(t.label),
+                        ),
+                    ],
+                    onChanged: (next) {
+                      setPageState(() {
+                        if (next == null || next.isEmpty) {
+                          animation = null;
+                          return;
+                        }
+                        final picked =
+                            ElementAnimationTypeX.fromStorage(next)!;
+                        // 换类型时套用该类型的建议时长：
+                        // 按压 150ms 与粒子 700ms 的合适值差很多，
+                        // 沿用上一个类型的时长往往不对。
+                        animation = (animation ??
+                                ElementAnimation(type: picked))
+                            .copyWith(
+                          type: picked,
+                          durationMs: picked.defaultDurationMs,
+                        );
+                      });
+                    },
+                  ),
+                  if (animation != null) ...[
+                    const SizedBox(height: 12),
+                    slider(
+                      '时长',
+                      animation!.durationMs.toDouble(),
+                      80,
+                      1500,
+                      (v) => setPageState(() => animation =
+                          animation!.copyWith(durationMs: v.round())),
+                      suffix: 'ms',
+                    ),
+                    slider(
+                      '幅度',
+                      animation!.intensity,
+                      0.1,
+                      1.0,
+                      (v) => setPageState(
+                          () => animation = animation!.copyWith(intensity: v)),
+                    ),
+                    DropdownButtonFormField<ElementAnimationCurve>(
+                      initialValue: animation!.curve,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                          labelText: '缓动曲线', isDense: true),
+                      items: [
+                        for (final c in ElementAnimationCurve.values)
+                          DropdownMenuItem(value: c, child: Text(c.label)),
+                      ],
+                      onChanged: (next) {
+                        if (next == null) return;
+                        setPageState(
+                            () => animation = animation!.copyWith(curve: next));
+                      },
+                    ),
+                    // 只有会用到附加色的动画才给取色器，
+                    // 按压/跳动不吃颜色，给了反而让人以为能改。
+                    if (const {
+                      ElementAnimationType.flash,
+                      ElementAnimationType.glowPulse,
+                      ElementAnimationType.particleBurst,
+                    }.contains(animation!.type)) ...[
+                      const SizedBox(height: 12),
+                      colorRow(
+                        '动画颜色',
+                        Color(animation!.colorValue ?? color.toARGB32()),
+                        (c) => setPageState(() =>
+                            animation = animation!.copyWith(
+                                colorValue: c.toARGB32())),
+                        hint: '留用主色时可直接选与组件同色。',
+                      ),
+                    ],
+                  ],
+
                   const SizedBox(height: 8),
                   const Text(
                     '这里改的是「这一个实例在本张卡里长什么样」。'
@@ -6716,6 +6824,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final current = _elements[index];
     final currentModule = current.module;
     if (currentModule == null) return false;
+
+    // A12：动画配置写回统一通道。
+    // writeConfig 会保留已有时间戳——保存外观不该顺手触发一次动画。
+    ElementAnimation.writeConfig(props, animation);
 
     setState(() {
       _elements[index] = current.copyWith(

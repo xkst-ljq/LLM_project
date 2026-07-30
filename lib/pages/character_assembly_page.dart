@@ -11,6 +11,7 @@ import '../models/character_entry.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/dashed_selection_border_painter.dart';
+import '../services/ui_engine/element_animation.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/linker_connection_painter.dart';
 import '../services/ui_engine/linker_matrix_engine.dart';
