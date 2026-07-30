@@ -507,6 +507,90 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   /// linker 两侧接线热区的宽度。
   static const double kLinkerPortHotZone = 24.0;
 
+  // ===== A14-1g：形变把手 =====
+
+  /// 选中可形变元件时四周撑出的边距。
+  ///
+  /// 把手是 22px 的圆，热区取 2×padding = 24，略大于圆本身好点。
+  /// 与 Studio 的 p=20 同量级，但更紧凑——Assembly 画布本就挤。
+  static const double kResizeHandlePadding = 12.0;
+
+  Size _resizeStartSize = Size.zero;
+  Offset _resizeStartGlobal = Offset.zero;
+
+  /// 各类组件的最小尺寸。
+  ///
+  /// 与 Studio 的 clamp 口径一致：进度条可以做得很细（血条），
+  /// 面板类允许铺满整页，其余控件保底 40×20 以免拉成看不见的一条。
+  Size _minResizeFor(String? type) {
+    if (type == 'progress') return const Size(12, 6);
+    if (_isSurfaceLikeType(type)) return const Size(20, 20);
+    return const Size(40, 20);
+  }
+
+  Size _maxResizeFor(String? type) {
+    if (_isSurfaceLikeType(type)) return const Size(4096, 4096);
+    return const Size(600, 400);
+  }
+
+  bool _isSurfaceLikeType(String? type) => const {
+        'surface',
+        'surface_art',
+        'primitive_art',
+        'base_box',
+      }.contains(type);
+
+  /// 应用一次形变拖动。
+  ///
+  /// 关键：把屏幕位移**投影到元件的局部轴**。
+  /// 把手随元件一起旋转，若仍拿屏幕 dx/dy 当宽高增量，
+  /// 转 90° 后朝屏幕右边拖改的却是 width，视觉上元件在往下长——
+  /// 把手转了、数学没转，两者不一致怎么用都拧巴。
+  /// 投影之后，把手朝哪个视觉方向，就朝哪个方向拖、元件朝那个方向长。
+  void _applyResizeDrag(UIElement element, Offset globalPosition) {
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return;
+    final current = _elements[index];
+    if (current.layoutLocked || current.sealed) return;
+
+    final rawDx = globalPosition.dx - _resizeStartGlobal.dx;
+    final rawDy = globalPosition.dy - _resizeStartGlobal.dy;
+    final rad = current.rotation * math.pi / 180.0;
+    final cosR = math.cos(rad);
+    final sinR = math.sin(rad);
+    final localDx = rawDx * cosR + rawDy * sinR;
+    final localDy = -rawDx * sinR + rawDy * cosR;
+
+    final type = current.module?.type;
+    final minSize = _minResizeFor(type);
+    final maxSize = _maxResizeFor(type);
+    final nextWidth = (_resizeStartSize.width + localDx)
+        .clamp(minSize.width, maxSize.width)
+        .toDouble();
+    final nextHeight = (_resizeStartSize.height + localDy)
+        .clamp(minSize.height, maxSize.height)
+        .toDouble();
+
+    setState(() {
+      final module = current.module;
+      // 手动改过尺寸就关掉自适应，否则下一帧又被算回去。
+      if (module != null && module.properties['autoFit'] == true) {
+        final props = Map<String, dynamic>.from(
+          _deepCloneValue(module.properties) as Map,
+        );
+        props['autoFit'] = false;
+        _elements[index] = current.copyWith(
+          size: Size(nextWidth, nextHeight),
+          module: module.copyWith(properties: props),
+        );
+        return;
+      }
+      _elements[index] = current.copyWith(
+        size: Size(nextWidth, nextHeight),
+      );
+    });
+  }
+
   bool _isDraggingConnection = false;
   String? _draggingSourceId;
 

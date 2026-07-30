@@ -450,11 +450,25 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                             if (_isDraggingConnection)
                               _buildDraggingConnectionLine(),
                             ..._elements.map((el) {
+                              // A14-1g：选中且可形变时，四周撑出一圈边距
+                              // 给右下角的形变把手站位。
+                              //
+                              // 不撑不行——Flutter 的命中检测会先判断
+                              // `size.contains(position)`，画在盒子外面的
+                              // 把手根本收不到点击（与 A14-4 那个
+                              // IgnorePointer 把手失效同源）。
+                              //
+                              // 四周等量扩张，padded box 的中心仍是元件中心，
+                              // 因此 Transform.rotate 的旋转中心不变，
+                              // 连线端点与选中框都不受影响。
+                              final pad = _handlePaddingOf(el);
                               return Positioned(
-                                left: _canvasOffset.dx + _pcbOffset.dx + el.offset.dx,
-                                top: _canvasOffset.dy + _pcbOffset.dy + el.offset.dy,
-                                width: el.size.width,
-                                height: el.size.height,
+                                left: _canvasOffset.dx + _pcbOffset.dx +
+                                    el.offset.dx - pad,
+                                top: _canvasOffset.dy + _pcbOffset.dy +
+                                    el.offset.dy - pad,
+                                width: el.size.width + pad * 2,
+                                height: el.size.height + pad * 2,
                                 // A14-1d：旋转整个节点，选中虚线框与徽标
                                 // 都在其内部，会一起转——只转内容会让
                                 // 边框与组件错位（首轮测试反馈）。
@@ -1052,7 +1066,113 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   }
 
   // ========== 组件渲染 ==========
+  /// 选中且可形变的元件，四周撑出的边距宽度。
+  ///
+  /// 只在需要时撑：未选中 / 锁定 / 逻辑件都返回 0，
+  /// 避免平时白白扩大每个元件的命中区域、互相抢点击。
+  double _handlePaddingOf(UIElement el) =>
+      _supportsResizeHandle(el) ? _AssemblyLogic.kResizeHandlePadding : 0.0;
+
+  /// 该元件是否显示形变把手。
+  ///
+  /// 只做形变、不做旋转把手（用户选定）：旋转使用率不高，
+  /// 精确几何里已有角度输入且更准；而 Studio 的单把手靠
+  /// 「点一下切换形变/旋转」实现两用，代价是每次形变前都要确认当前模式，
+  /// 为低频功能给高频操作上税不划算。
+  bool _supportsResizeHandle(UIElement el) {
+    if (_selectedElementId != el.id) return false;
+    // 锁定针对的就是「误改几何」，把手必须收起。
+    if (el.layoutLocked || el.sealed) return false;
+    final type = el.module?.type;
+    if (type == null) return el.isComposite;
+    // 逻辑件尺寸由渲染器固定，拉伸没有意义（与 A14-1 的几何按钮同口径）。
+    const fixedSize = {'linker', 'math_node', 'timer', 'page_router',
+        'indicator'};
+    return !fixedSize.contains(type);
+  }
+
   Widget _buildElementWidget(UIElement el) {
+    final pad = _handlePaddingOf(el);
+    if (pad > 0) {
+      // 撑开后内容仍要落在原来的位置上，因此整体内移 pad。
+      // 把手画在 padding 区域内，不遮挡元件本体。
+      return SizedBox(
+        width: el.size.width + pad * 2,
+        height: el.size.height + pad * 2,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: pad,
+              top: pad,
+              width: el.size.width,
+              height: el.size.height,
+              child: _buildElementBody(el),
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: _buildResizeHandle(el),
+            ),
+          ],
+        ),
+      );
+    }
+    return _buildElementBody(el);
+  }
+
+  /// 右下角形变把手。
+  ///
+  /// 拖动增量会投影到元件的**局部轴**——把手跟着元件一起旋转，
+  /// 拖动的数学也必须跟着旋转，否则转 90° 后朝右拖却在改高度，
+  /// 手感完全错乱（Studio 旧实现正是如此，已一并修正）。
+  Widget _buildResizeHandle(UIElement el) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: (d) {
+        if (_isDraggingConnection) return;
+        _resizeStartSize = el.size;
+        _resizeStartGlobal = d.globalPosition;
+      },
+      onPanUpdate: (d) {
+        if (_isDraggingConnection) return;
+        _applyResizeDrag(el, d.globalPosition);
+      },
+      onPanEnd: (_) {
+        if (_isDraggingConnection) return;
+        _persistAssemblyElements();
+      },
+      child: Container(
+        width: _AssemblyLogic.kResizeHandlePadding * 2,
+        height: _AssemblyLogic.kResizeHandlePadding * 2,
+        alignment: Alignment.center,
+        // 外层透明扩大热区，视觉上只有中间那个小圆。
+        color: Colors.transparent,
+        child: Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF4081),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.open_in_full_rounded,
+            size: 12,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildElementBody(UIElement el) {
     final isInsidePcb = _isElementInsidePcb(el);
     if (el.isComposite && el.composite != null) {
       final isSelected = _selectedCompositeId == el.id;

@@ -953,8 +953,24 @@ class _UIStudioPageState extends State<UIStudioPage>
                   }
                 });
               } else {
-                final dx = details.globalPosition.dx - _startTouchGlobalPos.dx;
-                final dy = details.globalPosition.dy - _startTouchGlobalPos.dy;
+                // 把屏幕位移投影到元件的**局部轴**。
+                //
+                // 此前直接拿屏幕 dx/dy 当宽高增量，元件没旋转时看不出问题，
+                // 一旦转了 90°，元件的「宽」轴在屏幕上是竖直方向——
+                // 朝屏幕右边拖改的却仍是 width，视觉上元件在往下长，
+                // 手感完全错乱。把手跟着转了，拖动的数学却没跟着转。
+                //
+                // 投影之后，把手在哪个视觉方向，就朝哪个方向拖、
+                // 元件就朝那个方向长，旋转后依然直觉。
+                final rawDx =
+                    details.globalPosition.dx - _startTouchGlobalPos.dx;
+                final rawDy =
+                    details.globalPosition.dy - _startTouchGlobalPos.dy;
+                final rad = el.rotation * math.pi / 180.0;
+                final cosR = math.cos(rad);
+                final sinR = math.sin(rad);
+                final dx = rawDx * cosR + rawDy * sinR;
+                final dy = -rawDx * sinR + rawDy * cosR;
                 final isProgress = el.module?.type == 'progress';
                 final isSurface = const {'surface', 'surface_art', 'primitive_art', 'base_box'}
                     .contains(el.module?.type);
