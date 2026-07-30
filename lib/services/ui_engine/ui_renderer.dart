@@ -472,14 +472,14 @@ class UIRenderer {
     final animation = ElementAnimation.readFrom(module.properties);
     if (animation == null) return child;
 
-    // 只有明确「跟着数值动」的动画类型才自动播。
-    // 按压/涟漪是交互反馈，值变了自己涟漪一下会很怪。
-    const autoPlayTypes = {
-      ElementAnimationType.numberPop,
-      ElementAnimationType.glowPulse,
-      ElementAnimationType.flash,
-    };
-    if (!autoPlayTypes.contains(animation.type)) return child;
+    // 六种动画都允许值变化自动播放（用户选定）。
+    //
+    // 曾按「交互反馈 vs 数值反馈」设过白名单，把按压/水波/粒子排除在外。
+    // 但那是我的主观归类，实测下来站不住：粒子迸发用在「数值突变」
+    // 上很自然（扣血炸一下），而作者既然特意为这个组件选了某种动画，
+    // 就说明他想要那个效果，引擎不该替他否决。
+    //
+    // 副作用是选了按压/水波时，值变化也会播——那是作者自己的选择。
 
     return ValueChangeAnimator(
       value: _currentDisplayValueOf(module),
@@ -528,21 +528,28 @@ class UIRenderer {
     required Size size,
     required Widget child,
   }) {
+    // ⚠️ 必须夹取：elasticOut / bounceOut 这类曲线**会过冲**，
+    // progress 可能是 -0.05 或 1.08。
+    // 不夹的话由它算出的 wave 会变负，
+    // 传给 BoxShadow.blurRadius 直接触发
+    // 「Text shadow blur radius should be non-negative」断言崩溃
+    // （用户在发光脉冲 + 回弹曲线下实测到）。
+    //
+    // 只夹**派生量**而不夹 progress 本身：
+    // Transform.scale 需要过冲才有弹性观感，那正是选这类曲线的目的。
+    final double t = progress;
+    double waveOf(double peak) {
+      final w = t < peak ? t / peak : (1.0 - t) / (1.0 - peak);
+      return w.clamp(0.0, 1.0);
+    }
+
     switch (type) {
       case ElementAnimationType.press:
         // 前 35% 下沉、后 65% 回弹，与旧 _buildAnimatedSurface 一致。
         final double depth = 0.16 * intensity / 0.6;
-        double scale;
-        double dim;
-        if (progress < 0.35) {
-          final p = progress / 0.35;
-          scale = 1.0 - depth * p;
-          dim = 0.3 * p;
-        } else {
-          final p = (progress - 0.35) / 0.65;
-          scale = (1.0 - depth) + depth * p;
-          dim = 0.3 * (1.0 - p);
-        }
+        final double wave = waveOf(0.35);
+        final double scale = 1.0 - depth * wave;
+        final double dim = (0.3 * wave).clamp(0.0, 1.0);
         return Transform.scale(
           scale: scale,
           child: Stack(
@@ -564,8 +571,9 @@ class UIRenderer {
 
       case ElementAnimationType.ripple:
         // intensity 换算回半径：旧默认 150px 对应 intensity 0.6。
-        final double radius = 250.0 * intensity * progress;
-        final double opacity = (1.0 - progress).clamp(0.0, 1.0);
+        final double radius =
+            250.0 * intensity * t.clamp(0.0, 1.0);
+        final double opacity = (1.0 - t).clamp(0.0, 1.0);
         return Stack(
           children: [
             child,
@@ -602,8 +610,7 @@ class UIRenderer {
 
       case ElementAnimationType.flash:
         // 三角波：中点最亮，两端归零，避免结束时突然掉色。
-        final double wave =
-            progress < 0.5 ? progress / 0.5 : (1.0 - progress) / 0.5;
+        final double wave = waveOf(0.5);
         return Stack(
           children: [
             child,
@@ -612,7 +619,8 @@ class UIRenderer {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(borderRadius),
                   child: Container(
-                    color: accent.withValues(alpha: wave * 0.55 * intensity),
+                    color: accent.withValues(
+                        alpha: (wave * 0.55 * intensity).clamp(0.0, 1.0)),
                   ),
                 ),
               ),
@@ -622,22 +630,25 @@ class UIRenderer {
 
       case ElementAnimationType.numberPop:
         // 先放大后回落。幅度随 intensity，最大 +30%。
-        final double wave =
-            progress < 0.4 ? progress / 0.4 : (1.0 - progress) / 0.6;
+        // 这里**不夹取**：Transform.scale 允许过冲，
+        // 回弹曲线的弹性观感正来自于此。只兜住负缩放。
+        final double rawWave =
+            t < 0.4 ? t / 0.4 : (1.0 - t) / 0.6;
         return Transform.scale(
-          scale: 1.0 + 0.3 * intensity * wave,
+          scale: (1.0 + 0.3 * intensity * rawWave).clamp(0.05, 4.0),
           child: child,
         );
 
       case ElementAnimationType.glowPulse:
-        final double wave =
-            progress < 0.5 ? progress / 0.5 : (1.0 - progress) / 0.5;
+        final double wave = waveOf(0.5);
         return Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(borderRadius),
             boxShadow: [
               BoxShadow(
-                color: accent.withValues(alpha: wave * 0.75),
+                color: accent.withValues(
+                    alpha: (wave * 0.75).clamp(0.0, 1.0)),
+                // blurRadius / spreadRadius 必须非负，见上方夹取说明。
                 blurRadius: 24 * intensity * wave,
                 spreadRadius: 6 * intensity * wave,
               ),
@@ -655,7 +666,7 @@ class UIRenderer {
               child: IgnorePointer(
                 child: CustomPaint(
                   painter: _ParticleBurstPainter(
-                    progress: progress,
+                    progress: t.clamp(0.0, 1.0),
                     intensity: intensity,
                     color: accent,
                   ),

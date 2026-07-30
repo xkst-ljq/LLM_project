@@ -90,6 +90,71 @@ void main() {
     });
   });
 
+  group('缓动曲线过冲的安全性（崩溃修复）', () {
+    // 用户实测：发光脉冲配回弹类曲线时崩溃——
+    // 「Text shadow blur radius should be non-negative」。
+    //
+    // 根因：elasticOut / bounceOut 这类曲线**会过冲**，
+    // TweenAnimationBuilder 给出的 progress 可能是 -0.05 或 1.08。
+    // 由它算出的 wave 变负，传给 BoxShadow.blurRadius 就触发断言。
+
+    double waveOf(double t, double peak) {
+      final w = t < peak ? t / peak : (1.0 - t) / (1.0 - peak);
+      return w.clamp(0.0, 1.0);
+    }
+
+    test('过冲时派生量被夹到非负', () {
+      for (final t in [-0.08, -0.01, 1.01, 1.12]) {
+        final wave = waveOf(t, 0.5);
+        expect(wave, greaterThanOrEqualTo(0.0), reason: '$t');
+        // blurRadius / spreadRadius 都由 wave 缩放而来。
+        expect(24 * 0.6 * wave, greaterThanOrEqualTo(0.0), reason: '$t');
+      }
+    });
+
+    test('正常区间的波形不受夹取影响', () {
+      // 夹取只兜边界，中间段的观感必须和以前一致。
+      expect(waveOf(0.0, 0.5), closeTo(0.0, 1e-9));
+      expect(waveOf(0.25, 0.5), closeTo(0.5, 1e-9));
+      expect(waveOf(0.5, 0.5), closeTo(1.0, 1e-9));
+      expect(waveOf(0.75, 0.5), closeTo(0.5, 1e-9));
+      expect(waveOf(1.0, 0.5), closeTo(0.0, 1e-9));
+    });
+
+    test('按压的峰值点在 35%', () {
+      expect(waveOf(0.35, 0.35), closeTo(1.0, 1e-9));
+    });
+
+    test('数值跳动保留过冲，但兜住负缩放', () {
+      // 这一项**不夹** wave：Transform.scale 允许过冲，
+      // 回弹曲线的弹性观感正来自于此。只兜住不合法的缩放值。
+      double scaleAt(double t) {
+        final raw = t < 0.4 ? t / 0.4 : (1.0 - t) / 0.6;
+        return (1.0 + 0.3 * 0.6 * raw).clamp(0.05, 4.0);
+      }
+
+      for (final t in [-0.08, 0.4, 1.12]) {
+        expect(scaleAt(t), greaterThan(0.0), reason: '$t');
+      }
+      // 峰值仍有放大效果，没被夹平。
+      expect(scaleAt(0.4), greaterThan(1.0));
+    });
+
+    test('所有曲线都能安全求值', () {
+      // 回归守卫：新增曲线时若忘了考虑过冲，这条会失败。
+      for (final c in ElementAnimationCurve.values) {
+        final curve = c.curve;
+        for (final input in [0.0, 0.25, 0.5, 0.75, 1.0]) {
+          final t = curve.transform(input);
+          final wave = waveOf(t, 0.5);
+          expect(wave.isNaN, isFalse, reason: '${c.name}@$input');
+          expect(wave, greaterThanOrEqualTo(0.0), reason: '${c.name}@$input');
+          expect(wave, lessThanOrEqualTo(1.0), reason: '${c.name}@$input');
+        }
+      }
+    });
+  });
+
   group('值变化自动播放（A12-2）', () {
     // 数值跳动的自然语义是「值变了就自己弹一下」，
     // 不该还要额外接一条 event_to_animation 连线——
@@ -102,12 +167,6 @@ void main() {
       'select',
       'input',
     };
-    const autoPlayTypes = {
-      ElementAnimationType.numberPop,
-      ElementAnimationType.glowPulse,
-      ElementAnimationType.flash,
-    };
-
     test('只有显示数值/文本的组件参与自动播放', () {
       expect(valueDrivenTypes.contains('progress'), isTrue);
       expect(valueDrivenTypes.contains('text'), isTrue);
@@ -116,16 +175,17 @@ void main() {
       expect(valueDrivenTypes.contains('button'), isFalse);
     });
 
-    test('交互反馈类动画不自动播放', () {
-      // 按压/涟漪是「我碰了它」的反馈，
-      // 值变了自己涟漪一下会很怪。
-      expect(autoPlayTypes.contains(ElementAnimationType.press), isFalse);
-      expect(autoPlayTypes.contains(ElementAnimationType.ripple), isFalse);
-    });
-
-    test('跟数值相关的动画会自动播放', () {
-      expect(autoPlayTypes.contains(ElementAnimationType.numberPop), isTrue);
-      expect(autoPlayTypes.contains(ElementAnimationType.glowPulse), isTrue);
+    test('六种动画都允许自动播放，不设白名单', () {
+      // 曾按「交互反馈 vs 数值反馈」把按压/水波/粒子排除在外，
+      // 用户实测发现拖 slider 时这三种毫无反应。
+      // 那个归类是主观的且站不住——粒子迸发用在数值突变上很自然
+      // （扣血炸一下）；作者既然特意选了某种动画，
+      // 就说明他想要那个效果，引擎不该替他否决。
+      const excluded = <ElementAnimationType>{};
+      expect(excluded, isEmpty);
+      for (final t in ElementAnimationType.values) {
+        expect(excluded.contains(t), isFalse, reason: t.name);
+      }
     });
 
     test('自动播放不依赖时间戳', () {
@@ -152,7 +212,6 @@ void main() {
         durationMs: 600,
       );
       expect(anim.isActiveAt(1100), isTrue);
-      expect(autoPlayTypes.contains(anim.type), isTrue);
     });
   });
 

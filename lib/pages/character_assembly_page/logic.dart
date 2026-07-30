@@ -6768,17 +6768,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       (v) => setPageState(
                           () => animation = animation!.copyWith(intensity: v)),
                     ),
-                    // 值驱动组件配了「跟着数值动」的类型时，
-                    // 不接线也会在值变化时自动播——这是数值跳动的
-                    // 自然语义，明确告知作者，免得他再去接一条多余的线。
+                    // 值驱动组件不接线也会在值变化时自动播——
+                    // 这是数值跳动的自然语义，明确告知作者，
+                    // 免得他再去接一条多余的线。
                     if (const {'progress', 'text', 'slider', 'select',
                             'input'}
-                            .contains(type) &&
-                        const {
-                          ElementAnimationType.numberPop,
-                          ElementAnimationType.glowPulse,
-                          ElementAnimationType.flash,
-                        }.contains(animation!.type))
+                        .contains(type))
                       const Padding(
                         padding: EdgeInsets.only(bottom: 10),
                         child: Text(
