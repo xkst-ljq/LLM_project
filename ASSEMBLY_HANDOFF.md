@@ -633,6 +633,60 @@ PCB 的形变把手又在右侧与下侧，**左侧是唯一空闲的边**。
 A14 盘点里「Studio 2900 行 editors vs Assembly 一个通用对话框」
 这个对比，不能直接当成缺口来补。
 
+### button = 点击热区，不是控件（A14-3 第三步确立）
+
+**button 在运行期完全不显形**，`_buildButton` 直接返回
+`SizedBox.expand()` 包在手势 Listener 里。
+玩家看到的按压反馈，一律由它联动的 surface 表现
+（`click_to_surface_press` / `click_to_surface_ripple`）。
+编辑期才画灰色区域 + `touch_app` 图标，让作者知道热区在哪。
+
+推论，改代码时不要违反：
+
+1. **不要给 button 外观编辑**（不在 `_supportsAppearanceEditor` 名单）。
+   它不显形，调颜色圆角是白忙。
+2. **不要给 button 加文案**。`text` / `showTextOnRuntime`
+   是早期遗留，已废弃并在保存时主动 remove。
+3. **触发手势属于连线，不属于按钮**。见下条。
+
+### 手势用连线的 sourcePort 表达，不用方案 id（A14-3 第三步）
+
+运行端 `LinkerService.initEventBusListener` 按
+`'tap'` / `'double_tap'` / `'long_press'` 三个 `sourcePort` 分派事件。
+因此 Assembly 的联动器配置页在来源是 button 时多一栏「触发手势」，
+**只覆写 sourcePort**，运行端无需改动。
+
+两条不要走的岔路：
+
+* **不要为「双击触发某某」单开方案 id** —— 方案矩阵会翻三倍，
+  且仍做不到「同一按钮三种手势并存」。
+  `_schemeSourcePort` 里的 `double_click_` / `long_press_`
+  前缀分支是闲置预留，矩阵中并无此类方案。
+* **不要在按钮上选「当前手势模式」** —— 那正是被废弃的
+  `active_gesture`：一个按钮只能有一种语义，
+  还得靠隐藏其他连线来实现，远不如三条连线并存。
+
+覆写守卫：仅当**来源类型为 button 且方案推导端口为 `tap`** 时生效，
+防止将来给 button 加值型方案时被手势串改端口。
+
+手感参数 `doubleTapIntervalMs` / `longPressThresholdMs`
+归实例编辑器（是按钮的调校，不是某条连线的），
+且只在该按钮确实有非单击连线时才显示。
+
+### 死代码要顺着数据流验证，不能只看有没有 UI（A14-3 第三步教训）
+
+Studio 的「手势触发模式」下拉存在已久、界面完整、
+还配了「手势通道连接状态」的三色指示灯，看起来很正经，
+实际上 `props['active_gesture']` **全仓无人读取**——
+作者选了「长按触发」，运行时仍然是单击。
+
+同类的 `showTextOnRuntime` 则相反：它**确实被渲染端读**，
+但它控制的功能本身就不该存在。
+
+教训：判断一个字段是否有效，要从**渲染端 / 运行端往回查读取方**，
+不能看编辑器里有没有入口。两者都属于
+「不影响就留下了」的遗留，越留越难分辨哪个是真功能。
+
 ### A14-1 / A14-2 / A14-3 已完成（均测试通过）
 
 A14-3 的结论值得记一笔：**「实例编辑器分文件」最终判定为不做**。

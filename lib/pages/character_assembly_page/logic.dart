@@ -65,7 +65,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         type: 'button',
         color: const Color(0xFF757575),
         properties: {
-          'text': '',
+          // 不再放 'text'：button 是纯热区，运行期不显形。
           'action': 'tap',
           'doubleTapIntervalMs': 300,
           'longPressThresholdMs': 500,
@@ -2256,6 +2256,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ...(existing['schemeParams'] as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{},
     };
+    // 来源为 button 时的触发手势（单击 / 双击 / 长按）。
+    //
+    // 不为「双击触发某某」单开方案 id——那会让方案矩阵翻三倍。
+    // 手势只影响写出去的 sourcePort，运行端 LinkerService 本就按
+    // 'tap' / 'double_tap' / 'long_press' 三个端口名分派，无需改动。
+    // 好处是同一个按钮可以挂三条连线，三种触控各接各的目标。
+    var sourceGesture = existing['sourceGesture']?.toString() ?? '';
     if (!candidates.any((element) => element.id == sourceId)) sourceId = '';
     if (!candidates.any((element) => element.id == targetId)) targetId = '';
 
@@ -2394,6 +2401,73 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                             }),
                           ),
                         ),
+                      // 触发手势：仅当来源是 button 时才有意义。
+                      if (source?.module?.type == 'button' &&
+                          scheme.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          '触发手势',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF111116),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          initialValue: sourceGesture.isEmpty
+                              ? 'tap'
+                              : sourceGesture,
+                          isExpanded: true,
+                          decoration: const InputDecoration(isDense: true),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'tap',
+                              child: Text('单击'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'double_tap',
+                              child: Text('双击'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'long_press',
+                              child: Text('长按'),
+                            ),
+                          ],
+                          onChanged: (next) {
+                            if (next == null) return;
+                            setDialogState(() => sourceGesture = next);
+                          },
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text(
+                            '同一个按钮可以建多条连线，'
+                            '让单击 / 双击 / 长按分别触发不同的目标。',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF777783),
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                        if (sourceGesture != 'tap' &&
+                            (scheme == 'click_to_surface_press' ||
+                                scheme == 'click_to_surface_ripple'))
+                          const Padding(
+                            padding: EdgeInsets.only(top: 6),
+                            child: Text(
+                              '提示：按压 / 涟漪属于即时视觉反馈，'
+                              '改用双击或长按后要等判定时间结束才会播放，'
+                              '手感会明显变迟钝。',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFFE65100),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                      ],
                       // 方案参数编辑器。
                       //
                       // 此前漏了这一块，导致带参数的方案（如消息操作要选
@@ -2459,6 +2533,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ..remove('targetType')
             ..remove('inputConnection')
             ..remove('outputConnection')
+            ..remove('sourceGesture')
             ..remove('schemeParams');
           linkerData['scheme'] = '未配置';
           linkerData['enabled'] = false;
@@ -2469,7 +2544,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           linkerData['scheme'] = scheme;
           linkerData['enabled'] = true;
           // 端口与类型由方案定义推导，保持与 Studio 侧一致。
-          linkerData['sourcePort'] = _schemeSourcePort(scheme);
+          // button 来源额外允许用手势覆写端口（见 sourceGesture 的说明）。
+          final basePort = _schemeSourcePort(scheme);
+          final isButtonSource =
+              byId(sourceId)?.module?.type == 'button' && basePort == 'tap';
+          if (isButtonSource && sourceGesture.isNotEmpty) {
+            linkerData['sourcePort'] = sourceGesture;
+            linkerData['sourceGesture'] = sourceGesture;
+          } else {
+            linkerData['sourcePort'] = basePort;
+            linkerData.remove('sourceGesture');
+          }
           linkerData['targetPort'] = _schemeTargetPort(scheme);
           linkerData['sourceType'] = (def?.isPulse ?? false) ? 'pulse' : 'value';
           // 参数缺省时补上方案声明的默认值，运行端就不必各自兜底。
@@ -4035,6 +4120,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       text: (_numProp(module.properties, 'thickness') ?? 2.0)
           .toStringAsFixed(0),
     );
+    // button 的手势判定手感。默认值与渲染端 _ButtonGestureWidget 保持一致。
+    final doubleTapIntervalController = TextEditingController(
+      text: (_intProp(module.properties, 'doubleTapIntervalMs') ?? 300)
+          .toString(),
+    );
+    final longPressThresholdController = TextEditingController(
+      text: (_intProp(module.properties, 'longPressThresholdMs') ?? 500)
+          .toString(),
+    );
     final placeholderController = TextEditingController(
       text: module.properties['placeholder']?.toString() ?? '',
     );
@@ -4349,14 +4443,41 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       const SizedBox(height: 12),
                       numberField(currentController, '当前值'),
                     ],
+
                     if (type == 'button') ...[
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: textController,
-                        decoration: const InputDecoration(
-                          labelText: '按钮文字（可留空）',
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F3F6),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          '按钮是一块「点击热区」，运行时不显形。\n'
+                          '想让玩家看到按下的反馈，请用联动器把它连到一个'
+                          ' surface，选择按压或涟漪方案。',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF555562),
+                            height: 1.4,
+                          ),
                         ),
                       ),
+                      // 手感参数只在真的用到双击 / 长按时才出现，
+                      // 否则平白多两个数字框，作者还得猜它们干嘛用。
+                      if (_buttonUsesNonTapGesture(element.id)) ...[
+                        const SizedBox(height: 12),
+                        numberField(
+                          doubleTapIntervalController,
+                          '双击判定间隔（毫秒，100~1000）',
+                        ),
+                        const SizedBox(height: 12),
+                        numberField(
+                          longPressThresholdController,
+                          '长按判定时长（毫秒，150~3000）',
+                        ),
+                      ],
                     ],
                     if (type == 'line') ...[
                       const SizedBox(height: 12),
@@ -4684,6 +4805,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         maxController,
         currentController,
         thicknessController,
+        doubleTapIntervalController,
+        longPressThresholdController,
         placeholderController,
         maxLengthController,
         stepController,
@@ -4720,8 +4843,26 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             props['max'] = readDouble(maxController, 100.0);
             props['current'] = readDouble(currentController, 0.0);
           } else if (type == 'button') {
-            props['text'] = textController.text;
-            props['showTextOnRuntime'] = textController.text.trim().isNotEmpty;
+            // 热区不再承载文案：清掉历史遗留键，
+            // 否则旧卡里存着的 text 会在升级后继续被渲染端误读。
+            props
+              ..remove('text')
+              ..remove('showTextOnRuntime')
+              ..remove('active_gesture');
+            final interval =
+                int.tryParse(doubleTapIntervalController.text.trim());
+            if (interval == null) {
+              props.remove('doubleTapIntervalMs');
+            } else {
+              props['doubleTapIntervalMs'] = interval.clamp(100, 1000);
+            }
+            final threshold =
+                int.tryParse(longPressThresholdController.text.trim());
+            if (threshold == null) {
+              props.remove('longPressThresholdMs');
+            } else {
+              props['longPressThresholdMs'] = threshold.clamp(150, 3000);
+            }
           } else if (type == 'line') {
             props['axis'] = lineAxis;
             props['lineStyle'] = lineStyle;
@@ -4862,6 +5003,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       maxController,
       currentController,
       thicknessController,
+      doubleTapIntervalController,
+      longPressThresholdController,
       placeholderController,
       maxLengthController,
       stepController,
@@ -5265,11 +5408,28 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   /// 同一个面板在 A 卡是深蓝、B 卡是暖橙很正常，因此归 Assembly。
   /// 与之相对，indicator 的状态映射规则那种「颜色怎么随数值变」
   /// 是零件自带行为，仍只在 Studio 编辑。
+  /// 该 button 是否被某条连线用双击 / 长按方式触发。
+  ///
+  /// 只看画布上的 linker 元素，不依赖运行端快照——
+  /// 编辑期 LinkerService 里未必装着当前这张卡的连线。
+  bool _buttonUsesNonTapGesture(String buttonId) {
+    for (final element in _elements) {
+      final module = element.module;
+      if (module == null || module.type != 'linker') continue;
+      final data = _linkerDataOf(module);
+      if (data['sourceModuleId']?.toString() != buttonId) continue;
+      final port = data['sourcePort']?.toString() ?? '';
+      if (port == 'double_tap' || port == 'long_press') return true;
+    }
+    return false;
+  }
+
   bool _supportsAppearanceEditor(String type) => const {
         'surface',
         'base_box',
         'text',
-        'button',
+        // button 不在此列：它运行期是纯热区、完全不显形，
+        // 给它调颜色圆角只会让作者白忙一场（视觉反馈请连线到 surface）。
         'progress',
         'slider',
         'input',

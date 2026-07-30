@@ -756,38 +756,53 @@ class UIRenderer {
     );
   }
 
+  /// 点击热区渲染。
+  ///
+  /// button 的本意是「一块可被按动的区域」，而**不是**一个有文案的控件：
+  /// 运行期它完全不显形，视觉反馈一律由它联动的 surface 去表现。
+  /// 编辑期才画出灰色区域，让作者知道热区在哪、多大。
+  ///
+  /// 历史上这里支持过 `text` / `showTextOnRuntime`（在运行期显示文案），
+  /// 那是 Studio 缺编辑入口时留下的遗留设定，已废弃：
+  /// 一个会自己显字的按钮既与「热区」定位冲突，
+  /// 也让作者误以为按钮有外观可调。
   static Widget _buildButton(BuildContext context, UIElement element, UIModule module) {
     final bool isStudio = UISceneModeScope.of(context);
-    final bool showOnRuntime = module.properties['showTextOnRuntime'] == true;
-    final btnText = module.properties['text']?.toString() ?? module.name;
 
-    bool hasTap = false;
-    bool hasDoubleTap = false;
-    bool hasLongPress = false;
-
-    if (isStudio) {
-      hasTap = LinkerService.hasConnectedPort(element.id, 'tap');
-      hasDoubleTap = LinkerService.hasConnectedPort(element.id, 'double_tap');
-      hasLongPress = LinkerService.hasConnectedPort(element.id, 'long_press');
+    // 运行期：纯热区，不占任何像素的视觉表达。
+    if (!isStudio) {
+      return _ButtonGestureWidget(
+        elementId: element.id,
+        module: module,
+        child: const SizedBox.expand(),
+      );
     }
 
-    final childWidget = Container(
+    // 编辑期：统一的灰色区域 + 手势图标，表明这是热区而非可见控件。
+    final hasTap = LinkerService.hasConnectedPort(element.id, 'tap');
+    final hasDoubleTap = LinkerService.hasConnectedPort(element.id, 'double_tap');
+    final hasLongPress = LinkerService.hasConnectedPort(element.id, 'long_press');
+
+    return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: module.color.withValues(alpha: module.opacity * 0.15),
+        color: const Color(0xFF9E9E9E).withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: module.color.withValues(alpha: 0.45), width: 1),
+        border: Border.all(
+          color: const Color(0xFF9E9E9E).withValues(alpha: 0.55),
+          width: 1,
+        ),
       ),
       child: Stack(
         children: [
-          Center(
-            child: Text(
-              btnText,
-              style: TextStyle(color: module.color, fontSize: 12, fontWeight: FontWeight.bold),
-              overflow: TextOverflow.ellipsis,
+          const Center(
+            child: Icon(
+              Icons.touch_app_outlined,
+              size: 14,
+              color: Color(0xFF757580),
             ),
           ),
-          if (isStudio && (hasTap || hasDoubleTap || hasLongPress))
+          if (hasTap || hasDoubleTap || hasLongPress)
             Positioned(
               left: 4,
               bottom: 4,
@@ -828,16 +843,6 @@ class UIRenderer {
             ),
         ],
       ),
-    );
-
-    if (isStudio) {
-      return childWidget;
-    }
-
-    return _ButtonGestureWidget(
-      elementId: element.id,
-      module: module,
-      child: !showOnRuntime ? const SizedBox.expand() : childWidget,
     );
   }
 

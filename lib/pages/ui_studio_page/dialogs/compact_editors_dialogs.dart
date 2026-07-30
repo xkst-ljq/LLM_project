@@ -674,8 +674,12 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     final double offsetY = el.offset.dy;
 
     final props = Map<String, dynamic>.from(mod.properties);
-    String btnText = props['text']?.toString() ?? '点击热区';
-    bool showOnRuntime = props['showTextOnRuntime'] == true;
+    // 历史遗留键：按钮不再有文案，也不再有独立的手势模式。
+    // 这里顺手清掉，旧卡打开一次编辑器即完成迁移。
+    props
+      ..remove('text')
+      ..remove('showTextOnRuntime')
+      ..remove('active_gesture');
 
     Color color = mod.color;
     double opacity = mod.opacity.clamp(0.0, 1.0).toDouble();
@@ -703,7 +707,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     }
 
     final nameCtrl = TextEditingController(text: name)..selection = TextSelection.collapsed(offset: name.length);
-    final txtCtrl = TextEditingController(text: btnText)..selection = TextSelection.collapsed(offset: btnText.length);
 
     showDialog<void>(
       context: context,
@@ -747,39 +750,25 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                               TextField(controller: nameCtrl, style: const TextStyle(fontSize: 13, color: Color(0xFF111116)), decoration: _softInputDecoration(), onChanged: (v) => name = v),
                               const SizedBox(height: 12),
 
-                              const Text('按钮展示文案 (创作排版期可见)', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                              const SizedBox(height: 4),
-                              TextField(
-                                controller: txtCtrl,
-                                style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
-                                decoration: _softInputDecoration(),
-                                onChanged: (v) {
-                                  btnText = v;
-                                  props['text'] = v;
-                                  setState(() => syncLivePreview());
-                                },
-                              ),
-                              const SizedBox(height: 12),
-
-                              const Text('手势触发模式', style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
-                              const SizedBox(height: 4),
-                              DropdownButtonFormField<String>(
-                                initialValue: props['active_gesture']?.toString() ?? 'tap',
-                                decoration: _softInputDecoration(),
-                                dropdownColor: Colors.white,
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF111116)),
-                                items: const [
-                                  DropdownMenuItem(value: 'tap', child: Text('🟢 单击触发 (Tap)')),
-                                  DropdownMenuItem(value: 'double_tap', child: Text('🔵 双击触发 (Double Tap)')),
-                                  DropdownMenuItem(value: 'long_press', child: Text('🔴 长按触发 (Long Press)')),
-                                ],
-                                onChanged: (v) {
-                                  if (v == null) return;
-                                  setDialogState(() {
-                                    props['active_gesture'] = v;
-                                  });
-                                  setState(() => syncLivePreview());
-                                },
+                              // 按钮 = 纯点击热区，运行期不显形，
+                              // 因此既没有展示文案，也没有单独的「手势触发模式」：
+                              // 用哪种手势触发，由每条连线各自选择
+                              // （连线的 sourcePort 决定），
+                              // 这样同一个按钮的单击 / 双击 / 长按
+                              // 可以分别接到不同目标。
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF3F3F6),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Text(
+                                  '按钮是一块「点击热区」，运行时不显形。\n'
+                                  '想让玩家看到按下的反馈，请把它连到一个 surface，'
+                                  '选择按压或涟漪方案。\n'
+                                  '触发用的手势在每条连线里单独选择。',
+                                  style: TextStyle(fontSize: 11, color: Color(0xFF555562), height: 1.4),
+                                ),
                               ),
                               const SizedBox(height: 12),
 
@@ -849,20 +838,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                               ),
                               const SizedBox(height: 12),
 
-                              SwitchListTile(
-                                title: const Text('运行对话期依然显现纯字', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
-                                subtitle: const Text('默认仅排版创作对齐显现，聊天中消隐为热区', style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
-                                value: showOnRuntime,
-                                activeThumbColor: const Color(0xFF00ACC1),
-                                contentPadding: EdgeInsets.zero,
-                                onChanged: (val) {
-                                  setDialogState(() {
-                                    showOnRuntime = val;
-                                    props['showTextOnRuntime'] = val;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 12),
 
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -941,7 +916,6 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         nameCtrl.dispose();
-        txtCtrl.dispose();
       });
     });
   }

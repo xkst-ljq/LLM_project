@@ -14,7 +14,6 @@ bool supportsAppearance(String type) => const {
       'surface',
       'base_box',
       'text',
-      'button',
       'progress',
       'slider',
       'input',
@@ -49,7 +48,15 @@ void main() {
 
     test('纯逻辑件没有外观可言', () {
       // 运行时不渲染，改颜色没有意义。
-      for (final t in ['linker', 'page_router', 'math_node', 'timer']) {
+      // button 也在此列：它运行期是纯点击热区，不显形，
+      // 视觉反馈一律交给它联动的 surface。
+      for (final t in [
+        'linker',
+        'page_router',
+        'math_node',
+        'timer',
+        'button',
+      ]) {
         expect(supportsAppearance(t), isFalse, reason: t);
       }
     });
