@@ -1051,22 +1051,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   ),
                 ),
               ),
-              if (isSelected)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: const Color(0xFF5E35B1),
-                          width: 2,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        color: const Color(0xFF5E35B1)
-                            .withValues(alpha: 0.06),
-                      ),
-                    ),
-                  ),
-                ),
               if (!isInsidePcb)
                 Positioned.fill(
                   child: IgnorePointer(
