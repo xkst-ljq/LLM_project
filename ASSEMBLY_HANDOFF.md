@@ -565,6 +565,48 @@ scene 与 extra_companion 互斥（scene 不渲染消息列表，伴生没有宿
   需为该方案补一条 `tgtId == 事件源` 的分支；
 - **渲染**：编辑态分支也要单独处理，别只改运行态。
 
+### A14-1 画布元素操作（已完成，测试通过）
+
+选中 + 左侧操作栏（半锁 / 全锁 / 复制 / 上移 / 下移 / 删除）。
+
+#### 几条不要再踩的坑
+
+**1. 加画布操作前先确认有没有「选中态」。**
+Assembly 原本只有 `_selectedCompositeId`，且仅用于展开复合组件的
+覆写槽位——**原子组件根本没有选中状态**。
+盘点时只对比「有没有删除功能」会漏掉这个前提。
+
+**2. 锁定用模型已有的 `layoutLocked` / `sealed`，不要自造字段。**
+Studio 侧一直在用这两个。自造 `properties['locked']` 会导致
+方案在两个编辑器间迁移时锁定状态丢失。
+- `layoutLocked`（半锁）：位置 / 形变 / 旋转
+- `sealed`（全锁）：以上 + 联动连线（连不上、不可断开、配置时跳过）
+
+**3. 复制元素必须走 `jsonEncode/Decode`。**
+`_deepCloneValue` 对嵌套 Map 返回 `Map<dynamic, dynamic>`，
+而 `UIElement.fromJson` 里 `json['offset'] as Map<String, dynamic>?`
+是硬类型转换，会直接抛 `_TypeError`。
+另外 `UIElement.copyWith` **不接受 id**（final），要在 JSON 层换。
+
+**4. 层级顺序：`_elements` 越靠后越上层，「上移」= 索引 +1。**
+很容易写反，有测试守着。
+
+**5. 删除要连带清理联动器与覆写槽位。**
+悬空连线在运行端表现为「配了但没反应」，比直接删掉更难排查。
+
+**6. 选中框用 `DashedSelectionBorderPainter`（按组件形状描边）。**
+放在 `services/ui_engine/`，Studio 的 `painters.dart` 是
+`part of`，Assembly 导不了，但两边选中框必须一致。
+
+#### 布局：不要照搬 Studio 的两侧悬浮按钮
+
+Studio 有 10 个按钮分列画布左右。Assembly 不行——
+PCB 有固定边界且作者要频繁贴边摆元件，两侧会压住工作区；
+PCB 的形变把手又在右侧与下侧，**左侧是唯一空闲的边**。
+
+两档锁定共用一格、全锁**向右**展开：向下插入会把下方按钮整体推移，
+手指刚点完半锁，复制键就跑到了原本删除键的位置。
+
 ### 方案设计的两条通用规则（A13-3 踩出来的）
 
 **1. 换目标类型只能改变呈现形式，不能改变语义。**
