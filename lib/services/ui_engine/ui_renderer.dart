@@ -12,7 +12,6 @@ import 'element_animation.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
-import 'ripple_mesh_distortion.dart';
 import 'message_flow_scope.dart';
 import 'select_option.dart';
 import 'text_highlight_scope.dart';
@@ -571,26 +570,36 @@ class UIRenderer {
         );
 
       case ElementAnimationType.ripple:
-        // 方案 C：网格折射。
+        // 同心环扩散 + 壁面反弹。
         //
-        // 旧实现是「盖一个扩大的白圈」，用户评价「很敷衍」——
-        // 它模拟的是波的轮廓，组件本身纹丝不动，缺少介质被扰动的感觉；
-        // 且进度条这类扁长组件上，圆被裁得只剩中间一条窄带。
+        // 曾尝试用 drawVertices 网格变形做「放大镜折射」（方案 C），
+        // 三轮调参用户都反馈「看不出变化，就是抖动」。
+        // 复盘发现根因不在数学：捕获纹理的回调只写字段、从不触发重绘，
+        // 变形结果根本没被画出来——一直显示的是原图加轻微形变。
+        // 该方案已移除；若要做真折射应上片元着色器（方案 A）。
         //
-        // 现在改为抓取组件纹理 + 网格顶点扰动，做出真正的折射（透镜）效果，
-        // 并叠加本体非等比形变（横纵反相）产生动荡感。
-        // 波会撞到组件边界后反弹，符合瞬时事件的手感。
-        return Transform(
-          alignment: Alignment.center,
-          transform: RippleMeshDistortion.bodyDistortion(t, intensity),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(borderRadius),
-            child: RippleDistortionView(
-              progress: t.clamp(0.0, 1.0),
-              intensity: intensity,
-              child: child,
+        // 现在回到可靠的叠加绘制，但修掉旧版的三个硬伤：
+        // 旧版是单个正圆 + ClipRRect，进度条 200×12 上直径 300 的圆
+        // 只剩中间一条 12px 的窄带，即用户说的「只有中点很小一部分」。
+        final double ripplePhase = t.clamp(0.0, 1.0);
+        return Stack(
+          children: [
+            child,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(borderRadius),
+                  child: CustomPaint(
+                    painter: _RippleRingsPainter(
+                      progress: ripplePhase,
+                      intensity: intensity,
+                      color: accent,
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         );
 
       case ElementAnimationType.flash:
@@ -3371,30 +3380,141 @@ class _ParticleBurstPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (progress <= 0 || progress >= 1) return;
+    if (progress <= 0 || progress >= 1 || size.isEmpty) return;
+
     final center = Offset(size.width / 2, size.height / 2);
-    // 扩散半径以元件短边为基准，小元件不会被粒子淹没。
-    final maxRadius = size.shortestSide * (0.6 + intensity);
-    const count = 10;
+
+    // ⚠️ 扩散半径**不能**用 shortestSide。
+    //
+    // 进度条 200×12 时短边是 12，粒子只飞 14px、占可用横向距离的 14%，
+    // 正是用户说的「只有中点一点点动画，看着太小气」。
+    // 改用椭圆半径：各方向按自己的可用距离伸展，
+    // 扁长组件横向就能飞满。
+    final halfW = size.width / 2;
+    final halfH = size.height / 2;
+    final spread = 0.55 + 0.75 * intensity;
+
+    const count = 14;
     final fade = (1.0 - progress).clamp(0.0, 1.0);
-    final paint = Paint()
-      ..color = color.withValues(alpha: fade * 0.9)
-      ..style = PaintingStyle.fill;
+
+    // 初速度衰减：先快后慢，比匀速外扩自然得多。
+    final travel = 1.0 - math.pow(1.0 - progress, 2.2).toDouble();
+    // 重力下坠（用户要求）：随时间平方累积。
+    final gravity = halfH * 1.6 * intensity * progress * progress;
+
+    final paint = Paint()..style = PaintingStyle.fill;
 
     for (var i = 0; i < count; i++) {
-      final angle = (math.pi * 2 / count) * i;
-      // 交错长短，避免十个点连成一个规整的圆环。
-      final reach = maxRadius * (i.isEven ? 1.0 : 0.72) * progress;
-      final dot = Offset(
-        center.dx + math.cos(angle) * reach,
-        center.dy + math.sin(angle) * reach,
+      // 角度加半格偏移，避免第一颗正好压在水平轴上。
+      final angle = (math.pi * 2 / count) * (i + 0.5);
+      // 交错长短，十几个点才不会连成一个规整圆环。
+      final reach = (i % 3 == 0) ? 1.0 : (i.isEven ? 0.78 : 0.9);
+
+      final dx = math.cos(angle) * halfW * spread * reach * travel;
+      final dy = math.sin(angle) * halfH * spread * reach * travel + gravity;
+
+      // 粒子大小由 index 派生而非随机——CustomPainter 每帧重新构造，
+      // 用 Random() 会让粒子逐帧乱跳。
+      final sizeJitter = 0.6 + ((i * 37) % 100) / 100.0 * 0.8;
+      final radius = (2.6 * intensity * sizeJitter + 0.7) * fade;
+      if (radius <= 0.15) continue;
+
+      paint.color = color.withValues(
+        alpha: (fade * (0.55 + 0.45 * sizeJitter)).clamp(0.0, 1.0),
       );
-      canvas.drawCircle(dot, 3.2 * intensity * fade + 0.6, paint);
+      canvas.drawCircle(center + Offset(dx, dy), radius, paint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _ParticleBurstPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.intensity != intensity ||
+        oldDelegate.color != color;
+  }
+}
+
+/// 水波：椭圆同心环扩散 + 壁面反弹。
+///
+/// ## 为什么是椭圆
+///
+/// 旧版画正圆再用 ClipRRect 裁切。进度条 200×12 时，
+/// 直径 300px 的圆只剩中间一条 12px 高的窄带——
+/// 用户描述的「只有中点很小一个部分有白圈动画」正是这个。
+///
+/// 改用椭圆归一化距离后，环沿组件长宽比拉伸，
+/// 波前到达两端与上下边缘的时刻一致，扁长组件也能扫满。
+class _RippleRingsPainter extends CustomPainter {
+  final double progress;
+  final double intensity;
+  final Color color;
+
+  const _RippleRingsPainter({
+    required this.progress,
+    required this.intensity,
+    required this.color,
+  });
+
+  /// 波前在 [0,1] 之间折返：撞到边界原路弹回。
+  ///
+  /// 用户要求「像波浪一样碰到壁面会反弹」，
+  /// 瞬时事件正需要这种「敲一下、整个组件荡一荡」的手感。
+  static double _front(double t, double phaseOffset) {
+    final d = (t * 2.5 + phaseOffset) * 1.0;
+    final k = d.floor();
+    final f = d - k;
+    return k.isEven ? f : 1.0 - f;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty || progress <= 0 || progress >= 1) return;
+
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final halfW = size.width / 2;
+    final halfH = size.height / 2;
+
+    // 整体衰减：越到后面波越平息。
+    final envelope = math.pow(1.0 - progress, 1.2).toDouble();
+    if (envelope <= 0.01) return;
+
+    // 三道波错开相位，形成「一圈接一圈荡开」而不是单个圆环。
+    const phases = [0.0, 0.22, 0.44];
+    for (var i = 0; i < phases.length; i++) {
+      final front = _front(progress, phases[i]);
+      // 后发的波更淡。
+      final fade = envelope * (1.0 - i * 0.28).clamp(0.0, 1.0);
+      if (fade <= 0.01) continue;
+
+      // 环带本身有厚度，用描边宽度表达。
+      final strokeWidth = (1.5 + 2.5 * intensity) * fade;
+      if (strokeWidth <= 0.1) continue;
+
+      final rect = Rect.fromCenter(
+        center: Offset(cx, cy),
+        width: halfW * 2 * front,
+        height: halfH * 2 * front,
+      );
+      if (rect.width <= 0.5 || rect.height <= 0.5) continue;
+
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..color = color.withValues(alpha: (0.75 * fade).clamp(0.0, 1.0));
+      canvas.drawOval(rect, paint);
+
+      // 内侧再描一道更亮的细边，让波纹有「水面反光」的层次。
+      final innerPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (strokeWidth * 0.45).clamp(0.4, 3.0)
+        ..color = Colors.white.withValues(alpha: (0.5 * fade).clamp(0.0, 1.0));
+      canvas.drawOval(rect.deflate(strokeWidth * 0.5), innerPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RippleRingsPainter oldDelegate) {
     return oldDelegate.progress != progress ||
         oldDelegate.intensity != intensity ||
         oldDelegate.color != color;
