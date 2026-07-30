@@ -711,6 +711,33 @@ class UIRenderer {
     }
 
     final radius = shapeStr == 'rectangle' ? BorderRadius.zero : BorderRadius.circular(999);
+
+    // 水波动画期间，让**填充边界本身**随波起伏。
+    //
+    // 用户反馈：进度条只有两种纯色，折射只在两色交界处可见，
+    // 「显示效果太小了」。这是折射的固有局限——
+    // 采样偏移作用在纯色区域上，偏到哪儿取到的还是同一个颜色。
+    //
+    // 解法不是加强折射，而是**制造新的可动边界**：
+    // 把填充的右边缘画成波浪线，波纹经过时它跟着荡漾。
+    final rippleAnim = ElementAnimation.readFrom(module.properties);
+    if (rippleAnim != null &&
+        rippleAnim.type == ElementAnimationType.ripple &&
+        rippleAnim.isActiveAt(DateTime.now().millisecondsSinceEpoch)) {
+      return ClipRRect(
+        borderRadius: radius,
+        child: CustomPaint(
+          size: size,
+          painter: _WavyProgressPainter(
+            progress: progress.clamp(0.0, 1.0),
+            fillColor: fillColor,
+            trackColor: trackColor,
+            animation: rippleAnim,
+          ),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(color: trackColor, borderRadius: radius),
       child: ClipRRect(
@@ -3438,5 +3465,94 @@ class _ParticleBurstPainter extends CustomPainter {
     return oldDelegate.progress != progress ||
         oldDelegate.intensity != intensity ||
         oldDelegate.color != color;
+  }
+}
+
+/// 进度条填充边界的波动绘制。
+///
+/// ## 为什么需要它
+///
+/// 用户反馈水波「只有交接处有明显扰动，显示效果太小了」。
+///
+/// 这是折射的**固有局限**而非参数问题：折射的本质是采样位置偏移，
+/// 而进度条内部是大片纯色——偏移 5px 取到的还是同一个颜色，
+/// 肉眼完全看不出变化。只有已填充/未填充的交界处存在颜色梯度，
+/// 所以只有那一条线在动。
+///
+/// 加强折射强度解决不了这个问题，只会让交界处抖得更厉害。
+/// 正确解法是**制造新的可动边界**：把填充的右边缘画成波浪线。
+class _WavyProgressPainter extends CustomPainter {
+  final double progress;
+  final Color fillColor;
+  final Color trackColor;
+  final ElementAnimation animation;
+
+  const _WavyProgressPainter({
+    required this.progress,
+    required this.fillColor,
+    required this.trackColor,
+    required this.animation,
+  });
+
+  /// 动画进度 0..1。用时间戳换算，与着色器保持同一时基。
+  double get _t {
+    final elapsed =
+        DateTime.now().millisecondsSinceEpoch - animation.timestamp;
+    if (animation.durationMs <= 0) return 1.0;
+    return (elapsed / animation.durationMs).clamp(0.0, 1.0);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    // 底：未填充部分。
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = trackColor,
+    );
+
+    if (progress <= 0.0) return;
+
+    final t = _t;
+    final envelope = math.pow(math.max(1.0 - t, 0.0), 1.2).toDouble();
+    final edgeX = size.width * progress;
+
+    // 波幅随强度与衰减变化；上限取组件高度的一半，
+    // 再大边界会甩出组件、看起来像是断裂。
+    final amp = size.height * 0.5 * animation.intensity * envelope;
+
+    if (amp <= 0.3 || progress >= 1.0) {
+      // 波已平息或进度满格（没有边界可动），退回直边填充。
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, edgeX, size.height),
+        Paint()..color = fillColor,
+      );
+      return;
+    }
+
+    // 波浪线：沿纵向起伏，相位随时间推进，
+    // 让边界看起来在「荡」而不是整体平移。
+    final path = Path()..moveTo(0, 0);
+    path.lineTo(0, size.height);
+
+    const steps = 24;
+    for (var i = steps; i >= 0; i--) {
+      final y = size.height * i / steps;
+      // 两个不同频率叠加，避免规整的正弦看起来太机械。
+      final phase = t * 2.5 * math.pi * 2;
+      final wave = math.sin(y / size.height * math.pi * 2.2 - phase) * 0.7 +
+          math.sin(y / size.height * math.pi * 3.7 - phase * 1.3) * 0.3;
+      path.lineTo(edgeX + wave * amp, y);
+    }
+
+    path.close();
+    canvas.drawPath(path, Paint()..color = fillColor);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WavyProgressPainter oldDelegate) {
+    // 时间在走，必须每帧重绘。
+    return true;
   }
 }

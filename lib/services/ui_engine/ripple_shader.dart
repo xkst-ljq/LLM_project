@@ -167,14 +167,19 @@ class _RippleShaderViewState extends State<RippleShaderView> {
     // 这与「手势进行中改变树结构」是同一类陷阱。
     return Stack(
       children: [
-        // 纹理来源。用 Offstage 会跳过绘制导致抓不到图，
-        // 因此改用 Opacity(0) —— 它仍然参与布局与绘制。
-        Opacity(
-          opacity: useShader ? 0.0 : 1.0,
-          child: RepaintBoundary(
-            key: _boundaryKey,
-            child: widget.child,
-          ),
+        // 纹理来源。
+        //
+        // ⚠️ 不能用 Offstage（跳过绘制就抓不到图），
+        // 也**不能用 Opacity(0)**——Flutter 对全透明子树有优化，
+        // 同样可能跳过绘制，导致抓到空图或过期内容，
+        // 表现为动画「一顿一顿」。
+        //
+        // 改用 ShaderMask 之类会更重，这里用最朴素的办法：
+        // 让它照常绘制，再用上层的着色器结果完全覆盖。
+        // 多画一遍的代价远小于一次离屏抓取。
+        RepaintBoundary(
+          key: _boundaryKey,
+          child: widget.child,
         ),
         if (useShader)
           Positioned.fill(
@@ -185,6 +190,9 @@ class _RippleShaderViewState extends State<RippleShaderView> {
                   progress: widget.progress,
                   intensity: widget.intensity,
                   tint: widget.tint,
+                  // 不透明覆盖：底层原图被完全遮住，
+                  // 因此不会出现「原图 + 折射图」重影。
+                  opaque: true,
                 ),
               ),
             ),
@@ -200,11 +208,18 @@ class _RippleShaderPainter extends CustomPainter {
   final double intensity;
   final Color tint;
 
+  /// 是否用不透明方式覆盖底层。
+  ///
+  /// 底层的原始 child 仍在绘制（不能隐藏，否则抓不到纹理），
+  /// 因此这一层必须完全盖住它，否则会看到原图与折射图重影。
+  final bool opaque;
+
   const _RippleShaderPainter({
     required this.image,
     required this.progress,
     required this.intensity,
     required this.tint,
+    this.opaque = false,
   });
 
   @override
@@ -233,7 +248,16 @@ class _RippleShaderPainter extends CustomPainter {
       ..setFloat(8, tint.a)
       ..setImageSampler(0, image);
 
-    canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
+    final paint = Paint()..shader = shader;
+    if (opaque) {
+      // src 模式直接替换目标像素，把下面的原图整块盖掉。
+      // 需要先开一个图层，否则会连同背景一起清掉。
+      canvas.saveLayer(Offset.zero & size, Paint());
+      canvas.drawRect(Offset.zero & size, paint);
+      canvas.restore();
+    } else {
+      canvas.drawRect(Offset.zero & size, paint);
+    }
     shader.dispose();
   }
 
