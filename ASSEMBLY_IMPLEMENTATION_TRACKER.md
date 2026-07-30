@@ -344,6 +344,41 @@ Assembly 那套偏窄偏高，`FittedBox` 会把公式压得很小，
 
 测试：`test/assembly_geometry_tools_test.dart`。
 
+#### 首轮测试暴露的四个问题（均已修复）
+
+**1. 输入法未确认时关弹窗崩溃**（`controller used after disposed`）
+本文件其余弹窗早有 `closeDialog` 约定——先 `unfocus()`、等一帧再 pop。
+新加的三个弹窗（几何 / 定时器 / 计算节点）都漏了，
+并且 `dispose()` 也要延到 `addPostFrameCallback`：
+弹窗退场动画期间 TextField 仍会重建。
+
+> **约定：本文件里任何带 TextField 的弹窗，
+> 关闭一律走 `closeDialog`，controller 一律延后一帧释放。**
+
+**2. 键盘弹出时对话框 overflow 近十万像素**
+几何弹窗的 Column 没有包 `SingleChildScrollView`。
+键盘占掉一半屏高后可用空间骤减，必须可滚动。
+
+**3. 旋转后选中框不跟随**
+Assembly 的画布**从未应用过 `rotation`**——元素转了，
+虚线框还是正的。改为在 `Positioned` 内套 `Transform.rotate`
+包住整个节点，边框与徽标都在其内部，会一起转。
+（Studio 是 `Transform.rotate(child: rootTree)`，同样的做法。）
+
+**4. 微调键盘离资产栏太远**
+初版 `bottom: 168` 是为了避开展开态的资产抽屉。
+用户给出更干净的方案：**打开资产抽屉时直接取消选中**——
+作者要拖新组件了，本来也不再关心上一个选中项。
+于是不必为抽屉预留高度，`bottom` 收到 96
+（收起态资产栏顶边约 82，留 14px 间隙）。
+
+#### 用户反馈：微调键盘可反向移植回 Studio
+
+Assembly 版比 Studio 更紧凑（间距 12 vs 16），
+且中心键显示实时坐标，兼作「正在动哪个组件」的确认。
+Studio 的中心键是纯色方块，无信息。
+**待办：把这个形态同步回 `ui_studio_page`。**
+
 #### A14-1c 容器归属（待做，需求已明确）
 
 用户明确了这不只是编辑期分组，**要有实际运行时作用**，

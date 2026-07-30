@@ -418,7 +418,16 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                                 top: _canvasOffset.dy + _pcbOffset.dy + el.offset.dy,
                                 width: el.size.width,
                                 height: el.size.height,
-                                child: _buildElementWidget(el),
+                                // A14-1d：旋转整个节点，选中虚线框与徽标
+                                // 都在其内部，会一起转——只转内容会让
+                                // 边框与组件错位（首轮测试反馈）。
+                                child: el.rotation == 0.0
+                                    ? _buildElementWidget(el)
+                                    : Transform.rotate(
+                                        angle: el.rotation * math.pi / 180.0,
+                                        alignment: Alignment.center,
+                                        child: _buildElementWidget(el),
+                                      ),
                               );
                             }),
                           ],
@@ -553,7 +562,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 if (_selectedElement != null && _showNudgePad)
                   Positioned(
                     left: MediaQuery.of(context).size.width / 2 - 72,
-                    bottom: 168,
+                    // 贴近资产栏：抽屉展开时会取消选中，两者不会同框，
+                    // 因此不需要为抽屉预留高度。
+                    bottom: 96,
                     child: _buildNudgePad(_selectedElement!),
                   ),
 
@@ -1859,6 +1870,12 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               _activeAssetCategory = id;
               _showAssetDrawer = true;
               _showLayerPanel = false;
+              // A14-1d：打开资产抽屉即取消选中。
+              // 微调键盘紧贴资产栏，抽屉展开时两者必然重叠；
+              // 取消选中比做避让逻辑更干净——作者要拖新组件了，
+              // 本来也不再关心上一个选中项。
+              _selectedCompositeId = null;
+              _showNudgePad = false;
             }
           });
         },

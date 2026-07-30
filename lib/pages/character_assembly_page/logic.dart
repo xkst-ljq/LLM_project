@@ -3095,12 +3095,23 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       );
     }
 
+    // 输入法未确认时直接 pop，会让 TextField 在 dispose 后又被重建一帧。
+    // 先摘掉焦点、等一帧再关，与本文件其余弹窗一致。
+    Future<void> closeDialog(BuildContext ctx, bool value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
+
     final applied = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('精确几何'),
         content: SizedBox(
           width: 360,
+          // 键盘弹出时对话框可用高度骤减，不滚动会直接 overflow。
+          child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -3136,14 +3147,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               ),
             ],
           ),
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => closeDialog(ctx, false),
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => closeDialog(ctx, true),
             child: const Text('应用'),
           ),
         ],
@@ -3167,11 +3179,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       }
     }
 
-    xc.dispose();
-    yc.dispose();
-    wc.dispose();
-    hc.dispose();
-    rc.dispose();
+    // 延后到下一帧再释放：弹窗的退场动画期间 TextField 仍会重建，
+    // 立即 dispose 会命中「controller used after disposed」。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      xc.dispose();
+      yc.dispose();
+      wc.dispose();
+      hc.dispose();
+      rc.dispose();
+    });
   }
 
   /// 精确位移：按方向键逐像素挪动。
@@ -3214,6 +3230,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var pulseType = props['pulseType']?.toString() ?? 'increment';
     var loop = props['loop'] != false;
     var autoStart = props['isRunning'] == true;
+
+    Future<void> closeDialog(BuildContext ctx, bool value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
 
     final saved = await showDialog<bool>(
       context: context,
@@ -3333,11 +3356,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => closeDialog(ctx, false),
               child: const Text('取消'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: () => closeDialog(ctx, true),
               child: const Text('保存'),
             ),
           ],
@@ -3375,11 +3398,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       }
     }
 
-    nameCtrl.dispose();
-    intervalCtrl.dispose();
-    delayCtrl.dispose();
-    maxTicksCtrl.dispose();
-    stepCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+      intervalCtrl.dispose();
+      delayCtrl.dispose();
+      maxTicksCtrl.dispose();
+      stepCtrl.dispose();
+    });
   }
 
   /// A14-2：计算节点编辑器。
@@ -3411,6 +3436,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     if (active.isEmpty) active.addAll(['paramA', 'paramB']);
 
     const comparisons = {'>', '<', '>=', '<=', '=='};
+
+    Future<void> closeDialog(BuildContext ctx, bool value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
 
     final saved = await showDialog<bool>(
       context: context,
@@ -3519,11 +3551,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
+                onPressed: () => closeDialog(ctx, false),
                 child: const Text('取消'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
+                onPressed: () => closeDialog(ctx, true),
                 child: const Text('保存'),
               ),
             ],
@@ -3555,10 +3587,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       }
     }
 
-    nameCtrl.dispose();
-    for (final c in ctrls.values) {
-      c.dispose();
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+      for (final c in ctrls.values) {
+        c.dispose();
+      }
+    });
   }
 
   Future<void> _showAtomInstanceEditorDialog(UIElement element) async {
