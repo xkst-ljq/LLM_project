@@ -253,6 +253,9 @@ class LinkerService {
       'click_to_surface_press' => ElementAnimationType.press,
       'click_to_surface_ripple' => ElementAnimationType.ripple,
       'event_to_indicator' => ElementAnimationType.flash,
+      // event_to_animation 刻意不给兜底：它是 A12 之后才有的方案，
+      // 不存在「老卡兼容」问题。作者没在外观页配动画就什么都不播——
+      // 凭空给个默认动画反而是意外行为。
       _ => null,
     };
     if (type == null) return;
@@ -419,7 +422,8 @@ class LinkerService {
                 (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] = targetEl.copyWith(
                   module: targetEl.module!.copyWith(properties: props),
                 );
-              } else if (scheme == 'event_to_indicator' ||
+              } else if (scheme == 'event_to_animation' ||
+                  scheme == 'event_to_indicator' ||
                   scheme == 'click_to_surface_press' ||
                   scheme == 'click_to_surface_ripple') {
                 // A12：动画统一走 `__anim` 通道。

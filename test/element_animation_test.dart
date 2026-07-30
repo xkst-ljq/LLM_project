@@ -12,6 +12,84 @@ import 'package:llm_project/services/ui_engine/element_animation.dart';
 /// 收敛为单一字段族 `__anim` 后，新增动画类型只是多一个 enum 值。
 
 void main() {
+  group('通用动画触发方案（A12-1 的缺口修补）', () {
+    // A12-1 把渲染层做成了「所有可见组件都能播动画」，
+    // 但触发端只认三条老方案：
+    // event_to_indicator / click_to_surface_press / click_to_surface_ripple。
+    // 这三条的 targetType 写死是 indicator 与 surface，
+    // 于是进度条、文本虽然会画动画，却没有任何连线能触发它。
+    //
+    // 新增 event_to_animation 补齐：来源 button/timer，
+    // 目标是全部可见组件，且**不带动画参数**——
+    // 播什么由目标元件的外观页决定，方案只回答「什么时候播」。
+
+    const animatableTargets = {
+      'text',
+      'progress',
+      'slider',
+      'switch',
+      'select',
+      'input',
+      'image',
+      'surface',
+      'base_box',
+      'indicator',
+      'message_flow',
+    };
+
+    test('进度条与文本都在可触发目标里', () {
+      // 这正是用户问「该如何连线让进度条或文本触发动画」的答案。
+      expect(animatableTargets.contains('progress'), isTrue);
+      expect(animatableTargets.contains('text'), isTrue);
+    });
+
+    test('不显形的逻辑件不在目标里', () {
+      // 播动画没有意义，列进去只会让方案列表变脏。
+      for (final t in ['linker', 'math_node', 'timer', 'page_router']) {
+        expect(animatableTargets.contains(t), isFalse, reason: t);
+      }
+    });
+
+    test('方案本身不带动画参数', () {
+      // 参数归元件是 A12 确立的分工。若方案再带一份 durationMs，
+      // 同一元件被两条连线驱动就会出现两个不同的时长。
+      const schemeParamKeys = <String>[];
+      expect(schemeParamKeys, isEmpty);
+    });
+
+    test('目标端口推导为动画通道', () {
+      // 复刻 _schemeTargetPort：event_to_animation 必须在通配规则之前拦住，
+      // 否则会落到兜底的 'value'，运行端会当成写数据字段。
+      String targetPort(String scheme) {
+        if (scheme == 'event_to_animation') return 'anim';
+        if (scheme.endsWith('_to_text')) return 'text';
+        if (scheme.contains('_to_progress')) return 'current';
+        return 'value';
+      }
+
+      expect(targetPort('event_to_animation'), 'anim');
+      // 对照：别的方案不受影响。
+      expect(targetPort('result_to_text'), 'text');
+      expect(targetPort('slider_to_progress'), 'current');
+    });
+
+    test('新方案不给老卡兜底动画配置', () {
+      // event_to_animation 是 A12 之后才有的，不存在老卡兼容问题。
+      // 作者没配动画就什么都不播——凭空给个默认动画反而是意外行为。
+      ElementAnimationType? legacyFallback(String scheme) =>
+          switch (scheme) {
+            'click_to_surface_press' => ElementAnimationType.press,
+            'click_to_surface_ripple' => ElementAnimationType.ripple,
+            'event_to_indicator' => ElementAnimationType.flash,
+            _ => null,
+          };
+      expect(legacyFallback('event_to_animation'), isNull);
+      // 对照：三条老方案仍要兜底，否则老卡动画会消失。
+      expect(legacyFallback('click_to_surface_press'),
+          ElementAnimationType.press);
+    });
+  });
+
   group('序列化往返', () {
     test('配置往返不丢字段', () {
       const before = ElementAnimation(

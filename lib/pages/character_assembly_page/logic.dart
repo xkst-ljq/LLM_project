@@ -3136,6 +3136,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   /// 由方案 id 推导目标端口。
   String _schemeTargetPort(String scheme) {
+    // A12 通用动画触发：目标端口是动画通道，不写任何数据字段。
+    // 必须放在最前面——它以 `_to_animation` 结尾，
+    // 不拦住会被后面的通配规则误判。
+    if (scheme == 'event_to_animation') return 'anim';
     if (scheme.endsWith('_to_text')) return 'text';
     if (scheme.contains('_to_progress')) return 'current';
     if (scheme.contains('_to_slider')) return 'current';

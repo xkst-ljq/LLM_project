@@ -1005,6 +1005,41 @@ class LinkerMatrixEngine {
 
     // --- indicator (状态指示点数据源) ---
 
+    // --- A12：通用动画触发 ---
+    //
+    // 补的是 A12-1 的缺口：渲染层已经让**所有可见组件**都能播动画，
+    // 但触发端只有三条老方案（surface 按压 / 涟漪、indicator 高亮），
+    // 它们的 targetType 写死是 surface 与 indicator。
+    // 结果进度条、文本虽然会画动画，却没有任何一条连线能触发它。
+    //
+    // 这一条不带任何动画参数——「播什么、播多久」由目标元件
+    // 自己的外观页配置决定（A12 确立的分工：动画参数归元件）。
+    // 方案只回答「什么时候播」。
+    SchemeDefinition(
+      id: 'event_to_animation',
+      label: '事件触发动画 (event → animation)',
+      description: '按钮点击或定时器触发时，让目标组件播放它配置好的动画。'
+          '动画类型与时长在目标组件的「外观 → 触发动画」里设置。',
+      sourceType: 'any',
+      allowedSourceTypes: ['button', 'timer'],
+      targetType: 'any',
+      // 逻辑件不显形，播动画没有意义。
+      allowedTargetTypes: [
+        'text',
+        'progress',
+        'slider',
+        'switch',
+        'select',
+        'input',
+        'image',
+        'surface',
+        'base_box',
+        'indicator',
+        'message_flow',
+      ],
+      isPulse: true,
+    ),
+
     // --- event (Button / Timer → Indicator) ---
     SchemeDefinition(
       id: 'event_to_indicator',
@@ -1172,6 +1207,7 @@ class LinkerMatrixEngine {
       'input_value_to_select_filter': '触发条件：输入内容发生变化。\n目标变化：下拉菜单仅显示匹配选项。\n典型用途：为较长选项列表提供搜索过滤。',
       'value_to_math_param': '触发条件：来源数值变化。\n目标变化：写入指定计算参数。\n典型用途：将进度、滑块或状态值送入计算节点。',
       'event_to_indicator': '触发条件：按钮点击或定时器触发。\n目标变化：状态指示灯短暂高亮。\n典型用途：提示操作已执行或后台事件到达。',
+      'event_to_animation': '触发条件：按钮点击或定时器触发。\n目标变化：目标组件播放它自己配置的动画。\n典型用途：数值刷新时让进度条跳动、结算时让面板发光。\n注意：动画类型与时长在目标组件的「外观 → 触发动画」里设置，这里只决定何时播放。',
     };
     if (custom.containsKey(definition.id)) return custom[definition.id]!;
     return '触发条件：${definition.sourceType == 'any' ? '来源状态满足方案条件。' : '来源组件产生对应变化。'}\n目标变化：${definition.targetType == 'any' ? '目标组件按方案规则更新。' : '目标${definition.targetType}按方案规则更新。'}\n典型用途：${definition.label.split(' (').first}。';
