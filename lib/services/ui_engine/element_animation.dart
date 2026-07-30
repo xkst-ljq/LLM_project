@@ -357,6 +357,20 @@ class _ValueChangeAnimatorState extends State<ValueChangeAnimator> {
   int _playToken = 0;
   bool _initialized = false;
 
+  /// 当前这一轮动画是否还在播。
+  ///
+  /// 播放期间**不重启**，这是「不打断」的核心：
+  /// 拖滑块时值每帧都在变，若每次变化都换 key，
+  /// `TweenAnimationBuilder` 会不断从头重建，动画被反复掐死在第一帧，
+  /// 只有松手后最后那次才播得完（首轮测试反馈）。
+  bool _playing = false;
+
+  /// 播放期间是否又发生过值变化。
+  ///
+  /// 记下来，等这一轮播完再补一次，
+  /// 这样连续变值会得到「一段接一段的完整动画」而不是一直被截断。
+  bool _pendingReplay = false;
+
   @override
   void didUpdateWidget(covariant ValueChangeAnimator oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -377,9 +391,36 @@ class _ValueChangeAnimatorState extends State<ValueChangeAnimator> {
     if (widget.value == _lastValue) return;
     _lastValue = widget.value;
     if (widget.animation == null) return;
-    // 换 token 即重新起播：TweenAnimationBuilder 靠 key 变化重启，
-    // 参数不变时它会停在末态。
-    setState(() => _playToken++);
+
+    if (_playing) {
+      // 正在播就不打断，只记一笔，播完再补。
+      _pendingReplay = true;
+      return;
+    }
+    _startPlay();
+  }
+
+  void _startPlay() {
+    setState(() {
+      _playToken++;
+      _playing = true;
+      _pendingReplay = false;
+    });
+  }
+
+  void _onPlayEnd() {
+    if (!mounted) return;
+    // 动画结束回调发生在构建过程中，直接 setState 会撞上
+    // 「widget tree was locked」——与双击断开那次崩溃同源。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_pendingReplay) {
+        // 播放期间值又变过，紧接着补一轮完整动画。
+        _startPlay();
+        return;
+      }
+      setState(() => _playing = false);
+    });
   }
 
   @override
@@ -392,6 +433,7 @@ class _ValueChangeAnimatorState extends State<ValueChangeAnimator> {
       tween: Tween<double>(begin: 0.0, end: 1.0),
       duration: Duration(milliseconds: animation.durationMs),
       curve: animation.curve.curve,
+      onEnd: _onPlayEnd,
       builder: (ctx, t, inner) =>
           widget.frameBuilder(ctx, animation, t, inner!),
       child: widget.child,

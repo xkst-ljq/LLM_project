@@ -415,6 +415,12 @@ class UIRenderer {
 
     // key 带上时间戳：同一元件连续触发时必须重新起播，
     // 否则 TweenAnimationBuilder 会认为参数没变而停在末态。
+    //
+    // 这里**故意**允许打断——触发源是按钮点击这类离散事件，
+    // 连点两下本来就该重新播一次（第二次点击不该被忽略）。
+    // 与值变化通路不同：那边的值是连续变化的（拖滑块每帧都变），
+    // 打断会让动画永远停在第一帧，因此那边采用「播完再补」
+    // （见 ValueChangeAnimator）。
     final key = ValueKey(
       '${animation.type.storageKey}_${animation.timestamp}_'
       '${animation.durationMs}',
