@@ -523,30 +523,11 @@ class _UIStudioPageState extends State<UIStudioPage>
             // ===== 固定精调手柄 =====
             if (!_isPreviewMode && _selectedTransformationId != null && _fineTuneOpenIds.contains(_selectedTransformationId))
               Positioned(
-                // 3×3 标准 D-Pad：总宽 40×3 + 16×2 = 152，严格以屏幕中轴居中。
-                left: MediaQuery.of(context).size.width / 2 - 76,
+                // 总宽 = 箭头 40×3 + 间距 12×2 = 144（与 Assembly 一致），
+                // 严格以屏幕中轴居中。
+                left: MediaQuery.of(context).size.width / 2 - 72,
                 bottom: MediaQuery.of(context).padding.bottom + 24,
-                child: Column(children: [
-                  Row(children: [
-                    const SizedBox(width: 56),
-                    _buildFineTuneButton(Icons.keyboard_arrow_up_rounded, () => _nudgeElement(_selectedTransformationId!, const Offset(0, -1))),
-                    const SizedBox(width: 56),
-                  ]),
-                  const SizedBox(height: 16),
-                  Row(children: [
-                    _buildFineTuneButton(Icons.keyboard_arrow_left_rounded, () => _nudgeElement(_selectedTransformationId!, const Offset(-1, 0))),
-                    const SizedBox(width: 16),
-                    Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFF546E7A), borderRadius: BorderRadius.circular(10))),
-                    const SizedBox(width: 16),
-                    _buildFineTuneButton(Icons.keyboard_arrow_right_rounded, () => _nudgeElement(_selectedTransformationId!, const Offset(1, 0))),
-                  ]),
-                  const SizedBox(height: 16),
-                  Row(children: [
-                    const SizedBox(width: 56),
-                    _buildFineTuneButton(Icons.keyboard_arrow_down_rounded, () => _nudgeElement(_selectedTransformationId!, const Offset(0, 1))),
-                    const SizedBox(width: 56),
-                  ]),
-                ]),
+                child: _buildFineTunePad(_selectedTransformationId!),
               ),
 
             // ===== 7. 保存按钮 =====
@@ -1126,8 +1107,88 @@ class _UIStudioPageState extends State<UIStudioPage>
   Widget _buildFineTuneButton(IconData icon, VoidCallback onTap) => Material(
     color: const Color(0xFF37474F), shape: const CircleBorder(), elevation: 3,
     child: InkWell(borderRadius: BorderRadius.circular(20), onTap: onTap,
-      child: SizedBox(width: 40, height: 40, child: Icon(icon, color: Colors.white, size: 28))),
+      child: SizedBox(width: 40, height: 40, child: Icon(icon, color: Colors.white, size: 26))),
   );
+
+  /// 精调方向键（3×3 D-Pad）。
+  ///
+  /// 从 Assembly 反向移植回来（用户明确要求）。相比旧版三点改动：
+  ///
+  /// 1. **间距 16 → 12**，总宽 152 → 144，更紧凑；
+  ///    D-Pad 是拇指连续点按的控件，间距过大反而要挪手。
+  /// 2. **中心方块显示当前坐标**，不再是纯装饰的空色块。
+  ///    它兼作「我正在调的是哪个组件」的确认——
+  ///    盲点方向键时最容易发生的错误就是调错了对象。
+  /// 3. 从 build 里抽成独立方法，与 Assembly 的 `_buildNudgePad` 对齐。
+  ///
+  /// 坐标语义：Studio 的 `el.offset` 相对 workspace，
+  /// Assembly 的相对 PCB，都是「元素在自己画布里的位置」，可直接显示。
+  Widget _buildFineTunePad(String elementId) {
+    final index = _currentElements.indexWhere((e) => e.id == elementId);
+    // 元素可能刚被删除，而这一帧的 D-Pad 还没来得及收起。
+    if (index == -1) return const SizedBox.shrink();
+    final element = _currentElements[index];
+
+    Widget arrow(IconData icon, Offset delta) =>
+        _buildFineTuneButton(icon, () => _nudgeElement(elementId, delta));
+
+    const gap = SizedBox(width: 12, height: 12);
+    // 占位宽 = 箭头 40 + 间距 12，才能让上下行的箭头与中间行对齐。
+    const blank = SizedBox(width: 52, height: 40);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            blank,
+            arrow(Icons.keyboard_arrow_up_rounded, const Offset(0, -1)),
+            blank,
+          ],
+        ),
+        gap,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            arrow(Icons.keyboard_arrow_left_rounded, const Offset(-1, 0)),
+            gap,
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFF546E7A),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${element.offset.dx.toStringAsFixed(0)}\n'
+                '${element.offset.dy.toStringAsFixed(0)}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  height: 1.15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            gap,
+            arrow(Icons.keyboard_arrow_right_rounded, const Offset(1, 0)),
+          ],
+        ),
+        gap,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            blank,
+            arrow(Icons.keyboard_arrow_down_rounded, const Offset(0, 1)),
+            blank,
+          ],
+        ),
+      ],
+    );
+  }
 
   Widget _buildLockModeGlyph({
     required bool sealed,
