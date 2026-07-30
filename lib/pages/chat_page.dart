@@ -344,7 +344,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   Timer? _ballTuckTimer;
 
   /// 折叠时记录 UI 位置，展开时让 UI 回到球的附近。
-  Offset _stickyOffsetBeforeCollapse = Offset.zero;
 
   /// 悬浮球是否停靠在左侧。决定缩进方向与展开方向。
   bool get _ballOnLeft {
@@ -3394,7 +3393,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final screen = MediaQuery.of(context).size;
     setState(() {
       _stickyCollapsed = true;
-      _stickyOffsetBeforeCollapse = _stickyOffset;
       // 球出现在挂件右上角附近，位置连续；
       // 随后立即吸边，避免停在屏幕中间。
       _ballPos ??= Offset(

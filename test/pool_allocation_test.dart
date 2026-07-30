@@ -58,7 +58,7 @@ UIElement _poolLinker(
             'targetModuleId': to,
             'scheme': 'pool_to_allocation',
             'enabled': enabled,
-            if (params != null) 'schemeParams': params,
+            'schemeParams': ?params,
           },
         },
       ),

@@ -78,7 +78,7 @@ UIElement _sumLinker(
           'enabled': true,
           'sourcePort': 'current',
           'targetPort': 'text',
-          if (params != null) 'schemeParams': params,
+          'schemeParams': ?params,
         },
       },
     ),

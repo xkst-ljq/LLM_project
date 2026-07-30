@@ -507,11 +507,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _persistAssemblyElements();
   }
 
-  /// 深拷贝元素并重新分配 id（含复合组件内部子元素）。
+  /// 深拷贝元素并重新分配 id。
+  ///
+  /// `UIElement.copyWith` 不接受 id（它是 final、不可改），
+  /// 因此在 JSON 层面替换后再反序列化。
   UIElement _cloneElementWithNewIds(UIElement source) {
-    final json = _deepCloneValue(source.toJson()) as Map;
-    final clone = UIElement.fromJson(Map<String, dynamic>.from(json));
-    return clone.copyWith(id: _generateElementId());
+    final json = Map<String, dynamic>.from(
+      _deepCloneValue(source.toJson()) as Map,
+    );
+    json['id'] = _generateElementId();
+    return UIElement.fromJson(json);
   }
 
   /// 调整元素在绘制顺序中的位置。
@@ -1870,23 +1875,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
   }
 
-  List<UIElement> _topLevelModulesOfType(String type) {
-    return _elements
-        .where((element) =>
-            !element.isComposite && element.module?.type == type)
-        .toList();
-  }
-
   Map<String, dynamic> _linkerDataOf(UIModule module) {
     final raw = module.properties['linker'];
     if (raw is Map) return Map<String, dynamic>.from(raw);
     return <String, dynamic>{};
-  }
-
-  String _moduleNodeLabel(UIElement element) {
-    final module = element.module;
-    if (module == null) return element.id;
-    return '${module.name} · ${element.id.split('_').last}';
   }
 
   /// 由方案 id 推导来源端口。

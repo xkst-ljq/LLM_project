@@ -46,7 +46,7 @@ Map<String, dynamic> _channel({
     'targetId': '',
     'llmReadPolicy': read,
     'llmWritePolicy': write,
-    if (section != null) 'promptSection': section,
+    'promptSection': ?section,
   };
 }
 
