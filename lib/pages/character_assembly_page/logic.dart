@@ -406,6 +406,87 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   void _clearCompositeSelection() => _clearElementSelection();
 
+  // ========== A14-1b：选中外框形状 ==========
+  //
+  // 与 Studio 共用同一套判定，保证同一个组件在两个编辑器里
+  // 选中外框长得一样。直接照搬 `ui_studio_page/logic.dart` 的实现——
+  // 这三个函数是纯查表，抽公共模块的收益不抵引入依赖的成本。
+
+  UIModuleShape _outlineShapeOf(UIElement el) {
+    if (el.isComposite) return UIModuleShape.rounded;
+    final mod = el.module;
+    if (mod == null) return UIModuleShape.rounded;
+    if (mod.type == 'progress') {
+      final progShape = mod.properties['progressShape']?.toString();
+      if (progShape == 'rectangle') return UIModuleShape.rectangle;
+      if (progShape == 'heart') return UIModuleShape.heart;
+      if (progShape == 'ring') return UIModuleShape.circle;
+      return UIModuleShape.capsule;
+    }
+    if (mod.type == 'text' || mod.type == 'input' || mod.type == 'button' || mod.type == 'line') {
+      return UIModuleShape.rectangle;
+    }
+    if (mod.type == 'switch') {
+      return UIModuleShape.capsule;
+    }
+    if (mod.type == 'math_node' || mod.type == 'select') {
+      return UIModuleShape.rectangle;
+    }
+    if (mod.type == 'timer') {
+      return UIModuleShape.rounded;
+    }
+    if (mod.type == 'indicator') {
+      return UIModuleShape.circle;
+    }
+    if (mod.type == 'image') {
+      final shapeStr = mod.properties['shape']?.toString();
+      if (shapeStr == 'circle') return UIModuleShape.circle;
+      if (shapeStr == 'capsule') return UIModuleShape.capsule;
+      return UIModuleShape.rounded;
+    }
+    return mod.shape;
+  }
+
+  double _outlineBorderRadiusOf(UIElement el) {
+    if (el.isComposite) return 12;
+    final mod = el.module;
+    if (mod == null) return 12;
+    if (mod.type == 'progress') {
+      final progShape = mod.properties['progressShape']?.toString();
+      if (progShape == 'rectangle') return 0;
+      return 999;
+    }
+    if (mod.type == 'text' || mod.type == 'input' || mod.type == 'button') {
+      return 4;
+    }
+    if (mod.type == 'line') {
+      return 0;
+    }
+    if (mod.type == 'switch') {
+      return 999;
+    }
+    if (mod.type == 'timer') {
+      return 12.0;
+    }
+    if (mod.type == 'math_node' || mod.type == 'select') {
+      return 6.0;
+    }
+    if (mod.type == 'image') {
+      return (mod.properties['borderRadius'] ?? 8.0).toDouble();
+    }
+    return mod.borderRadius;
+  }
+
+  bool _isPerfectCircleOutlineOf(UIElement el) {
+    if (el.isComposite) return false;
+    final mod = el.module;
+    if (mod == null) return false;
+    if (mod.type == 'indicator' || (mod.type == 'progress' && mod.properties['progressShape'] == 'ring')) {
+      return true;
+    }
+    return false;
+  }
+
   // ========== A14-1b：画布元素操作 ==========
 
   /// 找出指向某元素的所有 linker（作为源或目标都算）。
@@ -511,9 +592,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   ///
   /// `UIElement.copyWith` 不接受 id（它是 final、不可改），
   /// 因此在 JSON 层面替换后再反序列化。
+  ///
+  /// 用 `jsonEncode/Decode` 而不是 `_deepCloneValue`：后者对嵌套 Map
+  /// 返回 `Map<dynamic, dynamic>`，而 `UIElement.fromJson` 里
+  /// `json['offset'] as Map<String, dynamic>?` 是硬类型转换，会直接抛
+  /// `_TypeError`（复制时崩溃）。JSON 往返能保证嵌套层的键类型。
   UIElement _cloneElementWithNewIds(UIElement source) {
     final json = Map<String, dynamic>.from(
-      _deepCloneValue(source.toJson()) as Map,
+      jsonDecode(jsonEncode(source.toJson())) as Map,
     );
     json['id'] = _generateElementId();
     return UIElement.fromJson(json);
@@ -535,30 +621,43 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _persistAssemblyElements();
   }
 
-  /// 切换锁定。锁定后禁止删除 / 复制 / 层级调整。
+  /// 切换半锁定（`layoutLocked`）：锁住位置 / 形变 / 旋转。
   ///
-  /// 位置锁定（禁拖动）在 `_buildElementWidget` 的手势里判断。
-  void _toggleElementLocked(UIElement element) {
+  /// 用模型上已有的 `layoutLocked` 字段而不是自造 `properties['locked']`——
+  /// Studio 侧本来就用它，两边共用同一份数据，方案在两个编辑器间迁移时
+  /// 锁定状态才不会丢。
+  void _toggleElementLayoutLock(UIElement element) {
     final index = _elements.indexWhere((e) => e.id == element.id);
     if (index == -1) return;
-    final module = element.module;
-    if (module == null) return;
-
-    final props = Map<String, dynamic>.from(
-      _deepCloneValue(module.properties) as Map,
-    );
-    final next = props['locked'] != true;
-    if (next) {
-      props['locked'] = true;
-    } else {
-      props.remove('locked');
-    }
     setState(() {
       _elements[index] =
-          element.copyWith(module: module.copyWith(properties: props));
+          element.copyWith(layoutLocked: !element.layoutLocked);
     });
     _persistAssemblyElements();
   }
+
+  /// 切换全锁定（`sealed`）：在半锁定基础上额外锁死联动。
+  ///
+  /// 全锁定后：已有连线不能切换或断开，没有连线则连不上，
+  /// 配置联动器时该元素会被跳过（与 Studio 的 `sealed` 语义一致）。
+  void _toggleElementSealed(UIElement element) {
+    final index = _elements.indexWhere((e) => e.id == element.id);
+    if (index == -1) return;
+    final next = !element.sealed;
+    setState(() {
+      _elements[index] = element.copyWith(
+        sealed: next,
+        // 全锁定必然包含半锁定的约束，一起打开更符合直觉；
+        // 解除全锁定时保留半锁定，让作者自己决定要不要一并解开。
+        layoutLocked: next ? true : element.layoutLocked,
+      );
+    });
+    _persistAssemblyElements();
+  }
+
+  /// 元素是否被任一档锁定禁止结构性改动（删除 / 复制 / 层级）。
+  bool _isStructureLocked(UIElement element) =>
+      element.layoutLocked || element.sealed;
 
   void _showSnack(String message) {
     if (!mounted) return;
@@ -1926,13 +2025,35 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   ///
   /// 排除 linker 自身（不支持 linker 串 linker）。
   /// 复合组件内部的暴露项后续再接，当前只取顶层原子。
+  /// 可作为联动器源 / 目标的元素。
+  ///
+  /// 全锁定（`sealed`）的元素被排除：这正是全锁与半锁的区别——
+  /// 有连线时不能切换或断开，没连线时连不上，配置界面直接跳过它。
   List<UIElement> _linkerCandidates() {
     return _elements
         .where((element) =>
             !element.isComposite &&
             element.module != null &&
-            element.module!.type != 'linker')
+            element.module!.type != 'linker' &&
+            !element.sealed)
         .toList();
+  }
+
+  /// 该联动器是否因两端存在全锁元素而不可编辑。
+  ///
+  /// 已配好的连线若有一端后来被全锁，必须阻止改动——
+  /// 否则「锁死连线」形同虚设。
+  UIElement? _sealedEndpointOf(UIModule linkerModule) {
+    final data = _linkerDataOf(linkerModule);
+    final ids = <String?>[
+      data['sourceModuleId']?.toString(),
+      data['targetModuleId']?.toString(),
+    ];
+    for (final element in _elements) {
+      if (!element.sealed) continue;
+      if (ids.contains(element.id)) return element;
+    }
+    return null;
   }
 
   String _linkerCandidateLabel(UIElement element) {
@@ -1950,6 +2071,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   Future<void> _showAssemblyLinkerConfigDialog(UIElement linkerElement) async {
     final module = linkerElement.module;
     if (module == null || module.type != 'linker') return;
+
+    // 已连的两端若有一端被全锁，禁止改动这条连线。
+    final sealedEnd = _sealedEndpointOf(module);
+    if (sealedEnd != null) {
+      _showSnack(
+        '「${sealedEnd.module?.name ?? sealedEnd.id}」已全锁定，'
+        '需先解除全锁才能修改这条联动',
+      );
+      return;
+    }
 
     final candidates = _linkerCandidates();
     final existing = _linkerDataOf(module);

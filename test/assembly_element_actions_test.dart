@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -8,18 +10,12 @@ import 'package:llm_project/services/ui_engine/ui_models.dart';
 /// UI 交互本身需要 widget 测试，这里只锁定容易写反的纯逻辑：
 /// 层级顺序语义、锁定标记、联动器牵连判定。
 
-UIElement _el(String id, {String type = 'text', bool locked = false}) =>
-    UIElement(
+UIElement _el(String id, {String type = 'text'}) => UIElement(
       id: id,
       isComposite: false,
-      offset: Offset.zero,
+      offset: const Offset(4, 6),
       size: const Size(80, 30),
-      module: UIModule(
-        id: 'm_$id',
-        name: id,
-        type: type,
-        properties: {if (locked) 'locked': true},
-      ),
+      module: UIModule(id: 'm_$id', name: id, type: type, properties: {}),
     );
 
 UIElement _linker(String id, {required String from, required String to}) =>
@@ -120,14 +116,66 @@ void main() {
     });
   });
 
-  group('锁定标记', () {
-    test('锁定写入 properties，解锁时移除键', () {
-      // 用移除而不是置 false：留一堆 locked:false 会污染角色卡产物。
-      final locked = _el('a', locked: true);
-      expect(locked.module!.properties['locked'], isTrue);
+  group('双档锁定', () {
+    // 用模型上已有的 layoutLocked / sealed，而不是自造
+    // properties['locked']——Studio 侧本来就用它们，两边共用同一份数据，
+    // 方案在两个编辑器间迁移时锁定状态才不会丢。
+    test('半锁只锁形变，不影响联动', () {
+      final el = _el('a').copyWith(layoutLocked: true);
+      expect(el.layoutLocked, isTrue);
+      expect(el.sealed, isFalse);
+    });
 
-      final unlocked = _el('a');
-      expect(unlocked.module!.properties.containsKey('locked'), isFalse);
+    test('全锁额外锁住联动，并自动带上半锁', () {
+      final el = _el('a').copyWith(sealed: true, layoutLocked: true);
+      expect(el.sealed, isTrue);
+      expect(el.layoutLocked, isTrue);
+    });
+
+    test('全锁的元素不进入联动候选', () {
+      final elements = [
+        _el('free'),
+        _el('locked').copyWith(sealed: true),
+        _el('half').copyWith(layoutLocked: true),
+      ];
+      final candidates =
+          elements.where((e) => !e.sealed).map((e) => e.id).toList();
+      // 半锁仍可参与联动，只有全锁被排除。
+      expect(candidates, ['free', 'half']);
+    });
+
+    test('锁定状态参与序列化，跨编辑器不丢失', () {
+      final el = _el('a').copyWith(sealed: true, layoutLocked: true);
+      final restored = UIElement.fromJson(el.toJson());
+      expect(restored.sealed, isTrue);
+      expect(restored.layoutLocked, isTrue);
+    });
+  });
+
+  group('复制', () {
+    test('JSON 往返后嵌套 Map 的键类型正确', () {
+      // _deepCloneValue 对嵌套 Map 返回 Map<dynamic,dynamic>，
+      // 而 fromJson 里 json['offset'] as Map<String,dynamic>? 是硬转换，
+      // 会直接抛 _TypeError（复制时崩溃）。必须走 jsonEncode/Decode。
+      final source = _el('e1');
+      final json = Map<String, dynamic>.from(
+        jsonDecode(jsonEncode(source.toJson())) as Map,
+      );
+      json['id'] = 'e2';
+      final clone = UIElement.fromJson(json);
+      expect(clone.id, 'e2');
+      expect(clone.offset, source.offset);
+      expect(clone.size, source.size);
+    });
+
+    test('复制不影响原元素', () {
+      final source = _el('e1');
+      final json = Map<String, dynamic>.from(
+        jsonDecode(jsonEncode(source.toJson())) as Map,
+      );
+      json['id'] = 'e2';
+      UIElement.fromJson(json);
+      expect(source.id, 'e1');
     });
   });
 }

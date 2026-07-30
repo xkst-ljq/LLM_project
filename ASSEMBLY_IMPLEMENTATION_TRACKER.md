@@ -192,9 +192,46 @@ Assembly 的 PCB 有固定边界，作者要频繁贴边摆元件，
 删除前弹窗告知会牵连几条，确认后一并删除。
 覆写槽位也要同步清理，否则留下指向不存在组件的孤儿配置。
 
-**3. 锁定用「移除键」而非置 false。**
-留一堆 `locked: false` 会污染角色卡产物。
-锁定针对的是「误拖走位」，因此仍允许选中与双击编辑，只禁拖动与结构操作。
+**3. 锁定分两档，复用模型已有字段。**
+
+初版自造了 `properties['locked']`，是错的——`UIElement` 上本来就有
+`layoutLocked` / `sealed` 两个字段，Studio 侧一直在用。
+自造字段会导致方案在两个编辑器间迁移时锁定状态丢失。
+
+| 档位 | 字段 | 锁住什么 |
+|---|---|---|
+| 半锁定 | `layoutLocked` | 位置 / 形变 / 旋转 |
+| 全锁定 | `sealed` | 以上 + **联动连线** |
+
+全锁的语义（用户指定，与 Studio 一致）：有连线时不能切换或断开，
+没连线时连不上，配置联动器时该元素被跳过。
+实现上 `_linkerCandidates` 排除 `sealed` 元素，
+且已配好的连线若有一端后来被全锁，打开配置会被拦下——
+否则「锁死连线」形同虚设。
+
+开全锁时自动带上半锁（全锁必然包含半锁的约束）；
+解除全锁时保留半锁，让作者自己决定要不要一并解开。
+
+两档都只禁拖动与结构操作，仍允许选中与双击编辑。
+
+**4. 选中外框按组件形状描边。**
+
+初版用固定圆角矩形，与 Studio 观感不一致。
+改为共用 `DashedSelectionBorderPainter`（灰白交替虚线）——
+圆形指示点画圆、开关画胶囊、心形进度条画心形。
+
+该 painter 从 `ui_studio_page/painters.dart` 提取到
+`services/ui_engine/`：原文件是 `part of ui_studio_page.dart`，
+Assembly 无法导入，而两个编辑器的选中框必须长得一样。
+配套的 `_outlineShapeOf` / `_outlineBorderRadiusOf` /
+`_isPerfectCircleOutlineOf` 三个纯查表函数直接照搬。
+
+**5. 复制必须走 jsonEncode/Decode，不能用 `_deepCloneValue`。**
+
+后者对嵌套 Map 返回 `Map<dynamic, dynamic>`，而
+`UIElement.fromJson` 里 `json['offset'] as Map<String, dynamic>?`
+是硬类型转换，会直接抛 `_TypeError`——**首轮测试点复制即崩溃**。
+JSON 往返能保证嵌套层的键类型正确。
 
 联动器不支持复制：它的源/目标指向具体元素，
 复制出来必然是重复连线，作者要的几乎总是「再连一条新的」。

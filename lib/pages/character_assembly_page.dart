@@ -9,6 +9,7 @@ import '../models/card_entry_target.dart';
 import '../models/character_entry.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/dashed_selection_border_painter.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/linker_matrix_engine.dart';
 import '../services/ui_engine/message_action.dart';
@@ -724,7 +725,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
   /// 竖列可滚动——左侧整条边都可用，但小屏 + 未来继续加按钮时
   /// 仍可能溢出，滚动比裁切安全。
   Widget _buildElementActionRail(UIElement element) {
-    final locked = element.module?.properties['locked'] == true;
+    final layoutLocked = element.layoutLocked;
+    final sealed = element.sealed;
+    final locked = _isStructureLocked(element);
     final index = _elements.indexWhere((e) => e.id == element.id);
     // 列表越靠后越上层：能上移 = 后面还有位置。
     final canMoveUp = index != -1 && index < _elements.length - 1;
@@ -736,11 +739,26 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 半锁定：位置 / 形变 / 旋转。
             _buildRailButton(
-              icon: locked ? Icons.lock_rounded : Icons.lock_open_rounded,
-              label: locked ? '已锁定' : '锁定',
-              color: locked ? const Color(0xFFE65100) : const Color(0xFF546E7A),
-              onTap: () => _toggleElementLocked(element),
+              icon: layoutLocked
+                  ? Icons.lock_outline_rounded
+                  : Icons.lock_open_rounded,
+              label: layoutLocked ? '已半锁' : '半锁定',
+              color: layoutLocked
+                  ? const Color(0xFF0288D1)
+                  : const Color(0xFF546E7A),
+              // 已全锁时半锁按钮无意义：全锁必然包含半锁。
+              onTap: sealed ? null : () => _toggleElementLayoutLock(element),
+            ),
+            // 全锁定：额外锁死联动连线。
+            _buildRailButton(
+              icon: sealed ? Icons.lock_rounded : Icons.lock_person_rounded,
+              label: sealed ? '已全锁' : '全锁定',
+              color: sealed
+                  ? const Color(0xFFE65100)
+                  : const Color(0xFF546E7A),
+              onTap: () => _toggleElementSealed(element),
             ),
             // 锁定后禁止改动结构：这正是锁定的目的。
             _buildRailButton(
@@ -1035,9 +1053,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           _startTouchScreenPos = d.globalPosition;
           _startTouchElemOffset = el.offset;
         },
-        // A14-1b：锁定后禁止拖动。仍允许选中与双击编辑——
+        // A14-1b：半锁 / 全锁都禁止拖动。仍允许选中与双击编辑——
         // 锁定针对的是「误拖走位」，不是「不让改配置」。
-        onPanUpdate: el.module!.properties['locked'] == true
+        onPanUpdate: (el.layoutLocked || el.sealed)
             ? null
             : (d) {
                 final delta = d.globalPosition - _startTouchScreenPos;
@@ -1066,24 +1084,30 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   ),
                 ),
               ),
-              // A14-1a：选中外框。用 Positioned.fill 叠一层描边而不是给
-              // 容器加 border——后者会改变布局尺寸，让组件在选中/取消时跳动。
+              // A14-1a：选中外框。
+              //
+              // 与 Studio 共用 `StudioAlternatingDashedBorderPainter`：
+              // 虚线框会**按组件自身形状**描边（圆形指示点画圆、开关画胶囊、
+              // 心形进度条画心形），而不是一律套圆角矩形。
+              //
+              // 用 Positioned.fill + CustomPaint 而非给容器加 border——
+              // 后者会改变布局尺寸，让组件在选中/取消时跳动。
               if (_selectedElementId == el.id)
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: const Color(0xFF651FFF),
-                          width: 1.6,
-                        ),
-                        borderRadius: BorderRadius.circular(4),
+                    child: CustomPaint(
+                      painter: DashedSelectionBorderPainter(
+                        strokeWidth: 1.2,
+                        shape: _outlineShapeOf(el),
+                        borderRadius: _outlineBorderRadiusOf(el),
+                        isPerfectCircle: _isPerfectCircleOutlineOf(el),
                       ),
                     ),
                   ),
                 ),
               // 锁定标记：让作者知道这个组件为什么拖不动。
-              if (el.module!.properties['locked'] == true)
+              // 全锁用橙色实心锁，半锁用蓝色空心锁，一眼区分档位。
+              if (el.layoutLocked || el.sealed)
                 Positioned(
                   left: 2,
                   top: -13,
@@ -1091,11 +1115,18 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     child: Container(
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE65100),
+                        color: el.sealed
+                            ? const Color(0xFFE65100)
+                            : const Color(0xFF0288D1),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Icon(Icons.lock_rounded,
-                          size: 9, color: Colors.white),
+                      child: Icon(
+                        el.sealed
+                            ? Icons.lock_rounded
+                            : Icons.lock_outline_rounded,
+                        size: 9,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
