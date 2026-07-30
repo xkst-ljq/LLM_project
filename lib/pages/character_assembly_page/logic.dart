@@ -7975,6 +7975,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   /// 白名单与 Studio 的 `_canUseBackgroundRuntimePlacement` 保持一致——
   /// 这是跨编辑器契约，两边不一致会出现「Studio 能标 Assembly 不能」的怪事。
   /// 复合件永远不许出 PCB（3.1 已确认的产品规则），因此直接排除。
+  ///
+  /// linker / math_node / timer / page_router 不在白名单里是**刻意的**：
+  /// 它们天生就是后台节点（`UIRenderer.render` 里非 Studio 模式直接
+  /// `SizedBox.shrink`），再给一个后台标记既多余又会让作者以为
+  /// 「不标就会显示」。它们摆在 PCB 外也不受边界阈值约束。
   bool _canUseBackgroundRuntimePlacement(UIElement element) {
     const backgroundCapableTypes = {
       'text',
@@ -7989,15 +7994,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   bool _isBackstageElement(UIElement element) =>
       element.module?.properties['runtimePlacement'] == 'background';
-
-  /// linker / math_node / timer / page_router 天生就是后台节点，
-  /// 运行时本来就不渲染，不需要也不应该走后台化标记。
-  bool _isNativeBackendNode(UIElement element) => const {
-        'linker',
-        'math_node',
-        'timer',
-        _pageRouterType,
-      }.contains(element.module?.type);
 
   /// 元件矩形越过 PCB 内壁的深度（PCB 局部坐标，不含 `_pcbOffset`）。
   ///
