@@ -2093,8 +2093,7 @@ class UIRenderer {
       activeColorInt = 0xFF9E9E9E;
       activeGlow = false;
     } else {
-      // 指示灯的闪烁改读统一动画通道（兼容旧 eventFlash* 字段，
-      // 见 ElementAnimation.readFrom）。
+      // 指示灯的闪烁走统一动画通道。
       //
       // 这里做的是**改色**而非叠加图层——指示灯本体就是一颗小圆点，
       // 盖一层半透明色只会让它变浑浊，直接换灯色才有「亮了一下」的观感。

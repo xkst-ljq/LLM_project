@@ -15,7 +15,7 @@ void main() {
   group('通用动画触发方案（A12-1 的缺口修补）', () {
     // A12-1 把渲染层做成了「所有可见组件都能播动画」，
     // 但触发端只认三条老方案：
-    // event_to_indicator / click_to_surface_press / click_to_surface_ripple。
+    // event_to_indicator / click_to_surface_press。
     // 这三条的 targetType 写死是 indicator 与 surface，
     // 于是进度条、文本虽然会画动画，却没有任何连线能触发它。
     //
@@ -79,7 +79,6 @@ void main() {
       ElementAnimationType? legacyFallback(String scheme) =>
           switch (scheme) {
             'click_to_surface_press' => ElementAnimationType.press,
-            'click_to_surface_ripple' => ElementAnimationType.ripple,
             'event_to_indicator' => ElementAnimationType.flash,
             _ => null,
           };
@@ -387,47 +386,37 @@ void main() {
     });
   });
 
-  group('旧字段兼容（老卡不迁移也能播）', () {
-    test('读得懂旧的 surface 按压字段', () {
-      final anim = ElementAnimation.readFrom({
-        'anim_trigger': 'click_to_surface_press',
-        'anim_duration': 150,
-        'anim_timestamp': 1700000000000,
-      })!;
-      expect(anim.type, ElementAnimationType.press);
-      expect(anim.durationMs, 150);
-      expect(anim.timestamp, 1700000000000);
+  group('只认统一字段族', () {
+    // A12 早期为兼容两套历史字段（surface 的 `anim_*`、
+    // indicator 的 `eventFlash*`）写过迁移分支。
+    // 项目仍在开发期、无已发布数据，已全部删除——
+    // 留着只会让「关掉动画却还在播」这类问题多一条排查路径。
+
+    test('旧的 anim_* 字段不再被识别', () {
+      expect(
+        ElementAnimation.readFrom({
+          'anim_trigger': 'click_to_surface_press',
+          'anim_duration': 150,
+          'anim_timestamp': 1700000000000,
+        }),
+        isNull,
+      );
     });
 
-    test('旧的 rippleRadius 换算成相对强度', () {
-      // 旧字段是绝对像素（默认 150），新模型用 0~1 相对值，
-      // 这样元件尺寸变化时不用重配。
-      final anim = ElementAnimation.readFrom({
-        'anim_trigger': 'click_to_surface_ripple',
-        'anim_radius': 250.0,
-      })!;
-      expect(anim.type, ElementAnimationType.ripple);
-      expect(anim.intensity, 1.0);
+    test('旧的 eventFlash* 字段不再被识别', () {
+      expect(
+        ElementAnimation.readFrom({
+          'eventFlashTimestamp': 1700000000000,
+          'eventFlashDurationMs': 400,
+          'eventFlashColor': 0xFFFFA726,
+        }),
+        isNull,
+      );
     });
 
-    test('读得懂旧的 indicator 闪烁字段', () {
-      final anim = ElementAnimation.readFrom({
-        'eventFlashTimestamp': 1700000000000,
-        'eventFlashDurationMs': 400,
-        'eventFlashColor': 0xFFFFA726,
-      })!;
-      expect(anim.type, ElementAnimationType.flash);
-      expect(anim.durationMs, 400);
-      expect(anim.colorValue, 0xFFFFA726);
-    });
-
-    test('新字段优先于旧字段', () {
-      // 作者在外观页改过之后就该以新配置为准，
-      // 否则旧字段会把刚配好的值盖回去。
+    test('只有 __anim 能读出配置', () {
       final anim = ElementAnimation.readFrom({
         '__anim': {'type': 'glow_pulse', 'durationMs': 900},
-        'anim_trigger': 'click_to_surface_press',
-        'anim_duration': 150,
       })!;
       expect(anim.type, ElementAnimationType.glowPulse);
       expect(anim.durationMs, 900);
@@ -439,36 +428,23 @@ void main() {
   });
 
   group('写入配置', () {
-    test('写新字段的同时清掉旧字段', () {
-      // 不清的话 readFrom 的兼容分支会把旧值读出来，
-      // 表现为「明明改了配置却还是老样子」。
-      final props = <String, dynamic>{
-        'anim_trigger': 'click_to_surface_press',
-        'anim_duration': 150,
-        'anim_radius': 150.0,
-        'anim_timestamp': 123,
-      };
+    test('写入后能读回同一份配置', () {
+      final props = <String, dynamic>{};
       ElementAnimation.writeConfig(
         props,
         const ElementAnimation(type: ElementAnimationType.ripple),
       );
-      expect(props.containsKey('anim_trigger'), isFalse);
-      expect(props.containsKey('anim_duration'), isFalse);
-      expect(props.containsKey('anim_radius'), isFalse);
-      expect(props.containsKey('anim_timestamp'), isFalse);
       expect(ElementAnimation.readFrom(props)!.type,
           ElementAnimationType.ripple);
     });
 
-    test('关闭动画会连旧字段一并清除', () {
-      // 只删新字段的话，旧字段仍会被兼容分支读出来，
-      // 表现为「关掉了动画却还在播」。
+    test('关闭动画后彻底读不出配置', () {
       final props = <String, dynamic>{
         '__anim': {'type': 'press'},
-        'anim_trigger': 'click_to_surface_press',
       };
       ElementAnimation.writeConfig(props, null);
       expect(ElementAnimation.readFrom(props), isNull);
+      expect(props.containsKey(ElementAnimation.propsKey), isFalse);
     });
 
     test('保存配置不会顺手触发一次动画', () {
@@ -506,19 +482,19 @@ void main() {
       expect(props.containsKey(ElementAnimation.propsKey), isFalse);
     });
 
-    test('打戳会清掉两套旧时间戳，避免打架', () {
+    test('打戳保留配置中的颜色', () {
+      // 时间戳只是「什么时候播」，不该顺手改掉「播成什么样」。
       final props = <String, dynamic>{
-        'eventFlashTimestamp': 111,
-        'eventFlashDurationMs': 300,
-        'eventFlashColor': 0xFFFFA726,
+        '__anim': {
+          'type': 'flash',
+          'durationMs': 300,
+          'color': 0xFFFFA726,
+        },
       };
       expect(ElementAnimation.stamp(props, nowMs: 999), isTrue);
-      expect(props.containsKey('eventFlashTimestamp'), isFalse);
-      expect(props.containsKey('anim_timestamp'), isFalse);
       final anim = ElementAnimation.readFrom(props)!;
       expect(anim.type, ElementAnimationType.flash);
       expect(anim.timestamp, 999);
-      // 旧配置的颜色要保下来，不能因为迁移而变色。
       expect(anim.colorValue, 0xFFFFA726);
     });
 
@@ -575,14 +551,15 @@ void main() {
       }
     });
 
-    test('旧方案 id 能映射到对应类型', () {
+    test('方案 id 不再被当作动画类型', () {
+      // 早期 anim_trigger 存的是完整方案 id，迁移映射已删除。
       expect(
         ElementAnimationTypeX.fromStorage('click_to_surface_press'),
-        ElementAnimationType.press,
+        isNull,
       );
       expect(
         ElementAnimationTypeX.fromStorage('click_to_surface_ripple'),
-        ElementAnimationType.ripple,
+        isNull,
       );
     });
 

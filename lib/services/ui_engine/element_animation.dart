@@ -32,11 +32,11 @@ enum ElementAnimationType {
 
   /// 水波折射（片元着色器实现）。
   ///
-  /// 早期由已废弃的 `click_to_surface_ripple` 方案驱动，
-  /// 现在改为在元件外观页配置、用 `event_to_animation` 触发。
+  /// 在元件外观页配置，用 `event_to_animation` 触发，
+  /// 或由值变化自动播放。
   ripple,
 
-  /// 短暂高亮。原 indicator 的 `eventFlash*`。
+  /// 短暂高亮。
   flash,
 
   /// 数值跳动：目标值变化时先放大再回弹。
@@ -118,14 +118,7 @@ extension ElementAnimationTypeX on ElementAnimationType {
     for (final t in ElementAnimationType.values) {
       if (t.storageKey == raw) return t;
     }
-    // 兼容旧数据：`anim_trigger` 存的是完整方案 id。
-    return switch (raw) {
-      'click_to_surface_press' => ElementAnimationType.press,
-      // 方案本身已移除，但老卡的 props 里仍可能存着这个字符串，
-      // 迁移映射必须保留，否则旧数据读不出动画类型。
-      'click_to_surface_ripple' => ElementAnimationType.ripple,
-      _ => null,
-    };
+    return null;
   }
 }
 
@@ -220,41 +213,16 @@ class ElementAnimation {
     );
   }
 
-  /// 从元件属性里解析动画配置，**兼容两套旧字段**。
+  /// 从元件属性里解析动画配置。
   ///
-  /// 读取顺序：新字段 `__anim` → 旧 `anim_*` → 旧 `eventFlash*`。
-  /// 老角色卡不做迁移也能正常播放，作者一旦在外观页改过就写成新格式。
+  /// 只认 `__anim` 这一个字段族。
+  ///
+  /// A12 早期为兼容两套历史字段（surface 的 `anim_*`、
+  /// indicator 的 `eventFlash*`）写过迁移分支，
+  /// 项目仍在开发期、无已发布数据，已全部删除——
+  /// 留着只会让「关掉动画却还在播」这类问题多一条排查路径。
   static ElementAnimation? readFrom(Map<String, dynamic> props) {
-    final fresh = fromJson(props[propsKey]);
-    if (fresh != null) return fresh;
-
-    // 旧字段族一：surface 按压 / 涟漪。
-    final legacyTrigger = props['anim_trigger']?.toString();
-    final legacyType = ElementAnimationTypeX.fromStorage(legacyTrigger);
-    if (legacyType != null) {
-      final duration = (props['anim_duration'] as num?)?.toInt() ??
-          legacyType.defaultDurationMs;
-      // 旧的 anim_radius 是绝对像素（默认 150），换算成相对强度。
-      final radius = (props['anim_radius'] as num?)?.toDouble() ?? 150.0;
-      return ElementAnimation(
-        type: legacyType,
-        durationMs: duration,
-        intensity: (radius / 250.0).clamp(0.0, 1.0),
-        timestamp: (props['anim_timestamp'] as num?)?.toInt() ?? 0,
-      );
-    }
-
-    // 旧字段族二：indicator 事件闪烁。
-    final flashTs = (props['eventFlashTimestamp'] as num?)?.toInt() ?? 0;
-    if (flashTs > 0) {
-      return ElementAnimation(
-        type: ElementAnimationType.flash,
-        durationMs: (props['eventFlashDurationMs'] as num?)?.toInt() ?? 300,
-        colorValue: (props['eventFlashColor'] as num?)?.toInt(),
-        timestamp: flashTs,
-      );
-    }
-    return null;
+    return fromJson(props[propsKey]);
   }
 
   /// 把配置写回属性表（不含时间戳，供编辑器保存用）。
@@ -264,24 +232,12 @@ class ElementAnimation {
   ) {
     if (animation == null) {
       props.remove(propsKey);
-      // 同时清掉旧字段，否则 readFrom 的兼容分支会把它又读出来，
-      // 表现为「关掉动画却还在播」。
-      props
-        ..remove('anim_trigger')
-        ..remove('anim_duration')
-        ..remove('anim_radius')
-        ..remove('anim_timestamp');
       return;
     }
     // 保留已有时间戳：编辑器保存不应该顺手触发一次动画。
     final existing = fromJson(props[propsKey]);
     props[propsKey] =
         animation.copyWith(timestamp: existing?.timestamp ?? 0).toJson();
-    props
-      ..remove('anim_trigger')
-      ..remove('anim_duration')
-      ..remove('anim_radius')
-      ..remove('anim_timestamp');
   }
 
   /// 打一次触发时间戳（运行端在连线触发时调用）。
@@ -297,15 +253,6 @@ class ElementAnimation {
           timestamp: nowMs ?? DateTime.now().millisecondsSinceEpoch,
         )
         .toJson();
-    // 旧字段已被新字段取代，清掉避免两套时间戳打架。
-    props
-      ..remove('anim_trigger')
-      ..remove('anim_duration')
-      ..remove('anim_radius')
-      ..remove('anim_timestamp')
-      ..remove('eventFlashTimestamp')
-      ..remove('eventFlashDurationMs')
-      ..remove('eventFlashColor');
     return true;
   }
 }

@@ -4401,6 +4401,31 @@ body 有原子 / 复合 / 页面路由器 / linker 四种，逐个加必然漏�
 
 新增 `test/assembly_canvas_actions_test.dart`（16 例）。
 
+**彻底删除旧字段兼容层**（用户确认：开发期、无已发布数据）
+
+A12 早期为兼容两套历史字段写过迁移分支，现已全部删除：
+
+| 删除内容 | 位置 |
+|---|---|
+| `anim_*` 字段族读取 | `ElementAnimation.readFrom` |
+| `eventFlash*` 字段族读取 | 同上 |
+| 写入/打戳时清理旧字段 | `writeConfig` / `stamp` |
+| 方案 id → 动画类型映射 | `ElementAnimationTypeX.fromStorage` |
+
+`readFrom` 现在只有一行 `fromJson(props[propsKey])`。
+
+**一处保留但改名**：`_ensureLegacyAnimationConfig`
+→ `_ensureSchemeAnimationConfig`。它**不是**老卡兼容——
+`click_to_surface_press` 与 `event_to_indicator` 这两条方案
+至今仍在自己的 `params` 里带 `durationMs` / `flashColor`，
+元件没配过动画时要靠它把参数搬进通道，删了这两条方案就失效了。
+原名容易误导成可以一并删掉。
+
+（`rippleRadius` 的换算逻辑已随涟漪方案一起移除。）
+
+测试相应改为**反向断言**：旧字段不再被识别、方案 id 不再映射为类型。
+留着这些负向用例是为了防止有人「好心」把兼容层加回来。
+
 ### A12 收尾状态
 
 **六种动画全部完成并经用户测试通过：**

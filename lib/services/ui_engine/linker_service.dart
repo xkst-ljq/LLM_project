@@ -233,16 +233,21 @@ class LinkerService {
     return null;
   }
 
-  /// 老卡兜底：元件还没有 `__anim` 配置时，用方案参数现场补一个。
+  /// 为**自带参数的方案**补一份元件动画配置。
   ///
-  /// A12 之前动画参数存在**方案**里（`durationMs` / `rippleRadius` /
-  /// `flashColor`），A12 之后归元件。已有角色卡里的元件没有 `__anim`，
-  /// 若直接 stamp 会返回 false、动画彻底消失——那是回归。
-  /// 因此这里按方案 id 推出对应的动画类型，把旧参数搬进新通道。
+  /// `click_to_surface_press` 与 `event_to_indicator` 这两条方案
+  /// 仍在自己的 `params` 里带 `durationMs` / `flashColor`，
+  /// 是 A12「动画参数归元件」之前的设计。
+  /// 若元件没在外观页配过动画，直接 stamp 会返回 false、什么都不播，
+  /// 这两条方案就失效了。因此这里按方案 id 推出类型、把参数搬进通道。
   ///
   /// 只在**首次**触发时写入；之后元件就有自己的配置了，
   /// 作者在外观页改过的值不会被方案参数覆盖回去。
-  static void _ensureLegacyAnimationConfig(
+  ///
+  /// `event_to_animation` 刻意不在此列：它不带参数，
+  /// 播什么完全由元件外观页决定。作者没配就什么都不播——
+  /// 凭空给个默认动画反而是意外行为。
+  static void _ensureSchemeAnimationConfig(
     Map<String, dynamic> props,
     String scheme,
     Map<String, dynamic> schemeParams,
@@ -252,16 +257,12 @@ class LinkerService {
     final type = switch (scheme) {
       'click_to_surface_press' => ElementAnimationType.press,
       'event_to_indicator' => ElementAnimationType.flash,
-      // event_to_animation 刻意不给兜底：它是 A12 之后才有的方案，
-      // 不存在「老卡兼容」问题。作者没在外观页配动画就什么都不播——
-      // 凭空给个默认动画反而是意外行为。
       _ => null,
     };
     if (type == null) return;
 
     final duration =
         (schemeParams['durationMs'] as num?)?.toInt() ?? type.defaultDurationMs;
-    final radius = (schemeParams['rippleRadius'] as num?)?.toDouble();
     final flashColor = (schemeParams['flashColor'] as num?)?.toInt();
 
     ElementAnimation.writeConfig(
@@ -269,8 +270,6 @@ class LinkerService {
       ElementAnimation(
         type: type,
         durationMs: duration,
-        // 旧的 rippleRadius 是绝对像素（默认 150），换算成相对强度。
-        intensity: radius != null ? (radius / 250.0).clamp(0.0, 1.0) : 0.6,
         colorValue: type == ElementAnimationType.flash
             ? (flashColor ?? 0xFFFFA726)
             : null,
@@ -431,9 +430,9 @@ class LinkerService {
                 // 作者没给这个元件配动画，stamp 返回 false、什么都不做——
                 // 那说明他不想让它动。
                 //
-                // 方案参数在这里只作**兜底**：老卡的元件还没有 `__anim`
-                // 配置，用方案里的 durationMs 现场补一个，保证行为不变。
-                _ensureLegacyAnimationConfig(props, scheme, schemeParams);
+                // 按压 / 指示灯高亮两条方案仍自带参数，
+                // 元件没配过动画时用它们现场补一份（见函数说明）。
+                _ensureSchemeAnimationConfig(props, scheme, schemeParams);
                 final stamped = ElementAnimation.stamp(props);
                 if (stamped) {
                   (tgtRef[0] as List<UIElement>)[tgtRef[1] as int] =
