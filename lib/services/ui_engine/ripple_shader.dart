@@ -2,6 +2,10 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+// RenderRepaintBoundary 由 rendering.dart 导出，material.dart **不转出**它。
+// 漏掉这行会连带报三个错：类型未定义、debugNeedsPaint 与 toImageSync
+// 被判为对 null 调用（因为 `is!` 类型收窄失效）。
+import 'package:flutter/rendering.dart';
 
 /// A12 水波折射（方案 A：片元着色器）。
 ///

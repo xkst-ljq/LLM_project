@@ -916,6 +916,27 @@ linker 本身就是有边框的卡片，再套一圈虚线只是噪声。
 夹取顺序：先夹宽度 → 由宽度推高度 → 若高度越界再由高度反推宽度。
 两个维度独立夹取会破坏比例。
 
+### RenderRepaintBoundary 需要单独导入 rendering.dart（已犯两次）
+
+`material.dart` 转出了 `RenderBox` / `RenderObject`，
+但**不转出 `RenderRepaintBoundary`**。
+
+漏掉 `import 'package:flutter/rendering.dart';` 会一次报三个错，
+而且后两个具有误导性：
+
+```
+The name 'RenderRepaintBoundary' isn't defined
+The property 'debugNeedsPaint' can't be unconditionally accessed
+The method 'toImageSync' can't be unconditionally invoked
+```
+
+后两条看着像空安全问题，实际是因为 `obj is! RenderRepaintBoundary`
+里的类型未定义，**类型收窄失效**，`obj` 保持 `RenderObject?`。
+只要补上 import，三个错一起消失——不要去加 `!` 或 `?`。
+
+凡是要用 `toImageSync` / `toImage` 抓取组件纹理的文件都会遇到。
+方案 C 和方案 A 各犯过一次。
+
 ### A14-1 / A14-2 / A14-3 已完成（均测试通过）
 
 A14-3 的结论值得记一笔：**「实例编辑器分文件」最终判定为不做**。
