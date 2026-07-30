@@ -4135,6 +4135,36 @@ Flutter 对全透明子树有优化、可能整块跳过绘制，
 在纯色区域天然无效，因为它们只搬运像素、不创造梯度。
 想让纯色组件有反应，必须叠加**颜色或形状**的变化。
 
+**第三轮：「和上版本没有什么区别」——波浪边界从未生效**
+
+上一轮加的进度条波浪边界**一次都没跑起来**。根因是判断条件：
+
+```dart
+rippleAnim.isActiveAt(DateTime.now().millisecondsSinceEpoch)
+```
+
+水波有**两条独立驱动通路**：
+1. 连线触发 —— 往 props 写 `timestamp`；
+2. **值变化自动播** —— 由 `ValueChangeAnimator` 的本地状态驱动，
+   props 里的 `timestamp` **恒为 0**（渲染函数不能写 props）。
+
+用户拖 slider 走的是第 2 条，`isActiveAt(0)` 永远返回 false。
+
+**中途还试错了一次**：想用静态通道从外层把进度压给进度条，
+写完才发现时序不对——`_buildProgressBar` 在 `_renderModule`
+阶段执行（第 55 行），而动画包裹在第 75/81 行，
+**child 早就构建完毕**，push/pop 根本包不住它。已回退。
+
+**最终解法：让进度条自己驱动。**
+`_WavyProgressBar` 是带 `AnimationController` 的 StatefulWidget，
+检测到进度值变化就自行起一轮波，不依赖任何外部时序。
+连续拖动时不打断当前段（`isAnimating` 时跳过重启），
+与 `ValueChangeAnimator` 同样的处理。
+
+**教训**：给渲染链路深处的组件加动画时，先确认它的执行时机
+——`_renderModule` 早于所有动画包裹层，
+任何「从外层传状态进去」的方案都不成立。
+
 ### A12-4：剩余打磨（未开始）
 
 * 粒子在小 PCB 上的实际观感（可能要调参）

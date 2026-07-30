@@ -720,20 +720,31 @@ class UIRenderer {
     //
     // 解法不是加强折射，而是**制造新的可动边界**：
     // 把填充的右边缘画成波浪线，波纹经过时它跟着荡漾。
+    // 配了水波动画的进度条，填充边界自己会荡漾。
+    //
+    // ⚠️ 不能靠外层动画的 progress 判断。
+    //
+    // 上一轮试过两种都失败：
+    // 1. 读 props 里的 timestamp —— 值变化通路里它恒为 0
+    //    （渲染函数不能写 props），`isActiveAt` 永远返回 false；
+    // 2. 用静态通道从外层传进度 —— `_buildProgressBar` 在
+    //    `_renderModule` 阶段执行，比外层的动画包裹**早得多**，
+    //    push/pop 包不住它。
+    //
+    // 改为让进度条**自己**成为一个带 Ticker 的组件：
+    // 检测到值变化就自行起波，不依赖任何外部时序。
     final rippleAnim = ElementAnimation.readFrom(module.properties);
     if (rippleAnim != null &&
-        rippleAnim.type == ElementAnimationType.ripple &&
-        rippleAnim.isActiveAt(DateTime.now().millisecondsSinceEpoch)) {
+        rippleAnim.type == ElementAnimationType.ripple) {
       return ClipRRect(
         borderRadius: radius,
-        child: CustomPaint(
+        child: _WavyProgressBar(
+          progress: progress.clamp(0.0, 1.0),
+          fillColor: fillColor,
+          trackColor: trackColor,
+          intensity: rippleAnim.intensity,
+          durationMs: rippleAnim.durationMs,
           size: size,
-          painter: _WavyProgressPainter(
-            progress: progress.clamp(0.0, 1.0),
-            fillColor: fillColor,
-            trackColor: trackColor,
-            animation: rippleAnim,
-          ),
         ),
       );
     }
@@ -3468,62 +3479,135 @@ class _ParticleBurstPainter extends CustomPainter {
   }
 }
 
-/// 进度条填充边界的波动绘制。
+/// 进度条填充边界的波动。
 ///
-/// ## 为什么需要它
+/// ## 为什么要独立成一个带 Ticker 的组件
 ///
 /// 用户反馈水波「只有交接处有明显扰动，显示效果太小了」。
 ///
-/// 这是折射的**固有局限**而非参数问题：折射的本质是采样位置偏移，
-/// 而进度条内部是大片纯色——偏移 5px 取到的还是同一个颜色，
-/// 肉眼完全看不出变化。只有已填充/未填充的交界处存在颜色梯度，
-/// 所以只有那一条线在动。
+/// 这是折射的**固有局限**：折射的本质是采样位置偏移，
+/// 而进度条内部是大片纯色——偏移 5px 取到的还是同一个颜色。
+/// 只有已填充/未填充的交界处存在颜色梯度，所以只有那条线在动。
+/// 加强折射强度解决不了，只会让交界处抖得更厉害。
 ///
-/// 加强折射强度解决不了这个问题，只会让交界处抖得更厉害。
-/// 正确解法是**制造新的可动边界**：把填充的右边缘画成波浪线。
+/// 正确解法是**制造新的可动边界**：把填充右缘画成波浪线。
+///
+/// 试过两种「从外部拿动画进度」的写法，都失败了：
+/// 1. 读 props 里的 `timestamp` —— 值变化通路里它恒为 0
+///    （渲染函数不能写 props），`isActiveAt` 永远 false；
+/// 2. 用静态通道从外层压入 —— `_buildProgressBar` 在 `_renderModule`
+///    阶段执行，比外层动画包裹早得多，push/pop 根本包不住它。
+///
+/// 所以让它**自己驱动**：检测到进度值变化就起一轮波，
+/// 不依赖任何外部时序。
+class _WavyProgressBar extends StatefulWidget {
+  final double progress;
+  final Color fillColor;
+  final Color trackColor;
+  final double intensity;
+  final int durationMs;
+  final Size size;
+
+  const _WavyProgressBar({
+    required this.progress,
+    required this.fillColor,
+    required this.trackColor,
+    required this.intensity,
+    required this.durationMs,
+    required this.size,
+  });
+
+  @override
+  State<_WavyProgressBar> createState() => _WavyProgressBarState();
+}
+
+class _WavyProgressBarState extends State<_WavyProgressBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: widget.durationMs),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _WavyProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.durationMs != oldWidget.durationMs) {
+      _controller.duration = Duration(milliseconds: widget.durationMs);
+    }
+    // 值变了就起一轮波。
+    //
+    // 连续拖动时不打断当前这一段——`forward(from: 0)` 会重置，
+    // 导致波永远停在第一帧（值变化动画那边踩过同样的坑）。
+    if (widget.progress != oldWidget.progress && !_controller.isAnimating) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (ctx, _) => CustomPaint(
+        size: widget.size,
+        painter: _WavyProgressPainter(
+          progress: widget.progress,
+          fillColor: widget.fillColor,
+          trackColor: widget.trackColor,
+          animProgress: _controller.value,
+          intensity: widget.intensity,
+        ),
+      ),
+    );
+  }
+}
+
 class _WavyProgressPainter extends CustomPainter {
   final double progress;
   final Color fillColor;
   final Color trackColor;
-  final ElementAnimation animation;
+
+  /// 波动进度 0..1。0 或 1 表示静止。
+  final double animProgress;
+  final double intensity;
 
   const _WavyProgressPainter({
     required this.progress,
     required this.fillColor,
     required this.trackColor,
-    required this.animation,
+    required this.animProgress,
+    required this.intensity,
   });
-
-  /// 动画进度 0..1。用时间戳换算，与着色器保持同一时基。
-  double get _t {
-    final elapsed =
-        DateTime.now().millisecondsSinceEpoch - animation.timestamp;
-    if (animation.durationMs <= 0) return 1.0;
-    return (elapsed / animation.durationMs).clamp(0.0, 1.0);
-  }
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
 
-    // 底：未填充部分。
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = trackColor,
-    );
-
+    canvas.drawRect(Offset.zero & size, Paint()..color = trackColor);
     if (progress <= 0.0) return;
 
-    final t = _t;
-    final envelope = math.pow(math.max(1.0 - t, 0.0), 1.2).toDouble();
     final edgeX = size.width * progress;
+    final t = animProgress;
 
-    // 波幅随强度与衰减变化；上限取组件高度的一半，
-    // 再大边界会甩出组件、看起来像是断裂。
-    final amp = size.height * 0.5 * animation.intensity * envelope;
+    // 静止、或进度满格（没有边界可动）时画直边。
+    final envelope = (t <= 0.0 || t >= 1.0)
+        ? 0.0
+        : math.pow(1.0 - t, 1.2).toDouble();
+    // 波幅上限取组件高度的一半：再大边界会甩出组件、看着像断裂。
+    final amp = size.height * 0.5 * intensity * envelope;
 
     if (amp <= 0.3 || progress >= 1.0) {
-      // 波已平息或进度满格（没有边界可动），退回直边填充。
       canvas.drawRect(
         Rect.fromLTWH(0, 0, edgeX, size.height),
         Paint()..color = fillColor,
@@ -3531,18 +3615,19 @@ class _WavyProgressPainter extends CustomPainter {
       return;
     }
 
-    // 波浪线：沿纵向起伏，相位随时间推进，
-    // 让边界看起来在「荡」而不是整体平移。
-    final path = Path()..moveTo(0, 0);
-    path.lineTo(0, size.height);
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(0, size.height);
 
+    // 沿纵向起伏，相位随时间推进，让边界在「荡」而不是整体平移。
     const steps = 24;
+    final phase = t * 2.5 * math.pi * 2;
     for (var i = steps; i >= 0; i--) {
       final y = size.height * i / steps;
-      // 两个不同频率叠加，避免规整的正弦看起来太机械。
-      final phase = t * 2.5 * math.pi * 2;
-      final wave = math.sin(y / size.height * math.pi * 2.2 - phase) * 0.7 +
-          math.sin(y / size.height * math.pi * 3.7 - phase * 1.3) * 0.3;
+      final n = y / size.height;
+      // 两个不同频率叠加，避免规整正弦显得机械。
+      final wave = math.sin(n * math.pi * 2.2 - phase) * 0.7 +
+          math.sin(n * math.pi * 3.7 - phase * 1.3) * 0.3;
       path.lineTo(edgeX + wave * amp, y);
     }
 
@@ -3552,7 +3637,10 @@ class _WavyProgressPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WavyProgressPainter oldDelegate) {
-    // 时间在走，必须每帧重绘。
-    return true;
+    return oldDelegate.progress != progress ||
+        oldDelegate.animProgress != animProgress ||
+        oldDelegate.intensity != intensity ||
+        oldDelegate.fillColor != fillColor ||
+        oldDelegate.trackColor != trackColor;
   }
 }
