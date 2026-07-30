@@ -1780,6 +1780,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   CharacterCard? _currentCharacter;
   final ScrollController _scrollController = ScrollController();
   bool _inputExpanded = false;
+  // 键盘弹出/收起时用来判断视口是否变化。见 didChangeDependencies。
+  double _lastKeyboardInset = 0.0;
+  // 键盘上升期间持续把列表钉在底部的定时器（键盘动画有过程，单次跳转不够）。
+  Timer? _keyboardFollowTimer;
   int _editingIndex = -1;
   String _editingOriginalContent = '';
 
@@ -2377,7 +2381,56 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // 键盘弹出时保持最后一条气泡可见。
+    //
+    // 聊天页刻意保留 resizeToAvoidBottomInset:true（输入框要跟着键盘上移），
+    // 于是视口高度减少了 keyboardInset，但 ListView 的 pixels 不变、
+    // maxScrollExtent 反而增大——原本贴底的气泡就被顶到视口之下，
+    // 表现为「被输入法挡住」。
+    //
+    // 只在「原本就在底部附近」时才补滚，用户手动往上翻历史时不打扰。
+    // 键盘是带动画上升的，inset 会连续变化好几帧，
+    // 单次 jumpTo 会被后续帧重新甩下去，所以用一个短定时器持续跟随。
+    final inset = MediaQuery.viewInsetsOf(context).bottom;
+    if ((inset - _lastKeyboardInset).abs() > 1.0) {
+      final bool opening = inset > _lastKeyboardInset;
+      _lastKeyboardInset = inset;
+      if (opening) _startKeyboardFollow();
+    }
+  }
+
+  /// 在键盘上升的动画期间持续把列表钉在底部。
+  void _startKeyboardFollow() {
+    if (!_scrollController.hasClients) return;
+    // 只有原本贴着底部才跟随；用户正在翻历史时不要抢滚动。
+    final pos = _scrollController.position;
+    if (pos.maxScrollExtent - pos.pixels > 120) return;
+
+    _keyboardFollowTimer?.cancel();
+    int ticks = 0;
+    _keyboardFollowTimer = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (timer) {
+        // 约 400ms，覆盖各平台键盘弹出动画时长。
+        if (!mounted || ticks++ > 25 || !_scrollController.hasClients) {
+          timer.cancel();
+          _keyboardFollowTimer = null;
+          return;
+        }
+        final p = _scrollController.position;
+        if (p.pixels < p.maxScrollExtent) {
+          _scrollController.jumpTo(p.maxScrollExtent);
+        }
+      },
+    );
+  }
+
+  @override
   void dispose() {
+    _keyboardFollowTimer?.cancel();
     _aiReplySub?.cancel();
     UserService.versionNotifier.removeListener(_onGlobalUserChanged);
     PromptSettingsService.versionNotifier.removeListener(_onPromptSettingsChanged);
@@ -3651,9 +3704,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                   Expanded(
                                     child: ListView.builder(
                                       controller: _scrollController,
-                                      padding: const EdgeInsets.only(
+                                      // 底部留白要盖住浮在列表之上的输入条
+                                      // （42+16+20=78）以及系统底部安全区，
+                                      // 否则最后一条气泡会压在输入条下面。
+                                      padding: EdgeInsets.only(
                                         top: 50,
-                                        bottom: 70,
+                                        bottom: 78 +
+                                            MediaQuery.of(context)
+                                                .padding
+                                                .bottom,
                                       ),
                                       itemCount:
                                       _messages.length + (_isLoading ? 1 : 0),
