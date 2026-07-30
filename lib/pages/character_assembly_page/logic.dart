@@ -3029,10 +3029,394 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }.contains(type);
   }
 
+  /// A14-2：定时器编辑器。
+  ///
+  /// 只做 Assembly 用得上的部分：Studio 版还带图层选择与坐标微调，
+  /// 那两项在 Assembly 里分别由页面图层与直接拖动承担。
+  Future<void> _showTimerEditorDialog(UIElement element) async {
+    final module = element.module;
+    if (module == null) return;
+    final props = Map<String, dynamic>.from(
+      _deepCloneValue(module.properties) as Map,
+    );
+
+    final nameCtrl = TextEditingController(text: module.name);
+    final intervalCtrl = TextEditingController(
+      text: ((props['interval'] as num?)?.toDouble() ?? 1.0).toStringAsFixed(1),
+    );
+    final delayCtrl = TextEditingController(
+      text: ((props['initialDelay'] as num?)?.toDouble() ?? 0.0)
+          .toStringAsFixed(1),
+    );
+    final maxTicksCtrl = TextEditingController(
+      text: ((props['maxTicks'] as num?)?.toInt() ?? 0).toString(),
+    );
+    final stepCtrl = TextEditingController(
+      text: ((props['stepValue'] as num?)?.toDouble() ?? 1.0).toString(),
+    );
+    var pulseType = props['pulseType']?.toString() ?? 'increment';
+    var loop = props['loop'] != false;
+    var autoStart = props['isRunning'] == true;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('定时器'),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: '名称'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: intervalCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: '触发间隔（秒）',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: delayCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: '首次延迟（秒）',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: maxTicksCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '最多触发次数（0 = 不限）',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: pulseType,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: '脉冲类型',
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'increment', child: Text('递增计数（+步长）')),
+                      DropdownMenuItem(
+                          value: 'toggle', child: Text('0/1 翻转（开关）')),
+                      DropdownMenuItem(
+                          value: 'timestamp', child: Text('运行秒戳（时间）')),
+                      DropdownMenuItem(
+                          value: 'countdown', child: Text('倒计时（-步长）')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => pulseType = v);
+                    },
+                  ),
+                  if (pulseType == 'increment' || pulseType == 'countdown') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: stepCtrl,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: '每次脉冲的步长',
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('循环触发', style: TextStyle(fontSize: 13)),
+                    value: loop,
+                    onChanged: (v) => setDialogState(() => loop = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('初始为运行状态',
+                        style: TextStyle(fontSize: 13)),
+                    subtitle: const Text(
+                      '仅当有按钮连了「点击启停」时才生效；'
+                      '没有这类连线时定时器一律自动运行',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    value: autoStart,
+                    onChanged: (v) => setDialogState(() => autoStart = v),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '定时器在运行时不显形，只对外发出脉冲，'
+                    '摆在 PCB 外也能正常工作。\n'
+                    '启停方式由联动决定：接了开关组件则受其控制，'
+                    '接了按钮的「点击启停」则由玩家操作，两者都没有就自动运行。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true && mounted) {
+      final index = _elements.indexWhere((e) => e.id == element.id);
+      if (index != -1) {
+        // 间隔必须为正：0 会让定时器每帧触发，直接卡死界面。
+        final interval =
+            (double.tryParse(intervalCtrl.text.trim()) ?? 1.0).clamp(0.1, 3600.0);
+        final delay =
+            (double.tryParse(delayCtrl.text.trim()) ?? 0.0).clamp(0.0, 3600.0);
+        final maxTicks = (int.tryParse(maxTicksCtrl.text.trim()) ?? 0)
+            .clamp(0, 1000000);
+        props['interval'] = interval.toDouble();
+        props['initialDelay'] = delay.toDouble();
+        props['maxTicks'] = maxTicks.toInt();
+        props['pulseType'] = pulseType;
+        props['stepValue'] = double.tryParse(stepCtrl.text.trim()) ?? 1.0;
+        props['loop'] = loop;
+        props['isRunning'] = autoStart;
+        setState(() {
+          _elements[index] = _elements[index].copyWith(
+            module: module.copyWith(
+              name: nameCtrl.text.trim().isEmpty ? module.name : nameCtrl.text.trim(),
+              properties: props,
+            ),
+          );
+        });
+        _setupEventBusListener();
+        _persistAssemblyElements();
+      }
+    }
+
+    nameCtrl.dispose();
+    intervalCtrl.dispose();
+    delayCtrl.dispose();
+    maxTicksCtrl.dispose();
+    stepCtrl.dispose();
+  }
+
+  /// A14-2：计算节点编辑器。
+  ///
+  /// 参数口 A/B/C 可各自启停：比较类运算固定用两个，
+  /// `set` 只取第一个，加减乘除则对所有启用项依次运算。
+  Future<void> _showMathNodeEditorDialog(UIElement element) async {
+    final module = element.module;
+    if (module == null) return;
+    final props = Map<String, dynamic>.from(
+      _deepCloneValue(module.properties) as Map,
+    );
+
+    const paramKeys = ['paramA', 'paramB', 'paramC'];
+    final nameCtrl = TextEditingController(text: module.name);
+    final ctrls = {
+      for (final key in paramKeys)
+        key: TextEditingController(
+          text: ((props[key] as num?)?.toDouble() ?? 0.0).toString(),
+        ),
+    };
+    var operation = props['operation']?.toString() ?? '+';
+    final rawActive = props['activeParams'];
+    final active = <String>{
+      ...(rawActive is List
+          ? rawActive.map((e) => e.toString()).where(paramKeys.contains)
+          : const <String>['paramA', 'paramB']),
+    };
+    if (active.isEmpty) active.addAll(['paramA', 'paramB']);
+
+    const comparisons = {'>', '<', '>=', '<=', '=='};
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final isComparison = comparisons.contains(operation);
+          final isSet = operation == 'set';
+          return AlertDialog(
+            title: const Text('计算节点'),
+            content: SizedBox(
+              width: 400,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(labelText: '名称'),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: operation,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: '运算方式',
+                        isDense: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'set', child: Text('设定值（取第 1 个启用参数）')),
+                        DropdownMenuItem(value: '+', child: Text('连续加法')),
+                        DropdownMenuItem(value: '-', child: Text('连续减法')),
+                        DropdownMenuItem(value: '*', child: Text('连续乘法')),
+                        DropdownMenuItem(value: '/', child: Text('连续除法')),
+                        DropdownMenuItem(value: '>', child: Text('大于')),
+                        DropdownMenuItem(value: '<', child: Text('小于')),
+                        DropdownMenuItem(value: '>=', child: Text('大于等于')),
+                        DropdownMenuItem(value: '<=', child: Text('小于等于')),
+                        DropdownMenuItem(value: '==', child: Text('等于')),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setDialogState(() {
+                          operation = v;
+                          // 比较运算固定两个参数口，切过去时收敛，
+                          // 避免留下第三个参数却不参与运算的困惑。
+                          if (comparisons.contains(v)) {
+                            active
+                              ..clear()
+                              ..addAll(['paramA', 'paramB']);
+                          } else if (v == 'set') {
+                            active
+                              ..clear()
+                              ..add('paramA');
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    for (final key in paramKeys) ...[
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: active.contains(key),
+                            // 比较与设定值的参数口数量固定，不允许改。
+                            onChanged: (isComparison || isSet)
+                                ? null
+                                : (v) => setDialogState(() {
+                                      if (v == true) {
+                                        active.add(key);
+                                      } else if (active.length > 1) {
+                                        active.remove(key);
+                                      }
+                                    }),
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: ctrls[key],
+                              enabled: active.contains(key),
+                              keyboardType: const TextInputType
+                                  .numberWithOptions(decimal: true),
+                              decoration: InputDecoration(
+                                labelText: '参数 ${key.substring(5)}',
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    const Text(
+                      '这里填的是默认值。参数口可由联动器动态覆盖，'
+                      '计算结果同样通过联动器输出给其他组件。'
+                      '计算节点在运行时不显形，摆在 PCB 外也能工作。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF777783),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (saved == true && mounted) {
+      final index = _elements.indexWhere((e) => e.id == element.id);
+      if (index != -1) {
+        props['operation'] = operation;
+        for (final key in paramKeys) {
+          props[key] = double.tryParse(ctrls[key]!.text.trim()) ?? 0.0;
+        }
+        // 保持 A/B/C 的固定顺序，否则连续运算的结果会随勾选顺序变化。
+        props['activeParams'] =
+            paramKeys.where(active.contains).toList();
+        setState(() {
+          _elements[index] = _elements[index].copyWith(
+            module: module.copyWith(
+              name: nameCtrl.text.trim().isEmpty ? module.name : nameCtrl.text.trim(),
+              properties: props,
+            ),
+          );
+        });
+        _setupEventBusListener();
+        _persistAssemblyElements();
+      }
+    }
+
+    nameCtrl.dispose();
+    for (final c in ctrls.values) {
+      c.dispose();
+    }
+  }
+
   Future<void> _showAtomInstanceEditorDialog(UIElement element) async {
     final module = element.module;
     if (module == null) return;
-    if (const {'linker', 'page_router', 'math_node', 'timer'}.contains(module.type)) {
+    // linker / page_router 有各自的专属配置对话框。
+    if (const {'linker', 'page_router'}.contains(module.type)) return;
+    // A14-2：timer / math_node 是纯逻辑件，参数与显示类组件差别太大，
+    // 塞进通用对话框会让两边都难用，各自开一个精简编辑器。
+    if (module.type == 'timer') {
+      await _showTimerEditorDialog(element);
+      return;
+    }
+    if (module.type == 'math_node') {
+      await _showMathNodeEditorDialog(element);
       return;
     }
 

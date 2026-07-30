@@ -1839,6 +1839,23 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             color: const Color(0xFF00ACC1),
             module: _assetModuleTemplate('atom_linker_basic'),
           ),
+          // A14-2：这两个是纯逻辑件，运行时隐形。
+          // 渲染、尺寸预设、linker 方案早就齐了，只是一直没有资产栏入口，
+          // 导致「定时触发剧情」「属性公式计算」这两类玩法做不了。
+          _AssemblyAssetItem.module(
+            title: '定时器',
+            subtitle: '周期脉冲',
+            icon: Icons.timer_rounded,
+            color: const Color(0xFFFF9100),
+            module: _assetModuleTemplate('atom_timer_basic'),
+          ),
+          _AssemblyAssetItem.module(
+            title: '计算节点',
+            subtitle: '数值运算',
+            icon: Icons.calculate_rounded,
+            color: const Color(0xFF7E57C2),
+            module: _assetModuleTemplate('atom_logic_math_node'),
+          ),
         ];
       case 'interaction':
         return [
