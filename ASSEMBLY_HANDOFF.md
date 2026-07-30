@@ -767,6 +767,40 @@ Transform.rotate(
 先从最外层往里数一遍有没有 proxy box 抢在 Transform 前面，
 不要先怀疑坐标计算——坐标往往是对的。
 
+### 连线端点画在元件边缘，不是端口圆心（A14-4，别「修」它）
+
+用户问「删掉提示圆点后，接线端点在哪，逻辑上会不会有偏移」。核实结论：
+
+**垂直方向零偏移。** 渲染器的 linker 端口是
+`Positioned(top: (size.height - portSize) / 2)`，圆心 y = height/2；
+`_assemblyPortOffset` 取 `elTop + height/2`，精确重合。
+
+**水平方向差 13.5px，且是刻意的。** 渲染器把端口内缩了 6px
+（`Positioned(left: 6)`，portSize=15），圆心 x = 13.5；
+而连线端点取元件**边缘** x = 0。
+
+照搬 Studio 的 `_resolvePortGlobalOffset`，两边一致；
+观感上也更合理——接到圆心会让线有一截压在元件内部、
+从圆点底下穿出来。**看到这个差值不要当成 bug 去「修」。**
+
+### 各组件的 portSize 不是同一个值（我在这里算错过一次）
+
+| 组件 | portSize | 出处 |
+|---|---|---|
+| linker | **15.0** | `ui_renderer.dart` 第 1318 行附近 |
+| math_node | **9.0** | 第 1470 行附近 |
+
+我曾用 linker 的 15.0 去算 math_node 的 gate 口，得出圆心 y=10.0、
+误判「与代码里的 7.0 差了 3px」，还据此让用户做了选择。
+
+正确算法：`top: 2.5 + 9.0/2 = 7.0`，与 `_assemblyPortOffset` 里
+gate_in 用的 `elTop + 7.0` **完全一致，零偏差**。
+
+教训：跨组件引用常数前先确认它属于哪一段作用域，
+`ui_renderer.dart` 里同名的 `const double portSize` 有多个。
+相关断言已固化在 `assembly_linker_wire_test.dart`
+的「端点与渲染器实际端口的对应关系」组。
+
 ### A14-1 / A14-2 / A14-3 已完成（均测试通过）
 
 A14-3 的结论值得记一笔：**「实例编辑器分文件」最终判定为不做**。

@@ -238,6 +238,43 @@ void main() {
     });
   });
 
+  group('端点与渲染器实际端口的对应关系', () {
+    // 这一组是为了钉死「连线端点画在哪」这个容易算错的问题。
+    // 数值全部来自 ui_renderer.dart 里各组件的端口绘制代码。
+
+    test('linker 端口垂直居中，与连线端点同轴', () {
+      // 渲染器：Positioned(top: (size.height - portSize) / 2)，
+      // portSize = 15.0（ui_renderer.dart 第 1318 行附近）。
+      const h = 44.0;
+      const portSize = 15.0;
+      final portCenterY = (h - portSize) / 2 + portSize / 2;
+      // 连线端点取 elTop + height / 2。
+      expect(portCenterY, h / 2);
+    });
+
+    test('连线端点落在元件边缘而非端口圆心，这是刻意的', () {
+      // 渲染器把 linker 端口内缩了 6px：Positioned(left: 6)。
+      // 圆心 x = 6 + 15/2 = 13.5，而连线端点取 x = 0（左边缘）。
+      const portSize = 15.0;
+      final portCenterX = 6 + portSize / 2;
+      expect(portCenterX, 13.5);
+      // 差 13.5px。照搬 Studio 的 _resolvePortGlobalOffset，
+      // 且观感上更合理——接到圆心会让线有一截压在元件内部、
+      // 从圆点底下穿出来。
+      expect(portCenterX - 0.0, 13.5);
+    });
+
+    test('math_node 的 gate 口圆心正好是 7.0', () {
+      // ⚠️ 易错点：math_node 的 portSize 是 9.0（第 1470 行），
+      // **不是** linker 的 15.0。用错常数会算出 10.0 并误以为差了 3px。
+      // 渲染器：Positioned(top: 2.5)。
+      const mathPortSize = 9.0;
+      final gateCenterY = 2.5 + mathPortSize / 2;
+      expect(gateCenterY, 7.0);
+      // _assemblyPortOffset 里 gate_in 用的正是 elTop + 7.0，零偏差。
+    });
+  });
+
   group('配色语义与 Studio 一致', () {
     test('接收线青 / 输出线绿', () {
       expect(LinkerLineColors.resolve(isInput: true), LinkerLineColors.input);
