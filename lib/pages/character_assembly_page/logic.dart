@@ -3043,6 +3043,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   // ========== A14-1d：精确几何 / 精确位移 ==========
 
+  /// 纯逻辑件：运行时不渲染，只在编辑器里显形。
+  ///
+  /// 它们没有视觉尺寸与朝向可言，因此不提供精确几何编辑。
+  /// 位置仍可拖动——作者会靠摆放位置给逻辑件分区归类。
+  bool _isLogicOnlyElement(UIElement element) {
+    final type = element.module?.type;
+    if (type == null) return false;
+    return const {'linker', 'page_router', 'math_node', 'timer'}
+        .contains(type);
+  }
+
   /// 是否禁止改动几何（半锁与全锁都禁）。
   bool _isGeometryLocked(UIElement element) =>
       element.layoutLocked || element.sealed;

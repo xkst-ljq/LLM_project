@@ -809,12 +809,17 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               ],
             ),
             // 精确几何：X / Y / 宽 / 高 / 旋转，与 Studio 同一套表单。
-            _buildRailButton(
-              icon: Icons.straighten_rounded,
-              label: '几何',
-              color: const Color(0xFF00838F),
-              onTap: locked ? null : () => _showGeometryEditorDialog(element),
-            ),
+            //
+            // 逻辑件不给这个按钮：它们运行时不渲染，画布上的位置只是
+            // 作者自己的归类摆放，拖一下就够了；宽高与旋转对它们更是
+            // 没有意义（用户判断）。
+            if (!_isLogicOnlyElement(element))
+              _buildRailButton(
+                icon: Icons.straighten_rounded,
+                label: '几何',
+                color: const Color(0xFF00838F),
+                onTap: locked ? null : () => _showGeometryEditorDialog(element),
+              ),
             // 精确位移：展开屏幕底部的方向键盘。
             _buildRailButton(
               icon: Icons.open_with_rounded,
@@ -1257,95 +1262,27 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     ),
                   ),
                 ),
-              // 锁定标记：让作者知道这个组件为什么拖不动。
-              // 全锁用橙色实心锁，半锁用蓝色空心锁，一眼区分档位。
-              if (el.layoutLocked || el.sealed)
+              // A14-1e：标签流式排列。
+              //
+              // 原先四个标签各写死一组坐标，锁定（left:2）与容器面（left:4）
+              // 直接重叠；每加一个新标签都要重找空位。
+              // 改为顶部一行、底部一行，新标签往后接即可。
+              if (_topBadgesOf(el).isNotEmpty)
                 Positioned(
                   left: 2,
-                  top: -13,
-                  child: IgnorePointer(
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: el.sealed
-                            ? const Color(0xFFE65100)
-                            : const Color(0xFF0288D1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Icon(
-                        el.sealed
-                            ? Icons.lock_rounded
-                            : Icons.lock_outline_rounded,
-                        size: 9,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              if (_dataChannelOf(el.module) != null)
-                Positioned(
                   right: 2,
                   top: -14,
                   child: IgnorePointer(
-                    child: _buildDataChannelChip(_dataChannelOf(el.module)!),
+                    child: _buildBadgeRow(_topBadgesOf(el)),
                   ),
                 ),
-              // 关键职责徽标：让作者一眼看出哪个按钮承担了该 UI 的关键操作。
-              if (UISemanticRole.isKeyAction(el.module))
+              if (_bottomBadgesOf(el).isNotEmpty)
                 Positioned(
-                  left: 4,
+                  left: 2,
+                  right: 2,
                   bottom: -14,
                   child: IgnorePointer(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: UISemanticRole.colorOf(_info.mode),
-                        borderRadius: BorderRadius.circular(5),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.88),
-                          width: 0.7,
-                        ),
-                      ),
-                      child: Text(
-                        UISemanticRole.actionLabelOf(_info.mode),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          height: 1.0,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              if (el.module?.properties['is_overlay_container'] == true)
-                Positioned(
-                  left: 4,
-                  top: -14,
-                  child: IgnorePointer(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE65100),
-                        borderRadius: BorderRadius.circular(5),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.88),
-                          width: 0.7,
-                        ),
-                      ),
-                      child: const Text(
-                        '容器面',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          height: 1.0,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
+                    child: _buildBadgeRow(_bottomBadgesOf(el)),
                   ),
                 ),
             ],
@@ -2160,6 +2097,89 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           ],
         ),
       ),
+    );
+  }
+
+  /// A14-1e：顶部标签（锁定 / 容器面 / 数据通道）。
+  ///
+  /// 顺序即优先级：状态类在前、配置类在后。
+  /// 新增标签直接往列表里加，不用再找空位。
+  List<Widget> _topBadgesOf(UIElement el) {
+    final badges = <Widget>[];
+
+    if (el.layoutLocked || el.sealed) {
+      // 全锁橙色实心锁，半锁蓝色空心锁，一眼区分档位。
+      badges.add(_buildIconBadge(
+        icon: el.sealed ? Icons.lock_rounded : Icons.lock_outline_rounded,
+        color: el.sealed ? const Color(0xFFE65100) : const Color(0xFF0288D1),
+      ));
+    }
+
+    if (el.module?.properties['is_overlay_container'] == true) {
+      badges.add(_buildTextBadge('容器面', const Color(0xFFE65100)));
+    }
+
+    final channel = _dataChannelOf(el.module);
+    if (channel != null) {
+      badges.add(_buildDataChannelChip(channel));
+    }
+
+    return badges;
+  }
+
+  /// 底部标签（关键职责）。
+  List<Widget> _bottomBadgesOf(UIElement el) {
+    final badges = <Widget>[];
+    if (UISemanticRole.isKeyAction(el.module)) {
+      badges.add(_buildTextBadge(
+        UISemanticRole.actionLabelOf(_info.mode),
+        UISemanticRole.colorOf(_info.mode),
+      ));
+    }
+    return badges;
+  }
+
+  /// 标签行：横向排列，超出组件宽度时换行而不是被裁掉。
+  Widget _buildBadgeRow(List<Widget> badges) {
+    return Wrap(
+      spacing: 3,
+      runSpacing: 2,
+      children: badges,
+    );
+  }
+
+  Widget _buildTextBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.88),
+          width: 0.7,
+        ),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          height: 1.0,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIconBadge({required IconData icon, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Icon(icon, size: 9, color: Colors.white),
     );
   }
 

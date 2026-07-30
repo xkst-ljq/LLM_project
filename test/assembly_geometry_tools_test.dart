@@ -45,6 +45,10 @@ Size clampSize(String type, double w, double h) {
       h.clamp(b.minH, b.maxH).toDouble());
 }
 
+/// 复刻 `_isLogicOnlyElement`：纯逻辑件运行时不渲染。
+bool isLogicOnly(String type) =>
+    const {'linker', 'page_router', 'math_node', 'timer'}.contains(type);
+
 void main() {
   group('几何锁定', () {
     test('半锁与全锁都禁止改几何', () {
@@ -126,6 +130,22 @@ void main() {
     test('未旋转时无需外层包裹，行为不变', () {
       final el = _el('a');
       expect(el.rotation, 0.0);
+    });
+  });
+
+  group('逻辑件不提供精确几何', () {
+    // 它们运行时不渲染，宽高与旋转没有意义；
+    // 位置仍可拖动——作者会靠摆放位置给逻辑件分区归类。
+    test('四种纯逻辑件都被识别', () {
+      for (final type in ['linker', 'page_router', 'math_node', 'timer']) {
+        expect(isLogicOnly(type), isTrue, reason: type);
+      }
+    });
+
+    test('显示类组件不受影响', () {
+      for (final type in ['text', 'button', 'slider', 'progress', 'image']) {
+        expect(isLogicOnly(type), isFalse, reason: type);
+      }
     });
   });
 
