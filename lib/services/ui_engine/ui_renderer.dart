@@ -12,6 +12,7 @@ import 'element_animation.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
+import 'ripple_mesh_distortion.dart';
 import 'message_flow_scope.dart';
 import 'select_option.dart';
 import 'text_highlight_scope.dart';
@@ -570,42 +571,26 @@ class UIRenderer {
         );
 
       case ElementAnimationType.ripple:
-        // intensity 换算回半径：旧默认 150px 对应 intensity 0.6。
-        final double radius =
-            250.0 * intensity * t.clamp(0.0, 1.0);
-        final double opacity = (1.0 - t).clamp(0.0, 1.0);
-        return Stack(
-          children: [
-            child,
-            Positioned.fill(
-              child: IgnorePointer(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(borderRadius),
-                  child: Center(
-                    child: Container(
-                      width: radius * 2,
-                      height: radius * 2,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: opacity * 0.55),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: opacity * 0.85),
-                          width: 2.0,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: accent.withValues(alpha: opacity * 0.4),
-                            blurRadius: 12,
-                            spreadRadius: 3,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+        // 方案 C：网格折射。
+        //
+        // 旧实现是「盖一个扩大的白圈」，用户评价「很敷衍」——
+        // 它模拟的是波的轮廓，组件本身纹丝不动，缺少介质被扰动的感觉；
+        // 且进度条这类扁长组件上，圆被裁得只剩中间一条窄带。
+        //
+        // 现在改为抓取组件纹理 + 网格顶点扰动，做出真正的折射（透镜）效果，
+        // 并叠加本体非等比形变（横纵反相）产生动荡感。
+        // 波会撞到组件边界后反弹，符合瞬时事件的手感。
+        return Transform(
+          alignment: Alignment.center,
+          transform: RippleMeshDistortion.bodyDistortion(t, intensity),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(borderRadius),
+            child: RippleDistortionView(
+              progress: t.clamp(0.0, 1.0),
+              intensity: intensity,
+              child: child,
             ),
-          ],
+          ),
         );
 
       case ElementAnimationType.flash:
