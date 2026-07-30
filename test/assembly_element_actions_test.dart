@@ -144,6 +144,37 @@ void main() {
       expect(candidates, ['free', 'half']);
     });
 
+    // 两档共用一栏：按状态决定露几个按钮，默认只占一格。
+    List<String> visibleLockButtons(UIElement el) => [
+          if (!el.sealed) 'half',
+          if (el.layoutLocked || el.sealed) 'full',
+        ];
+
+    test('未锁时只显示半锁按钮', () {
+      expect(visibleLockButtons(_el('a')), ['half']);
+    });
+
+    test('半锁后全锁按钮才出现', () {
+      // 未锁时不给全锁入口——避免跳过半锁直接全锁，
+      // 那样解锁时突然回落到半锁态会显得没来由。
+      final el = _el('a').copyWith(layoutLocked: true);
+      expect(visibleLockButtons(el), ['half', 'full']);
+    });
+
+    test('全锁时半锁隐藏，全锁顶替其位置', () {
+      final el = _el('a').copyWith(layoutLocked: true, sealed: true);
+      expect(visibleLockButtons(el), ['full']);
+    });
+
+    test('全锁再点一次回到半锁，而不是直接解锁', () {
+      final el = _el('a').copyWith(layoutLocked: true, sealed: true);
+      // _toggleElementSealed：next=false 时保留 layoutLocked。
+      final next = el.copyWith(sealed: false);
+      expect(next.sealed, isFalse);
+      expect(next.layoutLocked, isTrue);
+      expect(visibleLockButtons(next), ['half', 'full']);
+    });
+
     test('锁定状态参与序列化，跨编辑器不丢失', () {
       final el = _el('a').copyWith(sealed: true, layoutLocked: true);
       final restored = UIElement.fromJson(el.toJson());
