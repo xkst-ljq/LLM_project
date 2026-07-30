@@ -1034,8 +1034,15 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               IgnorePointer(
                 child: UISceneModeScope(
                   isStudioCreationMode: true,
+                  // 传去掉旋转的副本：外层 Positioned 已经套了
+                  // Transform.rotate，而 UIRenderer.render 内部**也会**
+                  // 按 element.rotation 转一次，不剥离就会转两倍
+                  // （输入 30° 实际变成 60°）。与 Studio 的 elNoRot 同理。
                   child: Builder(
-                    builder: (ctx) => UIRenderer.render(ctx, displayElement),
+                    builder: (ctx) => UIRenderer.render(
+                      ctx,
+                      displayElement.copyWith(rotation: 0.0),
+                    ),
                   ),
                 ),
               ),
@@ -1221,8 +1228,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 child: IgnorePointer(
                   child: UISceneModeScope(
                     isStudioCreationMode: true,
+                    // 同上：旋转由外层统一负责，这里必须剥离。
                     child: Builder(
-                      builder: (ctx) => UIRenderer.render(ctx, el),
+                      builder: (ctx) =>
+                          UIRenderer.render(ctx, el.copyWith(rotation: 0.0)),
                     ),
                   ),
                 ),

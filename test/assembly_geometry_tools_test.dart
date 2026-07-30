@@ -101,6 +101,34 @@ void main() {
     });
   });
 
+  group('旋转只能应用一次', () {
+    // UIRenderer.render 内部已经按 element.rotation 包了 Transform.rotate。
+    // 画布若在外层再套一层用于让选中框跟随旋转，
+    // 就必须把传进渲染器的副本剥离旋转，否则角度翻倍
+    // （输入 30° 实际转 60°，输入 90° 实际转 180°）。
+    test('传给渲染器的副本旋转必须归零', () {
+      final el = _el('a').copyWith(rotation: 30);
+      final forRenderer = el.copyWith(rotation: 0.0);
+      expect(el.rotation, 30);
+      expect(forRenderer.rotation, 0.0);
+    });
+
+    test('剥离旋转不影响其他几何属性', () {
+      final el = _el('a',
+              offset: const Offset(12, 34), size: const Size(80, 40))
+          .copyWith(rotation: 45);
+      final forRenderer = el.copyWith(rotation: 0.0);
+      expect(forRenderer.offset, const Offset(12, 34));
+      expect(forRenderer.size, const Size(80, 40));
+      expect(forRenderer.id, el.id);
+    });
+
+    test('未旋转时无需外层包裹，行为不变', () {
+      final el = _el('a');
+      expect(el.rotation, 0.0);
+    });
+  });
+
   group('D-Pad 布局', () {
     test('上下行与中间行等宽，箭头才能对齐', () {
       // 上下行 = 占位 52 + 箭头 40 + 占位 52

@@ -359,11 +359,23 @@ Assembly 那套偏窄偏高，`FittedBox` 会把公式压得很小，
 几何弹窗的 Column 没有包 `SingleChildScrollView`。
 键盘占掉一半屏高后可用空间骤减，必须可滚动。
 
-**3. 旋转后选中框不跟随**
-Assembly 的画布**从未应用过 `rotation`**——元素转了，
+**3. 旋转后选中框不跟随 → 修复时又引入「角度翻倍」**
+Assembly 的画布**从未在外层应用过 `rotation`**——元素转了，
 虚线框还是正的。改为在 `Positioned` 内套 `Transform.rotate`
-包住整个节点，边框与徽标都在其内部，会一起转。
-（Studio 是 `Transform.rotate(child: rootTree)`，同样的做法。）
+包住整个节点，边框与徽标就会一起转。
+
+但只做这一步会**转两倍**（用户实测：输入 30° 变 60°，90° 变 180°）：
+`UIRenderer.render` 内部**本来就**按 `element.rotation`
+包了一层 `Transform.rotate`。
+
+> **规则：旋转在整条链路上只能应用一次。**
+> 画布若在外层包 `Transform.rotate`（为了让选中框跟随），
+> 传进 `UIRenderer.render` 的副本就必须 `copyWith(rotation: 0.0)`。
+> Studio 早就这么做了（`final elNoRot = el.copyWith(rotation: 0.0)`），
+> Assembly 照搬外层包裹时漏了这一半。
+
+注意 `_buildReadonlyPageElement`（祖先页只读层）**不要剥离**——
+它没有外层包裹，那一次旋转正是它需要的。
 
 **4. 微调键盘离资产栏太远**
 初版 `bottom: 168` 是为了避开展开态的资产抽屉。
