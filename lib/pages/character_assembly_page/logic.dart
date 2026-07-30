@@ -7500,25 +7500,142 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ),
     );
     if (!mounted || selectedParentId == null) return;
-    final pageIndex = _pages.indexWhere((candidate) => candidate.id == page.id);
-    if (pageIndex == -1) return;
+    _applyPageReparent(page.id, selectedParentId);
+  }
+
+  /// 执行换父。弹窗与拖放共用同一条通路——
+  /// 两份实现迟早会漂移（sortOrder 重排这种事最容易只改一边）。
+  ///
+  /// 返回是否真的改动了。
+  bool _applyPageReparent(String pageId, String newParentId) {
+    final pageIndex = _pages.indexWhere((candidate) => candidate.id == pageId);
+    if (pageIndex == -1) return false;
     final oldParentId = _pages[pageIndex].parentPageId;
-    final newParentId = selectedParentId;
-    final newSiblingCount = _pages.where((p) => p.parentPageId == newParentId).length;
+    if (oldParentId == newParentId) return false;
+
+    // 防环：不能把页面挂到自己的后代下面，否则页面树成环，
+    // `_pageDepth` 靠 visited 兜底不会死循环，但那一支会从树上消失。
+    if (newParentId == pageId || _isDescendantPage(newParentId, pageId)) {
+      return false;
+    }
+
+    _pushHistory();
+
+    final newSiblingCount =
+        _pages.where((p) => p.parentPageId == newParentId).length;
     _pages[pageIndex].parentPageId = newParentId;
     _pages[pageIndex].sortOrder = newSiblingCount;
 
+    // 原父级下的兄弟重排，补上离开留下的空位。
     final oldSiblings = _pages
-        .where((p) => p.parentPageId == oldParentId && p.id != page.id)
+        .where((p) => p.parentPageId == oldParentId && p.id != pageId)
         .toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     for (var i = 0; i < oldSiblings.length; i++) {
-      final index = _pages.indexWhere((candidate) => candidate.id == oldSiblings[i].id);
+      final index =
+          _pages.indexWhere((candidate) => candidate.id == oldSiblings[i].id);
       if (index != -1) _pages[index].sortOrder = i;
     }
 
     setState(() {});
     _persistAssemblyElements();
+    return true;
+  }
+
+  // ==========================================================================
+  // 灵感池 4.2：叠加页拖放换父级
+  // ==========================================================================
+  //
+  // 手势冲突是这样消解的（用户的观察）：
+  //
+  // | 页面类型 | 有无父级 | 需要的操作 |
+  // |---|---|---|
+  // | 平级页 | 无父级 | 只需排序 |
+  // | 叠加页 | 有父级 | 只需换父（同级顺序不影响打开） |
+  //
+  // **每种页面只有一种拖动行为**，因此不需要在同一套手势里区分
+  // 「排序」与「换父」两种意图——那正是当初判定「手势风险高」的根源。
+  // 平级页保留 ReorderableListView，叠加页整体换成 Draggable/DragTarget。
+
+  /// 正在被拖动的叠加页 id。null 表示没有拖放进行中。
+  String? _draggingPageId;
+
+  /// 当前悬停其上的候选父页 id。
+  String? _dragHoverParentId;
+
+  /// 某个页面能否作为 [pageId] 的新父级。
+  ///
+  /// 判据与 `_reparentCandidatesForPage` 保持一致——
+  /// 拖放能放进去、弹窗里却查不到这个候选，会让作者觉得随机。
+  bool _canDropPageInto(String pageId, String targetId) {
+    final pageIndex = _pages.indexWhere((p) => p.id == pageId);
+    if (pageIndex == -1) return false;
+    final page = _pages[pageIndex];
+    if (!page.isOverlay) return false;
+    if (targetId == pageId) return false;
+    if (page.parentPageId == targetId) return false;
+    // 不能挂到自己的后代下面。
+    if (_isDescendantPage(targetId, pageId)) return false;
+
+    final targetIndex = _pages.indexWhere((p) => p.id == targetId);
+    if (targetIndex == -1) return false;
+    final target = _pages[targetIndex];
+    final depth = _pageDepth(page);
+    final targetDepth = _pageDepth(target);
+    if (depth == 1) {
+      return targetDepth <= 1;
+    }
+    return target.isOverlay && targetDepth == 1;
+  }
+
+  void _beginPageDrag(String pageId) {
+    setState(() {
+      _draggingPageId = pageId;
+      _dragHoverParentId = null;
+    });
+  }
+
+  void _endPageDrag() {
+    if (_draggingPageId == null && _dragHoverParentId == null) return;
+    setState(() {
+      _draggingPageId = null;
+      _dragHoverParentId = null;
+    });
+  }
+
+  void _setPageDragHover(String? targetId) {
+    if (_dragHoverParentId == targetId) return;
+    setState(() => _dragHoverParentId = targetId);
+  }
+
+  /// 落下：执行换父并给出反馈。
+  void _handlePageDrop(String pageId, String targetId) {
+    final pageName = _displayPageNameById(pageId);
+    final targetName = _displayPageNameById(targetId);
+    final moved = _applyPageReparent(pageId, targetId);
+    _endPageDrag();
+    if (!moved || !mounted) return;
+    HapticFeedback.selectionClick();
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 1600),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF455A64),
+        content: Text(
+          '「$pageName」已移入「$targetName」',
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  String _displayPageNameById(String pageId) {
+    final index = _pages.indexWhere((p) => p.id == pageId);
+    if (index == -1) return '页面';
+    return _displayPageName(_pages[index]);
   }
 
   void _scheduleInitialViewportCenter() {

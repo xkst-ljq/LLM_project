@@ -1997,11 +1997,17 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildPageTile(
+                  // 根页也要能接收：叠加页从深层拖回顶层时，
+                  // 落点就是它。没有这一层的话，拖出去容易拖不回来。
+                  _buildPageDropZone(
                     rootPage,
-                    depth: 0,
-                    draggable: false,
-                    showMenuBadge: true,
+                    child: _buildPageTile(
+                      rootPage,
+                      depth: 0,
+                      draggable: false,
+                      showMenuBadge: true,
+                      dropHighlight: _dragHoverParentId == rootPage.id,
+                    ),
                   ),
                   if (rootOverlays.isNotEmpty)
                     Padding(
@@ -2045,6 +2051,40 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         .toList();
     if (children.isEmpty) return const SizedBox.shrink();
 
+    // 灵感池 4.2：叠加页组走「拖放换父」，平级页组保留「同级排序」。
+    //
+    // 分流的依据（用户的观察）：平级页没有父级、只需要排序；
+    // 叠加页同级顺序不影响打开、只需要换父。每种页面只有一种拖动行为，
+    // 因此不必在同一套手势里区分两种意图——这消解了原先
+    // 「手势风险高」的判定。
+    //
+    // 混合组（同一父级下既有平级页又有叠加页）实际只出现在根层：
+    // 那里 excludeRoot 分支拿到的全是平级页。这里按多数决分流，
+    // 并对个别不匹配的条目单独处理。
+    final bool overlayGroup = children.every((page) => page.isOverlay);
+    if (overlayGroup) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final page in children)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildDraggablePageTile(page, depth: depth),
+                  if (_directChildPages(page.id).isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: _buildPageGroup(page.id, depth + 1),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+
     return ReorderableListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -2076,11 +2116,15 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildPageTile(
+              _buildPageDropZone(
                 page,
-                depth: depth,
-                draggable: !_isRootBasePage(page),
-                dragIndex: index,
+                child: _buildPageTile(
+                  page,
+                  depth: depth,
+                  draggable: !_isRootBasePage(page),
+                  dragIndex: index,
+                  dropHighlight: _dragHoverParentId == page.id,
+                ),
               ),
               if (_directChildPages(page.id).isNotEmpty)
                 Padding(
@@ -2094,23 +2138,114 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
     );
   }
 
+  /// 纯落点包装：给「只接收、不被拖走」的条目用（根页 / 平级页）。
+  ///
+  /// 平级页自己走 ReorderableListView 的排序手势，
+  /// 不能再套 Draggable，否则两套拖动打架。
+  Widget _buildPageDropZone(AssemblyPage page, {required Widget child}) {
+    final dragging = _draggingPageId;
+    if (dragging == null || !_canDropPageInto(dragging, page.id)) {
+      return child;
+    }
+    final bool isHovered = _dragHoverParentId == page.id;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) {
+        final ok = _canDropPageInto(details.data, page.id);
+        if (ok) _setPageDragHover(page.id);
+        return ok;
+      },
+      onLeave: (_) {
+        if (_dragHoverParentId == page.id) _setPageDragHover(null);
+      },
+      onAcceptWithDetails: (details) => _handlePageDrop(details.data, page.id),
+      builder: (context, candidate, rejected) => Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isHovered
+                ? const Color(0xFF00E676)
+                : const Color(0xFF00E676).withValues(alpha: 0.35),
+            width: isHovered ? 2.0 : 1.2,
+          ),
+        ),
+        child: child,
+      ),
+    );
+  }
+
+  /// 叠加页条目：既可被拖走（换父），也可作为落点（收纳别的叠加页）。
+  ///
+  /// **DragTarget 必须包在 Draggable 外层**。反过来的话，
+  /// 拖动进行中 Draggable 会重建自身子树，落点判定跟着抖，
+  /// 这是「手势进行中不能改变自身所在的树结构」的老坑。
+  Widget _buildDraggablePageTile(AssemblyPage page, {required int depth}) {
+    final dragging = _draggingPageId;
+    final bool isBeingDragged = dragging == page.id;
+    final bool isHovered = _dragHoverParentId == page.id;
+
+    Widget tile = _buildPageTile(
+      page,
+      depth: depth,
+      draggable: false,
+      dropHighlight: isHovered,
+      dimmed: isBeingDragged,
+    );
+
+    final draggableTile = LongPressDraggable<String>(
+      data: page.id,
+      // 与 ReorderableDelayedDragStartListener 的手感对齐，
+      // 也避免与图层面板的纵向滚动打架。
+      delay: const Duration(milliseconds: 300),
+      onDragStarted: () => _beginPageDrag(page.id),
+      onDraggableCanceled: (_, _) => _endPageDrag(),
+      onDragEnd: (_) => _endPageDrag(),
+      feedback: Material(
+        color: Colors.transparent,
+        child: Opacity(
+          opacity: 0.9,
+          child: SizedBox(
+            width: 224,
+            child: _buildPageTile(
+              page,
+              depth: 0,
+              draggable: false,
+              elevated: true,
+            ),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.35, child: tile),
+      child: tile,
+    );
+
+    return _buildPageDropZone(page, child: draggableTile);
+  }
+
   Widget _buildPageTile(
     AssemblyPage page, {
     required int depth,
     required bool draggable,
     bool showMenuBadge = false,
     int? dragIndex,
+    bool dropHighlight = false,
+    bool dimmed = false,
+    bool elevated = false,
   }) {
     final selected = page.id == _activePage.id;
     final bool isOverlay = page.isOverlay;
-    final background = selected
-        ? (isOverlay
-            ? const Color(0xFF455A64)
-            : const Color(0xFF5E35B1))
-        : (isOverlay
-            ? const Color(0xFFF2F4F7)
-            : const Color(0xFFF8F7FC));
-    final foreground = selected ? Colors.white : const Color(0xFF111116);
+    // 悬停落点时整块染绿，比只描边更容易在余光里看到。
+    final background = dropHighlight
+        ? const Color(0xFF00E676).withValues(alpha: 0.18)
+        : selected
+            ? (isOverlay
+                ? const Color(0xFF455A64)
+                : const Color(0xFF5E35B1))
+            : (isOverlay
+                ? const Color(0xFFF2F4F7)
+                : const Color(0xFFF8F7FC));
+    final foreground = (selected && !dropHighlight)
+        ? Colors.white
+        : const Color(0xFF111116);
     final accent = isOverlay
         ? const Color(0xFF546E7A)
         : const Color(0xFF651FFF);
@@ -2121,10 +2256,15 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         color: background,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: selected
-              ? const Color(0xFFB2EBF2)
-              : Colors.black.withValues(alpha: 0.04),
+          color: dropHighlight
+              ? const Color(0xFF00E676)
+              : selected
+                  ? const Color(0xFFB2EBF2)
+                  : Colors.black.withValues(alpha: 0.04),
         ),
+        boxShadow: elevated
+            ? const [BoxShadow(color: Color(0x33000000), blurRadius: 10)]
+            : null,
       ),
       child: ListTile(
         dense: true,
@@ -2226,6 +2366,10 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         onTap: () => _activatePage(page.id),
       ),
     );
+
+    if (dimmed) {
+      tile = Opacity(opacity: 0.45, child: tile);
+    }
 
     if (draggable && dragIndex != null) {
       return ReorderableDelayedDragStartListener(
