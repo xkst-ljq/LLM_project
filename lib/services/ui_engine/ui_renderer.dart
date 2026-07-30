@@ -12,6 +12,7 @@ import 'element_animation.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
+import 'ripple_shader.dart';
 import 'message_flow_scope.dart';
 import 'select_option.dart';
 import 'text_highlight_scope.dart';
@@ -570,36 +571,23 @@ class UIRenderer {
         );
 
       case ElementAnimationType.ripple:
-        // 同心环扩散 + 壁面反弹。
+        // 方案 A：片元着色器逐像素折射。
         //
-        // 曾尝试用 drawVertices 网格变形做「放大镜折射」（方案 C），
-        // 三轮调参用户都反馈「看不出变化，就是抖动」。
-        // 复盘发现根因不在数学：捕获纹理的回调只写字段、从不触发重绘，
-        // 变形结果根本没被画出来——一直显示的是原图加轻微形变。
-        // 该方案已移除；若要做真折射应上片元着色器（方案 A）。
+        // 前五版都是 Canvas 叠加绘制（画环 / 渐变 / 加色混合），
+        // 底层像素一个都没动，用户始终觉得「像两个图层」。
+        // 那是叠加绘制的天花板，不是参数问题——
+        // 只有重采样纹理才能让组件内容本身被拉伸挤压。
         //
-        // 现在回到可靠的叠加绘制，但修掉旧版的三个硬伤：
-        // 旧版是单个正圆 + ClipRRect，进度条 200×12 上直径 300 的圆
-        // 只剩中间一条 12px 的窄带，即用户说的「只有中点很小一部分」。
-        final double ripplePhase = t.clamp(0.0, 1.0);
-        return Stack(
-          children: [
-            child,
-            Positioned.fill(
-              child: IgnorePointer(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(borderRadius),
-                  child: CustomPaint(
-                    painter: _RippleRingsPainter(
-                      progress: ripplePhase,
-                      intensity: intensity,
-                      color: accent,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
+        // 着色器不可用时 RippleShaderView 会原样显示 child，
+        // 不会崩溃也不会让组件消失。
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(borderRadius),
+          child: RippleShaderView(
+            progress: t.clamp(0.0, 1.0),
+            intensity: intensity,
+            tint: accent,
+            child: child,
+          ),
         );
 
       case ElementAnimationType.flash:
@@ -3447,134 +3435,6 @@ class _ParticleBurstPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ParticleBurstPainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.intensity != intensity ||
-        oldDelegate.color != color;
-  }
-}
-
-/// 水波：同心波纹扩散 + 壁面反弹。
-///
-/// ## 三次迭代的教训
-///
-/// 1. 单个正圆 + ClipRRect：进度条上只剩中间一条窄带
-///    （「只有中点很小一部分」）。
-/// 2. 椭圆完全跟随组件长宽比：环变成 16.7:1 的扁线
-///    （「极其扁的椭圆，一点也不像波纹」）。
-///    错在把「容器裁切的效果」提前烘焙成了「波的形状」。
-/// 3. 实色描边：`alpha 0.8` 的纯色圆环盖在内容上
-///    （「像在图像上加了几个同心圆环」）。
-///
-/// ## 现在的做法
-///
-/// 波纹**不是描边，是渐变光带**：
-/// 用 `RadialGradient` 在波前位置做一圈亮度渐强再渐弱的环，
-/// 边缘平滑趋于全透明，因此没有生硬的「圆环轮廓」。
-///
-/// 混合模式用 `BlendMode.plus`（加色）而非默认覆盖——
-/// 波纹与底层内容**相加**，亮处更亮、暗处保持，
-/// 看起来是光掠过水面，而不是一个不透明的环压在上面。
-class _RippleRingsPainter extends CustomPainter {
-  final double progress;
-  final double intensity;
-  final Color color;
-
-  const _RippleRingsPainter({
-    required this.progress,
-    required this.intensity,
-    required this.color,
-  });
-
-  /// 波前在 [0,1] 之间折返：撞到边界原路弹回。
-  ///
-  /// 用户要求「像波浪一样碰到壁面会反弹」，
-  /// 瞬时事件正需要「敲一下、整个组件荡一荡」的手感。
-  static double _front(double t, double phaseOffset) {
-    final d = t * 2.5 + phaseOffset;
-    final k = d.floor();
-    final f = d - k;
-    return k.isEven ? f : 1.0 - f;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty || progress <= 0 || progress >= 1) return;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    // 以对角线为基准，波前到 1.0 时刚好覆盖四角。
-    final maxRadius = math.sqrt(
-      (size.width / 2) * (size.width / 2) +
-          (size.height / 2) * (size.height / 2),
-    );
-    if (maxRadius <= 1.0) return;
-
-    // 纵向压缩仅在极扁组件上轻微收一点，下限 0.55——
-    // 完全跟随长宽比会退化成扁线（第 2 次迭代的错误）。
-    final aspect = size.height / size.width;
-    final squash =
-        aspect >= 1.0 ? 1.0 : (0.55 + 0.45 * aspect).clamp(0.55, 1.0);
-
-    final envelope = math.pow(1.0 - progress, 1.2).toDouble();
-    if (envelope <= 0.01) return;
-
-    // 光带的相对厚度（占总半径的比例）。
-    final bandWidth = (0.10 + 0.10 * intensity).clamp(0.06, 0.24);
-
-    canvas.save();
-    // 纵向压缩通过画布变换实现，渐变本身保持圆形。
-    canvas.translate(center.dx, center.dy);
-    canvas.scale(1.0, squash);
-    canvas.translate(-center.dx, -center.dy);
-
-    const phases = [0.0, 0.22, 0.44];
-    for (var i = 0; i < phases.length; i++) {
-      final front = _front(progress, phases[i]);
-      final fade = envelope * (1.0 - i * 0.3).clamp(0.0, 1.0);
-      if (fade <= 0.015) continue;
-      if (front <= 0.02) continue;
-
-      // 渐变的三个关键位置：内边缘、波峰、外边缘。
-      final inner = (front - bandWidth).clamp(0.0, 1.0);
-      final outer = (front + bandWidth).clamp(0.0, 1.0);
-      if (outer - inner < 0.01) continue;
-
-      final peakAlpha = (0.55 * fade * (0.6 + 0.6 * intensity))
-          .clamp(0.0, 1.0)
-          .toDouble();
-
-      final rect = Rect.fromCircle(center: center, radius: maxRadius);
-      final gradient = RadialGradient(
-        center: Alignment.center,
-        // stops 必须递增；两端全透明，中间是光带。
-        colors: [
-          color.withValues(alpha: 0.0),
-          color.withValues(alpha: peakAlpha * 0.35),
-          Colors.white.withValues(alpha: peakAlpha),
-          color.withValues(alpha: peakAlpha * 0.35),
-          color.withValues(alpha: 0.0),
-        ],
-        stops: [
-          inner,
-          (inner + front) / 2,
-          front,
-          (front + outer) / 2,
-          outer,
-        ],
-      );
-
-      canvas.drawRect(
-        rect,
-        Paint()
-          ..shader = gradient.createShader(rect)
-          // 加色混合：波纹与内容相加，是光掠过而非贴纸盖住。
-          ..blendMode = BlendMode.plus,
-      );
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _RippleRingsPainter oldDelegate) {
     return oldDelegate.progress != progress ||
         oldDelegate.intensity != intensity ||
         oldDelegate.color != color;

@@ -1,0 +1,237 @@
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+
+/// A12 水波折射（方案 A：片元着色器）。
+///
+/// ## 为什么必须是着色器
+///
+/// 水波前后改了五版，全是 Canvas 叠加绘制——在组件**上面**画圆环、
+/// 画渐变光带、加色混合。底层像素一个都没移动，
+/// 所以用户始终觉得「像两个图层」「不像波纹」。
+/// 那是叠加绘制的天花板，不是参数没调好。
+///
+/// 只有逐像素重采样才能让**组件内容本身**被拉伸挤压。
+///
+/// ## 方案 C 的教训（网格变形）
+///
+/// 曾用 `drawVertices` 做过一版，用户反馈「看不出任何变化」。
+/// 复盘发现根因不在数学：捕获纹理的回调只写字段、**从不 setState**，
+/// 变形结果压根没被画出来，一直显示的是 fallback 原图。
+///
+/// 所以这里的纹理捕获做了两件事保证链路真的通：
+/// 1. 捕获成功后**显式 setState**；
+/// 2. 只在动画开始时抓一次，不存在「每帧抓 → setState → 再抓」的循环。
+class RippleShaderLoader {
+  RippleShaderLoader._();
+
+  static ui.FragmentProgram? _program;
+  static bool _loading = false;
+  static bool _failed = false;
+
+  /// 着色器是否已就绪。未就绪时调用方应回退到无动画显示。
+  static bool get isReady => _program != null;
+
+  /// 加载失败（例如构建时漏配 `shaders:`）。失败后不再重试。
+  static bool get hasFailed => _failed;
+
+  static ui.FragmentShader? createShader() => _program?.fragmentShader();
+
+  /// 预加载。多次调用只会真正加载一次。
+  static Future<void> ensureLoaded() async {
+    if (_program != null || _loading || _failed) return;
+    _loading = true;
+    try {
+      _program = await ui.FragmentProgram.fromAsset(
+        'shaders/ripple_refraction.frag',
+      );
+    } catch (_) {
+      // 着色器缺失或编译失败时不应拖垮整个 UI，
+      // 调用方会退回「不播动画」而不是崩溃。
+      _failed = true;
+    } finally {
+      _loading = false;
+    }
+  }
+}
+
+/// 用着色器对子组件施加水波折射。
+///
+/// 纹理**只在动画开始时抓一次**，整段动画复用。
+/// 代价是这 600ms 内组件内容冻结——对瞬时事件（点击反馈）无感知；
+/// 换来的是不必每帧离屏渲染，也彻底避开了方案 C 那种
+/// 「抓取 → 重绘 → 再抓取」的循环陷阱。
+class RippleShaderView extends StatefulWidget {
+  final Widget child;
+  final double progress;
+  final double intensity;
+  final Color tint;
+
+  const RippleShaderView({
+    super.key,
+    required this.child,
+    required this.progress,
+    required this.intensity,
+    required this.tint,
+  });
+
+  @override
+  State<RippleShaderView> createState() => _RippleShaderViewState();
+}
+
+class _RippleShaderViewState extends State<RippleShaderView> {
+  final GlobalKey _boundaryKey = GlobalKey();
+  ui.Image? _snapshot;
+  bool _captureScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    RippleShaderLoader.ensureLoaded().then((_) {
+      if (mounted) setState(() {});
+    });
+    _scheduleCapture();
+  }
+
+  @override
+  void dispose() {
+    _snapshot?.dispose();
+    super.dispose();
+  }
+
+  void _scheduleCapture() {
+    if (_captureScheduled || _snapshot != null) return;
+    _captureScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final obj = _boundaryKey.currentContext?.findRenderObject();
+      if (obj is! RenderRepaintBoundary || obj.debugNeedsPaint) {
+        // 这一帧还没画完，下一帧再试。
+        _captureScheduled = false;
+        if (mounted) _scheduleCapture();
+        return;
+      }
+      try {
+        final image = obj.toImageSync(
+          pixelRatio: MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0,
+        );
+        // ⚠️ 必须 setState。方案 C 正是漏了这一步，
+        // 纹理抓到了却永远不重绘，等于整个特效没运行。
+        if (mounted) {
+          setState(() => _snapshot = image);
+        } else {
+          image.dispose();
+        }
+      } catch (_) {
+        // 抓取失败就一直显示原图，不要炸掉页面。
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = _snapshot;
+
+    // 纹理还没抓到、或着色器不可用时，原样显示。
+    // 宁可没有特效，也不能让组件消失或报错。
+    if (snapshot == null || !RippleShaderLoader.isReady) {
+      return RepaintBoundary(key: _boundaryKey, child: widget.child);
+    }
+
+    return CustomPaint(
+      painter: _RippleShaderPainter(
+        image: snapshot,
+        progress: widget.progress,
+        intensity: widget.intensity,
+        tint: widget.tint,
+      ),
+      // 尺寸由 child 决定；child 本身不再绘制（已经在纹理里）。
+      child: Opacity(opacity: 0.0, child: widget.child),
+    );
+  }
+}
+
+class _RippleShaderPainter extends CustomPainter {
+  final ui.Image image;
+  final double progress;
+  final double intensity;
+  final Color tint;
+
+  const _RippleShaderPainter({
+    required this.image,
+    required this.progress,
+    required this.intensity,
+    required this.tint,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final shader = RippleShaderLoader.createShader();
+    if (shader == null) return;
+
+    // 纵向压缩：仅在极扁组件上轻微收一点，下限 0.55。
+    // 完全跟随长宽比会让波纹退化成扁线（第三版的错误）。
+    final aspect = size.height / size.width;
+    final squash =
+        aspect >= 1.0 ? 1.0 : (0.55 + 0.45 * aspect).clamp(0.55, 1.0);
+
+    // ⚠️ 索引顺序必须与 .frag 里的 uniform 声明顺序完全一致。
+    // 错位不会报错，只会画出莫名其妙的结果。
+    shader
+      ..setFloat(0, size.width)
+      ..setFloat(1, size.height)
+      ..setFloat(2, progress.clamp(0.0, 1.0))
+      ..setFloat(3, intensity.clamp(0.0, 1.0))
+      ..setFloat(4, squash)
+      ..setFloat(5, tint.r)
+      ..setFloat(6, tint.g)
+      ..setFloat(7, tint.b)
+      ..setFloat(8, tint.a)
+      ..setImageSampler(0, image);
+
+    canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
+    shader.dispose();
+  }
+
+  @override
+  bool shouldRepaint(covariant _RippleShaderPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.intensity != intensity ||
+        oldDelegate.tint != tint ||
+        !identical(oldDelegate.image, image);
+  }
+}
+
+/// 与着色器保持一致的波前函数，供测试与文档参考。
+///
+/// GLSL 里那份是实际生效的实现；这里复刻一份是为了能在纯 Dart 测试中
+/// 校验数学不变量——着色器本身无法在单元测试里运行。
+class RippleWaveMath {
+  RippleWaveMath._();
+
+  static const double bounces = 2.5;
+
+  static double waveFront(double t, double phaseOffset) {
+    final d = t * bounces + phaseOffset;
+    final k = d.floor();
+    final f = d - k;
+    return k.isEven ? f : 1.0 - f;
+  }
+
+  static double ringProfile(double dist, double front, double width) {
+    final x = (dist - front) / width;
+    if (x.abs() > 2.0) return 0.0;
+    return math.exp(-3.0 * x * x);
+  }
+
+  static double envelope(double t) =>
+      math.pow(math.max(1.0 - t, 0.0), 1.2).toDouble();
+
+  static double squashFor(Size size) {
+    if (size.width <= 0) return 1.0;
+    final aspect = size.height / size.width;
+    return aspect >= 1.0 ? 1.0 : (0.55 + 0.45 * aspect).clamp(0.55, 1.0);
+  }
+}
