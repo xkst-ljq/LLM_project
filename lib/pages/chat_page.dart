@@ -2474,6 +2474,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       _messages.clear();
     });
 
+    // 关掉设置面板再走后续（用户反馈）。
+    //
+    // 清空会话副本会让 openingUIDismissed 复位，开场白 UI 立刻重现——
+    // 而设置页还开着，两层叠在一起，玩家看到的是「设置页背后弹出一个
+    // 关不掉的开场白」。开场白本来就要求先确认再操作，
+    // 这时候把设置页留着没有意义。
+    if (_showFanPanel) _closeFanPanel();
+    _closePanel();
+
     await _ensureOpeningGreetingForEmptyHistory();
   }
 
@@ -3358,12 +3367,21 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return Positioned.fill(
       child: Stack(
         children: [
-          // 遮罩：吸收所有点击，避免玩家在确认前操作下方聊天。
+          // 遮罩：吸收所有点击**与横向拖动**，避免玩家在确认前操作下方聊天。
           // 点遮罩本身不关闭——必须走作者指定的确认按钮。
+          //
+          // 只写 onTap 拦不住拖动：滑出聊天设置的
+          // `onHorizontalDragStart` 挂在最外层 GestureDetector 上，
+          // 遮罩不声明同类识别器的话，拖动会穿透过去把设置页滑出来
+          // （用户反馈）。这里与 scene 层用同一套办法——
+          // 声明空的横向拖动回调，在竞技场里赢下这个手势。
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {},
+              onHorizontalDragStart: (_) {},
+              onHorizontalDragUpdate: (_) {},
+              onHorizontalDragEnd: (_) {},
               child: Container(
                 color: Colors.black.withValues(alpha: 0.55),
               ),

@@ -276,6 +276,17 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
 
       // 关键职责：点击触发（关闭 / 确认 / 打开设置）。
       if (event.eventType == 'tap' && UISemanticRole.isKeyAction(module)) {
+        // 先把输入框里**没按回车**的内容强制提交（用户要求）。
+        //
+        // input 的值只在回车 / 失焦时写进 committedValue，
+        // 而数据通道读的正是它。玩家填完名字直接点「确认」时，
+        // 内容还停在 text 里，通道读到空值——
+        // 表现就是「填了名字但用户设定没变」。
+        //
+        // 必须在 onDismissRequested 之前做：那个回调会销毁开场白 UI，
+        // 之后再提交就没有组件可读了。
+        _commitPendingInputs(activePage.elements);
+        _syncDataChannels();
         widget.onDismissRequested?.call();
       }
 
@@ -312,6 +323,26 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         }
       }
     });
+  }
+
+  /// 把所有输入框的当前文本落进 `committedValue`。
+  ///
+  /// 数据通道读的是 committedValue，而它只在回车 / 失焦时更新。
+  /// 「确认」按钮要能收走玩家刚敲完、还没回车的内容，就得手动补这一步。
+  void _commitPendingInputs(List<UIElement> elements) {
+    for (final element in elements) {
+      if (element.isComposite && element.composite != null) {
+        _commitPendingInputs(element.composite!.children);
+        continue;
+      }
+      final module = element.module;
+      if (module == null || module.type != 'input') continue;
+      final text = module.properties['text']?.toString() ?? '';
+      if (text.isEmpty) continue;
+      if (module.properties['committedValue']?.toString() == text) continue;
+      module.properties['committedValue'] = text;
+      module.properties['value'] = text;
+    }
   }
 
   /// 查找该 button 通过 `button_to_message_action` 方案配置的消息操作。
