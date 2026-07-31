@@ -1,6 +1,7 @@
 import '../../models/card_entry_target.dart';
 import '../../models/session_state.dart';
 import '../../models/status_bar_field.dart';
+import '../../models/ui_assembly_info.dart';
 import 'ui_models.dart';
 
 /// 进入编辑器那一刻，某个已绑定组件的值与量程。
@@ -270,12 +271,58 @@ class DataChannelService {
   // 此时 targetId 为空、pendingName 记着那个名字。
 
   /// 该通道绑定的状态字段 id；不是状态字段通道或尚未绑定时返回 null。
-  static String? boundStatusFieldId(UIModule module) {
-    final raw = module.properties['dataChannel'];
+  static String? boundStatusFieldId(UIModule module) =>
+      statusFieldIdOfChannel(module.properties['dataChannel']);
+
+  /// 从任意 dataChannel map 里取已绑定的状态字段 id。
+  ///
+  /// 复合组件暴露项的通道配置**不在 module.properties 里**，
+  /// 而是存在 `AssemblyPage.propertyOverrides[].overrides['dataChannel']`。
+  /// 只遍历 elements 会漏掉它们——这正是首版同步「数值和上下限没变」的原因。
+  static String? statusFieldIdOfChannel(dynamic raw) {
     if (raw is! Map) return null;
     if (raw['targetKind']?.toString() != 'status_field') return null;
     final id = raw['targetId']?.toString().trim() ?? '';
     return id.isEmpty ? null : id;
+  }
+
+  /// 把状态字段的值与量程写进一份覆写 map。
+  ///
+  /// 覆写项里没有 UIModule，只有扁平的 key-value，
+  /// 因此不能复用 [applyValueToModule]，得直接按键名写。
+  /// 键名必须与 `_renderModule` 读取的一致：progress/slider 用
+  /// `current` / `min` / `max`。
+  static bool applyStatusFieldToOverride(
+    Map<String, dynamic> overrides,
+    StatusBarField field,
+  ) {
+    var changed = false;
+
+    bool setIfChanged(String key, dynamic next) {
+      if (overrides[key] == next) return false;
+      overrides[key] = next;
+      return true;
+    }
+
+    if (field.isNumber) {
+      final min = field.minValue ?? 0.0;
+      final max = field.maxValue ?? 100.0;
+      if (setIfChanged('min', min)) changed = true;
+      if (setIfChanged('max', max)) changed = true;
+      final parsed = double.tryParse(field.initialValue.trim());
+      if (parsed != null) {
+        final clamped = parsed.clamp(min, max).toDouble();
+        if (setIfChanged('current', clamped)) changed = true;
+        if (setIfChanged('value', clamped)) changed = true;
+      }
+    } else {
+      final value = field.initialValue.trim();
+      if (value.isNotEmpty) {
+        if (setIfChanged('text', value)) changed = true;
+        if (setIfChanged('value', value)) changed = true;
+      }
+    }
+    return changed;
   }
 
   /// 遍历元素树里所有绑定了状态字段的组件。
@@ -341,6 +388,29 @@ class DataChannelService {
     return changed;
   }
 
+  /// 同上，但作用于复合组件暴露项的覆写表。
+  ///
+  /// 返回 true 表示有覆写被改动。
+  static bool applyStatusFieldsToOverrides(
+    List<PropertyOverride> overrides,
+    List<StatusBarField> fields,
+  ) {
+    if (fields.isEmpty) return false;
+    final byId = <String, StatusBarField>{for (final f in fields) f.id: f};
+
+    var changed = false;
+    for (final override in overrides) {
+      final fieldId = statusFieldIdOfChannel(override.overrides['dataChannel']);
+      if (fieldId == null) continue;
+      final field = byId[fieldId];
+      if (field == null) continue;
+      if (applyStatusFieldToOverride(override.overrides, field)) {
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   /// 有 min/max 量程概念的组件类型。
   static const Set<String> _rangeCapableTypes = {'slider', 'progress'};
 
@@ -356,8 +426,9 @@ class DataChannelService {
   /// 不做这个区分的话，打开页面时那次同步本身就会被当成改动，
   /// 作者什么都没干也会触发一轮回写。
   static Map<String, StatusFieldSnapshot> snapshotBoundValues(
-    List<UIElement> elements,
-  ) {
+    List<UIElement> elements, [
+    List<PropertyOverride> overrides = const <PropertyOverride>[],
+  ]) {
     final out = <String, StatusFieldSnapshot>{};
     _visitBoundModules(elements, (module, fieldId) {
       out.putIfAbsent(
@@ -369,8 +440,26 @@ class DataChannelService {
         ),
       );
     });
+    for (final override in overrides) {
+      final fieldId = statusFieldIdOfChannel(override.overrides['dataChannel']);
+      if (fieldId == null) continue;
+      out.putIfAbsent(
+        fieldId,
+        () => StatusFieldSnapshot(
+          value: _overrideValueOf(override.overrides),
+          min: (override.overrides['min'] as num?)?.toDouble(),
+          max: (override.overrides['max'] as num?)?.toDouble(),
+        ),
+      );
+    }
     return out;
   }
+
+  static String _overrideValueOf(Map<String, dynamic> overrides) =>
+      (overrides['current'] ?? overrides['value'] ?? overrides['text'])
+          ?.toString()
+          .trim() ??
+      '';
 
   /// 反写：把作者在 UI 里改过的初始值与量程写回状态栏字段。
   ///
@@ -382,12 +471,46 @@ class DataChannelService {
   static bool writeBackToStatusFields(
     List<UIElement> elements,
     List<StatusBarField> fields,
-    Map<String, StatusFieldSnapshot> snapshot,
-  ) {
+    Map<String, StatusFieldSnapshot> snapshot, [
+    List<PropertyOverride> overrides = const <PropertyOverride>[],
+  ]) {
     if (fields.isEmpty) return false;
     final byId = <String, StatusBarField>{for (final f in fields) f.id: f};
 
     var changed = false;
+
+    // 复合件暴露项：与普通原子同样的「只回写改过的」规则。
+    for (final override in overrides) {
+      final fieldId = statusFieldIdOfChannel(override.overrides['dataChannel']);
+      if (fieldId == null) continue;
+      final field = byId[fieldId];
+      if (field == null) continue;
+      final base = snapshot[fieldId];
+
+      final value = _overrideValueOf(override.overrides);
+      if (value.isNotEmpty && (base == null || base.value != value)) {
+        if (field.initialValue != value) {
+          field.initialValue = value;
+          changed = true;
+        }
+      }
+      if (field.isNumber) {
+        final min = (override.overrides['min'] as num?)?.toDouble();
+        final max = (override.overrides['max'] as num?)?.toDouble();
+        if (min != null && (base == null || base.min != min)) {
+          if (field.minValue != min) {
+            field.minValue = min;
+            changed = true;
+          }
+        }
+        if (max != null && (base == null || base.max != max)) {
+          if (field.maxValue != max) {
+            field.maxValue = max;
+            changed = true;
+          }
+        }
+      }
+    }
     _visitBoundModules(elements, (module, fieldId) {
       final field = byId[fieldId];
       if (field == null) return;

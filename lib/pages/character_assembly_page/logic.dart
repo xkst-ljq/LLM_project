@@ -278,6 +278,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       )) {
         changed = true;
       }
+      // 复合组件暴露项的通道配置在 propertyOverrides 里，不在 elements 上。
+      // 首版只遍历 elements，复合件里的绑定完全没被同步到——
+      // 表现就是「数值和上下限没跟着变」。
+      if (DataChannelService.applyStatusFieldsToOverrides(
+        page.propertyOverrides,
+        _statusFields,
+      )) {
+        changed = true;
+      }
     }
     // 同步完成后记快照，作为反写的基线。
     //
@@ -289,8 +298,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ..addAll(_collectStatusFieldSnapshot());
 
     if (changed) {
+      // 只把结果读进画布，**不调 _persistAssemblyElements**。
+      //
+      // 那个函数第一步是 _pushHistory()：在 initState 阶段调用会往
+      // 撤销栈里塞一条「未同步」的快照，作者一进页面点撤销就把
+      // 刚同步好的值退回去了。
+      //
+      // 也不需要在这里持久化——_pages 已经是最新的，
+      // 退出时 _exportAssemblyInfoJson 会统一序列化。
       _loadActivePageState();
-      _persistAssemblyElements();
     }
   }
 
@@ -300,7 +316,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   Map<String, StatusFieldSnapshot> _collectStatusFieldSnapshot() {
     final merged = <String, StatusFieldSnapshot>{};
     for (final page in _pages) {
-      merged.addAll(DataChannelService.snapshotBoundValues(page.elements));
+      merged.addAll(DataChannelService.snapshotBoundValues(
+        page.elements,
+        page.propertyOverrides,
+      ));
     }
     return merged;
   }
@@ -324,6 +343,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         page.elements,
         draft,
         _statusFieldBaseline,
+        page.propertyOverrides,
       )) {
         changed = true;
       }
