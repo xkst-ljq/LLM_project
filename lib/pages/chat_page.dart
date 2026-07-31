@@ -2458,7 +2458,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     // 键盘弹出时保持最后一条气泡可见。
     //
-    // 聊天页刻意保留 resizeToAvoidBottomInset:true（输入框要跟着键盘上移），
+    // 普通聊天页保留 resizeToAvoidBottomInset:true（输入框要跟着键盘上移；
+    // scene / 开场白接管时才关掉，见 build 里的说明），
     // 于是视口高度减少了 keyboardInset，但 ListView 的 pixels 不变、
     // maxScrollExtent 反而增大——原本贴底的气泡就被顶到视口之下，
     // 表现为「被输入法挡住」。
@@ -3420,18 +3421,18 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     // 键盘弹出时不压缩场景 UI。
     //
-    // 聊天页本身**需要** resizeToAvoidBottomInset（输入框要跟着键盘上移），
-    // 但 scene 是全屏接管的 UI：Scaffold body 一收缩，
+    // scene 是全屏接管的 UI：Scaffold body 一收缩，
     // 它绑定的 `top:0 bottom:0` 也跟着缩，
     // UIAssemblyRuntimeView 又按可用高度等比缩放整张 PCB——
     // 结果是作者摆好的界面在打字时整体变小。
     //
-    // 这里把被键盘吃掉的高度补回去，让场景保持原尺寸；
-    // 「输入框被键盘盖住」则交给 KeyboardAvoidingStage 平移解决
-    // （见下方 child）——两件事必须分开做，因为任何尺寸变化
-    // 都会触发 PCB 重算缩放。
+    // scene 模式下 Scaffold 的 resizeToAvoidBottomInset 已关闭，
+    // body 恒为全屏高度，PCB 的 safeContainScale 不会因键盘而变，
+    // 所以这里**不需要**再做 `bottom: -keyboardInset` 的补偿
+    // （补了反而会把场景整体顶出屏幕）。
     //
-    // 必须用 _rawKeyboardInset：此处已在 Scaffold body 内部，
+    // 键盘高度只用来驱动 KeyboardAvoidingStage 的平移。
+    // 必须用 _rawKeyboardInset：此处在 Scaffold body 内部，
     // 直接读 viewInsetsOf 会拿到被消费后的 0。
     final keyboardInset = _rawKeyboardInset;
 
@@ -3440,7 +3441,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return Positioned(
       left: -panelW * _animController.value,
       top: 0,
-      bottom: -keyboardInset,
+      bottom: 0,
       width: screen.width,
       child: IgnorePointer(
         // 设置页滑出过半后不再接收触摸，避免隔着面板误触场景。
@@ -3854,6 +3855,22 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         child: Scaffold(
           primary: false,
           backgroundColor: Colors.transparent,
+          // scene 接管时**不要**让 Scaffold 压缩 body。
+          //
+          // 之前靠 `bottom: -keyboardInset` 让背景/场景溢出到键盘区，
+          // 但外层 Stack 默认 clipBehavior: Clip.hardEdge，
+          // 溢出部分会被裁掉，屏幕底部依旧露出一条黑边，
+          // 且随 body 逐帧回弹而抖动（用户反馈两次）。
+          //
+          // scene 模式下原生输入栏本就不渲染（见 `_sceneTakesOver` 判断），
+          // 没有任何东西需要跟着键盘上移，压缩 body 纯属有害：
+          // 直接关掉，body 始终保持全屏高度，键盘只是盖在它上面。
+          // 输入框的避让完全交给 KeyboardAvoidingStage 的平移。
+          //
+          // 非 scene 的普通聊天页仍需要 true——那里的输入栏要跟着键盘走。
+          // 开场白同理：它也是全屏铺开、且此时原生输入栏被遮罩挡着不可用。
+          resizeToAvoidBottomInset:
+              !_sceneTakesOver && !_shouldShowOpeningAssembly,
           body: SafeArea(
             top: false, // 不保留顶部安全区
             bottom: false,
@@ -3871,21 +3888,14 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   // 同步填好了，这里首帧就是真背景。下面那个空窗分支只在
                   // 缓存预热失败时才会走到，所以用中性深灰而不是纯黑——
                   // 万一真的露出来，也比一块死黑更不显眼。
-                  // 底部往下多铺一个键盘高度。
+                  // 铺满即可：scene 模式下 Scaffold 已关掉
+                  // resizeToAvoidBottomInset，body 始终是全屏高度，
+                  // 底部不会再出现露底的缝隙。
                   //
-                  // Scaffold 是 resizeToAvoidBottomInset: true，键盘弹出时
-                  // body 会被压矮；而 scene 层用 `bottom: -keyboardInset`
-                  // 把自己顶了出去。若背景只铺满 body，屏幕最下方那条
-                  // 缝隙就没有任何东西绘制，Scaffold 本身又是透明的，
-                  // 于是露出黑色——键盘收起时 body 逐帧回弹，
-                  // 那条黑边就跟着一顿一顿地往下沉（用户反馈）。
-                  //
-                  // 让背景一直盖到键盘底下，缝隙就不存在了。
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    bottom: -_rawKeyboardInset,
+                  // 曾经改成 `bottom: -_rawKeyboardInset` 想让背景溢出到
+                  // 键盘区，但外层 Stack 默认 Clip.hardEdge 会把溢出裁掉，
+                  // 治标不治本，已改为从源头不压缩。
+                  Positioned.fill(
                     child: !_backgroundLoaded
                         ? const ColoredBox(color: Color(0xFF1A1A1A))
                         : _background == null
