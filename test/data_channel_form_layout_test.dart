@@ -297,26 +297,31 @@ class SegmentedFieldHarness extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const options = [
-      ('a', '选项A'),
-      ('b', '选项B'),
-      ('c', '选项C'),
-    ];
+    // 用普通 Map 而不是记录（record）列表 + 解构 for。
+    // `for (final (v, label) in options)` 这种记录解构模式会让
+    // 分析器在此处报 "Expected an identifier"，且错误会向上传导，
+    // 把文件顶层结构一起判错——前面所有 group 都会变成
+    // "referenced before declaration"，报错行号完全指向错误的位置。
+    const options = <String, String>{
+      'a': '选项A',
+      'b': '选项B',
+      'c': '选项C',
+    };
     return Wrap(
       spacing: 6,
       children: [
-        for (final (v, label) in options)
+        for (final entry in options.entries)
           InkWell(
-            onTap: () => onChanged(v),
+            onTap: () => onChanged(entry.key),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: v == value ? Colors.teal : Colors.black12,
-                  width: v == value ? 1.4 : 1.0,
+                  color: entry.key == value ? Colors.teal : Colors.black12,
+                  width: entry.key == value ? 1.4 : 1.0,
                 ),
               ),
-              child: Text(label),
+              child: Text(entry.value),
             ),
           ),
       ],
