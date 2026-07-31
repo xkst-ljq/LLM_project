@@ -82,7 +82,7 @@ mixin _MathNodeEditorDialog on _UIStudioLogic, _StudioMenuDialogs {
         ..remove('gateFallback');
     }
 
-    showDialog<void>(
+    showKeyboardSafeDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {

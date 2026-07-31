@@ -2133,7 +2133,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     if (!compositeElement.isComposite || compositeElement.composite == null) return;
     final exposedChildren = _exposedChildrenOfComposite(compositeElement);
 
-    await showDialog<void>(
+    await showKeyboardSafeDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -2501,7 +2501,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       Navigator.pop(ctx, value);
     }
 
-    final saved = await showDialog<bool>(
+    final saved = await showKeyboardSafeDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -2676,7 +2676,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       Navigator.pop(ctx, value);
     }
 
-    final saved = await showDialog<bool>(
+    final saved = await showKeyboardSafeDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -4672,7 +4672,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     var selected = element.parentSurfaceId;
 
-    final applied = await showDialog<bool>(
+    final applied = await showKeyboardSafeDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -4855,7 +4855,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       Navigator.pop(ctx, value);
     }
 
-    final applied = await showDialog<bool>(
+    final applied = await showKeyboardSafeDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('精确几何'),
@@ -4993,7 +4993,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       Navigator.pop(ctx, value);
     }
 
-    final saved = await showDialog<bool>(
+    final saved = await showKeyboardSafeDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -7861,33 +7861,33 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   Future<void> _renamePage(AssemblyPage page) async {
     if (_isRootBasePage(page)) return;
     final controller = TextEditingController(text: page.name);
-    final renamed = await showDialog<String>(
+    // 用 showKeyboardSafeDialog：输入法还持有焦点时 pop 会抛
+    // 「Duplicate GlobalKeys」（输入法的 OverlayEntry 与正在拆除的
+    // 对话框争抢同一个 key）。用户路径是「改图层名时不点输入法的确认，
+    // 直接点按钮/遮罩/返回键」。
+    //
+    // 原先在两个按钮里各贴了一次 unfocus + 16ms 延迟，有两个洞：
+    // 点遮罩和返回键绕过按钮；16ms 只有一帧，键盘收起要 200~300ms。
+    // 现在由对话框宿主在 dispose 里统一收焦点，覆盖所有出口。
+    final renamed = await showKeyboardSafeDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('重命名页面'),
         content: TextField(
           controller: controller,
           autofocus: true,
+          // 键盘上的「完成」直接提交，省一次点击。
+          textInputAction: TextInputAction.done,
+          onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
           decoration: const InputDecoration(hintText: '页面名称'),
         ),
         actions: [
           TextButton(
-            onPressed: () async {
-              FocusManager.instance.primaryFocus?.unfocus();
-              await Future<void>.delayed(const Duration(milliseconds: 16));
-              if (!ctx.mounted) return;
-              Navigator.pop(ctx);
-            },
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () async {
-              final name = controller.text.trim();
-              FocusManager.instance.primaryFocus?.unfocus();
-              await Future<void>.delayed(const Duration(milliseconds: 16));
-              if (!ctx.mounted) return;
-              Navigator.pop(ctx, name);
-            },
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: const Text('确定'),
           ),
         ],
@@ -7927,91 +7927,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _persistAssemblyElements();
   }
 
-  /// 叠加页的换父候选 = **其他平级页**。
+  /// 执行换父。
   ///
-  /// 换父级是「同一类型的父级之间切换」：叠加页永远挂在某个平级页下，
-  /// 换的是挂在哪一个平级页。叠加层无论如何都不能变成子叠加层，
-  /// 因此候选里不含任何叠加页。
-  ///
-  /// 平级页没有父级，不参与换父（返回空表）。
-  List<AssemblyPage> _reparentCandidatesForPage(AssemblyPage page) {
-    if (!page.isOverlay) return const <AssemblyPage>[];
-    final candidates = _pages
-        .where((candidate) =>
-            candidate.isBase && candidate.id != page.parentPageId)
-        .toList()
-      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    return candidates;
-  }
-
-  Future<void> _showReparentPageDialog(AssemblyPage page) async {
-    final candidates = _reparentCandidatesForPage(page);
-    if (candidates.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('当前没有可用的目标父层')),
-        );
-      }
-      return;
-    }
-    final selectedParentId = await showDialog<String?>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('选择新的父层级'),
-        content: SizedBox(
-          width: 320,
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: candidates.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final candidate = candidates[index];
-              final isBase = candidate.isBase;
-              return ListTile(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  side: BorderSide(
-                    color: Colors.black.withValues(alpha: 0.05),
-                  ),
-                ),
-                tileColor: const Color(0xFFF6F6F9),
-                leading: Icon(
-                  isBase ? Icons.crop_square_rounded : Icons.layers_outlined,
-                  size: 18,
-                  color: isBase
-                      ? const Color(0xFF651FFF)
-                      : const Color(0xFF546E7A),
-                ),
-                title: Text(
-                  _displayPageName(candidate),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                subtitle: Text(
-                  isBase ? '平级页' : '叠加页',
-                  style: const TextStyle(fontSize: 10),
-                ),
-                onTap: () => Navigator.pop(ctx, candidate.id),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || selectedParentId == null) return;
-    _applyPageReparent(page.id, selectedParentId);
-  }
-
-  /// 执行换父。弹窗与拖放共用同一条通路——
-  /// 两份实现迟早会漂移（sortOrder 重排这种事最容易只改一边）。
+  /// 换父弹窗已随「拖放换父」上线而移除（两个入口做同一件事只是噪音），
+  /// 现在唯一的调用方是拖放。逻辑仍单独成函数——
+  /// 便于以后接入别的入口时不必重写 sortOrder 重排那段。
   ///
   /// 返回是否真的改动了。
   bool _applyPageReparent(String pageId, String newParentId) {
@@ -8075,10 +7995,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   /// 当前悬停其上的候选父页 id。
   String? _dragHoverParentId;
 
-  /// 某个页面能否作为 [pageId] 的新父级。
-  ///
-  /// 判据与 `_reparentCandidatesForPage` 保持一致——
-  /// 拖放能放进去、弹窗里却查不到这个候选，会让作者觉得随机。
   /// 能否把 [pageId] 拖到 [targetId] 下。
   ///
   /// 规则极简：**被拖的必须是叠加页，落点必须是平级页**。
@@ -8889,7 +8805,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       Navigator.pop(ctx, value);
     }
 
-    final saved = await showDialog<bool>(
+    final saved = await showKeyboardSafeDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(

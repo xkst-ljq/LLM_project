@@ -18,6 +18,7 @@ import '../../services/ui_engine/ui_renderer.dart';
 import 'editors/indicator_editor.dart';
 import 'editors/select_editor.dart';
 import 'editors/timer_editor.dart';
+import '../../widgets/keyboard_safe_dialog.dart';
 
 part 'dialogs.dart';
 part 'dialogs/compact_editors_dialogs.dart';

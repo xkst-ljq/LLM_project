@@ -1609,6 +1609,47 @@ setState(() {});
 **以后新增 mode 时记得**：`_addNewUI` 的拦截、`_existingModeLabels`
 的标签、以及列表页的配色三处都要补。
 
+### 3.5h 输入法未确认就关弹窗 → Duplicate GlobalKeys
+
+**报错**：
+```
+Duplicate GlobalKeys detected in widget tree.
+- [LabeledGlobalKey<_OverlayEntryWidgetState>#...]
+The specific parent that did not update ... *Theater(skipCount: 4 ...)
+```
+
+**触发路径**：改图层名时**不点输入法的「确认」**，
+直接点对话框按钮 / 点遮罩 / 按返回键。
+
+**成因**：输入法的候选栏、放大镜等是挂在 `Overlay`（`Theater`）上的
+`OverlayEntry`，每个带 `GlobalKey`。对话框被 pop 时若焦点仍在 TextField 上，
+框架会在同一帧里既销毁对话框、又把这些 OverlayEntry 重新挂载到新位置，
+于是同一个 GlobalKey 在一帧内出现两次。
+
+**原先的错误做法**（在每个按钮里各贴一次）：
+```dart
+FocusManager.instance.primaryFocus?.unfocus();
+await Future<void>.delayed(const Duration(milliseconds: 16));
+if (!ctx.mounted) return;
+Navigator.pop(ctx, value);
+```
+两个洞：
+1. **只覆盖按钮**。点遮罩（`barrierDismissible`）、系统返回键、
+   输入法自带的「完成」全都绕过按钮。
+2. **延迟不够**。16ms 只有一帧，键盘收起动画是 200~300ms。
+
+**正确做法**：`lib/widgets/keyboard_safe_dialog.dart` 的
+`showKeyboardSafeDialog()`，与 `showDialog` 同签名。
+它在对话框内容外套一层 StatefulWidget，在**自己的 `dispose`** 里
+`FocusScope.of(context).unfocus()`——无论从哪个出口关闭，
+子树被拆时 dispose 必定执行，天然覆盖所有路径。
+
+用 `FocusScope.of(context)` 而不是 `FocusManager.instance.primaryFocus`：
+后者可能已指向对话框之外的节点，误摘会让用户回到页面后发现别处失焦。
+
+**凡是内容里有 TextField 的 showDialog，一律改用这个包装。**
+已替换：assembly 编辑器 8 处 + Studio 的 math_node_editor 1 处。
+
 ### 3.6 页面路由器触发规则
 - A7 阶段的 `page_router` 本体点击跳转只是临时编辑态测试入口，A5 后已退场。
 - 页面切换应通过 `button → linker → page_router` 触发。

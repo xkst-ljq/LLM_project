@@ -10,6 +10,7 @@ import '../models/card_entry_target.dart';
 import '../models/character_entry.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
+import '../widgets/keyboard_safe_dialog.dart';
 import '../services/ui_engine/dashed_selection_border_painter.dart';
 import '../services/ui_engine/element_animation.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
@@ -2368,19 +2369,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                   ),
                 ),
               ),
-            if (page.isOverlay)
-              InkWell(
-                onTap: () => _showReparentPageDialog(page),
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.drive_file_move_rounded,
-                    size: 15,
-                    color: selected ? Colors.white : const Color(0xFF555562),
-                  ),
-                ),
-              ),
+            // 换父按钮已移除（用户决策）：灵感池 4.2 的「拖放换父」
+            // 已经覆盖同样的能力，两个入口做同一件事只是噪音。
+            // 换父逻辑本身保留在 _reparentPage，由拖放调用。
             if (draggable)
               Padding(
                 padding: const EdgeInsets.only(left: 4),
