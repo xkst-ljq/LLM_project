@@ -30,6 +30,12 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 当前会话副本。UI 组件的初始显示与后续刷新都以它为准。
   final SessionState sessionState;
 
+  /// 会话副本的版本号，透传给 UIAssemblyRuntimeView。
+  ///
+  /// 聊天页原地修改 SessionState，对象身份不变，
+  /// 运行时视图靠 identical 判断不出内容变化——这个数就是补丁。
+  final int sessionVersion;
+
   /// 用户操作 UI 导致会话副本变化时回调，供上层落盘。
   final ValueChanged<SessionState>? onSessionStateChanged;
 
@@ -63,6 +69,7 @@ class ChatAssemblyMount extends StatelessWidget {
     required this.meta,
     required this.mode,
     required this.sessionState,
+    this.sessionVersion = 0,
     this.onSessionStateChanged,
     this.maxWidth,
     this.enablePageGestures = false,
@@ -179,6 +186,7 @@ class ChatAssemblyMount extends StatelessWidget {
         // 着色规则是角色卡级配置，直接从 meta 取，调用方不用逐处传。
         highlightRules: meta.effectiveHighlightRules,
         sessionState: sessionState,
+        sessionVersion: sessionVersion,
         statusFields: meta.statusBarFields,
         onSessionStateChanged: onSessionStateChanged,
       ),
