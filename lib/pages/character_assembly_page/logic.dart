@@ -2503,6 +2503,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     final saved = await showKeyboardSafeDialog<bool>(
       context: context,
+      // controller 交给弹窗托管：await 返回时退场动画还要跑 ~150ms，
+      // 期间 TextField 仍在重建，自行 dispose 会抛
+      // 「A TextEditingController was used after being disposed」。
+      disposables: [
+        nameController,
+        cardCustomTitleController,
+        notifyTemplateController,
+      ],
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: Text('数据通道 · ${module.name}'),
@@ -2646,9 +2654,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _syncStatusFieldForOverride(nextOverride);
       _persistAssemblyElements();
     }
-    nameController.dispose();
-    cardCustomTitleController.dispose();
-    notifyTemplateController.dispose();
   }
 
   Future<void> _showCompositeOverrideBindingEditor({
@@ -2678,6 +2683,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     final saved = await showKeyboardSafeDialog<bool>(
       context: context,
+      // controller 交给弹窗托管：await 返回时退场动画还要跑 ~150ms，
+      // 期间 TextField 仍在重建，自行 dispose 会抛
+      // 「A TextEditingController was used after being disposed」。
+      disposables: [statusKeyController],
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: Text('Binding 挂载位 · ${child.module?.name ?? child.id}'),
@@ -2770,7 +2779,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             );
       setState(() => _upsertPropertyOverride(updated));
     }
-    statusKeyController.dispose();
   }
 
   bool _supportsBasicOverrideEditor(UIElement child) {
@@ -4857,6 +4865,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     final applied = await showKeyboardSafeDialog<bool>(
       context: context,
+      // controller 交给弹窗托管：await 返回时退场动画还要跑 ~150ms，
+      // 期间 TextField 仍在重建，自行 dispose 会抛
+      // 「A TextEditingController was used after being disposed」。
+      disposables: [
+        xc,
+        yc,
+        wc,
+        hc,
+        rc,
+      ],
       builder: (ctx) => AlertDialog(
         title: const Text('精确几何'),
         content: SizedBox(
@@ -4930,15 +4948,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       }
     }
 
-    // 延后到下一帧再释放：弹窗的退场动画期间 TextField 仍会重建，
-    // 立即 dispose 会命中「controller used after disposed」。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      xc.dispose();
-      yc.dispose();
-      wc.dispose();
-      hc.dispose();
-      rc.dispose();
-    });
   }
 
   /// 精确位移：按方向键逐像素挪动。
@@ -4995,6 +5004,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     final saved = await showKeyboardSafeDialog<bool>(
       context: context,
+      // controller 交给弹窗托管：await 返回时退场动画还要跑 ~150ms，
+      // 期间 TextField 仍在重建，自行 dispose 会抛
+      // 「A TextEditingController was used after being disposed」。
+      disposables: [
+        nameCtrl,
+        intervalCtrl,
+        delayCtrl,
+        maxTicksCtrl,
+        stepCtrl,
+      ],
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('定时器'),
@@ -5153,13 +5172,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       }
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      nameCtrl.dispose();
-      intervalCtrl.dispose();
-      delayCtrl.dispose();
-      maxTicksCtrl.dispose();
-      stepCtrl.dispose();
-    });
   }
 
   /// A14-2：计算节点编辑器。
@@ -7871,6 +7883,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     // 现在由对话框宿主在 dispose 里统一收焦点，覆盖所有出口。
     final renamed = await showKeyboardSafeDialog<String>(
       context: context,
+      // controller 交给弹窗托管：await 返回时退场动画还要跑 ~150ms，
+      // 期间 TextField 仍在重建，自行 dispose 会抛
+      // 「A TextEditingController was used after being disposed」。
+      disposables: [controller],
       builder: (ctx) => AlertDialog(
         title: const Text('重命名页面'),
         content: TextField(
@@ -7893,7 +7909,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         ],
       ),
     );
-    controller.dispose();
     if (!mounted || renamed == null || renamed.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -8807,6 +8822,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     final saved = await showKeyboardSafeDialog<bool>(
       context: context,
+      // controller 交给弹窗托管：await 返回时退场动画还要跑 ~150ms，
+      // 期间 TextField 仍在重建，自行 dispose 会抛
+      // 「A TextEditingController was used after being disposed」。
+      disposables: [
+        widthController,
+        heightController,
+      ],
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('画布设置'),
@@ -8948,11 +8970,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _persistAssemblyElements();
     }
 
-    // 控制器延后释放：弹窗退场动画期间仍会读它。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      widthController.dispose();
-      heightController.dispose();
-    });
   }
 
   double _clampPcbHeight(double value) =>

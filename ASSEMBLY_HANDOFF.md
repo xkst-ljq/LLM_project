@@ -1662,7 +1662,29 @@ Failed assertion: line 6268 pos 12: '_dependents.isEmpty': is not true.
 **通用规则：dispose 里禁止任何 `XxxTheme.of(context)` /
 `Scaffold.of(context)` / `MediaQuery.of(context)` 之类的 `of()` 调用**，
 一律在 `didChangeDependencies` 提前缓存。
-缓存的节点可能已随路由销毁，调用时要套 try。
+
+**最终采用的时机（第三次才对）**：监听 `ModalRoute.of(context)!.animation`
+的状态，在 `AnimationStatus.reverse`（退场动画**刚开始**）时 unfocus。
+此时 widget 树还完好，unfocus 只是正常的一帧重建；而所有退出路径
+（按钮 / 遮罩 / 返回键 / 输入法完成）都会驱动同一个退场动画，天然全覆盖。
+
+#### 配套：controller 不能在 await 返回后立刻 dispose
+
+```dart
+final result = await showDialog(...);
+controller.dispose();        // ← 错！
+```
+`showDialog` 的 future 在 pop 那一刻就完成，但退场动画还要跑 ~150ms，
+期间 TextField 仍在重建，于是抛
+`A TextEditingController was used after being disposed`，
+并连锁引发 `'attached': is not true`（RenderEditable 找不到 RenderObject）
+和 `'_dependents.isEmpty': is not true` 两个断言。
+**三个报错是一条因果链，只需修第一个。**
+
+用 `addPostFrameCallback` 延后一帧同样不够（一帧 ≈ 16ms，动画 150ms）。
+正确做法是交给 `showKeyboardSafeDialog(disposables: [...])`，
+由 host 在自己的 `dispose` 里释放——那时路由已彻底移除。
+已迁移 6 处（含原先用 addPostFrameCallback 的 3 处）。
 
 **凡是内容里有 TextField 的 showDialog，一律改用这个包装。**
 已替换：assembly 编辑器 8 处 + Studio 的 math_node_editor 1 处。

@@ -21,22 +21,40 @@ import 'package:flutter/material.dart';
 /// 用户触发路径：**改图层名时不点输入法的「确认」，直接点对话框按钮 /
 /// 点遮罩 / 按返回键**。
 ///
-/// ## 为什么不在按钮里各贴一次 unfocus
+/// ## 三次迭代才找对时机（务必读完再改）
 ///
-/// 那是原先的写法，有两个洞：
-/// 1. **只覆盖了按钮**。点遮罩关闭（`barrierDismissible`）、系统返回键、
-///    输入法自己的「完成」都绕过按钮，照样炸。
-/// 2. **延迟给得不够**。原来是 `Future.delayed(16ms)`，只有一帧；
-///    而键盘收起动画是 200~300ms，OverlayEntry 远没销毁完。
+/// **① 在每个按钮里 `unfocus()` + `await Future.delayed(16ms)`** —— 两个洞：
+///    点遮罩（`barrierDismissible`）、系统返回键、输入法自带的「完成」
+///    全都绕过按钮；且 16ms 只有一帧，键盘收起动画是 200~300ms。
 ///
-/// 正确做法是把「收焦点」放在**对话框自身的生命周期**里，覆盖所有出口。
+/// **② 在 host 的 `dispose()` 里 `FocusScope.of(context).unfocus()`** ——
+///    `of()` 走 `dependOnInheritedWidgetOfExactType` 会注册依赖，
+///    而此刻元素正被停用，触发
+///    `'_dependents.isEmpty': is not true`。
+///
+/// **③（当前）监听路由退场动画，在动画**刚开始**时 unfocus** ——
+///    这才是正确时机：它发生在 widget 树拆除**之前**，
+///    既不碰 teardown 期的 context，又天然覆盖所有退出路径
+///    （按钮 / 遮罩 / 返回键 / 输入法完成都会驱动同一个退场动画）。
+///
+/// ## 关于 controller 的销毁
+///
+/// **不要**在 `await showDialog(...)` 返回后立刻 `controller.dispose()`。
+/// future 在 pop 的那一刻就完成了，但退场动画还要跑 ~150ms，
+/// 期间 TextField 仍在重建，于是抛
+/// `A TextEditingController was used after being disposed`
+/// （并连锁引发 `attached: is not true` 和 `_dependents.isEmpty`）。
+///
+/// 把 controller 交给 [disposables]，由 host 在自己的 `dispose` 里销毁——
+/// 那时路由已彻底移除，不会再有人用它。
 ///
 /// ## 用法
 ///
-/// 与 `showDialog` 同签名，直接替换即可：
 /// ```dart
+/// final controller = TextEditingController(text: page.name);
 /// final result = await showKeyboardSafeDialog<String>(
 ///   context: context,
+///   disposables: [controller],   // ← 不要自己 dispose
 ///   builder: (ctx) => AlertDialog(...),
 /// );
 /// ```
@@ -44,23 +62,27 @@ Future<T?> showKeyboardSafeDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool barrierDismissible = true,
-}) async {
-  final result = await showDialog<T>(
+  List<ChangeNotifier> disposables = const <ChangeNotifier>[],
+}) {
+  return showDialog<T>(
     context: context,
     barrierDismissible: barrierDismissible,
-    builder: (ctx) => _KeyboardSafeDialogHost(child: Builder(builder: builder)),
+    builder: (ctx) => _KeyboardSafeDialogHost(
+      disposables: disposables,
+      child: Builder(builder: builder),
+    ),
   );
-  return result;
 }
 
-/// 在自己被 dispose 时收起键盘。
-///
-/// 放在对话框内容**外面**一层：无论从哪个出口关闭（按钮 / 遮罩 /
-/// 返回键 / 输入法完成），只要这棵子树被拆，`dispose` 必定执行。
+/// 在路由开始退场时收起键盘，并在彻底销毁后释放 controller。
 class _KeyboardSafeDialogHost extends StatefulWidget {
-  const _KeyboardSafeDialogHost({required this.child});
+  const _KeyboardSafeDialogHost({
+    required this.child,
+    required this.disposables,
+  });
 
   final Widget child;
+  final List<ChangeNotifier> disposables;
 
   @override
   State<_KeyboardSafeDialogHost> createState() =>
@@ -68,45 +90,38 @@ class _KeyboardSafeDialogHost extends StatefulWidget {
 }
 
 class _KeyboardSafeDialogHostState extends State<_KeyboardSafeDialogHost> {
-  /// 本对话框所属的 FocusScope，在 dispose 之前就缓存好。
-  ///
-  /// **不能在 dispose 里调 `FocusScope.of(context)`**：
-  /// `of()` 会通过 `dependOnInheritedWidgetOfExactType` 注册依赖，
-  /// 而此刻元素正在被停用，于是触发框架断言
-  /// `'_dependents.isEmpty': is not true`
-  /// （用户实测：开场白 UI 里点开叠加页编辑再点空白处必现）。
-  ///
-  /// 在 `didChangeDependencies` 里取则是安全的——那正是允许建立
-  /// InheritedWidget 依赖的时机，且它一定早于 dispose 执行。
-  FocusScopeNode? _scope;
+  Animation<double>? _routeAnimation;
+  bool _unfocused = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _scope = FocusScope.of(context);
+    // 在这里取路由是安全的——didChangeDependencies 正是允许建立
+    // InheritedWidget 依赖的时机（dispose 里则会触发断言，见类文档 ②）。
+    final animation = ModalRoute.of(context)?.animation;
+    if (identical(animation, _routeAnimation)) return;
+    _routeAnimation?.removeStatusListener(_handleRouteStatus);
+    _routeAnimation = animation;
+    _routeAnimation?.addStatusListener(_handleRouteStatus);
+  }
+
+  /// 退场动画一开始就收键盘。
+  ///
+  /// 此时 widget 树还完好，unfocus 引发的重建是正常的一帧，
+  /// 不会和「正在拆除」的状态打架。
+  void _handleRouteStatus(AnimationStatus status) {
+    if (status != AnimationStatus.reverse || _unfocused) return;
+    _unfocused = true;
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
   }
 
   @override
   void dispose() {
-    // 这里**不能** await——dispose 是同步的。
-    //
-    // 但也不需要 await：unfocus 会立刻把焦点摘掉，
-    // 输入法的 OverlayEntry 随之进入销毁流程，
-    // 不会再和正在拆除的对话框争抢同一个 GlobalKey。
-    //
-    // 用缓存的 scope 而非 `FocusManager.instance.primaryFocus`：
-    // 后者可能已经指向对话框之外的节点（例如画布上原本的焦点），
-    // 误摘会让用户回到页面后发现别处的输入框失焦了。
-    //
-    // scope 可能已随路由一起被销毁，判一下 hasListeners 之外的存活性：
-    // FocusScopeNode 被 dispose 后调 unfocus 会抛，所以套 try。
-    final scope = _scope;
-    if (scope != null) {
-      try {
-        scope.unfocus();
-      } catch (_) {
-        // 节点已随路由销毁——键盘本来就会跟着一起收，无需处理。
-      }
+    _routeAnimation?.removeStatusListener(_handleRouteStatus);
+    // 到这里路由已彻底移除，没有人会再用这些 controller 了。
+    for (final item in widget.disposables) {
+      item.dispose();
     }
     super.dispose();
   }
