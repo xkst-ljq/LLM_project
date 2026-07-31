@@ -36,8 +36,13 @@ void main() async {
   moduleManager.register(chatModule);
   moduleManager.initAll();
 
-  // 确保预设背景存在
-  BackgroundService.ensurePresetsExist();
+  // 预热背景缓存。
+  //
+  // 必须 await：这一步会顺带完成 openDatabase(建表/migration) 和
+  // SharedPreferences.getInstance() 两件冷启动大头。做完之后聊天页
+  // 首帧就能同步拿到背景，不会先空一拍再补上。
+  // ensurePresetsExist 已包含在 warmUp 内部，不需要再单独调。
+  await BackgroundService.warmUp();
 
   runApp(
     Provider<ChatModule>.value(

@@ -63,7 +63,8 @@ class _MainMenuPageState extends State<MainMenuPage>
   @override
   void initState() {
     super.initState();
-    BackgroundService.ensurePresetsExist();
+    // main() 里 warmUp() 已经建过预设并预热缓存，这里只在意外未就绪时补一次。
+    if (!BackgroundService.isWarm) BackgroundService.warmUp();
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),

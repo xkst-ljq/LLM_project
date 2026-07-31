@@ -1879,8 +1879,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     PromptSettingsService.versionNotifier.addListener(_onPromptSettingsChanged);
     BackgroundService.versionNotifier.addListener(_onBackgroundChanged);
     _loadPromptSettings();
-    // 尽早发起：背景与角色数据无关（只有 backgroundId 那一支要等卡），
-    // 这里先把全局背景查出来，_setCurrentCharacter 里再按角色校正一次。
+    // 先同步吃一口缓存，保证首帧就有背景（见 _seedBackgroundFromCache）。
+    _seedBackgroundFromCache();
+    // 再异步校准一次，覆盖缓存未预热 / 数据刚被改过的情况。
     _loadBackground();
 
     _animController = AnimationController(
@@ -2357,6 +2358,23 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _loadBackground();
   }
 
+  /// 从 BackgroundService 的内存缓存同步取一次背景。
+  ///
+  /// main() 里 `warmUp()` 已经预热过，正常路径下这里必定命中，
+  /// 于是聊天页**第一帧**就有正确背景，不存在任何空窗。
+  /// 只有缓存意外未就绪（预热失败）才会落空，交给异步路径补。
+  void _seedBackgroundFromCache() {
+    if (!BackgroundService.isWarm) return;
+    final boundId = widget.character?.backgroundId ?? '';
+    final bg = boundId.isNotEmpty
+        ? (BackgroundService.peekById(boundId) ??
+            BackgroundService.peekCurrent())
+        : BackgroundService.peekCurrent();
+    if (bg == null) return;
+    _background = bg;
+    _backgroundLoaded = true;
+  }
+
   /// 查一次背景并写进 state。
   ///
   /// 重新加载期间**保留**上一次的值（不先置 null），这样切换背景、
@@ -2382,6 +2400,14 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 优先使用当前角色的独立背景
     if (_currentCharacter?.backgroundId != null &&
         _currentCharacter!.backgroundId.isNotEmpty) {
+      // 缓存就绪时直接同步命中，省掉一次建表检查 + 全表查询。
+      if (BackgroundService.isWarm) {
+        final hit =
+            BackgroundService.peekById(_currentCharacter!.backgroundId);
+        if (hit != null) return hit;
+        return BackgroundService.peekCurrent();
+      }
+
       final all = await BackgroundService.getAll();
 
       for (final bg in all) {
@@ -3786,11 +3812,14 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 children: [
                   // 背景图层（动态）
                   // 背景取自 _background 缓存，不在 build 里发起查询。
-                  // 还没查完时铺纯黑而不是默认渐变——查询只要几十毫秒，
-                  // 底下马上会被真背景盖住，画一帧亮色反而正是闪烁的来源。
+                  //
+                  // 正常路径下 _seedBackgroundFromCache() 已经在 initState
+                  // 同步填好了，这里首帧就是真背景。下面那个空窗分支只在
+                  // 缓存预热失败时才会走到，所以用中性深灰而不是纯黑——
+                  // 万一真的露出来，也比一块死黑更不显眼。
                   Positioned.fill(
                     child: !_backgroundLoaded
-                        ? const ColoredBox(color: Colors.black)
+                        ? const ColoredBox(color: Color(0xFF1A1A1A))
                         : _background == null
                             ? const DecoratedBox(
                                 decoration: BoxDecoration(
