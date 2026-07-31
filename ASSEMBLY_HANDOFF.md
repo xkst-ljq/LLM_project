@@ -1519,6 +1519,54 @@ body 被塞进矮一个键盘高度的空间，同时向下传递的 MediaQuery 
 先看 Scaffold 是否在压缩 body → 再看外层 Stack 是否 clip 了溢出 →
 最后才怀疑绘制层本身。别一上来就给绘制层打补丁。
 
+### 3.5f 聊天页重建收敛（AnimatedBuilder 的正确用法）
+
+**背景**：`_ChatPageState.build` 有 1285 行，而 `_animController` /
+`_inputAnimController` / `_fanSnapController` 三个 controller 都挂着
+无条件 `setState`，任何动画播放期间整棵树每帧全量重建。
+
+**三种情况要分开处理，用错就出 bug：**
+
+**① 纯视觉属性（位移 / 透明度 / 缩放）** → `AnimatedBuilder` + `child`
+把重体积子树作为 `child` 传入只构建一次，builder 里只包薄薄一层。
+聊天主体那 750+ 行就是这么剥离的。
+
+**② 子树内部还引用动画值** → 必须**单独再套一层 AnimatedBuilder**
+这是最容易漏的：一旦子树作为静态 `child` 被缓存，写在它里面的
+`_animController.value` 就**冻结在初始值**，再也不刷新。
+聊天主体内层那个 `ignoring: value > 0.5` 就是这种情况。
+**重构后务必全文搜一遍子树内是否残留动画值引用。**
+
+**③ 条件渲染（决定 widget 存不存在）** → `AnimatedBuilder` 无能为力
+`if (_animController.value < 0.1) Positioned(...)` 这种写法决定的是
+**元素在不在树上**，不是它长什么样，只能整树重建。
+解法是**阈值节流**：把连续的动画值映射成离散「区间」，
+只在跨区间时 setState：
+
+```dart
+final bucket = v < 0.1 ? 0 : (v < 0.5 ? 1 : 2);
+if (bucket == _animBucket) return;
+_animBucket = bucket;
+setState(() {});
+```
+
+一次 300ms 抽屉动画约 37 帧，全树重建从 37 次降到 **4 次（-89%）**。
+注意分桶边界必须与条件判据**完全一致**（这里都是 0.1 / 0.5），
+否则条件渲染的时机会偏。
+
+**④ 已有 AnimatedBuilder 却还挂着全局 setState** → 等于白圈
+`_inputAnimController` 的两个消费点本来就套了 AnimatedBuilder，
+外面又挂了个 `setState`，整棵树照样每帧重建。
+**加 AnimatedBuilder 的同时一定要把对应的全局监听摘掉**，否则毫无收益。
+
+**其他已修的同类隐患：**
+- `FutureBuilder(future: _getXxx())` 写在 build 里 → future 每帧新建，
+  首帧必定走 loading 分支（背景闪烁的真凶），且每帧重跑一次数据库查询。
+  **正确做法**：查询结果缓存进 state，build 只读缓存。
+- `File(path).existsSync()` 写在 build 里 → 同步磁盘 IO，
+  头像那几处同一路径每帧要 stat 2~3 次。加 `_fileExistsCache` 缓存，
+  在 `_loadUser()` 里失效。
+
 ### 3.6 页面路由器触发规则
 - A7 阶段的 `page_router` 本体点击跳转只是临时编辑态测试入口，A5 后已退场。
 - 页面切换应通过 `button → linker → page_router` 触发。
