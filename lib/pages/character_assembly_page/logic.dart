@@ -279,10 +279,56 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         changed = true;
       }
     }
+    // 同步完成后记快照，作为反写的基线。
+    //
+    // **必须在同步之后记**：在之前记的话，同步本身造成的改动
+    // 会被当成「作者改的」，退出时又原样写回状态栏，
+    // 形成「打开就同步、退出就回写」的自激循环。
+    _statusFieldBaseline
+      ..clear()
+      ..addAll(_collectStatusFieldSnapshot());
+
     if (changed) {
       _loadActivePageState();
       _persistAssemblyElements();
     }
+  }
+
+  /// 反写基线：进入编辑器（且完成一次同步）那一刻的值与量程。
+  final Map<String, StatusFieldSnapshot> _statusFieldBaseline = {};
+
+  Map<String, StatusFieldSnapshot> _collectStatusFieldSnapshot() {
+    final merged = <String, StatusFieldSnapshot>{};
+    for (final page in _pages) {
+      merged.addAll(DataChannelService.snapshotBoundValues(page.elements));
+    }
+    return merged;
+  }
+
+  /// 把作者在 UI 里改过的初始值与量程写回状态栏字段。
+  ///
+  /// 返回被改动过的字段副本；没有改动时返回 null，
+  /// 调用方据此决定要不要把结果带回上一页。
+  ///
+  /// 只回写与基线有差异的组件——没碰过的一律跳过。
+  List<StatusBarField>? _buildStatusFieldWriteBack() {
+    if (_statusFields.isEmpty) return null;
+    _syncCanvasStateIntoActivePage();
+
+    // 在副本上改：直接改 widget.statusFields 会让「放弃修改并返回」
+    // 这条路径也把状态栏改掉。
+    final draft = _statusFields.map((f) => f.copyWith()).toList();
+    var changed = false;
+    for (final page in _pages) {
+      if (DataChannelService.writeBackToStatusFields(
+        page.elements,
+        draft,
+        _statusFieldBaseline,
+      )) {
+        changed = true;
+      }
+    }
+    return changed ? draft : null;
   }
 
   /// 打开 Assembly 时重新对齐状态字段通道。
@@ -8024,6 +8070,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return _info.toJsonString();
   }
 
+  /// 组装退出时的返回值：UI 数据 + 需要反写的状态字段。
+  AssemblyEditResult _buildEditResult() {
+    // 反写要在导出之前算：导出会 persist，
+    // 之后再读组件值拿到的是同一份数据，但顺序固定更不易出错。
+    final writeBack = _buildStatusFieldWriteBack();
+    return AssemblyEditResult(
+      assemblyJson: _exportAssemblyInfoJson(),
+      statusFields: writeBack,
+    );
+  }
+
   void _enterRuntimePreview() {
     _persistAssemblyElements();
     setState(() {
@@ -8792,7 +8849,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
   Future<void> _handleBackNavigation() async {
     if (_validateAssemblyBeforeExit()) {
-      if (mounted) Navigator.pop(context, _exportAssemblyInfoJson());
+      if (mounted) Navigator.pop(context, _buildEditResult());
       return;
     }
     if (!mounted) return;

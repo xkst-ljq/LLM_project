@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/character_entry.dart';
 import '../models/character_meta.dart';
+import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
 import 'character_assembly_page.dart';
 
@@ -41,9 +42,13 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
         .toList();
   }
 
-  void _save() {
+  void _save({List<StatusBarField>? statusFields}) {
     final updatedMeta = widget.meta.copy();
     updatedMeta.uiAssemblies = _assemblies.where((a) => a.id.isNotEmpty).map((a) => a.toJsonString()).toList();
+    // 反写：作者在 UI 里改了绑定组件的初始值 / 量程，同步回状态栏定义。
+    if (statusFields != null) {
+      updatedMeta.statusBarFields = statusFields;
+    }
     widget.onMetaChanged(updatedMeta);
   }
 
@@ -146,7 +151,7 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
   }
 
   void _openAssemblyPage(UIAssemblyInfo info) async {
-    final result = await Navigator.push<String>(
+    final result = await Navigator.push<AssemblyEditResult>(
       context,
       MaterialPageRoute(
         builder: (_) => CharacterAssemblyPage(
@@ -157,9 +162,9 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
         ),
       ),
     );
-    if (result != null && result.isNotEmpty) {
+    if (result != null && result.assemblyJson.isNotEmpty) {
       // 保存返回的 UI 数据
-      final updated = UIAssemblyInfo.fromJsonString(result);
+      final updated = UIAssemblyInfo.fromJsonString(result.assemblyJson);
       final idx = _assemblies.indexWhere((a) => a.id == updated.id);
       if (idx != -1) {
         _assemblies[idx] = updated;
@@ -167,7 +172,16 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
         _assemblies.add(updated);
       }
       setState(() {});
-      _save();
+      _save(statusFields: result.statusFields);
+      if (result.statusFields != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(milliseconds: 1800),
+            behavior: SnackBarBehavior.floating,
+            content: Text('绑定组件的改动已同步回状态栏字段'),
+          ),
+        );
+      }
     }
   }
 

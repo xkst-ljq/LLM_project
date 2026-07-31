@@ -3,6 +3,21 @@ import '../../models/session_state.dart';
 import '../../models/status_bar_field.dart';
 import 'ui_models.dart';
 
+/// 进入编辑器那一刻，某个已绑定组件的值与量程。
+///
+/// 用于区分「作者真的改了」与「只是打开时被同步过来的」。
+class StatusFieldSnapshot {
+  const StatusFieldSnapshot({
+    required this.value,
+    this.min,
+    this.max,
+  });
+
+  final String value;
+  final double? min;
+  final double? max;
+}
+
 /// 一条「预绑定」：UI 里写了状态字段名，但角色卡里还没有该字段。
 ///
 /// 状态栏编辑页据此提示作者——他在 UI 里写下「生命值」之后，
@@ -254,39 +269,26 @@ class DataChannelService {
   // 「预绑定」= 通道写了状态字段名但角色卡里还没有同名字段，
   // 此时 targetId 为空、pendingName 记着那个名字。
 
-  /// 把状态栏字段的**初始值**回填到绑定它的组件上（编辑期）。
-  ///
-  /// 只处理 `targetKind == 'status_field'` 且已解析出 targetId 的通道——
-  /// 预绑定（targetId 为空）的通道没有对应字段，反而应该由 UI 提供初始值。
-  ///
-  /// 返回 true 表示有组件被改动，调用方需要持久化。
-  static bool applyStatusFieldInitialValues(
+  /// 该通道绑定的状态字段 id；不是状态字段通道或尚未绑定时返回 null。
+  static String? boundStatusFieldId(UIModule module) {
+    final raw = module.properties['dataChannel'];
+    if (raw is! Map) return null;
+    if (raw['targetKind']?.toString() != 'status_field') return null;
+    final id = raw['targetId']?.toString().trim() ?? '';
+    return id.isEmpty ? null : id;
+  }
+
+  /// 遍历元素树里所有绑定了状态字段的组件。
+  static void _visitBoundModules(
     List<UIElement> elements,
-    List<StatusBarField> fields,
+    void Function(UIModule module, String fieldId) action,
   ) {
-    if (fields.isEmpty) return false;
-    final byId = <String, StatusBarField>{
-      for (final f in fields) f.id: f,
-    };
-
-    var changed = false;
-
     void visit(List<UIElement> nodes) {
       for (final node in nodes) {
         final module = node.module;
         if (module != null) {
-          final raw = module.properties['dataChannel'];
-          if (raw is Map) {
-            final channel = Map<String, dynamic>.from(raw);
-            if (channel['targetKind']?.toString() == 'status_field') {
-              final targetId = channel['targetId']?.toString().trim() ?? '';
-              final field = targetId.isEmpty ? null : byId[targetId];
-              final value = field?.initialValue.trim() ?? '';
-              if (value.isNotEmpty && applyValueToModule(module, value)) {
-                changed = true;
-              }
-            }
-          }
+          final id = boundStatusFieldId(module);
+          if (id != null) action(module, id);
         }
         if (node.isComposite && node.composite != null) {
           visit(node.composite!.children);
@@ -295,6 +297,129 @@ class DataChannelService {
     }
 
     visit(elements);
+  }
+
+  /// 把状态栏字段的**初始值与量程**回填到绑定它的组件上（编辑期）。
+  ///
+  /// 只处理已解析出 targetId 的通道——预绑定（targetId 为空）没有对应字段，
+  /// 反而应该由 UI 提供初始值。
+  ///
+  /// **量程必须一起同步**（用户要求）。只同步值会出事：
+  /// 状态栏「等级」是 70、量程 0~100，而作者按十级制把进度条量程设成 0~10，
+  /// 那么 70 写进组件时被 `clamp` 静默截断成 10。单向同步时这只影响显示，
+  /// 一旦启用反写，退出时就会把状态栏的 70 改成 10——数据凭空被吃掉。
+  /// 两边量程一致就从根源上消除了这种截断。
+  ///
+  /// 返回 true 表示有组件被改动，调用方需要持久化。
+  static bool applyStatusFieldInitialValues(
+    List<UIElement> elements,
+    List<StatusBarField> fields,
+  ) {
+    if (fields.isEmpty) return false;
+    final byId = <String, StatusBarField>{for (final f in fields) f.id: f};
+
+    var changed = false;
+    _visitBoundModules(elements, (module, fieldId) {
+      final field = byId[fieldId];
+      if (field == null) return;
+
+      // 先同步量程，再写值：顺序反了的话值会被旧量程截断。
+      if (field.isNumber && _rangeCapableTypes.contains(module.type)) {
+        if (_setIfChanged(module, 'min', field.minValue ?? 0.0)) {
+          changed = true;
+        }
+        if (_setIfChanged(module, 'max', field.maxValue ?? 100.0)) {
+          changed = true;
+        }
+      }
+
+      final value = field.initialValue.trim();
+      if (value.isNotEmpty && applyValueToModule(module, value)) {
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  /// 有 min/max 量程概念的组件类型。
+  static const Set<String> _rangeCapableTypes = {'slider', 'progress'};
+
+  static bool _setIfChanged(UIModule module, String key, dynamic next) {
+    if (module.properties[key] == next) return false;
+    module.properties[key] = next;
+    return true;
+  }
+
+  /// 编辑期快照：记录每个已绑定组件的当前值与量程。
+  ///
+  /// 反写时用来判断「作者到底改没改」——只有改过的才写回状态栏。
+  /// 不做这个区分的话，打开页面时那次同步本身就会被当成改动，
+  /// 作者什么都没干也会触发一轮回写。
+  static Map<String, StatusFieldSnapshot> snapshotBoundValues(
+    List<UIElement> elements,
+  ) {
+    final out = <String, StatusFieldSnapshot>{};
+    _visitBoundModules(elements, (module, fieldId) {
+      out.putIfAbsent(
+        fieldId,
+        () => StatusFieldSnapshot(
+          value: readModuleValue(module)?.trim() ?? '',
+          min: (module.properties['min'] as num?)?.toDouble(),
+          max: (module.properties['max'] as num?)?.toDouble(),
+        ),
+      );
+    });
+    return out;
+  }
+
+  /// 反写：把作者在 UI 里改过的初始值与量程写回状态栏字段。
+  ///
+  /// [snapshot] 是进入编辑器时由 [snapshotBoundValues] 记下的基线。
+  /// 与基线相同的组件视为「没碰过」，一律跳过——这是避免
+  /// 「打开就同步、退出就回写」形成自激循环的关键。
+  ///
+  /// 直接修改 [fields] 里的元素，返回 true 表示确有改动。
+  static bool writeBackToStatusFields(
+    List<UIElement> elements,
+    List<StatusBarField> fields,
+    Map<String, StatusFieldSnapshot> snapshot,
+  ) {
+    if (fields.isEmpty) return false;
+    final byId = <String, StatusBarField>{for (final f in fields) f.id: f};
+
+    var changed = false;
+    _visitBoundModules(elements, (module, fieldId) {
+      final field = byId[fieldId];
+      if (field == null) return;
+      final base = snapshot[fieldId];
+
+      final value = readModuleValue(module)?.trim() ?? '';
+      // base 为 null = 这个绑定是本次编辑中新建立的，
+      // 它的值来自作者的操作，应当写回。
+      if (value.isNotEmpty && (base == null || base.value != value)) {
+        if (field.initialValue != value) {
+          field.initialValue = value;
+          changed = true;
+        }
+      }
+
+      if (field.isNumber && _rangeCapableTypes.contains(module.type)) {
+        final min = (module.properties['min'] as num?)?.toDouble();
+        final max = (module.properties['max'] as num?)?.toDouble();
+        if (min != null && (base == null || base.min != min)) {
+          if (field.minValue != min) {
+            field.minValue = min;
+            changed = true;
+          }
+        }
+        if (max != null && (base == null || base.max != max)) {
+          if (field.maxValue != max) {
+            field.maxValue = max;
+            changed = true;
+          }
+        }
+      }
+    });
     return changed;
   }
 

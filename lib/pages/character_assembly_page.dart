@@ -96,6 +96,19 @@ class _AssemblyAssetItem {
   }
 }
 
+/// Assembly 编辑器的返回值。
+///
+/// 从裸 JSON 字符串改成对象，是因为反写需要多带一份状态字段：
+/// 作者在 UI 里改了绑定组件的初始值或量程，退出时要同步回角色卡。
+class AssemblyEditResult {
+  const AssemblyEditResult({required this.assemblyJson, this.statusFields});
+
+  final String assemblyJson;
+
+  /// 有反写时携带改动后的完整字段表；无反写为 null。
+  final List<StatusBarField>? statusFields;
+}
+
 class CharacterAssemblyPage extends StatefulWidget {
   final UIAssemblyInfo assemblyInfo;
 
@@ -602,7 +615,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                           Icons.save_rounded,
                           () {
                             if (!_validateAssemblyBeforeExit()) return;
-                            Navigator.pop(context, _exportAssemblyInfoJson());
+                            Navigator.pop(context, _buildEditResult());
                           },
                           color: const Color(0xFF00A86B),
                         ),
