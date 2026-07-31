@@ -6197,6 +6197,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String sourceComponentId,
     required UIModule module,
     required String targetKind,
+    // AB 批只改表单 UI，这两个字段继续按原样存写：
+    // visibility 已从 UI 删除（死字段），applyPolicy 的语义迁移留到 CD 批。
+    // 现在断掉存写会让已有角色卡的通道配置在下次保存时丢字段。
+    required String visibility,
+    required String applyPolicy,
     required String llmReadPolicy,
     required String llmWritePolicy,
     required String promptSection,
@@ -7104,10 +7109,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String semanticSource,
     required String labelElementId,
     required String targetKind,
-    required String visibility,
     required String llmReadPolicy,
     required String llmWritePolicy,
-    required String applyPolicy,
     required String promptSection,
     required CardEntryTarget cardTarget,
     required TextEditingController cardCustomTitleController,
@@ -7273,6 +7276,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               ),
             ),
           ),
+          // 状态字段匹配提示：告诉作者这个名字有没有对上角色卡里
+          // 已有的状态字段，没对上会被记为「待创建」。
+          //
+          // 放在段②而不是段①「存放位置」旁边——它校验的是**名称**，
+          // 名称还没填时提示也无从谈起。
+          if (targetKind == 'status_field') ...[
+            const SizedBox(height: 10),
+            _buildStatusFieldMatchHint(previewName),
+          ],
         ],
       ),
 
