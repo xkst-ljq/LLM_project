@@ -310,6 +310,47 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
   }
 
+  /// 单个元素刚建立/变更状态字段绑定后的即时同步。
+  ///
+  /// 与 `_syncStatusFieldInitialValues`（进页面时全量跑）互补：
+  /// 那个只在 initState 跑一次，而绑定往往是在页面运行中才建立的。
+  ///
+  /// 同步后**必须登记基线**，否则这个新绑定在反写时会命中
+  /// `base == null` 分支，被当成「作者改的」——
+  /// 结果是刚同步进来的值又被写回状态栏，把作者设的初始值冲掉。
+  void _syncStatusFieldForElement(UIElement element) {
+    if (_statusFields.isEmpty) return;
+    final module = element.module;
+    if (module == null) return;
+    final fieldId = DataChannelService.boundStatusFieldId(module);
+    if (fieldId == null) return;
+
+    DataChannelService.applyStatusFieldInitialValues(
+      [element],
+      _statusFields,
+    );
+    // 用同步后的值刷新基线，覆盖进页面时记的旧条目。
+    _statusFieldBaseline.addAll(
+      DataChannelService.snapshotBoundValues([element]),
+    );
+  }
+
+  /// 覆写项（复合件暴露项）刚建立绑定后的即时同步。
+  void _syncStatusFieldForOverride(PropertyOverride override) {
+    if (_statusFields.isEmpty) return;
+    final fieldId =
+        DataChannelService.statusFieldIdOfChannel(override.overrides['dataChannel']);
+    if (fieldId == null) return;
+
+    DataChannelService.applyStatusFieldsToOverrides(
+      [override],
+      _statusFields,
+    );
+    _statusFieldBaseline.addAll(
+      DataChannelService.snapshotBoundValues(const [], [override]),
+    );
+  }
+
   /// 反写基线：进入编辑器（且完成一次同步）那一刻的值与量程。
   final Map<String, StatusFieldSnapshot> _statusFieldBaseline = {};
 
@@ -2519,11 +2560,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           cardTarget: cardTarget,
         );
       }
+      final nextOverride =
+          propertyOverride.copyWith(overrides: nextOverrides);
       setState(() {
-        _upsertPropertyOverride(
-          propertyOverride.copyWith(overrides: nextOverrides),
-        );
+        _upsertPropertyOverride(nextOverride);
       });
+      // 复合件暴露项刚建立绑定：同样要立即同步值与量程并登记基线。
+      _syncStatusFieldForOverride(nextOverride);
+      _persistAssemblyElements();
     }
     nameController.dispose();
     cardCustomTitleController.dispose();
@@ -6110,6 +6154,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ),
           );
         });
+        // 实例编辑器里也可能刚打开通道开关并绑上状态字段，
+        // 与专项页保存走同一条即时同步。
+        _syncStatusFieldForElement(_elements[index]);
         _persistAssemblyElements();
       }
     }
@@ -7236,6 +7283,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               module: currentModule.copyWith(properties: props),
             );
           });
+          // 刚建立绑定：立即把状态字段的值与量程同步进组件。
+          //
+          // 不做的话作者会看到「绑了 50 的字段，进度条还显示 65」，
+          // 而且退出时 65 会被当成作者的改动写回状态栏，把 50 冲掉。
+          _syncStatusFieldForElement(_elements[index]);
           _persistAssemblyElements();
           changed = true;
         }
