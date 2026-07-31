@@ -109,6 +109,35 @@ def math_node(name, op, *, a=0.0, b=0.0, c=0.0):
         {"operation": op, "paramA": a, "paramB": b, "paramC": c},
         color=0xFF7E57C2, radius=8.0), x, y, 180, 44)
 
+
+def button_group(label, x, y, w, h, *, parent, layer, color=0xFF9B3B2E,
+                 text_color=0xFFF2E8D5, radius=8.0, key_action=False,
+                 sends_message=False, font=13.0):
+    """一组「可见按钮」：surface 底 + text 文字 + button 热区。
+
+    button 运行时是 `SizedBox.expand()`——**纯透明热区，自己不显形**
+    （见 UIRenderer._buildButton）。所以「点击凹陷」必须作用在它下面
+    垫的那块 surface 上，不能连到整页背景——否则点一下整个页面在凹，
+    而不是这个按钮。
+
+    返回 (元素列表, surface_id, button_id)，
+    调用方用后两者建一条 click_to_surface_press。
+    """
+    face = element(uid("el"), module(uid("m"), label + "底", "surface",
+        {}, color=color, material=0, radius=radius, opacity=1.0),
+        x, y, w, h, layer=layer, parent=parent)
+    cap = element(uid("el"), module(uid("m"), label + "字", "text",
+        {"text": label, "fontSize": font, "textAlign": "center"},
+        color=text_color),
+        x, y + (h - font - 6) / 2, w, font + 6, layer=layer + 1, parent=parent)
+    props = {"hitArea": True}
+    if key_action: props["keyAction"] = True
+    if sends_message: props["sendsMessage"] = True
+    hot = element(uid("el"), module(uid("m"), label, "button",
+        props, color=color, radius=radius),
+        x, y, w, h, layer=layer + 2, parent=parent)
+    return [face, cap, hot], face["id"], hot["id"]
+
 # 羊皮纸色板：浅底深字，避开上一版深底黑字的可读性问题
 INK    = 0xFF2E2419   # 主文字
 INK2   = 0xFF6B5B45   # 次要文字
@@ -227,27 +256,26 @@ h_input = element(uid("el"), module(uid("m"), "行动", "input",
     {"placeholder": "你打算做什么…", "text": "", "committedValue": "",
      "maxLength": 300}, color=PARCH2, material=0, radius=8.0),
     20, 518, 258, 44, layer=15, parent=HB)
-h_act = element(uid("el"), module(uid("m"), "行动", "button",
-    {"sendsMessage": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "行动"}, color=BLOOD, radius=8.0),
-    286, 518, 74, 44, layer=16, parent=HB)
+h_act_els, h_act_face, h_act_id = button_group("行动", 286, 518, 74, 44,
+    parent=HB, layer=16, color=BLOOD, sends_message=True)
 
 # 退出（scene 必须有 keyAction）
-h_exit = element(uid("el"), module(uid("m"), "离开", "button",
-    {"keyAction": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "收起面板"}, color=INK2, radius=8.0),
-    20, 572, W-40, 36, layer=17, parent=HB)
+h_exit_els, h_exit_face, h_exit_id = button_group("收起面板", 20, 572, W-40, 36,
+    parent=HB, layer=19, color=INK2, key_action=True, font=12.0)
 
 h_hint = hint("← 角色卡    上滑掷骰    背包 →", HB, y=618)
 
 lk_h1 = linker("有字才能行动", "input_nonempty_to_button_enable",
-               h_input["id"], h_act["id"])
-lk_h2 = linker("行动→按压", "click_to_surface_press", h_act["id"], HB)
+               h_input["id"], h_act_id)
+# 按压动画作用在按钮**自己的** surface 底上，不是整页背景。
+lk_h2 = linker("行动→按压", "click_to_surface_press", h_act_id, h_act_face)
+lk_h3 = linker("收起→按压", "click_to_surface_press", h_exit_id, h_exit_face)
 
 home = page(PAGES["home"], "主菜单", "base",
     [h_bg, h_title, h_sub, h_div, h_loc, h_hp, h_hp_lb, h_mp, h_mp_lb,
-     h_gold, h_gold_lb, h_clue, h_clue_lb, h_div2, h_flow, h_input,
-     h_act, h_exit, h_hint, lk_h1, lk_h2],
+     h_gold, h_gold_lb, h_clue, h_clue_lb, h_div2, h_flow, h_input]
+    + h_act_els + h_exit_els +
+    [h_hint, lk_h1, lk_h2, lk_h3],
     order=0,
     gestures=[
         gesture("swipe_right", PAGES["sheet"]),
@@ -334,10 +362,9 @@ s_note = element(uid("el"), module(uid("m"), "备注", "text",
      "fontSize": 11.5, "overflow": "wrap"}, color=INK2),
     24, 424, W-48, 60, layer=17, parent=SB)
 
-s_exit = element(uid("el"), module(uid("m"), "离开", "button",
-    {"keyAction": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "收起面板"}, color=INK2, radius=8.0),
-    20, 566, W-40, 36, layer=18, parent=SB)
+s_exit_els, s_exit_face, s_exit_id = button_group("收起面板", 20, 566, W-40, 36,
+    parent=SB, layer=18, color=INK2, key_action=True, font=12.0)
+lk_s_exit = linker("收起→按压", "click_to_surface_press", s_exit_id, s_exit_face)
 s_hint = hint("← 日志            主界面 →", SB, y=618)
 
 # 三条滑块各连一条 sum_to_display 到同一个文本 = 点数汇总
@@ -349,8 +376,8 @@ lk_s2 = [linker(f"{nm}→数值", "slider_to_text", attr_els[i*3+1]["id"], attr_
 sheet = page(PAGES["sheet"], "角色卡", "base",
     [s_bg, s_title, s_div, s_name, s_lv, s_lv_lb, s_xp, s_xp_lb, s_div2]
     + attr_els +
-    [s_total_lb, s_total, s_div3, s_state, s_state_lb, s_note, s_exit, s_hint]
-    + lk_s + lk_s2,
+    [s_total_lb, s_total, s_div3, s_state, s_state_lb, s_note]
+    + s_exit_els + [s_hint, lk_s_exit] + lk_s + lk_s2,
     order=1,
     gestures=[
         gesture("swipe_left",  PAGES["home"]),
@@ -405,10 +432,8 @@ b_cost_lb = element(uid("el"), module(uid("m"), "总价标签", "text",
     {"text": "共需（银）", "fontSize": 9.0, "textAlign": "right"}, color=INK2),
     250, 344, 100, 12, layer=11, parent=BB)
 
-b_buy = element(uid("el"), module(uid("m"), "购买", "button",
-    {"sendsMessage": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "向店主买下"}, color=GREEN, radius=8.0),
-    24, 376, W-48, 40, layer=12, parent=BB)
+b_buy_els, b_buy_face, b_buy_id = button_group("向店主买下", 24, 376, W-48, 40,
+    parent=BB, layer=12, color=GREEN, sends_message=True)
 
 # 开关：是否公开携带武器（演示 boolean_to_visible）
 b_arm = element(uid("el"), module(uid("m"), "明面持械", "switch",
@@ -421,10 +446,8 @@ b_warn = element(uid("el"), module(uid("m"), "警告", "text",
     {"text": "⚠ 街上巡警会注意到你", "fontSize": 10.5}, color=BLOOD),
     100, 458, 240, 16, layer=15, parent=BB)
 
-b_exit = element(uid("el"), module(uid("m"), "离开", "button",
-    {"keyAction": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "收起面板"}, color=INK2, radius=8.0),
-    20, 566, W-40, 36, layer=16, parent=BB)
+b_exit_els, b_exit_face, b_exit_id = button_group("收起面板", 20, 566, W-40, 36,
+    parent=BB, layer=17, color=INK2, key_action=True, font=12.0)
 b_hint = hint("← 主界面", BB, y=618)
 
 lk_b1 = linker("数量→总价参数", "slider_commit_to_math_param",
@@ -432,13 +455,15 @@ lk_b1 = linker("数量→总价参数", "slider_commit_to_math_param",
 lk_b2 = linker("总价→文本", "result_to_text", b_math["id"], b_cost["id"])
 lk_b3 = linker("持械→显示警告", "boolean_to_visible",
                b_arm["id"], b_warn["id"])
-lk_b4 = linker("购买→按压", "click_to_surface_press", b_buy["id"], BB)
+lk_b4 = linker("购买→按压", "click_to_surface_press", b_buy_id, b_buy_face)
+lk_b5 = linker("收起→按压", "click_to_surface_press", b_exit_id, b_exit_face)
 
 bag = page(PAGES["bag"], "行囊", "base",
     [b_bg, b_title, b_div] + item_els +
-    [b_div2, b_shop_lb, b_qty, b_qty_lb, b_cost, b_cost_lb, b_buy,
-     b_arm, b_arm_lb, b_warn, b_exit, b_hint,
-     b_math, lk_b1, lk_b2, lk_b3, lk_b4],
+    [b_div2, b_shop_lb, b_qty, b_qty_lb, b_cost, b_cost_lb]
+    + b_buy_els +
+    [b_arm, b_arm_lb, b_warn] + b_exit_els +
+    [b_hint, b_math, lk_b1, lk_b2, lk_b3, lk_b4, lk_b5],
     order=2,
     gestures=[gesture("swipe_right", PAGES["home"])])
 
@@ -481,23 +506,22 @@ l_note = element(uid("el"), module(uid("m"), "新线索", "input",
     {"placeholder": "记下新发现…", "text": "", "committedValue": "",
      "maxLength": 200}, color=PARCH2, material=0, radius=8.0),
     24, 432, 240, 40, layer=8, parent=LB)
-l_add = element(uid("el"), module(uid("m"), "记录", "button",
-    {"sendsMessage": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "记下"}, color=GREEN, radius=8.0),
-    274, 432, 82, 40, layer=9, parent=LB)
+l_add_els, l_add_face, l_add_id = button_group("记下", 274, 432, 82, 40,
+    parent=LB, layer=9, color=GREEN, sends_message=True)
 
-l_exit = element(uid("el"), module(uid("m"), "离开", "button",
-    {"keyAction": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "收起面板"}, color=INK2, radius=8.0),
-    20, 566, W-40, 36, layer=10, parent=LB)
+l_exit_els, l_exit_face, l_exit_id = button_group("收起面板", 20, 566, W-40, 36,
+    parent=LB, layer=12, color=INK2, key_action=True, font=12.0)
 l_hint = hint("角色卡 →", LB, y=618)
 
 lk_l1 = linker("有字才能记", "input_nonempty_to_button_enable",
-               l_note["id"], l_add["id"])
+               l_note["id"], l_add_id)
+lk_l2 = linker("记下→按压", "click_to_surface_press", l_add_id, l_add_face)
+lk_l3 = linker("收起→按压", "click_to_surface_press", l_exit_id, l_exit_face)
 
 log = page(PAGES["log"], "日志", "base",
     [l_bg, l_title, l_div] + log_els +
-    [l_filter_lb, l_filter, l_note, l_add, l_exit, l_hint, lk_l1],
+    [l_filter_lb, l_filter, l_note] + l_add_els + l_exit_els +
+    [l_hint, lk_l1, lk_l2, lk_l3],
     order=3,
     gestures=[gesture("swipe_left", PAGES["sheet"])])
 
@@ -541,21 +565,19 @@ d_hint2 = element(uid("el"), module(uid("m"), "结果提示", "text",
     {"text": "掷骰结果由主持人判定", "fontSize": 10.5, "textAlign": "center"},
     color=INK2), 64, 328, 252, 16, layer=7, parent=DC)
 
-d_roll = element(uid("el"), module(uid("m"), "掷骰", "button",
-    {"sendsMessage": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "掷 1d20"}, color=BLOOD, radius=10.0),
-    64, 352, 252, 46, layer=8, parent=DC)
+d_roll_els, d_roll_face, d_roll_id = button_group("掷 1d20", 64, 352, 252, 46,
+    parent=DC, layer=8, color=BLOOD, radius=10.0, sends_message=True, font=14.0)
 
 d_tip = element(uid("el"), module(uid("m"), "关闭提示", "text",
     {"text": "点面板外任意处关闭", "fontSize": 9.5, "textAlign": "center"},
     color=INK2), 64, 408, 252, 14, layer=9, parent=DC)
 
 lk_d1 = linker("调整值→数字", "slider_to_text", d_mod["id"], d_mod_v["id"])
-lk_d2 = linker("掷骰→按压", "click_to_surface_press", d_roll["id"], DC)
+lk_d2 = linker("掷骰→按压", "click_to_surface_press", d_roll_id, d_roll_face)
 
 dice = page(PAGES["dice"], "骰子面板", "overlay",
-    [d_card, d_title, d_sub, d_diff, d_mod_lb, d_mod, d_mod_v,
-     d_hint2, d_roll, d_tip, lk_d1, lk_d2],
+    [d_card, d_title, d_sub, d_diff, d_mod_lb, d_mod, d_mod_v, d_hint2]
+    + d_roll_els + [d_tip, lk_d1, lk_d2],
     parent=PAGES["home"], order=0)
 
 # ============================================================
@@ -606,16 +628,16 @@ m_kloc = module(uid("m"), "位置", "text",
 k_loc = element(uid("el"), m_kloc, 12, 64, 140, 16, layer=4, parent=KB)
 m_kloc["properties"]["dataChannel"]["sourceComponentId"] = k_loc["id"]
 
-k_close = element(uid("el"), module(uid("m"), "收起", "button",
-    {"keyAction": True, "hitArea": True}, color=INK2, radius=6.0),
-    160, 62, 28, 20, layer=5, parent=KB)
-lk_k = linker("收起→按压", "click_to_surface_press", k_close["id"], KB)
+k_close_els, k_close_face, k_close_id = button_group("×", 160, 62, 28, 20,
+    parent=KB, layer=5, color=INK2, radius=6.0, key_action=True, font=11.0)
+lk_k = linker("收起→按压", "click_to_surface_press", k_close_id, k_close_face)
 
 sticky = json.dumps({
     "id": uid("ui"), "name": "调查员状态", "mode": "extra_sticky",
     "elements": "[]",
     "pages": json.dumps([page(uid("pg"), "主菜单", "base",
-        [k_bg, k_t, k_hp, k_mp, k_loc, k_close, lk_k])], ensure_ascii=False),
+        [k_bg, k_t, k_hp, k_mp, k_loc] + k_close_els + [lk_k])],
+        ensure_ascii=False),
     "pcbWidth": 200.0, "pcbHeight": 96.0,
     "pcbColorValue": 0x00000000, "pcbRadius": 12.0, "pcbRounded": True,
     "createdAt": BASE,
@@ -663,20 +685,18 @@ m_prof = module(uid("m"), "职业", "select",
 o_prof = element(uid("el"), m_prof, 30, 266, 260, 38, layer=5, parent=OB)
 m_prof["properties"]["dataChannel"]["sourceComponentId"] = o_prof["id"]
 
-o_go = element(uid("el"), module(uid("m"), "启程", "button",
-    {"keyAction": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "走进雾里"}, color=BLOOD, radius=10.0),
-    30, 322, 260, 46, layer=6, parent=OB)
+o_go_els, o_go_face, o_go_id = button_group("走进雾里", 30, 322, 260, 46,
+    parent=OB, layer=6, color=BLOOD, radius=10.0, key_action=True, font=14.0)
 
 lk_o1 = linker("填名才能启程", "input_nonempty_to_button_enable",
-               o_name["id"], o_go["id"])
-lk_o2 = linker("启程→按压", "click_to_surface_press", o_go["id"], OB)
+               o_name["id"], o_go_id)
+lk_o2 = linker("启程→按压", "click_to_surface_press", o_go_id, o_go_face)
 
 opening = json.dumps({
     "id": uid("ui"), "name": "开场白", "mode": "opening",
     "elements": "[]",
     "pages": json.dumps([page(uid("pg"), "主菜单", "base",
-        [o_bg, o_t, o_s, o_b, o_name, o_prof, o_go, lk_o1, lk_o2])],
+        [o_bg, o_t, o_s, o_b, o_name, o_prof] + o_go_els + [lk_o1, lk_o2])],
         ensure_ascii=False),
     "pcbWidth": 320.0, "pcbHeight": 400.0,
     "pcbColorValue": 0x00000000, "pcbRadius": 16.0, "pcbRounded": True,

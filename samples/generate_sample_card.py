@@ -88,6 +88,31 @@ def assembly(name, mode, w, h, pages, *, color=0xF20A0A14, radius=18.0):
     }, ensure_ascii=False)
 
 
+
+def button_group(label, x, y, w, h, *, parent, layer, color=0xFFFF4081,
+                 text_color=0xFFFFFFFF, radius=8.0, key_action=False,
+                 sends_message=False, font=13.0):
+    """可见按钮 = surface 底 + text 字 + button 热区（三者几何重合）。
+
+    button 运行时是 SizedBox.expand()——纯透明热区、自己不显形，
+    所以「点击凹陷」必须作用在它下面垫的那块 surface 上。
+    连到整页背景的话，点一下是整个页面在凹。
+    """
+    face = element(uid("el"), module(uid("m"), label + "底", "surface",
+        {}, color=color, material=0, radius=radius, opacity=1.0),
+        x, y, w, h, layer=layer, parent=parent)
+    cap = element(uid("el"), module(uid("m"), label + "字", "text",
+        {"text": label, "fontSize": font, "textAlign": "center"},
+        color=text_color),
+        x, y + (h - font - 6) / 2, w, font + 6, layer=layer + 1, parent=parent)
+    props = {"hitArea": True}
+    if key_action: props["keyAction"] = True
+    if sends_message: props["sendsMessage"] = True
+    hot = element(uid("el"), module(uid("m"), label, "button",
+        props, color=color, radius=radius),
+        x, y, w, h, layer=layer + 2, parent=parent)
+    return [face, cap, hot], face["id"], hot["id"]
+
 # ---------- 逻辑件（linker / math_node）----------
 # 摆在 PCB **左外侧**的「机房区」。运行时它们隐形，
 # 但编辑器里占位置——不给规则的话 AI 会把它们堆成一团，
@@ -185,17 +210,18 @@ m_mood = module(uid("m"), "心情", "text",
 e_mood = element(uid("el"), m_mood, 12, 118, 120, 18, layer=7, parent=PANEL_ID)
 m_mood["properties"]["dataChannel"]["sourceComponentId"] = e_mood["id"]
 
-e_close = element(uid("el"), module(uid("m"), "收起", "button",
-    {"keyAction": True, "hitArea": True}, color=GREY),
-    172, 8, 30, 22, layer=8, parent=PANEL_ID)
+e_close_els, e_close_face, e_close_id = button_group("×", 172, 8, 30, 22,
+    parent=PANEL_ID, layer=8, color=GREY, radius=6.0,
+    key_action=True, font=11.0)
 
 lk_close_press = linker("收起→按压反馈", "click_to_surface_press",
-                        e_close["id"], PANEL_ID)
+                        e_close_id, e_close_face)
 
 sticky = assembly("状态挂件", "extra_sticky", 212, 150,
     [page(uid("pg"), "主菜单", "base",
           [e_panel, e_title, e_trust, e_trust_lb, e_credit,
-           e_credit_lb, e_alert, e_mood, e_close, lk_close_press])])
+           e_credit_lb, e_alert, e_mood] + e_close_els +
+          [lk_close_press])])
 
 # ==========================================================
 # 2. 全屏场景 scene —— 吧台点单
@@ -277,16 +303,12 @@ m_input = module(uid("m"), "点单输入", "input",
 s_input = element(uid("el"), m_input, 16, 452, 250, 44, layer=11, parent=BG)
 
 # 发送按钮
-s_send = element(uid("el"), module(uid("m"), "递上", "button",
-    {"sendsMessage": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "递上"}, color=PINK, radius=10.0),
-    276, 452, 68, 44, layer=12, parent=BG)
+s_send_els, s_send_face, s_send_id = button_group("递上", 276, 452, 68, 44,
+    parent=BG, layer=12, color=PINK, radius=10.0, sends_message=True)
 
 # 退出按钮（scene 必须有 keyAction）
-s_exit = element(uid("el"), module(uid("m"), "离开吧台", "button",
-    {"keyAction": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "离开吧台"}, color=GREY, radius=10.0),
-    16, 512, 328, 40, layer=13, parent=BG)
+s_exit_els, s_exit_face, s_exit_id = button_group("离开吧台", 16, 512, 328, 40,
+    parent=BG, layer=16, color=GREY, radius=10.0, key_action=True)
 
 # 时段文本（绑定状态字段）
 m_time = module(uid("m"), "时段", "text",
@@ -317,18 +339,20 @@ lk_slider_math = linker("浓度→醉意参数", "slider_commit_to_math_param",
 lk_math_text   = linker("醉意→文本", "result_to_text",
                         s_math["id"], s_drunk["id"])
 lk_send_press  = linker("递上→按压反馈", "click_to_surface_press",
-                        s_send["id"], s_bg["id"])
+                        s_send_id, s_send_face)
+lk_exit_press  = linker("离开→按压反馈", "click_to_surface_press",
+                        s_exit_id, s_exit_face)
 lk_input_send  = linker("有字才能递", "input_nonempty_to_button_enable",
-                        s_input["id"], s_send["id"])
+                        s_input["id"], s_send_id)
 
 scene = assembly("吧台场景", "scene", 360, 640,
     [page(uid("pg"), "主菜单", "base",
           [s_bg, s_title, s_sub, s_line, s_flow, s_slider_lb, s_slider,
-           s_preview, s_drunk, s_select, s_switch, s_switch_lb, s_input,
-           s_send, s_exit, s_time,
+           s_preview, s_drunk, s_select, s_switch, s_switch_lb, s_input]
+          + s_send_els + s_exit_els + [s_time,
            # 逻辑件排在最后：它们在 PCB 外，不参与容器组。
            s_math, lk_slider_prog, lk_slider_math, lk_math_text,
-           lk_send_press, lk_input_send])])
+           lk_send_press, lk_exit_press, lk_input_send])])
 
 # ==========================================================
 # 3. 开场白 opening —— 报上名号
@@ -371,20 +395,18 @@ m_job = module(uid("m"), "身份", "select",
 o_job = element(uid("el"), m_job, 30, 232, 260, 40, layer=4, parent=OBG)
 m_job["properties"]["dataChannel"]["sourceComponentId"] = o_job["id"]
 
-o_go = element(uid("el"), module(uid("m"), "坐下", "button",
-    {"keyAction": True, "hitArea": True, "showTextOnRuntime": True,
-     "text": "坐到吧台前"}, color=PINK, radius=12.0),
-    30, 292, 260, 46, layer=5, parent=OBG)
+o_go_els, o_go_face, o_go_id = button_group("坐到吧台前", 30, 292, 260, 46,
+    parent=OBG, layer=5, color=PINK, radius=12.0, key_action=True, font=14.0)
 
 lk_name_go = linker("填了名字才能坐下", "input_nonempty_to_button_enable",
-                    o_name["id"], o_go["id"])
+                    o_name["id"], o_go_id)
 lk_go_press = linker("坐下→按压反馈", "click_to_surface_press",
-                     o_go["id"], OBG)
+                     o_go_id, o_go_face)
 
 opening = assembly("开场白", "opening", 320, 380,
     [page(uid("pg"), "主菜单", "base",
-          [o_bg, o_title, o_body, o_name, o_job, o_go,
-           lk_name_go, lk_go_press])])
+          [o_bg, o_title, o_body, o_name, o_job] + o_go_els +
+          [lk_name_go, lk_go_press])])
 
 # ==========================================================
 # 角色卡本体

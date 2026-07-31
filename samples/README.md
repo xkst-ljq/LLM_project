@@ -158,6 +158,33 @@ meta.ui_assemblies: [ JSON字符串, ... ]   ← 注意是字符串数组，不�
 `sourceModuleId` / `targetModuleId` 存的是**元素 id**（`element.id`），
 不是 module.id——名字有误导性，别填错。
 
+#### ⚠️ button 是透明热区，可见外观要自己垫 surface
+
+`UIRenderer._buildButton` 运行时返回的是 **`SizedBox.expand()`**——
+button **自己不显形**，只是一块透明热区。
+（`showTextOnRuntime` 只画文字，画不出底色和圆角。）
+
+所以一个「看得见、按得动、有反馈」的按钮需要**三个元素叠起来**：
+
+```
+surface（按钮外观：底色 + 圆角）   layer N     ← 按压动画作用在它身上
+  text（按钮文字）                layer N+1
+    button（透明热区）             layer N+2   ← 必须在最上层才接得到点击
+```
+
+三者**几何完全重合**（同 x/y/w/h），然后连一条：
+
+```
+click_to_surface_press:  button → 它自己的那块 surface
+```
+
+**常见错误**：把 button 连到整页的背景 surface 上。
+那样点一下是**整个页面在凹陷**，而不是这个按钮——
+方案描述里写的「为透明按钮或图片热区增加按下手感」，
+指的就是按钮自己那块底。
+
+跑团卡的 `button_group()` 就是这个模式，10 个按钮全部照此构造。
+
 #### 逻辑件的摆放：PCB 左外侧「机房区」
 
 `linker` / `math_node` / `timer` / `page_router` 运行时**隐形**，
