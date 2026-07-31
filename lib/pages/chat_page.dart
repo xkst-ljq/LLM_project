@@ -388,8 +388,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 这里负责落盘并刷新界面，使状态栏与 UI 组件保持一致。
   Future<void> _onAssemblySessionChanged(SessionState next) async {
     _sessionState = next;
-    await _saveSessionState();
+    // 同 _dismissOpeningAssembly：先刷新界面再落盘。
+    //
+    // 这个回调跟着 300ms 轮询走，玩家每拖一下滑块都会进来一次。
+    // 等磁盘 IO 完成才 setState 会让交互带上明显的黏滞感。
     if (mounted) setState(() {});
+    await _saveSessionState();
   }
 
   /// 玩家档案通道写入：把值落到**角色卡本体**并刷新显示。
@@ -3410,10 +3414,20 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   /// 确认并关闭开场白 UI，同时落盘，避免重启后又弹出来。
+  ///
+  /// **先隐藏再落盘**，顺序不能反。
+  ///
+  /// 旧实现是 `await _saveSessionState()` 之后才 setState——
+  /// 那一步是数据库写盘，UI 得等磁盘 IO 完成才消失，
+  /// release 下也有半秒左右的可见滞留（用户反馈：确认后会闪一下）。
+  ///
+  /// 标记已经写进内存里的 _sessionState，判定 `_shouldShowOpeningAssembly`
+  /// 读的就是它，所以立即 setState 就能让开场白消失；
+  /// 落盘只是为了重启后不再弹，晚几十毫秒没有任何影响。
   Future<void> _dismissOpeningAssembly() async {
     if (!OpeningGreetingState.markDismissed(_sessionState)) return;
-    await _saveSessionState();
     if (mounted) setState(() {});
+    await _saveSessionState();
   }
 
   /// 折叠常驻 UI 为悬浮球。
