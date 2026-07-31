@@ -68,6 +68,24 @@ class _KeyboardSafeDialogHost extends StatefulWidget {
 }
 
 class _KeyboardSafeDialogHostState extends State<_KeyboardSafeDialogHost> {
+  /// 本对话框所属的 FocusScope，在 dispose 之前就缓存好。
+  ///
+  /// **不能在 dispose 里调 `FocusScope.of(context)`**：
+  /// `of()` 会通过 `dependOnInheritedWidgetOfExactType` 注册依赖，
+  /// 而此刻元素正在被停用，于是触发框架断言
+  /// `'_dependents.isEmpty': is not true`
+  /// （用户实测：开场白 UI 里点开叠加页编辑再点空白处必现）。
+  ///
+  /// 在 `didChangeDependencies` 里取则是安全的——那正是允许建立
+  /// InheritedWidget 依赖的时机，且它一定早于 dispose 执行。
+  FocusScopeNode? _scope;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scope = FocusScope.of(context);
+  }
+
   @override
   void dispose() {
     // 这里**不能** await——dispose 是同步的。
@@ -76,10 +94,20 @@ class _KeyboardSafeDialogHostState extends State<_KeyboardSafeDialogHost> {
     // 输入法的 OverlayEntry 随之进入销毁流程，
     // 不会再和正在拆除的对话框争抢同一个 GlobalKey。
     //
-    // 用 `of(context)` 而非 `FocusManager.instance.primaryFocus`：
+    // 用缓存的 scope 而非 `FocusManager.instance.primaryFocus`：
     // 后者可能已经指向对话框之外的节点（例如画布上原本的焦点），
     // 误摘会让用户回到页面后发现别处的输入框失焦了。
-    FocusScope.of(context).unfocus();
+    //
+    // scope 可能已随路由一起被销毁，判一下 hasListeners 之外的存活性：
+    // FocusScopeNode 被 dispose 后调 unfocus 会抛，所以套 try。
+    final scope = _scope;
+    if (scope != null) {
+      try {
+        scope.unfocus();
+      } catch (_) {
+        // 节点已随路由销毁——键盘本来就会跟着一起收，无需处理。
+      }
+    }
     super.dispose();
   }
 

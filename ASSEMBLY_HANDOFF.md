@@ -1644,8 +1644,25 @@ Navigator.pop(ctx, value);
 `FocusScope.of(context).unfocus()`——无论从哪个出口关闭，
 子树被拆时 dispose 必定执行，天然覆盖所有路径。
 
-用 `FocusScope.of(context)` 而不是 `FocusManager.instance.primaryFocus`：
+用 `FocusScope` 而不是 `FocusManager.instance.primaryFocus`：
 后者可能已指向对话框之外的节点，误摘会让用户回到页面后发现别处失焦。
+
+**但 scope 必须在 `didChangeDependencies` 里缓存，不能在 dispose 里现取。**
+`FocusScope.of(context)` 内部走 `dependOnInheritedWidgetOfExactType`，
+会注册一条 InheritedWidget 依赖；在 dispose 阶段元素正被停用，
+于是触发框架断言：
+
+```
+'package:flutter/src/widgets/framework.dart':
+Failed assertion: line 6268 pos 12: '_dependents.isEmpty': is not true.
+```
+
+（用户实测路径：开场白 UI 里点开叠加页编辑，再点空白处必现。）
+
+**通用规则：dispose 里禁止任何 `XxxTheme.of(context)` /
+`Scaffold.of(context)` / `MediaQuery.of(context)` 之类的 `of()` 调用**，
+一律在 `didChangeDependencies` 提前缓存。
+缓存的节点可能已随路由销毁，调用时要套 try。
 
 **凡是内容里有 TextField 的 showDialog，一律改用这个包装。**
 已替换：assembly 编辑器 8 处 + Studio 的 math_node_editor 1 处。
