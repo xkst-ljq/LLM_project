@@ -47,7 +47,7 @@ meta.ui_assemblies: [ JSON字符串, ... ]   ← 注意是字符串数组，不�
 | 规则 | 说明 |
 |---|---|
 | **keyAction** | `opening` / `scene` / `extra_sticky` 必须**至少有一个**按钮带 `keyAction: true`，否则玩家会被卡死，运行时会拦截 |
-| **元素不出 PCB** | 除 `linker`/`math_node`/`timer`/`page_router` 外，所有元素必须完全落在 `0,0,pcbWidth,pcbHeight` 内 |
+| **元素不出 PCB** | 除 `linker`/`math_node`/`timer`/`page_router` 四种逻辑件外，所有元素必须完全落在 `0,0,pcbWidth,pcbHeight` 内。逻辑件运行时隐形，按第 7 节的「机房区」公式摆在 PCB 左外侧 |
 | **容器组连续** | 用了 `parentSurfaceId` 时，父面元素必须排在组员**之前** |
 | **PCB 尺寸** | 宽 120~600（`extra_companion` 上限 212）；高 64~2000。超出会被静默 clamp |
 | **select 的 current** | 必须是 `options` 里某个 `value`，否则保存时被打回第一项 |
@@ -110,7 +110,156 @@ meta.ui_assemblies: [ JSON字符串, ... ]   ← 注意是字符串数组，不�
 | `surface` | 作容器时加 `is_overlay_container: true` |
 | `indicator` | `dotSize`, `defaultGlow` |
 
-### 7. 图片
+### 7. 联动：linker 连线 vs 数据通道
+
+**两套机制，用途不同，不要混淆。**
+
+| | 数据通道 | linker 连线 |
+|---|---|---|
+| 怎么联动 | 共享数据源：A 写 session → B 读 session | 点对点：A 的值直接推给 B |
+| 画布上 | **看不见**，靠同名/同 targetId 隐式匹配 | **有一条连线**，因果关系可见 |
+| 出错时 | 静默不联动，很难查 | 连线断了一眼看出 |
+| 适合 | 要进 Prompt、要存状态、跨页面 | 组件间的即时反馈、事件触发 |
+
+**优先用 linker 表达组件之间的联动**——创作者打开画布就能看懂
+「这个数是从哪来的」。数据通道留给「需要 AI 读写」的值。
+
+⚠️ 常见错误：给滑块和进度条各设一个值就以为会联动。
+**不会**。必须显式加一条 `slider_to_progress` 的 linker，
+或者给两者配**同名**的 `session_var` 数据通道。
+
+#### linker 元件的结构
+
+它就是一个普通元件，`type` 为 `linker`：
+
+```json
+{
+  "id": "el_lk1",
+  "offset": {"x": -224, "y": 0},
+  "size": {"width": 132, "height": 44},
+  "module": {
+    "id": "m_lk1", "name": "浓度→预览条", "type": "linker",
+    "properties": {
+      "linker": {
+        "scheme": "slider_to_progress",
+        "sourceModuleId": "<源【元素】id>",
+        "targetModuleId": "<目标【元素】id>",
+        "enabled": true,
+        "priority": 5,
+        "params": {"mappingMode": "absolute"}
+      }
+    }
+  }
+}
+```
+
+`sourceModuleId` / `targetModuleId` 存的是**元素 id**（`element.id`），
+不是 module.id——名字有误导性，别填错。
+
+#### 逻辑件的摆放：PCB 左外侧「机房区」
+
+`linker` / `math_node` / `timer` / `page_router` 运行时**隐形**，
+但在编辑器里占位置。它们也是少数**允许摆在 PCB 外**的类型。
+
+不给规则的话，AI 会把它们堆在同一个坐标上重叠成一团，
+作者打开看到一堆糊在一起的方块，比不画连线更糟。
+用这套公式排（机械可执行，不需要审美判断）：
+
+```
+列宽 200      # 最宽逻辑件 math_node(180) + 余量
+行高 64       # 最高 timer(54) + 间距 10
+每列 8 个，满了往左再起一列
+
+第 i 个逻辑件：
+  col, row = divmod(i, 8)
+  x = -224 - col * 212
+  y = row * 64
+```
+
+**每套 UI 各自从 0 开始编号**，不要跨 assembly 累加。
+
+逻辑件默认尺寸：`linker` 132×44、`math_node` 180×44、
+`timer` 140×54、`page_router` 124×56。
+
+逻辑件**不要**设 `parentSurfaceId`——它们不属于任何容器组。
+
+#### 全部 66+ 条方案
+
+源 / 目标写成 `a/b/c` 的表示只接受这几种类型（比 `any` 严格）。
+`isPulse` 类方案由点击或 tick 触发，不是持续同步。
+
+| scheme | 源 → 目标 | 说明 | 参数 |
+|---|---|---|---|
+| `button_to_page_route` | button → page_router | button 点击触发页面路由器，切换平级页或打开叠加页 | — |
+| `button_to_message_action` | button → message_flow | button 点击对消息流中最新一条 AI 消息执行重生成 / 编辑 / 删除等操作 | `action` |
+| `pool_to_allocation` | text/progress/math_node → slider/input | 把一个组件当作「可分配总量」，其余组件从中分配。总量直接取来源组件的内容——文本里写「1… | `total`, `initialValue`, `precision`, `template` |
+| `sum_to_display` | slider/progress/input/math_node/timer → text/progress/slider | 把多个数值加起来显示在一处。用法：每个来源各连一条本方案到【同一个】目标组件，目标就会显… | `total`, `overflowMode`, `precision`, `template` |
+| `click_to_surface_press` | button → surface | button 点击脉冲触发 surface 的按下凹陷反馈 | `durationMs` |
+| `click_to_switch_toggle` | button → switch | 每次点击脉冲，switch 状态翻转一次 (true ↔ false) | — |
+| `click_to_switch_set_true` | button → switch | 每次点击脉冲，强制将 switch 设为 true | — |
+| `click_to_switch_set_false` | button → switch | 每次点击脉冲，强制将 switch 设为 false | — |
+| `click_to_input_clear` | button → input | 点击脉冲清空 input 当前内容 | — |
+| `click_to_slider_reset` | button → slider | 点击脉冲将滑块恢复至默认值 | — |
+| `click_to_timer_toggle` | button → timer | 每次点击在启动与停止 Timer 之间切换 | — |
+| `click_to_timer_reset` | button → timer | 点击脉冲停止 Timer 并清空当前值与 Tick 计数 | — |
+| `click_to_math_trigger` | button → math_node | 点击脉冲使目标 Math Node 立即计算并更新 lastResult | — |
+| `result_to_text` | math_node → text | 计算结果实时覆盖文本原子的模板输出 | `template`, `precision` |
+| `bool_result_to_text` | math_node → text | 根据计算结果真假，显示条件文案 | `trueText`, `falseText` |
+| `result_to_progress` | math_node → progress | 计算结果驱动进度条数值，支持比例归一化与绝对值截断 | `mappingMode` |
+| `bool_result_to_progress` | math_node → progress | true 跳至 100%，false 跳至 0% | — |
+| `value_to_math_param` | any → math_node | 将来源当前值转换为数值并注入目标计算节点的指定参数口 | `targetParam` |
+| `bool_to_text` | switch → text | 根据开关开启/关闭渲染对应文案 | `trueText`, `falseText` |
+| `boolean_to_visible` | switch → surface/surface_art/primitive_art/text/progress/slider/input/button/switch/select/indicator | 开关开启时显示目标组件，关闭时在预览和运行时隐藏 | — |
+| `boolean_to_enabled` | switch → button/input/slider/switch/select/indicator | 开关开启时允许目标交互，关闭时禁用并淡化 | — |
+| `boolean_to_locked` | switch → button/input/slider/switch/select | 开关开启时锁定目标编辑，关闭时解除锁定 | — |
+| `boolean_to_frozen` | switch → progress/math_node | 开关开启时冻结目标的外部数值更新，关闭时恢复更新 | — |
+| `boolean_to_timer_running` | switch → timer | 开关开启时 Timer 运行，关闭时 Timer 停止 | — |
+| `input_live_to_text` | input → text | 每次输入立即更新目标文本 | — |
+| `input_commit_to_text` | input → text | 输入法完成、回车或失焦后更新目标文本，保留输入框内容 | — |
+| `input_submit_to_text_clear` | input → text | 提交值写入目标文本后立即清空输入框，适合快速记录与短指令 | — |
+| `input_nonempty_to_button_enable` | input → button | 输入去除空白后有内容时启用按钮，无内容时禁用 | — |
+| `input_valid_to_button_enable` | input → button | 输入通过 required 与 maxLength 校验时启用按钮 | — |
+| `input_validity_to_indicator` | input → indicator | 向状态灯传入 empty、valid 或 invalid，由状态规则决定颜色 | — |
+| `input_length_to_indicator` | input → indicator | 向状态灯传入当前字符长度，由范围规则决定颜色 | — |
+| `input_value_to_select_match` | input → select | 输入内容与选项完全匹配时自动切换 Select；不匹配时保持当前选项 | — |
+| `input_value_to_select_filter` | input → select | 输入关键词实时过滤 Select 菜单；清空输入后恢复全部选项 | — |
+| `input_to_progress` | input → progress | 尝试解析输入的数值，驱动进度条变化 | — |
+| `input_to_slider` | input → slider | 解析输入的数值，驱动滑块滑动 | — |
+| `slider_to_text` | slider → text | 滑块当前数值实时渲染到文本模板 | `template` |
+| `slider_to_progress` | slider → progress | 滑块当前数值实时同步到进度条，支持比例折算与绝对值截断 | `mappingMode` |
+| `slider_commit_to_text` | slider → text | 只在点击结束或拖动松手后将最终值写入 Text | `template`, `precision` |
+| `slider_commit_to_math_param` | slider → math_node | 只在点击结束或拖动松手后将最终值注入 Math Node 参数口 | `targetParam` |
+| `select_to_text` | select → text | 单选组件选中的 Value/Label 输出到文本模板 | `template` |
+| `select_value_to_surface_visible` | select → surface/surface_art/primitive_art | 选中值匹配时显示目标 Surface，不匹配时隐藏 | `triggerValue` |
+| `select_value_to_switch` | select → switch | 选中值匹配时开启 Switch，不匹配时关闭 | `triggerValue` |
+| `progress_to_text` | progress → text | 输出当前值、最大值、百分比或范围文本 | `sourceField`, `precision`, `template` |
+| `progress_to_math_param` | progress → math_node | 将当前值或最大值注入 Math Node 指定参数口 | `sourceField`, `targetParam` |
+| `progress_threshold_to_button_enable` | progress → button | 进度满足阈值条件时启用按钮，否则禁用 | `operator`, `threshold` |
+| `progress_threshold_to_switch` | progress → switch | 进度满足阈值条件时开启 Switch，否则关闭 | `operator`, `threshold` |
+| `text_extract_to_math_param` | text → math_node | 从纯数值、首个数、第 N 个数或关键字字段中提取数值 | `targetParam`, `extractMode`, `numberIndex`, `key`, `parseFailBehavior` |
+| `text_match_to_switch` | text → switch | 文本匹配时开启 Switch，不匹配时关闭 | `triggerText` |
+| `text_nonempty_to_button_enable` | text → button | 文本去除空白后有内容时启用按钮 | — |
+| `text_match_to_button_enable` | text → button | 文本匹配时启用按钮，不匹配时禁用 | `triggerText` |
+| `text_value_to_select_match` | text → select | 文本与选项完全匹配时切换 Select，不匹配时保持当前选项 | — |
+| `timer_tick_to_switch_toggle` | timer → switch | 每到一次定时 Tick，驱动目标 switch 翻转一次 | — |
+| `timer_tick_to_switch_set_true` | timer → switch | 每到一次定时 Tick，强制将目标 switch 设为 true | — |
+| `timer_tick_to_switch_set_false` | timer → switch | 每到一次定时 Tick，强制将目标 switch 设为 false | — |
+| `timer_tick_to_progress_increment` | timer → progress | 每到一次定时 Tick，驱动进度条增加固定步长 | `step`, `boundaryBehavior` |
+| `timer_tick_to_progress_decrement` | timer → progress | 每到一次定时 Tick，驱动进度条减少固定步长 | `step`, `boundaryBehavior` |
+| `timer_tick_to_math_trigger` | timer → math_node | 每次 Timer Tick 使目标 Math Node 重算并更新 lastResult | — |
+| `timer_value_to_text` | timer → text | 输出当前值、Tick 次数或步长，由 Text 负责格式化展示 | `sourceField`, `precision` |
+| `event_to_animation` | button/timer → text/progress/slider/switch/select/input/image/surface/base_box/indicator/message_flow | 按钮点击或定时器触发时，让目标组件播放它配置好的动画。动画类型与时长在目标组件的「外观 … | — |
+| `event_to_indicator` | button/timer → indicator | Button 点击或 Timer Tick 使状态灯短暂闪烁，随后恢复原状态 | `flashColor`, `durationMs` |
+| `indicator_color_to_switch` | indicator → switch | 当前激活颜色匹配时开关为 true，不匹配时为 false | `triggerColor` |
+| `indicator_color_to_text` | indicator → text | 当前激活颜色匹配时显示匹配文案，否则显示未匹配文案 | `triggerColor`, `matchText`, `mismatchText` |
+| `indicator_color_to_enabled` | indicator → button/input/slider/switch/select/indicator | 当前激活颜色匹配时启用目标，不匹配时禁用 | `triggerColor` |
+| `indicator_color_to_locked` | indicator → button/input/slider/switch/select | 当前激活颜色匹配时锁定目标编辑，不匹配时解除锁定 | `triggerColor` |
+| `indicator_color_to_frozen` | indicator → progress/math_node | 当前激活颜色匹配时冻结 Progress 或 Math Node，不匹配时恢复 | `triggerColor` |
+| `indicator_color_to_visible` | indicator → surface/surface_art/primitive_art/text/progress/slider/input/button/switch/select/indicator | 当前激活颜色匹配时显示目标，不匹配时隐藏目标 | `triggerColor` |
+| `name_to_text` | surface → text | 源组件标识名称回写为目标文本 | — |
+| `to_string` | any → indicator | 将上游原始值交给状态灯自身的状态规则解释 | — |
+
+### 8. 图片
 
 `image` 组件的 `assetPath` 若填本地路径，分享时会被自动内联成 data URI。
 LLM 生成时**不要编造本地路径**——要么留空，要么用 `https://` 网址。

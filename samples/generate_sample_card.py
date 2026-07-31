@@ -87,7 +87,50 @@ def assembly(name, mode, w, h, pages, *, color=0xF20A0A14, radius=18.0):
         "createdAt": BASE,
     }, ensure_ascii=False)
 
+
+# ---------- 逻辑件（linker / math_node）----------
+# 摆在 PCB **左外侧**的「机房区」。运行时它们隐形，
+# 但编辑器里占位置——不给规则的话 AI 会把它们堆成一团，
+# 作者打开看到一堆重叠方块，比不画连线更糟。
+#
+# 排布公式（机械可执行，不需要审美判断）：
+#   列宽 200（取最宽逻辑件 math_node 180 + 余量）
+#   行高 64（取最高 timer 54 + 间距 10）
+#   每列 8 个，满了往左再起一列
+LOGIC_COL_W, LOGIC_ROW_H, LOGIC_PER_COL = 200, 64, 8
+LOGIC_START_X = -224   # -(列宽 + 24 留白)
+_logic_seq = [0]
+
+def logic_pos(size):
+    i = _logic_seq[0]; _logic_seq[0] += 1
+    col, row = divmod(i, LOGIC_PER_COL)
+    return LOGIC_START_X - col * (LOGIC_COL_W + 12), row * LOGIC_ROW_H
+
+def reset_logic_layout():
+    """每套 UI 开始前重置：否则第二套会接着第一套的编号继续往左飘。"""
+    _logic_seq[0] = 0
+
+def linker(name, scheme, src_id, dst_id, params=None, *, priority=5):
+    """一条连线。source/target 存的是**元素 id**。"""
+    data = {"scheme": scheme, "sourceModuleId": src_id,
+            "targetModuleId": dst_id, "enabled": True, "priority": priority}
+    if params:
+        data["params"] = params
+    w, h = 132, 44
+    x, y = logic_pos((w, h))
+    return element(uid("el"), module(uid("m"), name, "linker",
+        {"linker": data}, color=0xFF00ACC1, radius=8.0), x, y, w, h)
+
+def math_node(name, operation, *, a=0.0, b=0.0, c=0.0):
+    w, h = 180, 44
+    x, y = logic_pos((w, h))
+    return element(uid("el"), module(uid("m"), name, "math_node",
+        {"operation": operation, "paramA": a, "paramB": b, "paramC": c},
+        color=0xFF7E57C2, radius=8.0), x, y, w, h)
+
 CYAN, PINK, AMBER, GREEN, GREY = 0xFF00E5FF, 0xFFFF4081, 0xFFFFB300, 0xFF66BB6A, 0xFF546E7A
+
+reset_logic_layout()
 
 # ==========================================================
 # 1. 常驻挂件 extra_sticky —— 状态一览
@@ -146,14 +189,18 @@ e_close = element(uid("el"), module(uid("m"), "收起", "button",
     {"keyAction": True, "hitArea": True}, color=GREY),
     172, 8, 30, 22, layer=8, parent=PANEL_ID)
 
+lk_close_press = linker("收起→按压反馈", "click_to_surface_press",
+                        e_close["id"], PANEL_ID)
+
 sticky = assembly("状态挂件", "extra_sticky", 212, 150,
     [page(uid("pg"), "主菜单", "base",
           [e_panel, e_title, e_trust, e_trust_lb, e_credit,
-           e_credit_lb, e_alert, e_mood, e_close])])
+           e_credit_lb, e_alert, e_mood, e_close, lk_close_press])])
 
 # ==========================================================
 # 2. 全屏场景 scene —— 吧台点单
 # ==========================================================
+reset_logic_layout()
 s_bg = element(uid("el"), module(uid("m"), "吧台背板", "surface",
     {"is_overlay_container": True}, color=0xFF0D0D16, material=1, radius=0.0, opacity=1.0),
     0, 0, 360, 640)
@@ -250,15 +297,43 @@ m_time = module(uid("m"), "时段", "text",
 s_time = element(uid("el"), m_time, 240, 24, 100, 16, layer=14, parent=BG)
 m_time["properties"]["dataChannel"]["sourceComponentId"] = s_time["id"]
 
+# ---- 醉意计算：浓度 × 0.8 ----
+# math_node 让「算出来的值」有出处，作者能看懂这个数是怎么来的。
+s_math = math_node("醉意 = 浓度 x 0.8", "*", a=50.0, b=0.8)
+
+s_drunk = element(uid("el"), module(uid("m"), "醉意", "text",
+    {"text": "40", "fontSize": 12.0, "textAlign": "right"}, color=PINK),
+    232, 340, 108, 16, layer=15, parent=BG)
+
+# ---- 连线（linker）----
+# 用 linker 而不是同名数据通道来做联动：连线在画布上**看得见**，
+# 作者一眼就知道「这个值是从哪来的」。数据通道是隐式约定，
+# 出错时静默不联动，很难查。
+lk_slider_prog = linker("浓度→预览条", "slider_to_progress",
+                        s_slider["id"], s_preview["id"],
+                        {"mappingMode": "absolute"})
+lk_slider_math = linker("浓度→醉意参数", "slider_commit_to_math_param",
+                        s_slider["id"], s_math["id"], {"targetParam": "paramA"})
+lk_math_text   = linker("醉意→文本", "result_to_text",
+                        s_math["id"], s_drunk["id"])
+lk_send_press  = linker("递上→按压反馈", "click_to_surface_press",
+                        s_send["id"], s_bg["id"])
+lk_input_send  = linker("有字才能递", "input_nonempty_to_button_enable",
+                        s_input["id"], s_send["id"])
+
 scene = assembly("吧台场景", "scene", 360, 640,
     [page(uid("pg"), "主菜单", "base",
           [s_bg, s_title, s_sub, s_line, s_flow, s_slider_lb, s_slider,
-           s_preview, s_select, s_switch, s_switch_lb, s_input, s_send,
-           s_exit, s_time])])
+           s_preview, s_drunk, s_select, s_switch, s_switch_lb, s_input,
+           s_send, s_exit, s_time,
+           # 逻辑件排在最后：它们在 PCB 外，不参与容器组。
+           s_math, lk_slider_prog, lk_slider_math, lk_math_text,
+           lk_send_press, lk_input_send])])
 
 # ==========================================================
 # 3. 开场白 opening —— 报上名号
 # ==========================================================
+reset_logic_layout()
 o_bg = element(uid("el"), module(uid("m"), "开场背板", "surface",
     {"is_overlay_container": True}, color=0xFF0D0D16, material=1, radius=18.0, opacity=0.97),
     0, 0, 320, 380)
@@ -301,9 +376,15 @@ o_go = element(uid("el"), module(uid("m"), "坐下", "button",
      "text": "坐到吧台前"}, color=PINK, radius=12.0),
     30, 292, 260, 46, layer=5, parent=OBG)
 
+lk_name_go = linker("填了名字才能坐下", "input_nonempty_to_button_enable",
+                    o_name["id"], o_go["id"])
+lk_go_press = linker("坐下→按压反馈", "click_to_surface_press",
+                     o_go["id"], OBG)
+
 opening = assembly("开场白", "opening", 320, 380,
     [page(uid("pg"), "主菜单", "base",
-          [o_bg, o_title, o_body, o_name, o_job, o_go])])
+          [o_bg, o_title, o_body, o_name, o_job, o_go,
+           lk_name_go, lk_go_press])])
 
 # ==========================================================
 # 角色卡本体
