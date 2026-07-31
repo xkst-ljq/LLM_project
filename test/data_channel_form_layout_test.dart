@@ -44,6 +44,33 @@ bool showsNameInput(String semanticSource) => semanticSource == 'manual';
 bool showsLabelDropdown(String semanticSource) =>
     semanticSource == 'text_label';
 
+/// 建议排序规则，复刻 `_statusFieldNameSuggestions`。
+///
+/// 前缀命中的提到前面：作者打了几个字再点开，想找的多半在那几个字里。
+List<String> suggestionOrder(List<String> fields, String input) {
+  final key = input.trim().toLowerCase();
+  if (key.isEmpty) return fields;
+  final hit = <String>[];
+  final rest = <String>[];
+  for (final f in fields) {
+    if (f.toLowerCase().startsWith(key)) {
+      hit.add(f);
+    } else {
+      rest.add(f);
+    }
+  }
+  return [...hit, ...rest];
+}
+
+/// 是否与当前输入完全一致（用于打勾标记）。
+bool isExactMatch(String name, String input) {
+  final key = input.trim().toLowerCase();
+  if (key.isEmpty) return false;
+  return name.toLowerCase() == key;
+}
+
+const List<String> sampleFields = ['等级', '生命值', '生命上限', '金钱'];
+
 void main() {
   group('三段结构', () {
     test('恰好三段', () => expect(sections.length, 3));
@@ -198,45 +225,31 @@ void main() {
   });
 
   group('状态字段名称建议', () {
-    // 排序规则复刻 _statusFieldNameSuggestions。
-    List<String> order(List<String> fields, String input) {
-      final key = input.trim().toLowerCase();
-      if (key.isEmpty) return fields;
-      final hit = <String>[];
-      final rest = <String>[];
-      for (final f in fields) {
-        (f.toLowerCase().startsWith(key) ? hit : rest).add(f);
-      }
-      return [...hit, ...rest];
-    }
-
-    const fields = ['等级', '生命值', '生命上限', '金钱'];
-
     test('输入为空时保持状态栏原顺序', () {
-      expect(order(fields, ''), fields);
+      expect(suggestionOrder(sampleFields, ''), sampleFields);
     });
 
     test('前缀命中的排到前面', () {
-      expect(order(fields, '生命'), ['生命值', '生命上限', '等级', '金钱']);
+      expect(
+        suggestionOrder(sampleFields, '生命'),
+        ['生命值', '生命上限', '等级', '金钱'],
+      );
     });
 
     test('无命中时顺序不变', () {
-      expect(order(fields, 'xyz'), fields);
+      expect(suggestionOrder(sampleFields, 'xyz'), sampleFields);
     });
 
     test('完全一致的判定为 matched', () {
-      bool isMatched(String name, String input) =>
-          input.trim().isNotEmpty &&
-          name.toLowerCase() == input.trim().toLowerCase();
-      expect(isMatched('等级', '等级'), isTrue);
-      expect(isMatched('等级', ' 等级 '), isTrue);
-      expect(isMatched('等级', '等'), isFalse);
+      expect(isExactMatch('等级', '等级'), isTrue);
+      expect(isExactMatch('等级', ' 等级 '), isTrue);
+      expect(isExactMatch('等级', '等'), isFalse);
       // 输入为空时不该把任何一项标成命中。
-      expect(isMatched('等级', ''), isFalse);
+      expect(isExactMatch('等级', ''), isFalse);
     });
 
     test('没有状态字段时返回空表（按钮应隐藏）', () {
-      expect(order(const [], '等级'), isEmpty);
+      expect(suggestionOrder(const <String>[], '等级'), isEmpty);
     });
   });
 
