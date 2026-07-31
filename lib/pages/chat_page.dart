@@ -38,6 +38,7 @@ import '../widgets/status_notification_layer.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
 import '../widgets/chat_assembly_mount.dart';
+import '../widgets/keyboard_avoiding_stage.dart';
 import '../widgets/page_guide_overlay.dart';
 import 'background_picker_sheet.dart';
 import 'prompt_preview_page.dart';
@@ -3422,8 +3423,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // UIAssemblyRuntimeView 又按可用高度等比缩放整张 PCB——
     // 结果是作者摆好的界面在打字时整体变小。
     //
-    // 这里把被键盘吃掉的高度补回去：场景保持原尺寸，
-    // 输入框浮在它上方即可。
+    // 这里把被键盘吃掉的高度补回去，让场景保持原尺寸；
+    // 「输入框被键盘盖住」则交给 KeyboardAvoidingStage 平移解决
+    // （见下方 child）——两件事必须分开做，因为任何尺寸变化
+    // 都会触发 PCB 重算缩放。
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     // 与聊天主体同步左移：设置页从右侧滑入时，scene 要一起让开，
@@ -3448,7 +3451,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           onHorizontalDragStart: (_) {},
           onHorizontalDragUpdate: (_) {},
           onHorizontalDragEnd: (_) {},
-          child: Stack(
+          child: KeyboardAvoidingStage(
+            stageHeight: screen.height,
+            child: Stack(
           children: [
             // 背景蒙版：压暗聊天背景，让 PCB 缩放留出的信箱区不至于
             // 和场景内容抢视线。保持半透明——作者选的聊天背景图仍是
@@ -3484,6 +3489,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
             ),
           ],
+          ),
           ),
         ),
       ),
@@ -3596,21 +3602,26 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
             ),
           ),
-          Center(
-            child: ChatAssemblyMount(
-              meta: character.meta,
-              mode: 'opening',
-              sessionState: _sessionState,
-              sessionVersion: _sessionVersion,
-              onSessionStateChanged: _onAssemblySessionChanged,
-              onUserProfileChanged: _onAssemblyUserProfileChanged,
-              maxWidth: screen.width - 32,
-              // 开场白是全屏形态，保留页面手势（多页开场白可翻页）。
-              enablePageGestures: true,
-              onDismissRequested: _dismissOpeningAssembly,
-              messages: _flowMessages,
-              characterAvatar: _characterAvatarPath,
-              userAvatar: _userAvatarPath,
+          // 开场白里常有让玩家填名字的输入框，同样会被键盘盖住。
+          // 与 scene 走同一套平移方案（不缩放、可手动上翻）。
+          KeyboardAvoidingStage(
+            stageHeight: screen.height,
+            child: Center(
+              child: ChatAssemblyMount(
+                meta: character.meta,
+                mode: 'opening',
+                sessionState: _sessionState,
+                sessionVersion: _sessionVersion,
+                onSessionStateChanged: _onAssemblySessionChanged,
+                onUserProfileChanged: _onAssemblyUserProfileChanged,
+                maxWidth: screen.width - 32,
+                // 开场白是全屏形态，保留页面手势（多页开场白可翻页）。
+                enablePageGestures: true,
+                onDismissRequested: _dismissOpeningAssembly,
+                messages: _flowMessages,
+                characterAvatar: _characterAvatarPath,
+                userAvatar: _userAvatarPath,
+              ),
             ),
           ),
         ],
