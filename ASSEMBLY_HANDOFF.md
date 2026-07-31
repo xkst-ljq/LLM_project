@@ -1410,6 +1410,64 @@ A10-1 的挂载基础设施可直接复用，主要工作是各自的形态差�
 只有清空聊天记录（`_sessionState = SessionState()` 整个重建）
 才该让这类标记复位。
 
+### 3.5d 首帧空窗：异步初始化的通病（本轮连修三次）
+
+同一个根因换了三副面孔，全都是**「进页面时该显示的东西晚了一拍」**。
+
+**症状家族**
+1. 开场白先闪一下再消失
+2. 修完闪现后，开场白要等半秒才出来
+3. 聊天页背景先铺一帧默认浅蓝→浅紫渐变，再换成真背景
+
+**三条判据**
+
+**(1) 状态没读完就渲染 → 闪现。**
+`_setCurrentCharacter` 里 `_currentCharacter = char` 之后立刻 `setState`，
+但此时 `_openingDismissed` 还是上一个角色的值。
+解法是加**就绪闸门**（`_sessionReady`），副本读完前判定一律返回 false。
+
+**(2) 闸门挂在最慢的一步后面 → 空等。**
+闸门只依赖 `_loadSessionState()`（单行 `where id = ?`），
+它却排在 `_loadUser()`（`getAllCharacters()` 全表扫 + 逐字段重建卡）后面。
+**规则：决定「首帧画什么」的查询，必须排在初始化链的最前面。**
+注意提前之后，后面若有刷新 `_currentCharacter` 的步骤（`_loadUser`），
+要在其后补一次 `_invalidateAssemblyCaches()`，
+因为判定缓存按角色 id 存，同一张卡改了内容不会自动失效。
+
+**(3) `FutureBuilder` 写在 build 里 → 必然闪一帧。**
+```dart
+FutureBuilder(future: _loadXxx(), ...)   // ✗ 每次 build 新建 future
+```
+两个后果：首帧 snapshot 是 waiting（`data == null`）走进兜底分支；
+以及聊天页有多个 AnimationController 在 setState，
+动画期间**每帧**都重跑一次数据库查询。
+**解法：查询移出 build，结果缓存到 state 字段，配 `_xxxLoaded` 标志区分
+「还没查」和「查完确实没有」——前者绝不能画兜底样式。**
+
+**(4) 换个兜底颜色不算修好。**
+把默认渐变换成纯黑，只是把闪烁换了个颜色。
+必须消灭空窗本身：让数据在**首帧同步可得**。
+
+**同步缓存范式**（`BackgroundService` 是模板）
+```
+_cache / _cachedCurrentId   内存缓存
+isWarm                      缓存是否就绪
+peekCurrent() / peekById()  同步读，未就绪返回 null
+warmUp()                    main() 里 await，顺带做掉冷启动大头
+_refreshCache()             所有写入口走它：先重建缓存再 bump versionNotifier
+```
+适用条件：数据量小、全进程共用、写入口可枚举。背景、预设这类都符合。
+
+**冷启动开销藏在哪**（一次查询看着轻，前面挂着三段）
+- `DatabaseService.database` 首次 → `openDatabase` + 建表 + migration
+- `SharedPreferences.getInstance()` 首次 → 读整个 xml/plist
+- `ensureBackgroundsTable()` → 每次都查一遍 `sqlite_master`
+
+把这些代价 `await` 在 `main()` 里（记在启动画面上），
+比留给每个页面首帧去付要好。
+用户对此的判断：**「在角色库等待一会问题不大」**——
+启动慢一点可以接受，进页面闪一下不能接受。
+
 ### 3.6 页面路由器触发规则
 - A7 阶段的 `page_router` 本体点击跳转只是临时编辑态测试入口，A5 后已退场。
 - 页面切换应通过 `button → linker → page_router` 触发。
@@ -1508,6 +1566,14 @@ A10-1 的挂载基础设施可直接复用，主要工作是各自的形态差�
 - `647e6fb` 叠加页拖放换父级
 - `28578b2` 普通原子也必须留在 PCB 内（补齐三态分类 + 旋转死锁修复）
 - `b83259b` 拖出 PCB 自动后台化（双阈值滞回）
+
+**聊天页首帧空窗（详见 3.5d）**
+- `0fec4fc` 背景加同步缓存 + 启动预热，聊天页首帧即有背景
+- `6af8a45` 背景查询移出 build，缓存到 state（修默认渐变闪一帧）
+- `d48186c` 会话副本提到初始化链首读（修开场白要等半秒）
+- `98ac344` 加 `_sessionReady` 闸门（修开场白先闪后消失）
+- `d985253` 开场白判定加快速标记 + 缓存（消除每帧 JSON 解析）
+- `86d29ef` 关闭开场白改为先隐藏再落盘
 
 **聊天页**
 - `c49041c` 修键盘弹出遮挡底部气泡
