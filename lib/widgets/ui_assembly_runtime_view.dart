@@ -112,6 +112,22 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   ///   - 挂件通常只有一页，页面切换没有意义。
   final bool enablePageGestures;
 
+  /// 长按 PCB 空白处并拖动时回调（用于常驻挂件的整体移动）。
+  ///
+  /// 只有落点**没有**命中 [_longPressBlockingTypes] 里的组件时才触发；
+  /// 命中 button / slider / input 等，手势完全让给组件。
+  ///
+  /// 命中判定放在运行时视图内部而不是交给挂载方，是因为
+  /// 只有这里同时掌握 pcbRect、等比缩放系数与当前活动页的元素树，
+  /// 把这三样透传出去既啰嗦又容易算错。
+  final VoidCallback? onLongPressDragStart;
+
+  /// 长按拖动过程中的位移增量（全局坐标系）。
+  final ValueChanged<Offset>? onLongPressDragUpdate;
+
+  /// 长按拖动结束。
+  final VoidCallback? onLongPressDragEnd;
+
   const UIAssemblyRuntimeView({
     super.key,
     required this.assemblyInfo,
@@ -127,6 +143,9 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.enablePageGestures = true,
     this.onDismissRequested,
     this.onUserProfileChanged,
+    this.onLongPressDragStart,
+    this.onLongPressDragUpdate,
+    this.onLongPressDragEnd,
     this.messages = const <FlowMessage>[],
     this.liveMessages = false,
     this.onSendMessage,
@@ -154,6 +173,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   bool _suppressNextWriteBack = false;
   List<String> _lastChannelDebug = const <String>[];
   Timer? _channelPollTimer;
+
+  /// 本次长按是否已判定为「拖动挂件」。
+  /// 落点命中交互组件时为 false，后续位移不上报。
+  bool _longPressDragActive = false;
+
+  /// 上一次上报的累计位移，用来算帧间增量。
+  Offset _longPressLastOffset = Offset.zero;
   StreamSubscription<LinkerPulseEvent>? _roleSubscription;
   Offset? _swipeStart;
   String _lastTransition = 'base_slide';
@@ -509,6 +535,19 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     'switch',        // 部分实现支持横向拨动
   };
 
+  /// 长按拖动挂件时必须让开的组件类型。
+  ///
+  /// 在 [_gestureGreedyTypes] 基础上**再加 button**：button 自身有
+  /// `long_press` 事件（`ui_renderer` 会 emit，作者可接 linker），
+  /// 不排除就会和「长按拖动挂件」直接冲突。
+  ///
+  /// 其余交互组件同样要排除——长按 slider 想微调、长按 input 想选文字，
+  /// 这些都不该把整个挂件拖走（用户决策：沿用手势白名单那一套）。
+  static const Set<String> _longPressBlockingTypes = {
+    ..._gestureGreedyTypes,
+    'button',
+  };
+
   /// 落点是否命中了需要独占手势的组件。
   ///
   /// [designPoint] 是换算回设计坐标系后的位置——元素的 offset/size
@@ -516,22 +555,112 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   bool _hitsGestureGreedyElement(
     Offset designPoint,
     List<UIElement> elements,
+  ) =>
+      _hitsTypedElement(designPoint, elements, _gestureGreedyTypes);
+
+  /// 落点是否命中了「长按拖动」必须让开的组件（含 button）。
+  ///
+  /// 供外部（聊天页的常驻挂件层）判断这次长按该拖挂件还是交给组件。
+  bool hitsLongPressBlockingElement(Offset designPoint) {
+    final activePage = _resolveActivePage(_pages, _activePageId);
+    return _hitsTypedElement(
+      designPoint,
+      activePage.elements,
+      _longPressBlockingTypes,
+    );
+  }
+
+  /// 给内容套一层「长按后拖动」。未接回调时原样返回，零开销。
+  ///
+  /// 用 RawGestureDetector + LongPressGestureRecognizer：
+  ///   - 长按判定天然与单击/滑动区分，不会误触；
+  ///   - 在 `onLongPressStart` 里先做命中判定，落在 button / slider /
+  ///     input 等组件上就**不回调**，手势留给组件（用户决策）。
+  ///
+  /// 注意 `deferToChild`：空白处不参与命中，避免这层挡住下方聊天内容。
+  Widget _wrapLongPressDrag({
+    required Rect pcbRect,
+    required double scale,
+    required Widget child,
+  }) {
+    if (widget.onLongPressDragStart == null) return child;
+
+    return RawGestureDetector(
+      behavior: HitTestBehavior.deferToChild,
+      gestures: <Type, GestureRecognizerFactory>{
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+          () => LongPressGestureRecognizer(),
+          (instance) {
+            instance.onLongPressStart = (details) {
+              // 命中交互组件就整个放弃：置 false 后，
+              // 后续 MoveUpdate / End 都不再上报。
+              _longPressDragActive = !_blocksLongPress(
+                details.localPosition,
+                pcbRect,
+                scale,
+              );
+              if (_longPressDragActive) {
+                widget.onLongPressDragStart?.call();
+              }
+            };
+            instance.onLongPressMoveUpdate = (details) {
+              if (!_longPressDragActive) return;
+              // offsetFromOrigin 是**累计**位移，而调用方按增量累加，
+              // 直接传会导致位移平方级放大。这里自己算帧间增量。
+              final delta = details.offsetFromOrigin - _longPressLastOffset;
+              _longPressLastOffset = details.offsetFromOrigin;
+              widget.onLongPressDragUpdate?.call(delta);
+            };
+            instance.onLongPressEnd = (_) {
+              if (_longPressDragActive) widget.onLongPressDragEnd?.call();
+              _longPressDragActive = false;
+              _longPressLastOffset = Offset.zero;
+            };
+            instance.onLongPressCancel = () {
+              _longPressDragActive = false;
+              _longPressLastOffset = Offset.zero;
+            };
+          },
+        ),
+      },
+      child: child,
+    );
+  }
+
+  /// 长按落点是否应让位给组件。
+  bool _blocksLongPress(Offset localPosition, Rect pcbRect, double scale) {
+    if (scale <= 0) return false;
+    // 落在 PCB 之外（信箱区）不算命中组件，允许拖动。
+    if (!pcbRect.contains(localPosition)) return false;
+    final designPoint = Offset(
+      (localPosition.dx - pcbRect.left) / scale,
+      (localPosition.dy - pcbRect.top) / scale,
+    );
+    return hitsLongPressBlockingElement(designPoint);
+  }
+
+  bool _hitsTypedElement(
+    Offset designPoint,
+    List<UIElement> elements,
+    Set<String> types,
   ) {
     // 倒序遍历：列表越靠后越上层，上层组件先响应。
     for (final element in elements.reversed) {
       if (element.isComposite && element.composite != null) {
         // 复合件用绝对坐标摆子元素，先减去外壳偏移再递归。
         if ((element.offset & element.size).contains(designPoint) &&
-            _hitsGestureGreedyElement(
+            _hitsTypedElement(
               designPoint - element.offset,
               element.composite!.children,
+              types,
             )) {
           return true;
         }
         continue;
       }
       final type = element.module?.type;
-      if (type == null || !_gestureGreedyTypes.contains(type)) continue;
+      if (type == null || !types.contains(type)) continue;
       if ((element.offset & element.size).contains(designPoint)) return true;
     }
     return false;
@@ -763,6 +892,14 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                     ),
                   ),
                 ),
+              // 长按拖动层。
+              //
+              // 放在 Listener **之内、内容之上**，用 deferToChild 保证
+              // 只有落到实际内容上才参与命中；空白处仍穿透给下层。
+              //
+              // 用 LongPressGestureRecognizer 而非 GestureDetector：
+              // 需要在 onLongPressStart 时先做命中判定，
+              // 命中交互组件就整个放弃这次拖动。
               Positioned.fill(
                 child: Listener(
                   // 不启用页面手势时用 deferToChild：
@@ -792,7 +929,10 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                     }
                   },
                   onPointerCancel: (_) => _swipeStart = null,
-                  child: AnimatedSwitcher(
+                  child: _wrapLongPressDrag(
+                    pcbRect: pcbRect,
+                    scale: safeContainScale,
+                    child: AnimatedSwitcher(
                     duration: Duration(milliseconds: _lastDurationMs),
                     transitionBuilder: _buildRouteTransition,
                     child: KeyedSubtree(
@@ -807,6 +947,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                         blur: false,
                       ),
                     ),
+                  ),
                   ),
                 ),
               ),

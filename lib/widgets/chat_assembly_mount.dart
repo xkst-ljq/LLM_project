@@ -42,6 +42,11 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 玩家档案通道写入回调，透传给 UIAssemblyRuntimeView。
   final void Function(String? name, String? detail)? onUserProfileChanged;
 
+  /// 长按 PCB 拖动（常驻挂件用）。透传给 UIAssemblyRuntimeView。
+  final VoidCallback? onLongPressDragStart;
+  final ValueChanged<Offset>? onLongPressDragUpdate;
+  final VoidCallback? onLongPressDragEnd;
+
   /// 可用最大宽度。超出时由运行时等比缩小，不会溢出。
   final double? maxWidth;
 
@@ -75,6 +80,9 @@ class ChatAssemblyMount extends StatelessWidget {
     this.sessionVersion = 0,
     this.onSessionStateChanged,
     this.onUserProfileChanged,
+    this.onLongPressDragStart,
+    this.onLongPressDragUpdate,
+    this.onLongPressDragEnd,
     this.maxWidth,
     this.enablePageGestures = false,
     this.onDismissRequested,
@@ -194,6 +202,9 @@ class ChatAssemblyMount extends StatelessWidget {
         statusFields: meta.statusBarFields,
         onSessionStateChanged: onSessionStateChanged,
         onUserProfileChanged: onUserProfileChanged,
+        onLongPressDragStart: onLongPressDragStart,
+        onLongPressDragUpdate: onLongPressDragUpdate,
+        onLongPressDragEnd: onLongPressDragEnd,
       ),
     );
   }

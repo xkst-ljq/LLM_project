@@ -322,7 +322,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 常驻 UI 相对默认位置的拖动偏移。
   /// 仅存在于本次会话，不持久化——位置属于临时观感，不值得写进角色卡。
   Offset _stickyOffset = Offset.zero;
-  Offset _stickyDragStart = Offset.zero;
+
+  /// 正在长按拖动挂件。仅用于给出视觉反馈（轻微放大 + 阴影），
+  /// 让玩家知道「已经抓起来了」——长按本身没有可见的触发点。
+  bool _stickyDragging = false;
 
   /// 常驻 UI 的默认纵向锚点：状态栏长条下方。
   /// 状态栏展开时挂件不跟随下移（它已是独立层），由用户自行拖开。
@@ -3321,7 +3324,27 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       onHorizontalDragStart: (_) {},
       onHorizontalDragUpdate: (_) {},
       onHorizontalDragEnd: (_) {},
-      child: Stack(
+      // 拖动反馈：长按没有可见的触发点，必须让玩家确认「抓起来了」。
+      // 轻微放大 + 投影，200ms 内完成，不喧宾夺主。
+      child: AnimatedScale(
+        scale: _stickyDragging ? 1.04 : 1.0,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: _stickyDragging
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.28),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ]
+                : const <BoxShadow>[],
+          ),
+          child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.topCenter,
         children: [
@@ -3335,56 +3358,23 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               // 两侧各留 8，避免贴边
               maxWidth: screenWidth - 16,
               onDismissRequested: () => _collapseSticky(),
+              // 长按 PCB 拖动整个挂件（取代原先左上角的内置把手）。
+              //
+              // 命中判定在 UIAssemblyRuntimeView 内部完成：落在 button /
+              // slider / input / select / switch / message_flow 上时
+              // 不会触发，手势完全让给组件。
+              onLongPressDragStart: () {
+                setState(() => _stickyDragging = true);
+              },
+              onLongPressDragUpdate: (delta) {
+                setState(() => _stickyOffset += delta);
+              },
+              onLongPressDragEnd: () {
+                setState(() => _stickyDragging = false);
+              },
               messages: _flowMessages,
               characterAvatar: _characterAvatarPath,
               userAvatar: _userAvatarPath,
-            ),
-            // 拖动把手。作者自定义把手（drag_handle 角色）尚未接入运行时，
-            // 因此这里始终显示内置把手，保证挂件可移动。
-            Positioned(
-              top: -6,
-              left: -6,
-              // 用 RawGestureDetector：聊天页根部有 onHorizontalDrag*
-              // 用于滑出侧栏，竞技场里专用识别器优先于通用的 Pan，
-              // 直接写 onPanStart 会被父级抢走。
-              child: RawGestureDetector(
-                behavior: HitTestBehavior.opaque,
-                gestures: <Type, GestureRecognizerFactory>{
-                  // 同悬浮球：普通 Pan 会被外层 HorizontalDrag 抢走，
-                  // 且要先移动 18px 才触发，显得不跟手。
-                  _EagerPanRecognizer:
-                      GestureRecognizerFactoryWithHandlers<
-                          _EagerPanRecognizer>(
-                    () => _EagerPanRecognizer(),
-                    (instance) {
-                      // 必须用块体：箭头体 `(d) => _stickyDragStart = ...`
-                      // 的返回值是 Offset，级联会接到 Offset 上而不是识别器。
-                      instance.onStart = (d) {
-                        _stickyDragStart = d.globalPosition;
-                      };
-                      instance.onUpdate = (d) {
-                        setState(() {
-                          _stickyOffset += d.globalPosition - _stickyDragStart;
-                          _stickyDragStart = d.globalPosition;
-                        });
-                      };
-                    },
-                  ),
-                  DoubleTapGestureRecognizer:
-                      GestureRecognizerFactoryWithHandlers<
-                          DoubleTapGestureRecognizer>(
-                    () => DoubleTapGestureRecognizer(),
-                    (instance) {
-                      instance.onDoubleTap =
-                          () => setState(() => _stickyOffset = Offset.zero);
-                    },
-                  ),
-                },
-                child: _buildStickyToggle(
-                  icon: Icons.open_with_rounded,
-                  onTap: () {},
-                ),
-              ),
             ),
           // 内置折叠按钮：仅在作者没有标记折叠按钮时兜底显示，
           // 否则用户会看到两个关闭入口。
@@ -3398,6 +3388,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
             ),
         ],
+          ),
+        ),
       ),
     );
   }
