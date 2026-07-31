@@ -1148,7 +1148,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final panelHeight = (screenHeight * 0.13).clamp(96.0, 135.0).toDouble();
 
     final hasImage =
-        card.cardImagePath.isNotEmpty && File(card.cardImagePath).existsSync();
+        card.cardImagePath.isNotEmpty && _fileExists(card.cardImagePath);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -1772,6 +1772,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   Future<void> _loadUser() async {
+    // 头像可能刚被换过，存在性缓存要作废重来。
+    _invalidateFileExistsCache();
     final globalUser = await UserService.getUser();
     if (_currentCharacter != null) {
       // 重新从数据库读取角色数据，确保获取最新设定
@@ -2338,6 +2340,28 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 对已渲染过的片段（规则 / 连续性提醒等）是幂等的。
     return _renderPromptTemplate(systemPrompt);
   }
+
+  /// 文件存在性缓存。
+  ///
+  /// `File(path).existsSync()` 是**同步磁盘 IO**。头像那几处写在 build 里，
+  /// 且同一个路径要判 2~3 次（backgroundColor / backgroundImage / child
+  /// 各判一次）。聊天页有多个 AnimationController 在 setState，抽屉、
+  /// 输入框展开等动画期间每帧都会重跑整棵树，于是每帧几十次 stat 调用。
+  ///
+  /// 头像文件在一次会话里不会凭空消失，缓存结果即可。换头像走的是
+  /// UserService/角色刷新，那时会调 _invalidateFileExistsCache()。
+  static final Map<String, bool> _fileExistsCache = {};
+
+  bool _fileExists(String path) {
+    if (path.isEmpty) return false;
+    final hit = _fileExistsCache[path];
+    if (hit != null) return hit;
+    final ok = File(path).existsSync();
+    _fileExistsCache[path] = ok;
+    return ok;
+  }
+
+  void _invalidateFileExistsCache() => _fileExistsCache.clear();
 
   /// 当前生效的背景。缓存在 state 里，**不要**在 build 里现查。
   ///
@@ -3919,10 +3943,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                   _currentCharacter!
                                                                       .avatar
                                                                       .isNotEmpty &&
-                                                                  File(
-                                                                    _currentCharacter!
-                                                                        .avatar,
-                                                                  ).existsSync()
+                                                                  _fileExists(_currentCharacter!.avatar)
                                                                   ? null
                                                                   : Colors
                                                                   .grey
@@ -3934,10 +3955,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                   _currentCharacter!
                                                                       .avatar
                                                                       .isNotEmpty &&
-                                                                  File(
-                                                                    _currentCharacter!
-                                                                        .avatar,
-                                                                  ).existsSync()
+                                                                  _fileExists(_currentCharacter!.avatar)
                                                                   ? FileImage(
                                                                 File(
                                                                   _currentCharacter!
@@ -3952,10 +3970,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                   _currentCharacter!
                                                                       .avatar
                                                                       .isEmpty ||
-                                                                  !File(
-                                                                    _currentCharacter!
-                                                                        .avatar,
-                                                                  ).existsSync()
+                                                                  !_fileExists(_currentCharacter!.avatar)
                                                                   ? Icon(
                                                                 Icons.person,
                                                                 size: 18,
@@ -4439,10 +4454,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                 _currentUser
                                                                     .avatarPath
                                                                     .isNotEmpty &&
-                                                                    File(
-                                                                      _currentUser
-                                                                          .avatarPath,
-                                                                    ).existsSync()
+                                                                    _fileExists(_currentUser.avatarPath)
                                                                     ? FileImage(
                                                                   File(
                                                                     _currentUser
@@ -4454,10 +4466,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                 _currentUser
                                                                     .avatarPath
                                                                     .isEmpty ||
-                                                                    !File(
-                                                                      _currentUser
-                                                                          .avatarPath,
-                                                                    ).existsSync()
+                                                                    !_fileExists(_currentUser.avatarPath)
                                                                     ? Icon(
                                                                   Icons
                                                                       .person,
