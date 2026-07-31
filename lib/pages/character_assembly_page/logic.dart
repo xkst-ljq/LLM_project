@@ -7222,7 +7222,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final elementIndex =
         _elements.indexWhere((e) => e.module?.id == module.id);
     final element = elementIndex == -1 ? null : _elements[elementIndex];
-    if (element == null) return false;
+    if (element == null) {
+      return const DataChannelPageResult(saved: false);
+    }
 
     final existing = _dataChannelOf(module);
     final labels = _textLabelCandidates();
