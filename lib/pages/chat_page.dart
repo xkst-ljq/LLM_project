@@ -2064,6 +2064,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // _openingDismissed 去判断新角色。
     _sessionReady = false;
 
+    // 会话副本要**第一个**读。
+    //
+    // 闸门只依赖它，而它只是一条 `where id = ?` 的单行查询；
+    // 排在 _loadUser（全表扫描）后面的话，开场白要等整条链跑完才敢上屏，
+    // 表现就是「点进角色后白等半秒开场白才出来」。
+    // 反过来说，先读它就能在第一帧之前定下「这张卡该不该显示开场白」，
+    // 既不闪也不等。
+    await _loadSessionState();
+
     await _loadPromptSettings();
 
     setState(() {
@@ -2078,8 +2087,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 包括 openingGreetings、entriesJson 等最新字段。
     await _loadUser();
 
-    // 加载会话副本覆盖层（界面交互 / 状态栏写入的变量）。
-    await _loadSessionState();
+    // _loadUser 会用数据库里的最新数据重建 _currentCharacter，
+    // meta 里的 UI 方案可能刚在编辑器里被改过。
+    // 判定缓存是按角色 id 存的，id 没变就不会自动重算，
+    // 所以这里要手动失效一次——_loadSessionState 里那次是在刷新之前，
+    // 拦不住这种「同一张卡但内容变了」的情况。
+    _invalidateAssemblyCaches();
+
+    // 同理，刷新后的卡可能带上了新的状态栏字段定义。
+    // 只补缺失键，重复调用无副作用。
+    _ensureStatusValuesInitialized();
 
     // 如果没有历史记录，则自动插入开场白
     await _ensureOpeningGreetingForEmptyHistory();
