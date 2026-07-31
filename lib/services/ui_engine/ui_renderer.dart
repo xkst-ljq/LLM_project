@@ -2793,23 +2793,6 @@ class _TimerBlockWidgetState extends State<_TimerBlockWidget> {
   }
 
   @override
-  void dispose() {
-    // 这两个定时器必须在这里回收。
-    //
-    // 周期定时器内部虽然有 `if (!mounted) timer.cancel()` 自救，但那要等
-    // 下一个 tick 才生效——interval 最大可配到 60s，期间定时器一直活着，
-    // 还持有整个 State 的引用。initialDelay 更糟：最长可配 3600s，
-    // 且它的回调只判 mounted 不 cancel 自己，页面切走后仍会挂满一小时。
-    //
-    // timer 元件在多页面 UI 里随翻页反复建销，不回收就是稳定泄漏。
-    _timer?.cancel();
-    _timer = null;
-    _initialDelayTimer?.cancel();
-    _initialDelayTimer = null;
-    super.dispose();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _checkTimerState();
