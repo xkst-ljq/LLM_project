@@ -39,6 +39,9 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 用户操作 UI 导致会话副本变化时回调，供上层落盘。
   final ValueChanged<SessionState>? onSessionStateChanged;
 
+  /// 玩家档案通道写入回调，透传给 UIAssemblyRuntimeView。
+  final void Function(String? name, String? detail)? onUserProfileChanged;
+
   /// 可用最大宽度。超出时由运行时等比缩小，不会溢出。
   final double? maxWidth;
 
@@ -71,6 +74,7 @@ class ChatAssemblyMount extends StatelessWidget {
     required this.sessionState,
     this.sessionVersion = 0,
     this.onSessionStateChanged,
+    this.onUserProfileChanged,
     this.maxWidth,
     this.enablePageGestures = false,
     this.onDismissRequested,
@@ -189,6 +193,7 @@ class ChatAssemblyMount extends StatelessWidget {
         sessionVersion: sessionVersion,
         statusFields: meta.statusBarFields,
         onSessionStateChanged: onSessionStateChanged,
+        onUserProfileChanged: onUserProfileChanged,
       ),
     );
   }

@@ -98,6 +98,24 @@ class DataChannelWrite {
 
   /// 只作用于 UI 内部，不进会话副本。
   bool get isLocalOnly => targetKind == 'local_ui_state';
+
+  /// 写入本卡的玩家档案（`character.user_name` / `user_detail_setting`）。
+  ///
+  /// 与其余四种的根本区别：**它改的是角色卡本体，不是会话副本**。
+  /// 开场白里让玩家填名字后要能反映到「用户设定」，
+  /// 而 session 里的值再多也进不了那里（用户反馈）。
+  ///
+  /// 用 `semanticLabel` 区分写哪个字段：
+  ///   - 含「名」/「name」→ user_name
+  ///   - 其余            → user_detail_setting
+  bool get isUserProfile => targetKind == 'user_profile';
+
+  /// 该档案通道写的是玩家昵称（否则写玩家设定详述）。
+  bool get writesUserName {
+    final label = semanticLabel.toLowerCase();
+    return label.contains('名') || label.contains('name') ||
+        label.contains('称呼');
+  }
 }
 
 /// A9.6-2：UI 运行时 → SessionState 单向写入。
@@ -602,6 +620,30 @@ class DataChannelService {
     visit(elements);
     return out.values.toList()
       ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  /// 收集写往玩家档案的通道值。
+  ///
+  /// 不在 [applyWrites] 里处理：那个函数只认 SessionState，
+  /// 而档案要改的是角色卡本体，得由聊天页落库。
+  ///
+  /// 返回 (昵称, 设定详述)，没有对应通道时为 null。
+  static ({String? name, String? detail}) collectUserProfileWrites(
+    List<DataChannelWrite> writes,
+  ) {
+    String? name;
+    String? detail;
+    for (final write in writes) {
+      if (!write.isUserProfile) continue;
+      final value = write.value.trim();
+      if (value.isEmpty) continue;
+      if (write.writesUserName) {
+        name = value;
+      } else {
+        detail = value;
+      }
+    }
+    return (name: name, detail: detail);
   }
 
   /// 从会话副本里取出该通道对应的值；无对应数据时返回 null。

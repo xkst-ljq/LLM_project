@@ -392,6 +392,45 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     if (mounted) setState(() {});
   }
 
+  /// 玩家档案通道写入：把值落到**角色卡本体**并刷新显示。
+  ///
+  /// 与 `_onAssemblySessionChanged` 的区别是目标不同——
+  /// 那个写会话副本，这个写 `character.user_name` /
+  /// `user_detail_setting`。开场白里让玩家填的名字要能出现在
+  /// 「用户设定」里，只能走这条路（用户反馈：填了名字用户名还是「我」）。
+  ///
+  /// 优先级见 `_loadUser`：本卡 userName > 主角设定 > 全局用户，
+  /// 所以写本卡这一层就能覆盖显示名，且不污染别的角色。
+  Future<void> _onAssemblyUserProfileChanged(
+    String? name,
+    String? detail,
+  ) async {
+    final character = _currentCharacter;
+    if (character == null) return;
+
+    final nextName = name?.trim() ?? '';
+    final nextDetail = detail?.trim() ?? '';
+    // 值没变就不写库：这个回调跟着 300ms 轮询走，
+    // 不做判等会每轮都刷一次数据库。
+    final nameChanged = nextName.isNotEmpty && nextName != character.userName;
+    final detailChanged =
+        nextDetail.isNotEmpty && nextDetail != character.userDetailSetting;
+    if (!nameChanged && !detailChanged) return;
+
+    if (nameChanged) character.userName = nextName;
+    if (detailChanged) character.userDetailSetting = nextDetail;
+
+    // 只提交改动的列——updateCharacter 走的是 db.update，
+    // 传全字段没必要，也容易把别处刚改的值覆盖回旧值。
+    await DatabaseService.updateCharacter({
+      'id': character.id,
+      if (nameChanged) 'user_name': nextName,
+      if (detailChanged) 'user_detail_setting': nextDetail,
+    });
+    if (!mounted) return;
+    await _loadUser();
+  }
+
   /// 读取当前角色的会话状态（进入聊天 / 切换角色时调用）。
   Future<void> _loadSessionState() async {
     if (_currentCharacter == null) {
@@ -3024,6 +3063,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             sessionState: _sessionState,
             sessionVersion: _sessionVersion,
             onSessionStateChanged: _onAssemblySessionChanged,
+            onUserProfileChanged: _onAssemblyUserProfileChanged,
             maxWidth: bubbleMaxWidth,
             // 伴生嵌在滚动列表里，绝不能开页面手势：
             // 它的全屏 Listener 会与 ListView 的垂直滚动打架。
@@ -3120,6 +3160,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               sessionState: _sessionState,
               sessionVersion: _sessionVersion,
               onSessionStateChanged: _onAssemblySessionChanged,
+              onUserProfileChanged: _onAssemblyUserProfileChanged,
               // 两侧各留 8，避免贴边
               maxWidth: screenWidth - 16,
               onDismissRequested: () => _collapseSticky(),
@@ -3275,6 +3316,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 sessionState: _sessionState,
                 sessionVersion: _sessionVersion,
                 onSessionStateChanged: _onAssemblySessionChanged,
+                onUserProfileChanged: _onAssemblyUserProfileChanged,
                 maxWidth: screen.width,
                 // 场景是全屏形态，保留页面手势（多页场景可翻页）。
                 enablePageGestures: true,
@@ -3334,6 +3376,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               sessionState: _sessionState,
               sessionVersion: _sessionVersion,
               onSessionStateChanged: _onAssemblySessionChanged,
+              onUserProfileChanged: _onAssemblyUserProfileChanged,
               maxWidth: screen.width - 32,
               // 开场白是全屏形态，保留页面手势（多页开场白可翻页）。
               enablePageGestures: true,

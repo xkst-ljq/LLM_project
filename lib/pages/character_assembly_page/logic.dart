@@ -7561,6 +7561,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 label: '角色卡设定',
                 icon: Icons.badge_outlined,
               ),
+              SegmentedFieldOption(
+                value: 'user_profile',
+                label: '玩家档案',
+                icon: Icons.account_circle_outlined,
+              ),
             ],
             helper: _targetKindHelper(targetKind),
             onChanged: onTargetKind,
@@ -7780,6 +7785,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         return '写进角色卡状态栏，玩家能在状态栏看到。适合等级、好感度这类长期数值。';
       case 'card_entry':
         return '写进角色卡设定条目，作为长期设定的一部分。需要在下面指定写到哪一条。';
+      case 'user_profile':
+        return '写进本卡的「用户设定」。名称里含「名/称呼」写昵称，'
+            '其余写玩家设定详述。只影响这张卡，不改全局用户。';
       default:
         return '';
     }

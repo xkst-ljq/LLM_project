@@ -420,32 +420,29 @@ b_shop_lb = element(uid("el"), module(uid("m"), "商店标题", "text",
     {"text": "锚链街杂货铺 · 灯油 8 银/瓶", "fontSize": 12.0}, color=INK),
     24, 292, W-48, 18, layer=7, parent=BB)
 
-m_qty = module(uid("m"), "数量", "slider",
-    {"current": 1.0, "min": 0.0, "max": 10.0, "step": 1.0,
-     "committedValue": 1.0,
-     # 数量必须进 Prompt，否则 KP 不知道玩家买了几瓶——
-     # 按钮只能发固定文字，带不上数字。
+# 数量用 select 而非 slider：
+#   1. slider 的值要**松手提交**才写进 committedValue，
+#      拖动过程中通道读到的还是旧值（用户反馈：拉动没识别出来）；
+#   2. select 选完即生效，且选项文本本身就带单位，KP 读起来无歧义。
+m_qty = module(uid("m"), "数量", "select",
+    {"options": [{"label": f"{n} 瓶", "value": str(n)} for n in range(1, 7)],
+     "current": "1", "defaultValue": "1",
      "dataChannel": channel("购买数量", "session_var",
-        read="prompt", write="none", notify="silent")}, color=GOLD)
-b_qty = element(uid("el"), m_qty, 24, 318, 210, 34, layer=8, parent=BB)
+        read="prompt", write="none", notify="silent", field_type="text")},
+    color=GOLD, radius=8.0)
+b_qty = element(uid("el"), m_qty, 24, 316, 150, 36, layer=8, parent=BB)
 m_qty["properties"]["dataChannel"]["sourceComponentId"] = b_qty["id"]
 b_qty_lb = element(uid("el"), module(uid("m"), "数量标签", "text",
     {"text": "数量", "fontSize": 10.0}, color=INK2),
     24, 352, 60, 14, layer=9, parent=BB)
 
-b_math = math_node("总价 = 数量 x 8", "*", a=1.0, b=8.0)
-m_cost = module(uid("m"), "总价", "text",
-    {"text": "8", "fontSize": 16.0, "textAlign": "right",
-     # 总价也要进 Prompt：只给数量的话 KP 还得自己乘，容易算错
-     # （用户反馈：买一个只收了一银）。
-     "dataChannel": channel("本次消费总额", "session_var",
-        read="prompt", write="none", notify="silent", field_type="text")},
-    color=BLOOD)
-b_cost = element(uid("el"), m_cost, 250, 320, 100, 24, layer=10, parent=BB)
-m_cost["properties"]["dataChannel"]["sourceComponentId"] = b_cost["id"]
-b_cost_lb = element(uid("el"), module(uid("m"), "总价标签", "text",
-    {"text": "共需（银）", "fontSize": 9.0, "textAlign": "right"}, color=INK2),
-    250, 344, 100, 12, layer=11, parent=BB)
+
+b_cost = element(uid("el"), module(uid("m"), "单价提示", "text",
+    {"text": "8 银 / 瓶", "fontSize": 13.0, "textAlign": "right"}, color=BLOOD),
+    230, 322, 120, 22, layer=10, parent=BB)
+b_cost_lb = element(uid("el"), module(uid("m"), "结算提示", "text",
+    {"text": "总额由店主结算", "fontSize": 9.0, "textAlign": "right"},
+    color=INK2), 230, 344, 120, 12, layer=11, parent=BB)
 
 # 按钮只能发出固定文字（引擎限制，见上）。
 # 数量本身通过数据通道进 Prompt，KP 读得到，所以文案写成半句话，
@@ -469,9 +466,6 @@ b_exit_els, b_exit_face, b_exit_id = button_group("收起面板", 20, 566, W-40,
     parent=BB, layer=17, color=INK2, key_action=True, font=12.0)
 b_hint = hint("← 主界面", BB, y=618)
 
-lk_b1 = linker("数量→总价参数", "slider_commit_to_math_param",
-               b_qty["id"], b_math["id"], {"targetParam": "paramA"})
-lk_b2 = linker("总价→文本", "result_to_text", b_math["id"], b_cost["id"])
 lk_b3 = linker("持械→显示警告", "boolean_to_visible",
                b_arm["id"], b_warn["id"])
 lk_b4 = linker("购买→按压", "click_to_surface_press", b_buy_id, b_buy_face)
@@ -482,7 +476,7 @@ bag = page(PAGES["bag"], "行囊", "base",
     [b_div2, b_shop_lb, b_qty, b_qty_lb, b_cost, b_cost_lb]
     + b_buy_els +
     [b_arm, b_arm_lb, b_warn] + b_exit_els +
-    [b_hint, b_math, lk_b1, lk_b2, lk_b3, lk_b4, lk_b5],
+    [b_hint, lk_b3, lk_b4, lk_b5],
     order=2,
     gestures=[gesture("swipe_right", PAGES["home"])])
 
@@ -686,7 +680,10 @@ o_b = element(uid("el"), module(uid("m"), "正文", "text",
 
 m_pname = module(uid("m"), "调查员名", "input",
     {"placeholder": "你的名字", "text": "", "committedValue": "", "maxLength": 20,
-     "dataChannel": channel("调查员姓名", "session_var",
+     # user_profile 通道：写进本卡的「用户设定」。
+     # session_var 只写会话副本，进不了用户设定（用户反馈：
+     # 填了名字用户名还是「我」）。
+     "dataChannel": channel("调查员姓名", "user_profile",
         read="prompt", write="none", notify="silent",
         section="core_setting", field_type="text")},
     color=PARCH2, material=0, radius=8.0)
@@ -759,11 +756,12 @@ SYSTEM = """你是 KP，主持「灰港迷雾」。严格遵守：
 
 【读取界面数据】
 15. 每轮 Prompt 会带上界面数据段，其中：
-    - 购买数量 / 本次消费总额 / 检定难度 / 检定调整值
+    - 购买数量 / 检定难度 / 检定调整值
       由玩家在面板上选定。
     - 玩家点「按当前数量向店主买下灯油」时：
-      按【购买数量】给出对应瓶数，按【本次消费总额】扣银币，
-      灯油单价 8 银/瓶。**不要按 1 瓶或 1 银处理**。
+      按【购买数量】给出对应瓶数，灯油单价 8 银/瓶，
+      **自己算总价并扣银币**（如 3 瓶 = 24 银）。
+      不要按 1 瓶或 1 银处理。
     - 玩家点「按当前难度掷骰」时，按【检定难度】作为 DC、
       【检定调整值】作为加值。
     - 按钮只能发出固定文字，所有数值一律从界面数据段读，

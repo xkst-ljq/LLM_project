@@ -99,6 +99,12 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 未提供时该标记不产生行为，作者的按钮仍可正常参与 linker 等其他配置。
   final VoidCallback? onDismissRequested;
 
+  /// 玩家档案通道（`targetKind: user_profile`）产生写入时回调。
+  ///
+  /// 参数为空表示该项无变化。由挂载方决定怎么落库——
+  /// 运行时视图不该直接碰角色卡表。
+  final void Function(String? name, String? detail)? onUserProfileChanged;
+
   /// 是否启用整页滑动手势（切换平级页 / 打开叠加页 / 点空白关闭 overlay）。
   ///
   /// 常驻 / 伴生这类挂件不该吃掉滑动手势：
@@ -120,6 +126,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.showDataChannelDebug = false,
     this.enablePageGestures = true,
     this.onDismissRequested,
+    this.onUserProfileChanged,
     this.messages = const <FlowMessage>[],
     this.liveMessages = false,
     this.onSendMessage,
@@ -425,6 +432,12 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     );
     if (changed) {
       widget.onSessionStateChanged?.call(_session);
+    }
+
+    // 玩家档案通道单独走：它改的是角色卡本体而非会话副本。
+    final profile = DataChannelService.collectUserProfileWrites(writes);
+    if (profile.name != null || profile.detail != null) {
+      widget.onUserProfileChanged?.call(profile.name, profile.detail);
     }
   }
 

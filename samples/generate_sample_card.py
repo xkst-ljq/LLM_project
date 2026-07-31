@@ -374,7 +374,10 @@ o_body = element(uid("el"), module(uid("m"), "正文", "text",
 # 玩家名 → 写进角色卡设定
 m_name = module(uid("m"), "玩家名", "input",
     {"placeholder": "你的名字", "text": "", "committedValue": "", "maxLength": 24,
-     "dataChannel": channel("玩家称呼", "session_var",
+     # user_profile 通道：写进本卡的「用户设定」。
+     # session_var 只写会话副本，进不了用户设定（用户反馈：
+     # 填了名字用户名还是「我」）。
+     "dataChannel": channel("玩家称呼", "user_profile",
         read="prompt", write="none", notify="silent",
         section="core_setting", field_type="text")},
     color=0xFF1A1A28, material=1, radius=10.0)
