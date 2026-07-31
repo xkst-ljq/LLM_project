@@ -3357,6 +3357,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               onUserProfileChanged: _onAssemblyUserProfileChanged,
               // 两侧各留 8，避免贴边
               maxWidth: screenWidth - 16,
+              // 常驻挂件禁用滑动换页。
+              //
+              // 虽然 ChatAssemblyMount 的默认值就是 false，这里仍显式写出：
+              //   1. 伴生那边是显式 false，只有这里靠默认值，
+              //      读代码时容易误以为常驻是漏写了；
+              //   2. 挂件浮在聊天内容之上，开启后那层全屏 Listener
+              //      会用 translucent 持续参与命中，抢走内部 slider /
+              //      输入框的拖动，也会和聊天页的左右滑出设置页打架；
+              //   3. 多页面需求应当用叠加页实现（同 3.5g 的决策）。
+              enablePageGestures: false,
               onDismissRequested: () => _collapseSticky(),
               // 长按 PCB 拖动整个挂件（取代原先左上角的内置把手）。
               //

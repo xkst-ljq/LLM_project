@@ -4195,6 +4195,18 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return null;
   }
 
+  /// 当前 mode 的运行时是否真的会响应页面手势。
+  ///
+  /// 常驻 / 伴生挂件在聊天页挂载时都传 `enablePageGestures: false`：
+  ///   - 常驻浮在聊天内容之上，开启会抢走内部 slider / 输入框的拖动，
+  ///     也会和聊天页左右滑出设置页打架；
+  ///   - 伴生嵌在消息 ListView 里，全屏 Listener 会与垂直滚动打架。
+  ///
+  /// 这两种 mode 下配了手势也不会生效，必须在配置入口就讲清楚，
+  /// 否则作者配完发现没反应，只能靠猜（同 3.5g 那类静默失效）。
+  bool get _pageGesturesTakeEffect =>
+      _info.mode != 'extra_sticky' && _info.mode != 'extra_companion';
+
   Future<void> _showPageGestureDialog(AssemblyPage page) async {
     const directions = ['swipe_left', 'swipe_right', 'swipe_up', 'swipe_down'];
     var localGestures = page.gestures
@@ -4245,6 +4257,29 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       height: 1.35,
                     ),
                   ),
+                  // 常驻 / 伴生的运行时不响应滑动，配了也白配。
+                  if (!_pageGesturesTakeEffect) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF3E0),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFFFB74D)),
+                      ),
+                      child: const Text(
+                        '此类型 UI 不响应滑动换页：挂件浮在聊天内容上，'
+                        '开启会抢走内部滑块与输入框的拖动，也会和聊天页的'
+                        '左右滑动打架。需要多页面请改用「叠加页」。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFE65100),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     key: ValueKey('gesture_direction_$direction'),

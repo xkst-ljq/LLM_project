@@ -2340,9 +2340,18 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
               child: Padding(
                 padding: const EdgeInsets.all(4),
                 child: Icon(
-                  Icons.swipe_rounded,
+                  // 常驻 / 伴生不响应滑动换页，图标置灰示意。
+                  // 仍保留可点：点开有橙色说明条讲清楚原因，
+                  // 直接隐藏反而让作者以为是 bug。
+                  _pageGesturesTakeEffect
+                      ? Icons.swipe_rounded
+                      : Icons.swipe_outlined,
                   size: 14,
-                  color: selected ? Colors.white : const Color(0xFF555562),
+                  color: !_pageGesturesTakeEffect
+                      ? (selected
+                          ? Colors.white.withValues(alpha: 0.45)
+                          : const Color(0xFFBDBDBD))
+                      : selected ? Colors.white : const Color(0xFF555562),
                 ),
               ),
             ),
