@@ -1362,6 +1362,54 @@ A10-1 的挂载基础设施可直接复用，主要工作是各自的形态差�
 **自检清单**：新增「对话框 → 子页面」入口时，列出子页面可能改动的
 每一个 props 键，逐一确认对话框里承载它的 state/controller 都会被回读。
 
+### 3.5c 会话副本（SessionState）的同步陷阱
+
+4.3b 期间在这条链上连栽三次，都值得记。
+
+#### 一、`identical` 判不出原地修改
+
+`UIAssemblyRuntimeView.didUpdateWidget` 原本只用
+`!identical(incoming, _session)` 判断会话有没有变。但聊天页是
+**原地修改** `_sessionState.statusValues[...]`，对象身份从头到尾不变，
+`identical` 恒为 true，反向同步永远不触发。
+
+症状：**Prompt 里数值已经变了，界面纹丝不动。**
+
+解法：加 `sessionVersion`，在 `_saveSessionState()` 里统一递增。
+放那个函数是因为所有会话写入最终都汇到它——逐个改调用点必然会漏
+（与 `_persistAssemblyElements` 同理）。
+
+**透传链有三层**：`chat_page` → `ChatAssemblyMount` → `UIAssemblyRuntimeView`。
+只加两层会报 "The named parameter isn't defined"。
+
+#### 二、300ms 轮询会覆盖外部写入
+
+`_syncDataChannels` 每 300ms 跑一次，其中 `applyWrites`
+**无条件用组件当前值覆盖 session**。LLM 写入后组件还没刷新，
+新值在 300ms 内就被旧值顶掉。
+
+症状：数值看着是变了（Prompt 侧读的 session），
+但**通知不弹**——通知依据的变化量已经被抹平。
+
+解法：`_suppressNextWriteBack`。外部写入后抑制紧随的那一轮回写，
+只让 UI 追上 session；下一轮组件已是新值，回写不再造成倒退。
+
+**这条通用**：任何「组件 ⇄ session」双向同步的地方，
+外部写入后都必须先让 UI 追上，否则回写会把外部改动吃掉。
+
+#### 三、消息回滚会抹掉会话级的一次性事实
+
+`_rollbackSessionStateFor` 用消息快照**整体替换** session。
+快照是每条 AI 消息结算前拍的，可能早于玩家确认开场白，
+覆盖后 `openingUIDismissed` 回到 false，开场白又弹出来。
+
+**判据**：某个标记描述的是「玩家做过一次的事」还是「剧情状态」？
+前者（开场白已确认、引导已看过）属于会话级事实，回滚时要单独保留；
+后者（等级、好感度）才该跟着消息一起回滚。
+
+只有清空聊天记录（`_sessionState = SessionState()` 整个重建）
+才该让这类标记复位。
+
 ### 3.6 页面路由器触发规则
 - A7 阶段的 `page_router` 本体点击跳转只是临时编辑态测试入口，A5 后已退场。
 - 页面切换应通过 `button → linker → page_router` 触发。
@@ -1435,6 +1483,12 @@ A10-1 的挂载基础设施可直接复用，主要工作是各自的形态差�
 
 ## 7. 最近关键提交（倒序）
 
+**4.3b 状态变化通知**
+- `fdf56e2` 修弹窗不出现（轮询覆盖 LLM 写入）+ openingUI 被回滚重现
+- `378688b` 补 ChatAssemblyMount 的 sessionVersion 透传
+- `7dff266` 修 identical 判不出原地修改 + notifyStyle 被 silent 吃掉
+- `cc84396` 通知系统主体（废除否决权 + 弹窗/浮窗队列）
+
 **状态栏 ⇄ UI 同步**
 - `9ba93fd` 文本/开关/下拉的内容也随绑定同步
 - `d4ad321` 修 min/max/current 输入框不随绑定刷新，且保存时反向覆盖同步结果
@@ -1466,10 +1520,14 @@ A10-1 的挂载基础设施可直接复用，主要工作是各自的形态差�
 
 > 继续 `ASSEMBLY_HANDOFF.md` 的上下文，分支 `arena/019fa2fe-llm-project`。
 > A2~A14 主线全部完成并测试通过，灵感池 4.1（拖出 PCB 后台化）、
-> 4.2（叠加页拖放换父）、4.3（数据通道页重构）也已完成，
+> 4.2（叠加页拖放换父）、4.3（数据通道页重构）、
+> 4.3b（状态变化通知系统）也已完成，
 > 状态栏 ⇄ UI 初始值双向同步已打通。
-> 下一步是 **4.3b 状态变化通知系统**（设计已定案见 TRACKER，尚未实现）。
+> 灵感池六项已全部处理完毕（4.2 判定不做后被推翻并实现、
+> 4.4 转为开发约定、4.5/4.6 早已实现）。
+> 下一步方向待定，可问用户。
 > 请遵守每一步完成后 commit/push、非阻塞问题并入下一步的节奏；
 > 沙箱没有 Flutter SDK，提交前提醒我本地跑 analyze/test。
 
-**动手前务必先读 `3.5b 「双写覆盖」陷阱`**——本轮在那上面连栽四次。
+**动手前务必先读 `3.5b 「双写覆盖」陷阱` 与 `3.5c 会话副本同步陷阱`**
+——这两处各自连栽了三四次。
