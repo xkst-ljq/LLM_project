@@ -310,30 +310,69 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
   }
 
-  /// 把通道绑定的状态字段的值与量程填进实例编辑器的三个输入框。
+  /// 把通道绑定的状态字段同步进实例编辑器的各个输入框。
   ///
-  /// 只处理数值型字段——文本型没有量程，`current` 也不是数字。
-  void _fillRangeControllersFromStatusField({
+  /// **必须覆盖全部承载值的 controller**，不能只管数值那几个：
+  /// 保存时 `props['text'] = textController.text` 之类的赋值
+  /// 会用打开对话框那一刻的旧值回写，把同步结果整个盖掉。
+  /// 数值型漏了会看到「量程不变」，文本型漏了会看到「文字不变」，
+  /// 是同一个「双写覆盖」病根的不同表现。
+  ///
+  /// 返回是否真的改动了什么，调用方据此决定要不要提示。
+  bool _fillControllersFromStatusField({
     required Map<String, dynamic>? channel,
+    required String moduleType,
     required TextEditingController minController,
     required TextEditingController maxController,
     required TextEditingController currentController,
+    required TextEditingController textController,
+    required TextEditingController selectDefaultController,
+    required void Function(bool) onSwitchValue,
   }) {
     final fieldId = DataChannelService.statusFieldIdOfChannel(channel);
-    if (fieldId == null) return;
+    if (fieldId == null) return false;
     final matched = _statusFields.where((f) => f.id == fieldId);
-    if (matched.isEmpty) return;
+    if (matched.isEmpty) return false;
     final field = matched.first;
-    if (!field.isNumber) return;
+    final raw = field.initialValue.trim();
 
-    final min = field.minValue ?? 0.0;
-    final max = field.maxValue ?? 100.0;
-    minController.text = min.toStringAsFixed(0);
-    maxController.text = max.toStringAsFixed(0);
+    if (field.isNumber) {
+      // 数值型：量程 + 当前值。
+      final min = field.minValue ?? 0.0;
+      final max = field.maxValue ?? 100.0;
+      minController.text = min.toStringAsFixed(0);
+      maxController.text = max.toStringAsFixed(0);
+      final parsed = double.tryParse(raw);
+      if (parsed != null) {
+        currentController.text = parsed.clamp(min, max).toStringAsFixed(0);
+      }
+      // 数值字段绑到 text 组件上是合法的（用文字显示数值）。
+      if (moduleType == 'text' && parsed != null) {
+        textController.text = raw;
+      }
+      return true;
+    }
 
-    final parsed = double.tryParse(field.initialValue.trim());
-    if (parsed != null) {
-      currentController.text = parsed.clamp(min, max).toStringAsFixed(0);
+    // 文本型：按组件类型写到各自承载内容的那个 controller。
+    if (raw.isEmpty) return false;
+    switch (moduleType) {
+      case 'text':
+      case 'input':
+        textController.text = raw;
+        return true;
+      case 'select':
+        // 填进去，但**不保证生效**：保存时有一道
+        // `valid ? wanted : options.first.value` 的校验，
+        // 状态字段的值不在选项列表里就会被打回第一项。
+        // 这是 select 的固有约束（当前值必须是合法选项），
+        // 不是同步的 bug——作者需要自己保证选项覆盖了字段可能的取值。
+        selectDefaultController.text = raw;
+        return true;
+      case 'switch':
+        onSwitchValue(raw == 'true' || raw == '1' || raw == '开启');
+        return true;
+      default:
+        return false;
     }
   }
 
@@ -5977,11 +6016,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                   // 保存时 props['min'] = readDouble(minController)
                                   // 会用打开那一刻的旧值，把刚同步好的
                                   // 量程与数值整个覆盖回去。
-                                  _fillRangeControllersFromStatusField(
+                                  _fillControllersFromStatusField(
                                     channel: latest,
+                                    moduleType: module.type,
                                     minController: minController,
                                     maxController: maxController,
                                     currentController: currentController,
+                                    textController: textController,
+                                    selectDefaultController:
+                                        selectDefaultController,
+                                    onSwitchValue: (v) => switchValue = v,
                                   );
                                   // 「双写覆盖」陷阱（HANDOFF 已记两次）：
                                   // 专项页写的是 _elements，而本对话框的
