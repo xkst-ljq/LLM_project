@@ -310,6 +310,33 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
   }
 
+  /// 把通道绑定的状态字段的值与量程填进实例编辑器的三个输入框。
+  ///
+  /// 只处理数值型字段——文本型没有量程，`current` 也不是数字。
+  void _fillRangeControllersFromStatusField({
+    required Map<String, dynamic>? channel,
+    required TextEditingController minController,
+    required TextEditingController maxController,
+    required TextEditingController currentController,
+  }) {
+    final fieldId = DataChannelService.statusFieldIdOfChannel(channel);
+    if (fieldId == null) return;
+    final matched = _statusFields.where((f) => f.id == fieldId);
+    if (matched.isEmpty) return;
+    final field = matched.first;
+    if (!field.isNumber) return;
+
+    final min = field.minValue ?? 0.0;
+    final max = field.maxValue ?? 100.0;
+    minController.text = min.toStringAsFixed(0);
+    maxController.text = max.toStringAsFixed(0);
+
+    final parsed = double.tryParse(field.initialValue.trim());
+    if (parsed != null) {
+      currentController.text = parsed.clamp(min, max).toStringAsFixed(0);
+    }
+  }
+
   /// 单个元素刚建立/变更状态字段绑定后的即时同步。
   ///
   /// 与 `_syncStatusFieldInitialValues`（进页面时全量跑）互补：
@@ -5943,6 +5970,19 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                   pendingChannel = res.channel;
                                   channelTouchedByPage = true;
                                   final latest = res.channel;
+                                  // 绑定状态字段后，值与量程要立刻反映到
+                                  // 本对话框的三个输入框里。
+                                  //
+                                  // 不刷新的话不只是「显示不同步」——
+                                  // 保存时 props['min'] = readDouble(minController)
+                                  // 会用打开那一刻的旧值，把刚同步好的
+                                  // 量程与数值整个覆盖回去。
+                                  _fillRangeControllersFromStatusField(
+                                    channel: latest,
+                                    minController: minController,
+                                    maxController: maxController,
+                                    currentController: currentController,
+                                  );
                                   // 「双写覆盖」陷阱（HANDOFF 已记两次）：
                                   // 专项页写的是 _elements，而本对话框的
                                   // 这些变量仍是打开那一刻的旧值。
