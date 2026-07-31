@@ -248,7 +248,8 @@ s_line = element(uid("el"), module(uid("m"), "分割线", "line",
 s_flow = element(uid("el"), module(uid("m"), "对话", "message_flow",
     {"historyLimit": 0, "fontSize": 12.5, "showUser": True,
      "showAssistant": True, "richText": True,
-     "userBubbleColor": 0xFF1B3A4B, "assistantBubbleColor": 0xFF201828,
+     # 深色主题下气泡也要够亮，否则默认深色文字看不清。
+     "userBubbleColor": 0xFF2E4A5C, "assistantBubbleColor": 0xFF3A3050,
      "bubbleRadius": 12.0}, color=0xFF141420, material=1, radius=12.0),
     16, 88, 328, 250, layer=4, parent=BG)
 
@@ -436,10 +437,38 @@ GREETING = """<p>雨还在下。</p>
 <p>「随便坐。」</p>"""
 
 entries = [
-    {"id": "e_intro", "group": "intro", "title": "身份", "content": "「夜航」酒吧的调酒师，消息贩子。", "enabled": True, "order": 0},
-    {"id": "e_appear", "group": "detail", "title": "外貌", "content": "银灰短发，左眼义体，深蓝衬衫，小臂旧疤。", "enabled": True, "order": 1},
-    {"id": "e_rule", "group": "detail", "title": "行为准则", "content": "不主动提过去；信任靠时间累积；用调酒动作表达情绪。", "enabled": True, "order": 2},
+    # 固定条目必须用约定 id（name_entry / relationship / body /
+    # psychology / background），否则角色卡编辑页认不出模板。
+    {"id": "name_entry", "title": "名称",
+     "content": json.dumps({"last_name": "", "first_name": "织", "other": "夜航酒保"},
+                           ensure_ascii=False),
+     "enabled": True, "is_custom": False, "sort_order": 0},
+    {"id": "relationship", "title": "与用户关系",
+     "content": "初次见面的客人。信任需要一杯一杯地攒。",
+     "enabled": True, "is_custom": False, "sort_order": 1},
+    {"id": "body", "title": "身体数据",
+     "content": json.dumps({
+        "race": "人类", "gender": "女", "age": "34",
+        "height": "168cm", "weight": "", "measurements": "",
+        "other": "银灰短发，左眼义体（虹膜随情绪泛青光），小臂有一道未修的旧疤。",
+     }, ensure_ascii=False),
+     "enabled": True, "is_custom": False, "sort_order": 2},
+    {"id": "psychology", "title": "心理数据",
+     "content": json.dumps({
+        "personality": "话少，语速慢。对熟客毒舌，对生客礼貌而疏远。",
+        "thoughts": "讨厌被追问过去。用调酒动作代替情绪表达。",
+        "interests": "擦杯子。听客人讲街面上的传闻。",
+     }, ensure_ascii=False),
+     "enabled": True, "is_custom": False, "sort_order": 3},
+    {"id": "background", "title": "背景数据",
+     "content": json.dumps({
+        "origin": "十年前是企业安保。",
+        "experiences": "某次任务后独自退出，用遣散费盘下「夜航」。",
+        "current": "这条街消息最灵通的人。都知道她认识些人，没人知道是谁。",
+     }, ensure_ascii=False),
+     "enabled": True, "is_custom": False, "sort_order": 4},
 ]
+
 
 meta = {
     "tags": ["赛博朋克", "酒吧", "慢热", "UI测试"],

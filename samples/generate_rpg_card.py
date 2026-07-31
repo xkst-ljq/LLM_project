@@ -247,7 +247,9 @@ h_div2 = divider(HB, 196, layer=13)
 h_flow = element(uid("el"), module(uid("m"), "叙事", "message_flow",
     {"historyLimit": 0, "fontSize": 12.5, "showUser": True,
      "showAssistant": True, "richText": True,
-     "userBubbleColor": 0xFFDCD2BC, "assistantBubbleColor": 0xFFEDE3CE,
+     # 消息流不支持逐条改字色，气泡必须用浅色底，
+     # 否则默认深色文字在深气泡上看不清（用户反馈）。
+     "userBubbleColor": 0xFFE8DCC4, "assistantBubbleColor": 0xFFF5EDDF,
      "bubbleRadius": 10.0}, color=PARCH2, material=0, radius=10.0),
     20, 206, W-40, 300, layer=14, parent=HB)
 
@@ -432,9 +434,15 @@ b_qty_lb = element(uid("el"), module(uid("m"), "数量标签", "text",
     24, 352, 60, 14, layer=9, parent=BB)
 
 b_math = math_node("总价 = 数量 x 8", "*", a=1.0, b=8.0)
-b_cost = element(uid("el"), module(uid("m"), "总价", "text",
-    {"text": "8", "fontSize": 16.0, "textAlign": "right"}, color=BLOOD),
-    250, 320, 100, 24, layer=10, parent=BB)
+m_cost = module(uid("m"), "总价", "text",
+    {"text": "8", "fontSize": 16.0, "textAlign": "right",
+     # 总价也要进 Prompt：只给数量的话 KP 还得自己乘，容易算错
+     # （用户反馈：买一个只收了一银）。
+     "dataChannel": channel("本次消费总额", "session_var",
+        read="prompt", write="none", notify="silent", field_type="text")},
+    color=BLOOD)
+b_cost = element(uid("el"), m_cost, 250, 320, 100, 24, layer=10, parent=BB)
+m_cost["properties"]["dataChannel"]["sourceComponentId"] = b_cost["id"]
 b_cost_lb = element(uid("el"), module(uid("m"), "总价标签", "text",
     {"text": "共需（银）", "fontSize": 9.0, "textAlign": "right"}, color=INK2),
     250, 344, 100, 12, layer=11, parent=BB)
@@ -751,9 +759,15 @@ SYSTEM = """你是 KP，主持「灰港迷雾」。严格遵守：
 
 【读取界面数据】
 15. 每轮 Prompt 会带上界面数据段，其中：
-    - 购买数量 / 检定难度 / 检定调整值 由玩家在面板上选定，
-      玩家点「按当前数量买下」「按当前难度掷骰」时按这些值处理。
-    - 按钮只能发出固定文字，具体数值一律从界面数据段读，不要反问玩家。
+    - 购买数量 / 本次消费总额 / 检定难度 / 检定调整值
+      由玩家在面板上选定。
+    - 玩家点「按当前数量向店主买下灯油」时：
+      按【购买数量】给出对应瓶数，按【本次消费总额】扣银币，
+      灯油单价 8 银/瓶。**不要按 1 瓶或 1 银处理**。
+    - 玩家点「按当前难度掷骰」时，按【检定难度】作为 DC、
+      【检定调整值】作为加值。
+    - 按钮只能发出固定文字，所有数值一律从界面数据段读，
+      不要反问玩家，也不要自己假定。
 
 【禁止】
 12. 不要主动推进剧情到玩家没参与的地方。
@@ -767,21 +781,39 @@ GREETING = """<p>雾是从午后开始起的。</p>
 <p><em>（左右滑动可以查看角色卡与行囊，上滑打开检定面板）</em></p>"""
 
 entries = [
-    {"id": "e1", "group": "intro", "title": "身份",
-     "content": "本卡为跑团主持（KP），玩家扮演调查员。", "enabled": True, "order": 0},
-    {"id": "e2", "group": "detail", "title": "世界观",
-     "content": "二十世纪初架空港城灰港，多雾，捕鲸与走私为生，教会衰退，海上传闻不断。",
-     "enabled": True, "order": 1},
-    {"id": "e3", "group": "detail", "title": "当前章节",
-     "content": "第三章：两名同伴已失踪，线索指向十月三日夜里那艘无记录的船。",
-     "enabled": True, "order": 2},
-    {"id": "e4", "group": "detail", "title": "检定规则",
-     "content": "1d20 + 属性调整值 ≥ DC 为成功。1 为大失败必有代价，20 为大成功。",
-     "enabled": True, "order": 3},
-    {"id": "e5", "group": "detail", "title": "主要 NPC",
-     "content": "码头工头老凯（知情但要钱）；灯塔看守玛尔（疯癫，说真话）；教堂执事（隐瞒教会记录）。",
-     "enabled": True, "order": 4},
+    # ⚠️ 固定条目必须用**约定的 id**，否则角色卡编辑页认不出模板，
+    # 只能新建自定义项（用户反馈）。system 卡的固定条目见
+    # character_edit_page._defaultEntries / CardEntryTarget.fixedEntryIdsOf。
+    {"id": "system_name", "title": "系统名称", "content": "灰港迷雾",
+     "enabled": True, "is_custom": False, "sort_order": 0},
+    {"id": "system_summary", "title": "系统概要",
+     "content": "克苏鲁风格的港城调查跑团。AI 担任 KP，玩家扮演调查员。",
+     "enabled": True, "is_custom": False, "sort_order": 1},
+    {"id": "system_details", "title": "系统详情",
+     "content": json.dumps({
+        "world_setting": "二十世纪初架空港城灰港。终年多雾，靠捕鲸与走私维生。",
+        "worldview": "没有明确的超自然，只有解释不清的事。恐怖来自信息不对称。",
+        "system_mechanism": "1d20 + 属性调整值 ≥ DC 为成功。1 大失败必有代价，20 大成功。",
+     }, ensure_ascii=False),
+     "enabled": True, "is_custom": False, "sort_order": 2},
+    {"id": "protagonist", "title": "主角设定",
+     "content": json.dumps({
+        "name": "",
+        "detail": {"race": "人类", "gender": "", "age": "",
+                   "body": "左臂有旧伤，阴雨天会痛。对海腥味敏感。",
+                   "background": "受托调查两名同伴的失踪。"},
+     }, ensure_ascii=False),
+     "enabled": True, "is_custom": False, "sort_order": 3},
+    {"id": "plot", "title": "剧情",
+     "content": json.dumps({
+        "cause": "两名同伴在第二章失踪，线索指向十月三日夜里那艘无记录的船。",
+        "events": "码头工头老凯知情但要钱；灯塔看守玛尔疯癫却说真话；教堂执事隐瞒记录。",
+        "goal": "查明那艘船的来历与同伴下落。",
+        "possible_endings": "揭穿走私链 / 发现教会掩盖 / 调查员自身精神崩溃",
+     }, ensure_ascii=False),
+     "enabled": True, "is_custom": False, "sort_order": 4},
 ]
+
 
 meta = {
     "tags": ["跑团", "TRPG", "克苏鲁", "多页面UI", "UI测试"],
@@ -807,7 +839,7 @@ character = {
     "description": DESC,
     "system_prompt": SYSTEM,
     "world_book_id": "", "background_id": "",
-    "card_type": "character",
+    "card_type": "system",
     "entries_json": json.dumps(entries, ensure_ascii=False),
     "opening_greetings": json.dumps([GREETING], ensure_ascii=False),
     "meta_json": json.dumps(meta, ensure_ascii=False),

@@ -449,9 +449,68 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     return action == 'open_overlay' ? 180 : 220;
   }
 
-  void _handlePreviewPointerDown(Offset position, Rect pcbRect) {
+  /// 优先接管手势的交互组件白名单。
+  ///
+  /// 手势层是铺满整页的 `translucent` Listener，它在子组件之上，
+  /// 会把 slider 拖动、消息流滚动一并当成翻页滑动（用户反馈：
+  /// 「上滑看聊天记录结果触发了掷骰」「拖动数量没反应」）。
+  ///
+  /// 这些类型的组件自身就要吃拖动/滚动，落点命中它们时直接放弃
+  /// 本次翻页判定，把手势完全让给组件。
+  static const Set<String> _gestureGreedyTypes = {
+    'slider',        // 横向拖动
+    'message_flow',  // 纵向滚动
+    'input',         // 文本选择、光标拖动
+    'select',        // 展开后的列表滚动
+    'switch',        // 部分实现支持横向拨动
+  };
+
+  /// 落点是否命中了需要独占手势的组件。
+  ///
+  /// [designPoint] 是换算回设计坐标系后的位置——元素的 offset/size
+  /// 都是设计坐标，不能拿屏幕坐标去比。
+  bool _hitsGestureGreedyElement(
+    Offset designPoint,
+    List<UIElement> elements,
+  ) {
+    // 倒序遍历：列表越靠后越上层，上层组件先响应。
+    for (final element in elements.reversed) {
+      if (element.isComposite && element.composite != null) {
+        // 复合件用绝对坐标摆子元素，先减去外壳偏移再递归。
+        if ((element.offset & element.size).contains(designPoint) &&
+            _hitsGestureGreedyElement(
+              designPoint - element.offset,
+              element.composite!.children,
+            )) {
+          return true;
+        }
+        continue;
+      }
+      final type = element.module?.type;
+      if (type == null || !_gestureGreedyTypes.contains(type)) continue;
+      if ((element.offset & element.size).contains(designPoint)) return true;
+    }
+    return false;
+  }
+
+  void _handlePreviewPointerDown(Offset position, Rect pcbRect, double scale) {
     if (widget.assemblyInfo.mode == 'opening') return;
     if (!pcbRect.contains(position)) return;
+
+    // 命中交互组件就不记起点——后续 pointerUp 拿不到 start，
+    // 整个翻页判定自然跳过，组件独占这次手势。
+    if (scale > 0) {
+      final designPoint = Offset(
+        (position.dx - pcbRect.left) / scale,
+        (position.dy - pcbRect.top) / scale,
+      );
+      final activePage = _resolveActivePage(_pages, _activePageId);
+      if (_hitsGestureGreedyElement(designPoint, activePage.elements)) {
+        _swipeStart = null;
+        return;
+      }
+    }
+
     _swipeStart = position;
   }
 
@@ -670,7 +729,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                       : HitTestBehavior.deferToChild,
                   onPointerDown: widget.enablePageGestures
                       ? (event) => _handlePreviewPointerDown(
-                          event.localPosition, pcbRect)
+                          event.localPosition, pcbRect, safeContainScale)
                       : null,
                   onPointerUp: (event) {
                     if (widget.enablePageGestures) {
