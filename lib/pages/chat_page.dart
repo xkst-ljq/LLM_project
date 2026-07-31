@@ -1891,8 +1891,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
+    // 抽屉动画：**只在跨越结构性阈值时**才整树重建。
+    //
+    // 聊天主体（750+ 行）已经用 AnimatedBuilder 隔离，位移本身不需要
+    // setState。但 build 里还有两处依赖动画值的**条件渲染**——
+    // 输入栏的 `if (_animController.value < 0.1)` 和状态栏的
+    // `ignoring / opacity`。前者决定 widget 存不存在，无法靠
+    // AnimatedBuilder 局部化，必须重建整棵树。
+    //
+    // 于是只在 0.1 / 0.5 这两个阈值被跨过时才 setState：
+    // 一次 300ms 的抽屉动画约 18 帧，原本 18 次全树重建，
+    // 现在最多 4 次（进出各跨两个阈值）。
     _animController.addListener(() {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      final v = _animController.value;
+      final bucket = v < 0.1 ? 0 : (v < 0.5 ? 1 : 2);
+      if (bucket == _animBucket) return;
+      _animBucket = bucket;
+      setState(() {});
     });
     _inputAnimController = AnimationController(
       vsync: this,
@@ -1902,9 +1918,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       parent: _inputAnimController,
       curve: Curves.easeInOut,
     );
-    _inputAnimController.addListener(() {
-      if (mounted) setState(() {});
-    });
+    // 这里**故意不加** setState 监听。
+    //
+    // 输入框展开动画的两个消费点（见 build 里 4800 行附近）都已经
+    // 各自套了 AnimatedBuilder，会自行订阅这个 controller 并只重建
+    // 自己那一小块。再挂一个全局 setState 等于让 AnimatedBuilder
+    // 白圈——整棵 1285 行的聊天树仍会每帧重建。
     _detailAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
@@ -2344,6 +2363,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   /// 真实键盘高度（未被 Scaffold 消费）。见 build 里的赋值处说明。
   double _rawKeyboardInset = 0.0;
+
+  /// 抽屉动画所处的「结构区间」：0 = 收起(<0.1)，1 = 过渡，2 = 展开(>0.5)。
+  /// 只有区间变化才需要整树重建，见 initState 里的监听器。
+  int _animBucket = 0;
 
   /// 文件存在性缓存。
   ///
@@ -3914,21 +3937,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                             : _buildBackground(_background!),
                   ),
                   // 聊天主体 + 右侧面板
-                  Positioned(
-                    left: -panelW * _animController.value,
-                    top: 0,
-                    bottom: 0,
-                    width: screenWidth + panelW,
-                    child: IgnorePointer(
-                      // scene 接管时禁用聊天主体的交互，避免玩家隔着场景 UI
-                      // 误触下方内容；但设置页滑出时必须恢复，
-                      // 否则「打开聊天设置」进去后所有条目都点不动。
-                      ignoring: _showFanPanel ||
-                          (_sceneTakesOver && _animController.value < 0.5),
-                      child: Row(
+                  //
+                  // 用 AnimatedBuilder 把「随动画变的壳」与「不变的子树」分开：
+                  // 750+ 行的主体作为 child 只构建一次，抽屉滑动时每帧
+                  // 只重跑下面这个 builder（几行 Positioned）。
+                  //
+                  // 之前 _animController 挂的是无条件 setState，
+                  // 滑动期间每帧重建整棵 1285 行的树。
+                  AnimatedBuilder(
+                    animation: _animController,
+                    child: Row(
                         children: [
-                          IgnorePointer(
-                            ignoring: _animController.value > 0.5,
+                          // 这一层也依赖动画值，必须自己订阅：外层把子树
+                          // 当作静态 child 缓存后，写在子树里的
+                          // _animController.value 不会再随动画刷新。
+                          AnimatedBuilder(
+                            animation: _animController,
+                            builder: (context, _) => IgnorePointer(
+                              ignoring: _animController.value > 0.5,
                             child: SizedBox(
                               width: screenWidth,
                               child: Column(
@@ -4592,7 +4618,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                 ],
                               ),
                             ),
-                          ),
+                          )),
                           // 右侧设置面板
                           SizedBox(
                             width: panelW,
@@ -4674,7 +4700,23 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                           ),
                         ],
                       ),
-                    ),
+                    builder: (context, child) {
+                      final v = _animController.value;
+                      return Positioned(
+                        left: -panelW * v,
+                        top: 0,
+                        bottom: 0,
+                        width: screenWidth + panelW,
+                        child: IgnorePointer(
+                          // scene 接管时禁用聊天主体的交互，避免玩家隔着
+                          // 场景 UI 误触下方内容；但设置页滑出时必须恢复，
+                          // 否则「打开聊天设置」进去后所有条目都点不动。
+                          ignoring:
+                              _showFanPanel || (_sceneTakesOver && v < 0.5),
+                          child: child,
+                        ),
+                      );
+                    },
                   ),
                   //扇形面板
                   if (_showFanPanel)
@@ -4750,7 +4792,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                     top: 8,
                     left: 6,
                     right: 6,
-                    child: IgnorePointer(
+                    // 淡出要逐帧平滑，所以自己订阅动画。
+                    // 外层的整树重建已经按阈值节流，靠它刷新会一卡一卡。
+                    child: AnimatedBuilder(
+                      animation: _animController,
+                      builder: (context, _) => IgnorePointer(
                       ignoring: _showFanPanel || _animController.value > 0.5,
                       child: Opacity(
                         opacity: (_showFanPanel || _showCardDetail)
@@ -4768,6 +4814,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                           ),
                         ),
                       ),
+                    ),
                     ),
                   ),
                   // 3.5 常驻 UI（extra_sticky）**不在这里渲染**。
