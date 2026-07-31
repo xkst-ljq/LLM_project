@@ -3871,7 +3871,21 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   // 同步填好了，这里首帧就是真背景。下面那个空窗分支只在
                   // 缓存预热失败时才会走到，所以用中性深灰而不是纯黑——
                   // 万一真的露出来，也比一块死黑更不显眼。
-                  Positioned.fill(
+                  // 底部往下多铺一个键盘高度。
+                  //
+                  // Scaffold 是 resizeToAvoidBottomInset: true，键盘弹出时
+                  // body 会被压矮；而 scene 层用 `bottom: -keyboardInset`
+                  // 把自己顶了出去。若背景只铺满 body，屏幕最下方那条
+                  // 缝隙就没有任何东西绘制，Scaffold 本身又是透明的，
+                  // 于是露出黑色——键盘收起时 body 逐帧回弹，
+                  // 那条黑边就跟着一顿一顿地往下沉（用户反馈）。
+                  //
+                  // 让背景一直盖到键盘底下，缝隙就不存在了。
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    bottom: -_rawKeyboardInset,
                     child: !_backgroundLoaded
                         ? const ColoredBox(color: Color(0xFF1A1A1A))
                         : _background == null
