@@ -52,12 +52,36 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
     widget.onMetaChanged(updatedMeta);
   }
 
+  /// 已存在的 mode 名称列表，用于「已达上限」提示。
+  /// 每种 mode 只能有一个（运行时按 mode 查找，多建的不会被挂载）。
+  List<String> _existingModeLabels({
+    required bool hasOpening,
+    required bool hasScene,
+    required bool hasSticky,
+    required bool hasCompanion,
+  }) =>
+      [
+        if (hasOpening) '开场白弹窗',
+        if (hasScene) '场景 UI',
+        if (hasSticky) '常驻 UI',
+        if (hasCompanion) '伴生 UI',
+      ];
+
   void _addNewUI() {
     final hasOpening = _assemblies.any((a) => a.mode == 'opening');
     final hasScene = _assemblies.any((a) => a.mode == 'scene');
     // scene 与伴生**互斥**：scene 不渲染原生消息列表，伴生就没有宿主气泡。
     // 两个方向都要拦——先做伴生再加 scene 同样会造出无效组合。
     final hasCompanion = _assemblies.any((a) => a.mode == 'extra_companion');
+    // 常驻 / 伴生同样是单例。
+    //
+    // 运行时 `ChatAssemblyMount.resolveAssembly` 按 mode 查找，
+    // 遇到第一个匹配就 return——建了第二个也永远不会被挂载，
+    // 作者却看不到任何提示，等于劳动被静默吞掉（用户提问点破）。
+    //
+    // 需要多个面板时用「叠加页 + 页面跳转」在同一个 UI 内实现，
+    // 这也是用户的决策。
+    final hasSticky = _assemblies.any((a) => a.mode == 'extra_sticky');
 
     final options = <Map<String, dynamic>>[];
     if (!hasOpening) {
@@ -71,13 +95,17 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
             : '替代传统对话气泡，整个屏幕变为游戏 HUD。\n适合：战斗界面、养成面板。',
         'disabled': hasCompanion});
     }
-    options.add({'mode': 'extra_sticky', 'icon': Icons.widgets_rounded, 'title': '常驻 UI',
-      'desc': '浮在聊天上方，可折叠为悬浮球。\n适合：好感条、状态指示器。'});
-    options.add({'mode': 'extra_companion', 'icon': Icons.chat_bubble_outline_rounded, 'title': '伴生 UI',
-      'desc': hasScene
-          ? '已有场景 UI，两者互斥：场景接管聊天页后没有消息气泡可供依附。'
-          : '嵌入最新消息气泡下方，跟随聊天滚动。\n适合：评论区、记录面板。',
-      'disabled': hasScene});
+    if (!hasSticky) {
+      options.add({'mode': 'extra_sticky', 'icon': Icons.widgets_rounded, 'title': '常驻 UI',
+        'desc': '浮在聊天上方，可折叠为悬浮球。\n适合：好感条、状态指示器。'});
+    }
+    if (!hasCompanion) {
+      options.add({'mode': 'extra_companion', 'icon': Icons.chat_bubble_outline_rounded, 'title': '伴生 UI',
+        'desc': hasScene
+            ? '已有场景 UI，两者互斥：场景接管聊天页后没有消息气泡可供依附。'
+            : '嵌入最新消息气泡下方，跟随聊天滚动。\n适合：评论区、记录面板。',
+        'disabled': hasScene});
+    }
 
     if (options.isEmpty) return;
 
@@ -95,10 +123,23 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text('新建 UI 方案', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF111116))),
-              if (hasOpening || hasScene) ...[
+              // 四种 mode 都是单例，已建的在这里列出来，
+              // 免得作者对着少掉的选项猜为什么。
+              if (_existingModeLabels(
+                hasOpening: hasOpening,
+                hasScene: hasScene,
+                hasSticky: hasSticky,
+                hasCompanion: hasCompanion,
+              ).isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
-                  hasOpening && hasScene ? '已达上限：已有开场白弹窗和场景 UI' : hasOpening ? '已达上限：已有开场白弹窗' : '已达上限：已有场景 UI',
+                  '已达上限：已有' +
+                      _existingModeLabels(
+                        hasOpening: hasOpening,
+                        hasScene: hasScene,
+                        hasSticky: hasSticky,
+                        hasCompanion: hasCompanion,
+                      ).join('、'),
                   style: const TextStyle(fontSize: 11, color: Color(0xFFE65100)),
                 ),
               ],
@@ -251,6 +292,13 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
               itemCount: _assemblies.length,
               itemBuilder: (context, index) {
                 final info = _assemblies[index];
+                // 同 mode 的第二个及之后**永远不会被运行时挂载**
+                // （resolveAssembly 命中第一个就返回）。
+                // 新建入口已经堵死，但历史数据里可能已经存在，
+                // 必须显式标出来，否则作者会以为自己做的 UI 坏了。
+                final shadowed = _assemblies
+                    .sublist(0, index)
+                    .any((a) => a.mode == info.mode);
                 return Card(
                   elevation: 0,
                   color: Colors.white,
@@ -258,7 +306,9 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: info.mode == 'opening'
+                      backgroundColor: shadowed
+                          ? const Color(0xFFBDBDBD)
+                          : info.mode == 'opening'
                           ? const Color(0xFF7E57C2)
                           : info.mode == 'scene'
                               ? const Color(0xFFE65100)
@@ -268,7 +318,15 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                       child: Icon(info.modeIcon, color: Colors.white, size: 20),
                     ),
                     title: Text(info.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111116))),
-                    subtitle: Text(info.modeLabel, style: const TextStyle(fontSize: 11, color: Color(0xFF777783))),
+                    subtitle: shadowed
+                        ? Text(
+                            '${info.modeLabel} · 不会生效：已有同类型 UI',
+                            style: const TextStyle(
+                                fontSize: 11, color: Color(0xFFD32F2F)),
+                          )
+                        : Text(info.modeLabel,
+                            style: const TextStyle(
+                                fontSize: 11, color: Color(0xFF777783))),
                     trailing: PopupMenuButton<String>(
                       onSelected: (v) {
                         if (v == 'delete') _deleteUI(index);

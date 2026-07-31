@@ -1580,6 +1580,35 @@ setState(() {});
   头像那几处同一路径每帧要 stat 2~3 次。加 `_fileExistsCache` 缓存，
   在 `_loadUser()` 里失效。
 
+### 3.5g 四种 mode 全是单例（曾有静默失效缺口）
+
+`ChatAssemblyMount.resolveAssembly(meta, mode)` 按 mode 线性查找，
+**命中第一个就 return**。所以同一 mode 建了多个，第二个及之后
+永远不会被挂载。
+
+**曾经的缺口**：`character_assembly_list_page._addNewUI` 只给
+`opening` / `scene` 加了 `if (!hasXxx)` 拦截，
+`extra_sticky` / `extra_companion` 无条件加入选项。
+作者可以建任意多个常驻 UI，做完却发现它根本不出现，且**没有任何提示**。
+
+用户提问点破：「常驻 UI 的折叠图标只有一个，有多个常驻 UI 怎么办？
+进入对话会不会打架？折叠后怎么区分？两者重叠了怎么弄？」
+——答案是不会打架也不会重叠，因为第二个根本没被挂载，
+代价是作者的劳动被静默吞掉。
+
+**用户决策**：限制为单个。
+> 好吧，就限制为单个，用叠加页也可以实现多页面显示
+
+**已修**：
+1. 四种 mode 一律 `if (!hasXxx)` 拦截，「已达上限」提示由
+   `_existingModeLabels()` 统一生成（原来只硬编码了 opening/scene 两种组合）。
+2. 列表页对**历史数据**里的重复项显式标注：头像置灰 +
+   副标题红字「不会生效：已有同类型 UI」。
+   新建入口堵死不代表旧数据干净，不标出来作者会以为 UI 坏了。
+
+**以后新增 mode 时记得**：`_addNewUI` 的拦截、`_existingModeLabels`
+的标签、以及列表页的配色三处都要补。
+
 ### 3.6 页面路由器触发规则
 - A7 阶段的 `page_router` 本体点击跳转只是临时编辑态测试入口，A5 后已退场。
 - 页面切换应通过 `button → linker → page_router` 触发。
