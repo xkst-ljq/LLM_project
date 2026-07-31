@@ -96,6 +96,21 @@ class _AssemblyAssetItem {
   }
 }
 
+/// 数据通道专项页的返回值。
+///
+/// 专项页**不落盘**，只把配好的通道交回实例编辑器，
+/// 由后者的保存 / 取消统一裁决——
+/// 「先改动，再决定确认还是退回」才符合作者的直觉。
+class DataChannelPageResult {
+  const DataChannelPageResult({required this.saved, this.channel});
+
+  /// 是否点了专项页的保存（点返回则为 false）。
+  final bool saved;
+
+  /// 配好的通道 map；名称为空视为清除通道，此时为 null。
+  final Map<String, dynamic>? channel;
+}
+
 /// Assembly 编辑器的返回值。
 ///
 /// 从裸 JSON 字符串改成对象，是因为反写需要多带一份状态字段：

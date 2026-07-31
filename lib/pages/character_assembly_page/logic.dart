@@ -5340,8 +5340,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       text: existingChannel?['semanticLabel']?.toString() ?? module.name,
     );
     var channelEnabled = existingChannel != null;
-    // 专项页是否已经直接落盘过。落盘后本对话框的「取消」收不回那份改动。
-    var channelCommittedByPage = false;
+    // 专项页配好但尚未提交的通道。null 表示本次没经过专项页，
+    // 保存时沿用 props 里已有的配置。
+    Map<String, dynamic>? pendingChannel;
+    var channelTouchedByPage = false;
     var channelSource =
         existingChannel?['semanticSource']?.toString() ?? 'manual';
     var channelLabelId = existingChannel?['labelElementId']?.toString() ?? '';
@@ -5932,13 +5934,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                 icon: const Icon(Icons.tune_rounded, size: 16),
                                 label: const Text('配置数据通道'),
                                 onPressed: () async {
-                                  final changed =
+                                  final res =
                                       await _openDataChannelPage(module);
-                                  if (!changed) return;
-                                  // 专项页保存即落盘，本对话框的「取消」
-                                  // 已经收不回它——如实告知，
-                                  // 免得作者以为取消能一并撤销。
-                                  channelCommittedByPage = true;
+                                  if (!res.saved) return;
+                                  // 专项页只返回配置、不落盘。
+                                  // 这里把它暂存进对话框状态，
+                                  // 由本对话框的保存 / 取消统一裁决。
+                                  pendingChannel = res.channel;
+                                  channelTouchedByPage = true;
+                                  final latest = res.channel;
                                   // 「双写覆盖」陷阱（HANDOFF 已记两次）：
                                   // 专项页写的是 _elements，而本对话框的
                                   // 这些变量仍是打开那一刻的旧值。
@@ -5946,7 +5950,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                   //   1. 上面的「最终语义」预览不会变；
                                   //   2. 本对话框保存时会用旧值重建 payload，
                                   //      把专项页刚配好的内容整个盖掉。
-                                  final latest = _dataChannelOf(module);
                                   setDialogState(() {
                                     channelEnabled = latest != null;
                                     channelNameController.text =
@@ -6002,11 +6005,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             actions: [
               TextButton(
                 onPressed: () => closeAtomDialog(ctx, 'cancel'),
-                child: Text(
-                  // 通道已由专项页落盘时，「取消」只作用于本对话框的
-                  // 其余字段，说清楚比让作者猜好。
-                  channelCommittedByPage ? '取消其余修改' : '取消',
-                ),
+                child: const Text('取消'),
               ),
               FilledButton(
                 onPressed: () => closeAtomDialog(ctx, 'save'),
@@ -6180,6 +6179,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           // 重建会把刚配好的内容覆盖掉。
           if (!channelEnabled) {
             props.remove('dataChannel');
+          } else if (channelTouchedByPage) {
+            // 本次经过了专项页：以它返回的配置为准。
+            // 名称被清空时 channel 为 null，等同于移除通道。
+            if (pendingChannel == null) {
+              props.remove('dataChannel');
+            } else {
+              props['dataChannel'] =
+                  Map<String, dynamic>.from(pendingChannel!);
+            }
           } else if (props['dataChannel'] == null && channelName.isNotEmpty) {
             // 刚打开开关、还没进专项页配置：先落一份最小可用配置，
             // 免得开了开关却什么都没保存。
@@ -7207,9 +7215,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   /// 内嵌会把对话框撑得又长又乱，此前「方案参数编辑器漏做」
   /// 与「三级选择器藏太深」都是这么来的。
   ///
-  /// 内容先原样承接现有表单，后续再做优化（用户要求）。
-  /// 返回 true 表示配置有改动。
-  Future<bool> _openDataChannelPage(UIModule module) async {
+  /// **不直接落盘**：把配好的通道返回给调用方，由实例编辑器的
+  /// 保存 / 取消统一裁决。专项页自己写库的话，作者点了外层「取消」
+  /// 也收不回来，与「先改，再决定确认还是退回」的常识相悖。
+  Future<DataChannelPageResult> _openDataChannelPage(UIModule module) async {
     final elementIndex =
         _elements.indexWhere((e) => e.module?.id == module.id);
     final element = elementIndex == -1 ? null : _elements[elementIndex];
@@ -7301,7 +7310,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ),
     );
 
-    var changed = false;
+    Map<String, dynamic>? result;
     if (saved == true && mounted) {
       final name = _resolveDataChannelName(
         semanticSource: semanticSource,
@@ -7312,43 +7321,23 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ).trim();
 
       final index = _elements.indexWhere((e) => e.id == element.id);
-      if (index != -1) {
-        final current = _elements[index];
-        final currentModule = current.module;
+      if (index != -1 && name.isNotEmpty) {
+        final currentModule = _elements[index].module;
         if (currentModule != null) {
-          final props = Map<String, dynamic>.from(
-            _deepCloneValue(currentModule.properties) as Map,
+          result = _buildDataChannelPayload(
+            name: name,
+            semanticSource: semanticSource,
+            labelElementId: labelElementId,
+            sourceComponentId: _elements[index].id,
+            module: currentModule,
+            targetKind: targetKind,
+            visibility: visibility,
+            llmReadPolicy: readPolicy,
+            llmWritePolicy: writePolicy,
+            applyPolicy: applyPolicy,
+            promptSection: promptSection,
+            cardTarget: cardTarget,
           );
-          if (name.isEmpty) {
-            props.remove('dataChannel');
-          } else {
-            props['dataChannel'] = _buildDataChannelPayload(
-              name: name,
-              semanticSource: semanticSource,
-              labelElementId: labelElementId,
-              sourceComponentId: current.id,
-              module: currentModule,
-              targetKind: targetKind,
-              visibility: visibility,
-              llmReadPolicy: readPolicy,
-              llmWritePolicy: writePolicy,
-              applyPolicy: applyPolicy,
-              promptSection: promptSection,
-              cardTarget: cardTarget,
-            );
-          }
-          setState(() {
-            _elements[index] = current.copyWith(
-              module: currentModule.copyWith(properties: props),
-            );
-          });
-          // 刚建立绑定：立即把状态字段的值与量程同步进组件。
-          //
-          // 不做的话作者会看到「绑了 50 的字段，进度条还显示 65」，
-          // 而且退出时 65 会被当成作者的改动写回状态栏，把 50 冲掉。
-          _syncStatusFieldForElement(_elements[index]);
-          _persistAssemblyElements();
-          changed = true;
         }
       }
     }
@@ -7357,7 +7346,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       nameController.dispose();
       cardTitleController.dispose();
     });
-    return changed;
+    return DataChannelPageResult(saved: saved == true, channel: result);
   }
 
   /// 数据通道表单字段，供原子实例编辑器与复合暴露项实例编辑器共用。
