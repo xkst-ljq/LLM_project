@@ -9,6 +9,7 @@ import '../models/character_meta.dart';
 import '../models/status_bar_field.dart';
 import '../models/text_highlight_rule.dart';
 import '../models/ui_assembly_info.dart';
+import '../services/ui_engine/data_channel_service.dart';
 import '../services/database_service.dart';
 import '../services/image_pick_service.dart';
 import '../utils/id_utils.dart';
@@ -1310,12 +1311,48 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     final result = await Navigator.push<List<StatusBarField>>(
       context,
       MaterialPageRoute(
-        builder: (_) => StatusBarFieldsEditPage(fields: _meta.statusBarFields),
+        builder: (_) => StatusBarFieldsEditPage(
+          fields: _meta.statusBarFields,
+          pendingBindings: _collectPendingStatusBindings(),
+        ),
       ),
     );
     if (result != null) {
       setState(() => _meta.statusBarFields = result);
     }
+  }
+
+  /// 扫描全部界面组装，收集「UI 里引用了但角色卡还没建」的状态字段名。
+  ///
+  /// 状态栏编辑页据此提示作者一键创建，初始值取 UI 组件当前的值——
+  /// 这是用户明确的方向：状态栏还没有该字段时以 UI 为准。
+  ///
+  /// 解析失败的组装直接跳过：这个提示是锦上添花，
+  /// 不该因为某张卡的数据损坏就让整个状态栏编辑页打不开。
+  List<PendingStatusBinding> _collectPendingStatusBindings() {
+    final merged = <String, PendingStatusBinding>{};
+    for (final raw in _meta.uiAssemblies) {
+      try {
+        final info = UIAssemblyInfo.fromJsonString(raw);
+        if (info.id.isEmpty) continue;
+        final decoded = jsonDecode(info.pagesJson);
+        if (decoded is! List) continue;
+        for (final item in decoded) {
+          if (item is! Map) continue;
+          final page = AssemblyPage.fromJson(
+            Map<String, dynamic>.from(item),
+          );
+          for (final b in DataChannelService.collectPendingStatusBindings(
+            page.elements,
+          )) {
+            merged.putIfAbsent(b.name, () => b);
+          }
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return merged.values.toList()..sort((a, b) => a.name.compareTo(b.name));
   }
 
   /// 文本着色入口：正则规则决定台词 / 旁白等片段的颜色。

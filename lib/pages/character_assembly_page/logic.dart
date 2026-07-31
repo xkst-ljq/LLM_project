@@ -162,6 +162,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _canvasOffset = Offset.zero;
     _restoreAssemblyPages();
     _reconcileStatusChannelBindings();
+    // 补绑之后再同步初始值：顺序不能反。
+    // 反了的话本次刚补上 targetId 的通道拿不到字段值，
+    // 要等下次进页面才同步，表现为「改了状态栏，回 UI 没变，再进一次才变」。
+    _syncStatusFieldInitialValues();
     _setupEventBusListener();
     _scheduleInitialViewportCenter();
     _assetService.ensureLoaded().then((_) {
@@ -251,6 +255,33 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       for (var i = 0; i < children.length; i++) {
         children[i].sortOrder = i;
       }
+    }
+  }
+
+  /// 把状态栏字段的初始值同步到绑定它的组件上。
+  ///
+  /// 用户要的效果：「绑定好双方后，无论修改谁的初始值，
+  /// 保存切换到另一个页面也会跟着同步，采用一样的数据。」
+  ///
+  /// 这一侧负责「状态栏 → UI」。反向的「UI → 状态栏」发生在
+  /// 状态栏编辑页新建字段时（见 `collectPendingStatusBindings`）。
+  ///
+  /// 只同步**已绑定**的通道；预绑定（targetId 为空）保持组件自己的值，
+  /// 因为那个值正是将来创建字段时要用的初始值。
+  void _syncStatusFieldInitialValues() {
+    if (_statusFields.isEmpty) return;
+    var changed = false;
+    for (final page in _pages) {
+      if (DataChannelService.applyStatusFieldInitialValues(
+        page.elements,
+        _statusFields,
+      )) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      _loadActivePageState();
+      _persistAssemblyElements();
     }
   }
 

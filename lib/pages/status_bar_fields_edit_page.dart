@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/status_bar_field.dart';
+import '../services/ui_engine/data_channel_service.dart';
 
 /// 状态栏字段定义编辑页。
 ///
@@ -8,7 +9,19 @@ import '../models/status_bar_field.dart';
 /// 字段定义随卡片保存；运行时当前值另存于会话副本，清空记录后回到初始值。
 class StatusBarFieldsEditPage extends StatefulWidget {
   final List<StatusBarField> fields;
-  const StatusBarFieldsEditPage({super.key, required this.fields});
+
+  /// UI 里写了字段名、但角色卡还没有该字段的「预绑定」条目。
+  ///
+  /// 作者在数据通道里写下「生命值」时，角色卡可能还没这个字段——
+  /// 此时通道记为 pendingName 等待创建。他之后来这个页面建字段，
+  /// 不该还得自己回忆当时打的是什么名字，所以在这里直接列出来。
+  final List<PendingStatusBinding> pendingBindings;
+
+  const StatusBarFieldsEditPage({
+    super.key,
+    required this.fields,
+    this.pendingBindings = const <PendingStatusBinding>[],
+  });
 
   @override
   State<StatusBarFieldsEditPage> createState() =>
@@ -52,6 +65,49 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
         order: _fields.length,
       ));
     });
+  }
+
+  /// 尚未被创建的预绑定项。
+  ///
+  /// 已经建了同名字段的就不再提示——那条预绑定下次打开 UI 组装页时
+  /// 会被 `_reconcileStatusChannelBindings` 自动补绑成真实 targetId。
+  List<PendingStatusBinding> get _unresolvedBindings {
+    final existing = _fields
+        .map((f) => f.name.trim().toLowerCase())
+        .where((n) => n.isNotEmpty)
+        .toSet();
+    return widget.pendingBindings
+        .where((b) => !existing.contains(b.name.trim().toLowerCase()))
+        .toList();
+  }
+
+  /// 按预绑定创建字段。
+  ///
+  /// **初始值取 UI 组件当前的值**——这是用户明确的方向：
+  /// 状态栏还没有该字段时以 UI 为准，反之（字段已存在）以状态栏为准。
+  void _createFromBinding(PendingStatusBinding binding) {
+    final value = binding.initialValue.trim();
+    setState(() {
+      _fields.add(StatusBarField(
+        id: _newId(),
+        name: binding.name,
+        type: binding.isNumber ? 'number' : 'text',
+        initialValue: value.isEmpty ? (binding.isNumber ? '0' : '') : value,
+        // 数值型给个能容纳初始值的默认量程，免得一建出来就越界。
+        minValue: binding.isNumber ? 0 : null,
+        maxValue: binding.isNumber
+            ? _defaultMaxFor(double.tryParse(value) ?? 0)
+            : null,
+        pinSide: 'none',
+        order: _fields.length,
+      ));
+    });
+  }
+
+  /// 默认上限：至少 100，初始值更大时向上取整到百。
+  double _defaultMaxFor(double initial) {
+    if (initial <= 100) return 100;
+    return (initial / 100).ceil() * 100.0;
   }
 
   void _deleteField(int i) {
@@ -177,23 +233,135 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
           TextButton(onPressed: _save, child: const Text('保存')),
         ],
       ),
-      body: _fields.isEmpty
-          ? _buildEmpty()
-          : ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: _fields.length,
-              itemBuilder: (ctx, i) => KeyedSubtree(
-                // 没有 key 时，增删字段会让 TextFormField 的 State 错位复用，
-                // 输入内容可能串到别的字段上。
-                key: ValueKey(_fields[i].id),
-                child: _buildFieldCard(i),
-              ),
-            ),
+      body: Column(
+        children: [
+          // 预绑定提示排在列表之上：作者进这个页面多半就是为了
+          // 把 UI 里写下的名字建出来，藏在底部等于没做。
+          if (_unresolvedBindings.isNotEmpty) _buildPendingBindingBanner(),
+          Expanded(
+            child: _fields.isEmpty
+                ? _buildEmpty()
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _fields.length,
+                    itemBuilder: (ctx, i) => KeyedSubtree(
+                      // 没有 key 时，增删字段会让 TextFormField 的 State
+                      // 错位复用，输入内容可能串到别的字段上。
+                      key: ValueKey(_fields[i].id),
+                      child: _buildFieldCard(i),
+                    ),
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addField,
         icon: const Icon(Icons.add),
         label: const Text('添加字段'),
       ),
+      ),
+    );
+  }
+
+  /// 预绑定提示条：列出 UI 里已引用、但角色卡还没建的字段名。
+  Widget _buildPendingBindingBanner() {
+    final items = _unresolvedBindings;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3E0),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFB74D)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.link_rounded,
+                  size: 17, color: Color(0xFFE65100)),
+              const SizedBox(width: 6),
+              Text(
+                '界面里引用了 ${items.length} 个还未创建的字段',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFE65100),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '点击即可按界面组件的当前值创建。创建后回到界面组装页会自动完成绑定。',
+            style: TextStyle(
+              fontSize: 11,
+              color: Color(0xFF8D6E63),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final b in items)
+                Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(9),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(9),
+                    onTap: () => _createFromBinding(b),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(color: const Color(0xFFFFCC80)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.add_rounded,
+                              size: 15, color: Color(0xFFE65100)),
+                          const SizedBox(width: 4),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                b.name,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF5D4037),
+                                ),
+                              ),
+                              Text(
+                                [
+                                  b.isNumber ? '数值' : '文本',
+                                  if (b.initialValue.isNotEmpty)
+                                    '初始 ${b.initialValue}',
+                                  if (b.sourceComponent.isNotEmpty)
+                                    b.sourceComponent,
+                                ].join(' · '),
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  color: Color(0xFFA1887F),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

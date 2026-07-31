@@ -3,6 +3,34 @@ import '../../models/session_state.dart';
 import '../../models/status_bar_field.dart';
 import 'ui_models.dart';
 
+/// 一条「预绑定」：UI 里写了状态字段名，但角色卡里还没有该字段。
+///
+/// 状态栏编辑页据此提示作者——他在 UI 里写下「生命值」之后，
+/// 去建字段时不该还得自己回忆当时打的是什么名字。
+class PendingStatusBinding {
+  const PendingStatusBinding({
+    required this.name,
+    required this.initialValue,
+    required this.fieldType,
+    required this.sourceComponent,
+  });
+
+  /// 通道里记的字段名（pendingName）。
+  final String name;
+
+  /// 组件当前的值。字段被创建时用它做初始值——
+  /// 这个方向是用户明确的：状态栏还没有该字段时，以 UI 为准。
+  final String initialValue;
+
+  /// 'number' | 'text'，来自通道的 fieldType。
+  final String fieldType;
+
+  /// 来源组件名，仅用于在提示里标明出处。
+  final String sourceComponent;
+
+  bool get isNumber => fieldType != 'text';
+}
+
 /// 一条已解析的数据通道写入意图。
 ///
 /// 由 UI 原子的 `module.properties['dataChannel']` 解析而来，
@@ -205,6 +233,127 @@ class DataChannelService {
 
     visit(elements);
     return changed;
+  }
+
+  // ==========================================================================
+  // 编辑期初始值同步（UI 组装页 ⇄ 状态栏编辑页）
+  // ==========================================================================
+  //
+  // 与运行时的 `applySessionToElements` 是**两回事**：
+  // 那个同步的是会话里的实时值，只在运行时预览生效；
+  // 这里同步的是**初始值**，让作者在两个编辑页之间看到一致的数据。
+  //
+  // 方向规则（用户明确）：
+  //
+  // | 场景 | 源 |
+  // |---|---|
+  // | 状态栏已有该字段，UI 绑定它 | 状态栏 → UI |
+  // | UI 有预绑定、状态栏还没建，此时新建字段 | UI → 状态栏 |
+  // | 绑定成立后改任一侧初始值 | 双向，以最后保存的一侧为准 |
+  //
+  // 「预绑定」= 通道写了状态字段名但角色卡里还没有同名字段，
+  // 此时 targetId 为空、pendingName 记着那个名字。
+
+  /// 把状态栏字段的**初始值**回填到绑定它的组件上（编辑期）。
+  ///
+  /// 只处理 `targetKind == 'status_field'` 且已解析出 targetId 的通道——
+  /// 预绑定（targetId 为空）的通道没有对应字段，反而应该由 UI 提供初始值。
+  ///
+  /// 返回 true 表示有组件被改动，调用方需要持久化。
+  static bool applyStatusFieldInitialValues(
+    List<UIElement> elements,
+    List<StatusBarField> fields,
+  ) {
+    if (fields.isEmpty) return false;
+    final byId = <String, StatusBarField>{
+      for (final f in fields) f.id: f,
+    };
+
+    var changed = false;
+
+    void visit(List<UIElement> nodes) {
+      for (final node in nodes) {
+        final module = node.module;
+        if (module != null) {
+          final raw = module.properties['dataChannel'];
+          if (raw is Map) {
+            final channel = Map<String, dynamic>.from(raw);
+            if (channel['targetKind']?.toString() == 'status_field') {
+              final targetId = channel['targetId']?.toString().trim() ?? '';
+              final field = targetId.isEmpty ? null : byId[targetId];
+              final value = field?.initialValue.trim() ?? '';
+              if (value.isNotEmpty && applyValueToModule(module, value)) {
+                changed = true;
+              }
+            }
+          }
+        }
+        if (node.isComposite && node.composite != null) {
+          visit(node.composite!.children);
+        }
+      }
+    }
+
+    visit(elements);
+    return changed;
+  }
+
+  /// 收集所有「预绑定」条目：写了状态字段名、但角色卡里还没有该字段。
+  ///
+  /// 供状态栏编辑页在新建字段时提示——作者在 UI 里写下「生命值」之后，
+  /// 去状态栏建字段时不该还得自己回忆当时打的是什么。
+  ///
+  /// 同名多处引用只返回一条，值取第一个非空的。
+  static List<PendingStatusBinding> collectPendingStatusBindings(
+    List<UIElement> elements,
+  ) {
+    final out = <String, PendingStatusBinding>{};
+
+    void visit(List<UIElement> nodes) {
+      for (final node in nodes) {
+        final module = node.module;
+        if (module != null) {
+          final raw = module.properties['dataChannel'];
+          if (raw is Map) {
+            final channel = Map<String, dynamic>.from(raw);
+            if (channel['targetKind']?.toString() == 'status_field') {
+              final targetId = channel['targetId']?.toString().trim() ?? '';
+              final pending =
+                  channel['pendingName']?.toString().trim() ?? '';
+              // targetId 非空 = 已经绑上真实字段，不是预绑定。
+              if (targetId.isEmpty && pending.isNotEmpty) {
+                final existing = out[pending];
+                final value = readModuleValue(module)?.trim() ?? '';
+                if (existing == null) {
+                  out[pending] = PendingStatusBinding(
+                    name: pending,
+                    initialValue: value,
+                    fieldType:
+                        channel['fieldType']?.toString() ?? 'number',
+                    sourceComponent: module.name,
+                  );
+                } else if (existing.initialValue.isEmpty &&
+                    value.isNotEmpty) {
+                  out[pending] = PendingStatusBinding(
+                    name: existing.name,
+                    initialValue: value,
+                    fieldType: existing.fieldType,
+                    sourceComponent: existing.sourceComponent,
+                  );
+                }
+              }
+            }
+          }
+        }
+        if (node.isComposite && node.composite != null) {
+          visit(node.composite!.children);
+        }
+      }
+    }
+
+    visit(elements);
+    return out.values.toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
   }
 
   /// 从会话副本里取出该通道对应的值；无对应数据时返回 null。
