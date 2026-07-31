@@ -232,6 +232,14 @@ class DataChannelPromptBuilder {
   ///
   /// 状态字段是 SSOT：它同时被状态栏和 UI 视图引用，但只能有一套注入与解析。
   /// 因此这类字段统一交给 `StatusBarEngine` 处理，而作者在数据通道里配置的
+  /// 通知强度排序：dialog > toast > silent。
+  static String _strongerNotify(String? a, String b) {
+    const rank = {'silent': 0, 'toast': 1, 'dialog': 2};
+    final ra = rank[a] ?? 0;
+    final rb = rank[b] ?? 0;
+    return ra >= rb ? (a ?? 'silent') : b;
+  }
+
   /// 读写策略必须传递过去约束它，否则「可写不可读」会被状态栏绕过。
   static Map<String, StatusFieldPolicy> collectStatusFieldPolicies(
     List<DataChannelPromptItem> items,
@@ -245,11 +253,21 @@ class DataChannelPromptBuilder {
       final existing = out[id];
       // 同一状态字段被多个通道引用时取并集：
       // 任一通道允许读/写，该字段就允许读/写。
+      // 通知强度取**较强**的那个，不能用 `existing ?? item`：
+      // notifyStyle 永远非 null（默认 'silent'），那样写会让第一个
+      // 通道的 silent 把后续通道配的 dialog 直接吃掉。
+      final strongerStyle = _strongerNotify(existing?.notifyStyle, item.notifyStyle);
       out[id] = StatusFieldPolicy(
         canRead: (existing?.canRead ?? false) || item.canRead,
         canWrite: (existing?.canWrite ?? false) || item.canWrite,
-        notifyStyle: existing?.notifyStyle ?? item.notifyStyle,
-        notifyTemplate: existing?.notifyTemplate ?? item.notifyTemplate,
+        notifyStyle: strongerStyle,
+        // 文案跟着被选中的那一档走，避免出现「用 A 通道的强度、
+        // B 通道的文案」这种拼接结果。
+        notifyTemplate: strongerStyle == item.notifyStyle
+            ? (item.notifyTemplate.isNotEmpty
+                ? item.notifyTemplate
+                : (existing?.notifyTemplate ?? ''))
+            : (existing?.notifyTemplate ?? ''),
       );
     }
     return out;

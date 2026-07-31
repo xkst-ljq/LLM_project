@@ -449,6 +449,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   /// 持久化当前角色的会话状态。
   Future<void> _saveSessionState() async {
+    // 版本号在这里统一递增：所有会话写入最终都汇到这个函数，
+    // 逐个改调用点必然会漏。运行时视图靠它识别「内容变了但对象没换」。
+    _sessionVersion++;
     if (_currentCharacter == null) return;
     await DatabaseService.setSessionStateJson(
       _currentCharacter!.id,
@@ -1656,6 +1659,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 编排规则在 StatusNotificationQueue 里。
   final StatusNotificationQueue _notificationQueue =
       StatusNotificationQueue();
+
+  /// 会话副本的版本号。
+  ///
+  /// `_sessionState` 是原地修改的，对象身份不变，
+  /// 运行时视图靠 `identical` 判断不出变化。每次写入后 +1 强制它刷新。
+  int _sessionVersion = 0;
   bool _inputExpanded = false;
   // 键盘弹出/收起时用来判断视口是否变化。见 didChangeDependencies。
   double _lastKeyboardInset = 0.0;
@@ -3001,6 +3010,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             meta: character.meta,
             mode: 'extra_companion',
             sessionState: _sessionState,
+            sessionVersion: _sessionVersion,
             onSessionStateChanged: _onAssemblySessionChanged,
             maxWidth: bubbleMaxWidth,
             // 伴生嵌在滚动列表里，绝不能开页面手势：
@@ -3096,6 +3106,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               meta: character.meta,
               mode: 'extra_sticky',
               sessionState: _sessionState,
+              sessionVersion: _sessionVersion,
               onSessionStateChanged: _onAssemblySessionChanged,
               // 两侧各留 8，避免贴边
               maxWidth: screenWidth - 16,
@@ -3250,6 +3261,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 meta: character.meta,
                 mode: 'scene',
                 sessionState: _sessionState,
+                sessionVersion: _sessionVersion,
                 onSessionStateChanged: _onAssemblySessionChanged,
                 maxWidth: screen.width,
                 // 场景是全屏形态，保留页面手势（多页场景可翻页）。
@@ -3308,6 +3320,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               meta: character.meta,
               mode: 'opening',
               sessionState: _sessionState,
+              sessionVersion: _sessionVersion,
               onSessionStateChanged: _onAssemblySessionChanged,
               maxWidth: screen.width - 32,
               // 开场白是全屏形态，保留页面手势（多页开场白可翻页）。

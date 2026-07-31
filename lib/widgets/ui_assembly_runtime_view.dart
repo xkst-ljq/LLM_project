@@ -46,6 +46,15 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 不传则运行时完全不触碰会话状态（Assembly 预览默认使用本地临时副本）。
   final SessionState? sessionState;
 
+  /// 会话副本的版本号。
+  ///
+  /// **不能只靠 `identical` 判断 SessionState 有没有变**：
+  /// 聊天页是原地改 `_sessionState.statusValues[...]`，对象始终是同一个，
+  /// `identical` 恒为 true，反向同步永远不触发——
+  /// 表现就是「Prompt 里数值已经变了，但组件纹丝不动」。
+  /// 每次写入后让调用方把这个数 +1，即可强制刷新。
+  final int sessionVersion;
+
   /// 角色卡状态栏字段定义，用于数值字段 clamp。
   final List<StatusBarField> statusFields;
 
@@ -105,6 +114,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.showDebugInfo = false,
     this.blurSigma = 16.0,
     this.sessionState,
+    this.sessionVersion = 0,
     this.statusFields = const <StatusBarField>[],
     this.onSessionStateChanged,
     this.showDataChannelDebug = false,
@@ -191,7 +201,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     // 外部会话副本被替换（如 LLM 更新状态、撤回回滚）时刷新界面显示。
     // 这是反向同步的主要触发点：状态变了，UI 要跟着变。
     final incoming = widget.sessionState;
-    if (incoming != null && !identical(incoming, _session)) {
+    if (incoming != null &&
+        (!identical(incoming, _session) ||
+            oldWidget.sessionVersion != widget.sessionVersion)) {
       _session = incoming;
       if (_applySessionToUI() && mounted) setState(() {});
     }
