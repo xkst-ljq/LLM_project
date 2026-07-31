@@ -32,6 +32,7 @@ class KeyboardAvoidingStage extends StatefulWidget {
     super.key,
     required this.child,
     required this.stageHeight,
+    required this.keyboardInset,
     this.enabled = true,
   });
 
@@ -40,6 +41,13 @@ class KeyboardAvoidingStage extends StatefulWidget {
 
   /// 舞台的原始高度。平移不改变它，只改变它的绘制位置。
   final double stageHeight;
+
+  /// 真实键盘高度，由调用方在 **Scaffold 之外**取得后传入。
+  ///
+  /// 不能在本组件内部读 `MediaQuery.viewInsetsOf`：聊天页的 Scaffold
+  /// 是默认的 `resizeToAvoidBottomInset: true`，它会消费掉 viewInsets，
+  /// body 内部读到的恒为 0，导致整个避让逻辑静默失效。
+  final double keyboardInset;
 
   /// 关掉后完全不介入（保持原样，便于出问题时快速回退）。
   final bool enabled;
@@ -87,11 +95,22 @@ class _KeyboardAvoidingStageState extends State<KeyboardAvoidingStage>
   }
 
   @override
+  void didUpdateWidget(covariant KeyboardAvoidingStage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncToInset();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _syncToInset();
+  }
+
+  /// 键盘高度变化时重新计算目标平移量。
+  void _syncToInset() {
     if (!widget.enabled) return;
 
-    final inset = MediaQuery.viewInsetsOf(context).bottom;
+    final inset = widget.keyboardInset;
     if ((inset - _lastInset).abs() < 1.0) return;
 
     final opening = inset > _lastInset;
@@ -124,8 +143,12 @@ class _KeyboardAvoidingStageState extends State<KeyboardAvoidingStage>
     final box = ctx.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return 0.0;
 
+    // localToGlobal 得到的是**当前已平移之后**的屏幕坐标。
+    // 加回 _offset + _manualOffset 还原成未平移时的位置，
+    // 否则第二次计算会把已经推上去的量又算一遍（越推越多）。
     final topLeft = box.localToGlobal(Offset.zero);
-    final fieldBottom = topLeft.dy + box.size.height;
+    final fieldBottom =
+        topLeft.dy + box.size.height + _offset + _manualOffset;
 
     final screenHeight = MediaQuery.sizeOf(context).height;
     final keyboardTop = screenHeight - inset;
@@ -151,7 +174,7 @@ class _KeyboardAvoidingStageState extends State<KeyboardAvoidingStage>
 
   /// 手动拖动的允许范围：0 ~ 键盘高度。
   /// 上界就是那段「多接出来的空白」的高度。
-  double get _maxManual => _lastInset;
+  double get _maxManual => widget.keyboardInset;
 
   @override
   Widget build(BuildContext context) {
@@ -167,8 +190,9 @@ class _KeyboardAvoidingStageState extends State<KeyboardAvoidingStage>
       // 完全不参与手势竞技场，不会干扰 PCB 自己的翻页手势
       // （PCB 翻页走 Listener，本就不参与竞技场；但消息流的滚动
       //  走的是竞技场，这里不加判断会把它抢走）。
-      onVerticalDragStart: _lastInset > 0 ? (_) => _dragging = true : null,
-      onVerticalDragUpdate: _lastInset > 0
+      onVerticalDragStart:
+          widget.keyboardInset > 0 ? (_) => _dragging = true : null,
+      onVerticalDragUpdate: widget.keyboardInset > 0
           ? (d) {
               if (!_dragging) return;
               setState(() {
@@ -179,7 +203,8 @@ class _KeyboardAvoidingStageState extends State<KeyboardAvoidingStage>
               });
             }
           : null,
-      onVerticalDragEnd: _lastInset > 0 ? (_) => _dragging = false : null,
+      onVerticalDragEnd:
+          widget.keyboardInset > 0 ? (_) => _dragging = false : null,
       child: Transform.translate(
         offset: Offset(0, -total),
         child: SizedBox(

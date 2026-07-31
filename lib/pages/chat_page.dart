@@ -2342,6 +2342,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return _renderPromptTemplate(systemPrompt);
   }
 
+  /// 真实键盘高度（未被 Scaffold 消费）。见 build 里的赋值处说明。
+  double _rawKeyboardInset = 0.0;
+
   /// 文件存在性缓存。
   ///
   /// `File(path).existsSync()` 是**同步磁盘 IO**。头像那几处写在 build 里，
@@ -3427,7 +3430,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 「输入框被键盘盖住」则交给 KeyboardAvoidingStage 平移解决
     // （见下方 child）——两件事必须分开做，因为任何尺寸变化
     // 都会触发 PCB 重算缩放。
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    //
+    // 必须用 _rawKeyboardInset：此处已在 Scaffold body 内部，
+    // 直接读 viewInsetsOf 会拿到被消费后的 0。
+    final keyboardInset = _rawKeyboardInset;
 
     // 与聊天主体同步左移：设置页从右侧滑入时，scene 要一起让开，
     // 否则面板会被压在 scene 之下（scene 层排在主体之后）。
@@ -3453,6 +3459,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           onHorizontalDragEnd: (_) {},
           child: KeyboardAvoidingStage(
             stageHeight: screen.height,
+            keyboardInset: keyboardInset,
             child: Stack(
           children: [
             // 背景蒙版：压暗聊天背景，让 PCB 缩放留出的信箱区不至于
@@ -3606,6 +3613,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           // 与 scene 走同一套平移方案（不缩放、可手动上翻）。
           KeyboardAvoidingStage(
             stageHeight: screen.height,
+            keyboardInset: _rawKeyboardInset,
             child: Center(
               child: ChatAssemblyMount(
                 meta: character.meta,
@@ -3828,6 +3836,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final panelW = panelWidth;
+
+    // 在**进入 Scaffold 之前**把键盘高度取出来。
+    //
+    // 下面那个 Scaffold 是默认的 resizeToAvoidBottomInset: true，
+    // 它会「消费掉」viewInsets：body 被塞进一个矮了一个键盘高度的空间，
+    // 同时向下传递的 MediaQuery 里 viewInsets.bottom 被清成 0。
+    // 所以 scene / opening 层在 body 内部再读 viewInsetsOf 永远拿到 0，
+    // 键盘避让完全不会触发（用户实测：输入框照样被盖住）。
+    //
+    // 这里读到的才是真实值，用 _rawKeyboardInset 传给全屏 UI 层。
+    _rawKeyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     final page = MediaQuery.removePadding(
         context: context,
