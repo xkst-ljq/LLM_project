@@ -10,6 +10,7 @@ import '../models/status_bar_field.dart';
 import '../models/text_highlight_rule.dart';
 import '../models/ui_assembly_info.dart';
 import '../services/ui_engine/data_channel_service.dart';
+import '../services/character_draft_service.dart';
 import '../services/database_service.dart';
 import '../services/image_pick_service.dart';
 import '../utils/id_utils.dart';
@@ -83,6 +84,14 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     for (final entry in _entries) {
       if (entry.enabled) _expandedEntryIds.add(entry.id);
     }
+
+    // 快照必须在所有字段初始化**之后**拍，否则一进来就被判定为「有改动」。
+    _initialSnapshot = _buildSnapshot();
+
+    // 等首帧渲染完再问，让进场动画先跑起来。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeOfferDraft();
+    });
   }
 
   @override
@@ -171,11 +180,179 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     if (mounted) setState(() => _worldBookName = book['name'] as String? ?? '');
   }
 
+  // ===== 未保存草稿 =====
+  //
+  // 这个页面是浮层对话框，点外部空白直接关闭，改了一半很容易丢
+  // （用户反馈：「不小心点了一下外部，可能就前功尽弃」）。
+  //
+  // 策略（用户决策）：退出时**静默**存草稿，不打断关闭手势；
+  // 下次进入同一张卡时才提示是否恢复。
+
+  /// 进入编辑页那一刻的快照，用来判断「到底有没有改过」。
+  /// 只有真有改动才写草稿，否则进来点一下就退出也会留下无谓的提示。
+  late Map<String, dynamic> _initialSnapshot;
+
+  /// 已经保存过（或用户明确选择丢弃），退出时不要再写草稿。
+  bool _draftResolved = false;
+
+  /// 把当前编辑状态打包成可比较、可序列化的快照。
+  ///
+  /// 用 jsonEncode 后的字符串做相等判断——列表和对象直接 == 比的是引用，
+  /// 判不出内容变化（这类坑本项目已栽过多次，见 HANDOFF 3.5c）。
+  Map<String, dynamic> _buildSnapshot() => {
+        'name': _nameCtrl.text,
+        'description': _descCtrl.text,
+        'tags': _tagsCtrl.text,
+        'creator': _creatorCtrl.text,
+        'creatorNotes': _creatorNotesCtrl.text,
+        'version': _versionCtrl.text,
+        'postHistory': _postHistoryCtrl.text,
+        'avatarPath': _avatarPath,
+        'cardImagePath': _cardImagePath,
+        'cardType': _cardType,
+        'worldBookId': _worldBookId ?? '',
+        'entries': jsonEncode(_entries.map((e) => e.toJson()).toList()),
+        'greetings': jsonEncode(_greetings.map((g) => g.toJson()).toList()),
+        // 状态栏字段与高亮规则由子页面改完写回 _meta，同样要等最终保存
+        // 才落库，所以也必须纳入草稿——漏掉它们的话，用户在子页面里
+        // 辛苦配好的状态栏会在误触退出时无声消失。
+        'statusBarFields':
+            jsonEncode(_meta.statusBarFields.map((f) => f.toJson()).toList()),
+        'textHighlightRules': jsonEncode(
+            _meta.textHighlightRules.map((r) => r.toJson()).toList()),
+      };
+
+  /// 当前是否有未保存改动。
+  bool get _isDirty =>
+      jsonEncode(_buildSnapshot()) != jsonEncode(_initialSnapshot);
+
+  /// 退出前静默存草稿。失败不打扰用户——草稿是兜底功能，
+  /// 存不下也不该阻止页面关闭。
+  Future<void> _stashDraftIfNeeded() async {
+    if (_draftResolved || !_isDirty) return;
+    try {
+      await CharacterDraftService.save(
+        widget.character.id,
+        _buildSnapshot(),
+      );
+    } catch (_) {}
+  }
+
+  /// 把草稿内容灌回编辑器。
+  void _applyDraft(Map<String, dynamic> data) {
+    String str(String key) => data[key]?.toString() ?? '';
+    setState(() {
+      _nameCtrl.text = str('name');
+      _descCtrl.text = str('description');
+      _tagsCtrl.text = str('tags');
+      _creatorCtrl.text = str('creator');
+      _creatorNotesCtrl.text = str('creatorNotes');
+      _versionCtrl.text = str('version');
+      _postHistoryCtrl.text = str('postHistory');
+      _avatarPath = str('avatarPath');
+      _cardImagePath = str('cardImagePath');
+      final type = str('cardType');
+      if (type.isNotEmpty) _cardType = type;
+      final book = str('worldBookId');
+      _worldBookId = book.isEmpty ? null : book;
+      _entries = _parseEntries(str('entries'));
+      _greetings = _parseGreetings(str('greetings'));
+      _restoreMetaLists(data);
+      _expandedEntryIds
+        ..clear()
+        ..addAll(_entries.where((e) => e.enabled).map((e) => e.id));
+    });
+    if (_worldBookId != null && _worldBookId!.isNotEmpty) {
+      _loadWorldBookName();
+    }
+  }
+
+  /// 恢复 _meta 里那两组由子页面维护的列表。
+  ///
+  /// 解析失败时**保持现状**而不是清空：宁可少恢复一部分，
+  /// 也不能让一份坏草稿把用户卡里原有的状态栏配置抹掉。
+  void _restoreMetaLists(Map<String, dynamic> data) {
+    try {
+      final raw = data['statusBarFields']?.toString() ?? '';
+      if (raw.isNotEmpty) {
+        final list = jsonDecode(raw);
+        if (list is List) {
+          _meta.statusBarFields = list
+              .whereType<Map>()
+              .map((e) => StatusBarField.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+        }
+      }
+    } catch (_) {}
+    try {
+      final raw = data['textHighlightRules']?.toString() ?? '';
+      if (raw.isNotEmpty) {
+        final list = jsonDecode(raw);
+        if (list is List) {
+          _meta.textHighlightRules = list
+              .whereType<Map>()
+              .map((e) =>
+                  TextHighlightRule.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// 进入编辑页时询问是否恢复草稿。
+  ///
+  /// 放在首帧之后：此时进场动画已经开始，弹窗叠在展开的卡片上，
+  /// 比一进来就糊一个对话框自然。
+  Future<void> _maybeOfferDraft() async {
+    final draft = await CharacterDraftService.load(widget.character.id);
+    if (draft == null || !mounted) return;
+
+    final restore = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('发现未保存的修改'),
+        content: Text(
+          '上次编辑「${widget.character.name}」时有修改未保存'
+          '（${draft.relativeTime}）。要恢复这些修改吗？\n\n'
+          '选择「不保存」将彻底丢弃这份记录。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('不保存', style: TextStyle(color: Colors.red)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('恢复'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+
+    if (restore == true) {
+      _applyDraft(draft.data);
+      // 恢复后草稿即失效：内容已经在编辑器里，
+      // 此后要么保存、要么退出时重新落一份新的。
+      await CharacterDraftService.clear(widget.character.id);
+    } else {
+      // 用户要求：点「不保存」就彻底不留记录。
+      await CharacterDraftService.clear(widget.character.id);
+    }
+  }
+
   Future<void> _closeWithAnimation() async {
     if (_isClosing || !mounted) return;
 
     _isClosing = true;
     FocusScope.of(context).unfocus();
+
+    // 静默存草稿：不弹确认、不阻塞关闭（用户决策——保持点外部即关的手感）。
+    // 这里 await 的是一次 SharedPreferences 写入，只有几毫秒；
+    // 放在 pop 之前是为了确保 State 还活着，拿得到各 controller 的文本。
+    await _stashDraftIfNeeded();
+    if (!mounted) return;
 
     Navigator.pop(context);
   }
@@ -228,6 +405,11 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
       'opening_greetings': widget.character.openingGreetings,
       'meta_json': widget.character.metaJson,
     });
+    // 正式保存后草稿即过时——留着会在下次进入时弹出一个
+    // 内容与当前卡完全一致的提示，纯噪音。
+    _draftResolved = true;
+    await CharacterDraftService.clear(widget.character.id);
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已保存')),
