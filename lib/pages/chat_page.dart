@@ -1877,7 +1877,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     UserService.versionNotifier.addListener(_onGlobalUserChanged);
     PromptSettingsService.versionNotifier.addListener(_onPromptSettingsChanged);
+    BackgroundService.versionNotifier.addListener(_onBackgroundChanged);
     _loadPromptSettings();
+    // 尽早发起：背景与角色数据无关（只有 backgroundId 那一支要等卡），
+    // 这里先把全局背景查出来，_setCurrentCharacter 里再按角色校正一次。
+    _loadBackground();
 
     _animController = AnimationController(
       vsync: this,
@@ -2097,6 +2101,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 同理，刷新后的卡可能带上了新的状态栏字段定义。
     // 只补缺失键，重复调用无副作用。
     _ensureStatusValuesInitialized();
+
+    // 角色可能绑定了自己的背景，按最新的 backgroundId 再校正一次。
+    // 值没变时 _loadBackground 内部会跳过 setState。
+    await _loadBackground();
 
     // 如果没有历史记录，则自动插入开场白
     await _ensureOpeningGreetingForEmptyHistory();
@@ -2330,6 +2338,46 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return _renderPromptTemplate(systemPrompt);
   }
 
+  /// 当前生效的背景。缓存在 state 里，**不要**在 build 里现查。
+  ///
+  /// 原实现是 `FutureBuilder(future: _getCurrentBackground())` 直接写在
+  /// build 里，两个后果：
+  /// 1. future 每次 build 都新建一个，snapshot 先回到 waiting（data == null），
+  ///    于是先铺一帧默认的浅蓝→浅紫渐变，等查询回来再换成真背景——就是肉眼
+  ///    看到的「进聊天页背景闪一下」。
+  /// 2. 聊天页有好几个 AnimationController 的 listener 在 setState，
+  ///    动画期间每帧都会重跑一次数据库查询 + SharedPreferences 读取。
+  BackgroundCard? _background;
+
+  /// 是否已经完成过至少一次背景查询。
+  /// 用来区分「还没查」和「查完了确实没有背景」——前者不能画默认渐变。
+  bool _backgroundLoaded = false;
+
+  void _onBackgroundChanged() {
+    _loadBackground();
+  }
+
+  /// 查一次背景并写进 state。
+  ///
+  /// 重新加载期间**保留**上一次的值（不先置 null），这样切换背景、
+  /// 编辑背景库回来都不会中间闪一帧默认渐变。
+  Future<void> _loadBackground() async {
+    final bg = await _getCurrentBackground();
+    if (!mounted) return;
+    // 同一张背景就不 setState 了：这个方法会被角色切换和 versionNotifier
+    // 各触发一次，无谓重建会连带整棵聊天树。
+    if (_backgroundLoaded &&
+        bg?.id == _background?.id &&
+        bg?.colorValue == _background?.colorValue &&
+        bg?.originalImagePath == _background?.originalImagePath) {
+      return;
+    }
+    setState(() {
+      _background = bg;
+      _backgroundLoaded = true;
+    });
+  }
+
   Future<BackgroundCard?> _getCurrentBackground() async {
     // 优先使用当前角色的独立背景
     if (_currentCharacter?.backgroundId != null &&
@@ -2405,6 +2453,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _aiReplySub?.cancel();
     UserService.versionNotifier.removeListener(_onGlobalUserChanged);
     PromptSettingsService.versionNotifier.removeListener(_onPromptSettingsChanged);
+    BackgroundService.versionNotifier.removeListener(_onBackgroundChanged);
     _scrollController.dispose();
     _inputAnimController.dispose();
     _animController.dispose();
@@ -3736,31 +3785,26 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               child: Stack(
                 children: [
                   // 背景图层（动态）
+                  // 背景取自 _background 缓存，不在 build 里发起查询。
+                  // 还没查完时铺纯黑而不是默认渐变——查询只要几十毫秒，
+                  // 底下马上会被真背景盖住，画一帧亮色反而正是闪烁的来源。
                   Positioned.fill(
-                    child: ValueListenableBuilder<int>(
-                      valueListenable: BackgroundService.versionNotifier,
-                      builder: (context, version, _) {
-                        // 每次版本变化都创建新的 future，强制刷新
-                        return FutureBuilder<BackgroundCard?>(
-                          future: _getCurrentBackground(),
-                          builder: (context, snapshot) {
-                            final bg = snapshot.data;
-                            if (bg == null) {
-                              return Container(
-                                decoration: const BoxDecoration(
+                    child: !_backgroundLoaded
+                        ? const ColoredBox(color: Colors.black)
+                        : _background == null
+                            ? const DecoratedBox(
+                                decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
-                                    colors: [Color(0xFFE3F2FD), Color(0xFFF3E5F5)],
+                                    colors: [
+                                      Color(0xFFE3F2FD),
+                                      Color(0xFFF3E5F5),
+                                    ],
                                   ),
                                 ),
-                              );
-                            }
-                            return _buildBackground(bg);
-                          },
-                        );
-                      },
-                    ),
+                              )
+                            : _buildBackground(_background!),
                   ),
                   // 聊天主体 + 右侧面板
                   Positioned(
