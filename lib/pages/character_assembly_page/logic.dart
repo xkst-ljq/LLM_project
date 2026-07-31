@@ -2353,10 +2353,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       semanticSource: semanticSource,
                       labelElementId: labelElementId,
                       targetKind: targetKind,
-                      visibility: visibility,
                       llmReadPolicy: llmReadPolicy,
                       llmWritePolicy: llmWritePolicy,
-                      applyPolicy: applyPolicy,
                       promptSection: promptSection,
                       cardTarget: cardTarget,
                       cardCustomTitleController: cardCustomTitleController,
@@ -2368,14 +2366,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           setDialogState(() => labelElementId = value),
                       onTargetKind: (value) =>
                           setDialogState(() => targetKind = value),
-                      onVisibility: (value) =>
-                          setDialogState(() => visibility = value),
                       onReadPolicy: (value) =>
                           setDialogState(() => llmReadPolicy = value),
                       onWritePolicy: (value) =>
                           setDialogState(() => llmWritePolicy = value),
-                      onApplyPolicy: (value) =>
-                          setDialogState(() => applyPolicy = value),
                       onPromptSection: (value) =>
                           setDialogState(() => promptSection = value),
                       onNormalizeLabelId: (value) => labelElementId = value,
@@ -6203,10 +6197,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String sourceComponentId,
     required UIModule module,
     required String targetKind,
-    required String visibility,
     required String llmReadPolicy,
     required String llmWritePolicy,
-    required String applyPolicy,
     required String promptSection,
     required CardEntryTarget cardTarget,
   }) {
@@ -6992,14 +6984,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       MaterialPageRoute(
         builder: (pageContext) => StatefulBuilder(
           builder: (pageContext, setPageState) {
-            final previewName = _resolveDataChannelName(
-              semanticSource: semanticSource,
-              manualName: nameController.text,
-              labelElementId: labelElementId,
-              labels: labels,
-              fallbackName: module.name,
-            ).trim();
-
+            // 预览由表单内部自算（见段②），这里不再重复计算。
             return Scaffold(
               appBar: AppBar(
                 title: Text('数据通道 · ${module.name}'),
@@ -7016,25 +7001,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                   ),
                 ],
               ),
+              // 浅灰底：三张白卡片需要底色衬托才有「分组」的观感，
+              // 纯白底上卡片边框几乎看不见。
+              backgroundColor: const Color(0xFFF2F2F6),
               body: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 32),
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF6F6F9),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '最终语义：${previewName.isEmpty ? '未命名' : previewName}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF00897B),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
+                  // 预览条已移入段②「叫什么」，紧跟它服务的名称字段。
+                  // 旧版挂在页顶，与真正相关的两项隔着六个下拉。
                   ..._buildDataChannelFormFields(
                     labels: labels,
                     fallbackName: module.name,
@@ -7042,10 +7016,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     semanticSource: semanticSource,
                     labelElementId: labelElementId,
                     targetKind: targetKind,
-                    visibility: visibility,
                     llmReadPolicy: readPolicy,
                     llmWritePolicy: writePolicy,
-                    applyPolicy: applyPolicy,
                     promptSection: promptSection,
                     cardTarget: cardTarget,
                     cardCustomTitleController: cardTitleController,
@@ -7055,10 +7027,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     onLabelElementId: (v) =>
                         setPageState(() => labelElementId = v),
                     onTargetKind: (v) => setPageState(() => targetKind = v),
-                    onVisibility: (v) => setPageState(() => visibility = v),
                     onReadPolicy: (v) => setPageState(() => readPolicy = v),
                     onWritePolicy: (v) => setPageState(() => writePolicy = v),
-                    onApplyPolicy: (v) => setPageState(() => applyPolicy = v),
                     onPromptSection: (v) =>
                         setPageState(() => promptSection = v),
                     onNormalizeLabelId: (v) => labelElementId = v,
@@ -7145,10 +7115,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required ValueChanged<String> onSemanticSource,
     required ValueChanged<String> onLabelElementId,
     required ValueChanged<String> onTargetKind,
-    required ValueChanged<String> onVisibility,
     required ValueChanged<String> onReadPolicy,
     required ValueChanged<String> onWritePolicy,
-    required ValueChanged<String> onApplyPolicy,
     required ValueChanged<String> onPromptSection,
     required ValueChanged<String> onNormalizeLabelId,
     VoidCallback? onNameChanged,
@@ -7164,178 +7132,226 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       }
     }
 
-    Widget dropdown(
-      String value,
-      String label,
-      List<DropdownMenuItem<String>> items,
-      ValueChanged<String> onChanged,
-    ) {
-      return DropdownButtonFormField<String>(
-        initialValue: value,
-        isExpanded: true,
-        decoration: InputDecoration(labelText: label, isDense: true),
-        items: items,
-        onChanged: (next) {
-          if (next == null) return;
-          onChanged(next);
-        },
-      );
-    }
+    // 三段的顺序是「存哪里 → 叫什么 → 怎么交互」（用户确定）。
+    //
+    // 先问存放位置，是因为**它决定了后面所有项的含义**：
+    // 存进角色卡设定和存进会话变量，「名称」的作用完全不同
+    // （前者是卡片条目标题，后者只是个键名）。
+    // 旧版把「数据名称来源」放在第一项，作者得先给一个还不知道
+    // 要用在哪的东西起名字。
+    const accentWhere = Color(0xFF5E35B1);
+    const accentName = Color(0xFF00897B);
+    const accentAi = Color(0xFFEF6C00);
+
+    final previewName = _resolveDataChannelName(
+      semanticSource: semanticSource,
+      manualName: nameController.text,
+      labelElementId: effectiveLabelId,
+      labels: labels,
+      fallbackName: fallbackName,
+    ).trim();
 
     return [
-      dropdown(
-        semanticSource,
-        '数据名称来源',
-        const [
-          DropdownMenuItem(value: 'manual', child: Text('手动填写')),
-          DropdownMenuItem(value: 'text_label', child: Text('使用文本标签')),
-          DropdownMenuItem(value: 'component_name', child: Text('使用组件名称')),
-        ],
-        onSemanticSource,
-      ),
-      const SizedBox(height: 10),
-      if (semanticSource == 'manual')
-        TextField(
-          controller: nameController,
-          decoration: const InputDecoration(labelText: '数据名称', isDense: true),
-          onChanged: (_) => onNameChanged?.call(),
-        )
-      else if (semanticSource == 'text_label')
-        hasLabels
-            ? dropdown(
-                effectiveLabelId,
-                '标签文本',
-                labels
-                    .map(
-                      (label) => DropdownMenuItem(
-                        value: label.id,
-                        child: Text(
-                          _textValueOf(label),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onLabelElementId,
-              )
-            : const Text(
-                '当前页面没有可用文本标签，请先放置 Text 或改为手动填写。',
-                style: TextStyle(fontSize: 11, color: Color(0xFFD32F2F)),
-              )
-      else
-        Text(
-          '将使用组件名称：$fallbackName',
-          style: const TextStyle(fontSize: 12, color: Color(0xFF555562)),
-        ),
-      const SizedBox(height: 10),
-      dropdown(
-        targetKind,
-        '保存到',
-        const [
-          DropdownMenuItem(value: 'local_ui_state', child: Text('UI 内部状态')),
-          DropdownMenuItem(value: 'session_var', child: Text('会话变量')),
-          DropdownMenuItem(value: 'status_field', child: Text('状态字段')),
-          DropdownMenuItem(value: 'card_entry', child: Text('角色卡设定')),
-        ],
-        onTargetKind,
-      ),
-      // A13-2：角色卡设定的三级定位。
-      if (targetKind == 'card_entry') ...[
-        const SizedBox(height: 8),
-        ..._buildCardEntryTargetFields(
-          target: cardTarget,
-          customTitleController: cardCustomTitleController,
-          onChanged: onCardTarget,
-        ),
-      ],
-      if (targetKind == 'status_field') ...[
-        const SizedBox(height: 8),
-        _buildStatusFieldMatchHint(
-          _resolveDataChannelName(
-            semanticSource: semanticSource,
-            manualName: nameController.text,
-            labelElementId: effectiveLabelId,
-            labels: labels,
-            fallbackName: fallbackName,
+      // ================= ① 存在哪里 =================
+      DataChannelSection(
+        index: 1,
+        title: '存在哪里',
+        subtitle: '决定这个值的归属',
+        accent: accentWhere,
+        children: [
+          SegmentedField(
+            label: '存放位置',
+            value: targetKind,
+            accent: accentWhere,
+            options: const [
+              SegmentedFieldOption(
+                value: 'local_ui_state',
+                label: 'UI 内部状态',
+                icon: Icons.widgets_outlined,
+              ),
+              SegmentedFieldOption(
+                value: 'session_var',
+                label: '会话变量',
+                icon: Icons.chat_bubble_outline_rounded,
+              ),
+              SegmentedFieldOption(
+                value: 'status_field',
+                label: '状态字段',
+                icon: Icons.speed_rounded,
+              ),
+              SegmentedFieldOption(
+                value: 'card_entry',
+                label: '角色卡设定',
+                icon: Icons.badge_outlined,
+              ),
+            ],
+            helper: _targetKindHelper(targetKind),
+            onChanged: onTargetKind,
           ),
-        ),
-      ],
-      const SizedBox(height: 10),
-      dropdown(
-        visibility,
-        '玩家可见性',
-        const [
-          DropdownMenuItem(value: 'ui_only', child: Text('只控制界面')),
-          DropdownMenuItem(value: 'player_visible', child: Text('玩家可见')),
-          DropdownMenuItem(value: 'system_hidden', child: Text('系统隐藏')),
-        ],
-        onVisibility,
-      ),
-      const SizedBox(height: 10),
-      dropdown(
-        llmReadPolicy,
-        '发送当前值给 AI',
-        const [
-          DropdownMenuItem(value: 'none', child: Text('不发送')),
-          DropdownMenuItem(value: 'prompt', child: Text('发送到 Prompt')),
-          DropdownMenuItem(value: 'hidden_context', child: Text('隐藏上下文')),
-        ],
-        onReadPolicy,
-      ),
-      // A13-1：注入位置。只在「会发送给 AI」时才有意义。
-      if (llmReadPolicy != 'none') ...[
-        const SizedBox(height: 10),
-        dropdown(
-          promptSection,
-          '注入位置',
-          const [
-            DropdownMenuItem(
-                value: DataChannelPromptItem.sectionUiData,
-                child: Text('界面数据（运行时状态）')),
-            DropdownMenuItem(
-                value: DataChannelPromptItem.sectionCoreSetting,
-                child: Text('玩家档案（会话初始设定）')),
+          if (targetKind == 'card_entry') ...[
+            const SizedBox(height: 12),
+            ..._buildCardEntryTargetFields(
+              target: cardTarget,
+              customTitleController: cardCustomTitleController,
+              onChanged: onCardTarget,
+            ),
           ],
-          onPromptSection,
-        ),
-        if (promptSection == DataChannelPromptItem.sectionCoreSetting)
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
+        ],
+      ),
+
+      // ================= ② 叫什么 =================
+      DataChannelSection(
+        index: 2,
+        title: '叫什么',
+        subtitle: 'AI 与卡片里看到的名字',
+        accent: accentName,
+        children: [
+          SegmentedField(
+            label: '名称来源',
+            value: semanticSource,
+            accent: accentName,
+            options: const [
+              SegmentedFieldOption(value: 'manual', label: '手动填写'),
+              SegmentedFieldOption(value: 'text_label', label: '取文本标签'),
+              SegmentedFieldOption(value: 'component_name', label: '用组件名'),
+            ],
+            onChanged: onSemanticSource,
+          ),
+          const SizedBox(height: 12),
+          if (semanticSource == 'manual')
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: '数据名称',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => onNameChanged?.call(),
+            )
+          else if (semanticSource == 'text_label')
+            hasLabels
+                // 标签数量取决于画布上有几个 Text，项数不定 → 用下拉。
+                ? RoundedDropdownField(
+                    label: '标签文本',
+                    value: effectiveLabelId,
+                    accent: accentName,
+                    options: labels
+                        .map(
+                          (label) => RoundedDropdownOption(
+                            value: label.id,
+                            label: _textValueOf(label),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: onLabelElementId,
+                  )
+                : const Text(
+                    '当前页面没有可用文本标签，请先放置 Text 或改为手动填写。',
+                    style: TextStyle(fontSize: 11, color: Color(0xFFD32F2F)),
+                  )
+          else
+            Text(
+              '将使用组件名称：$fallbackName',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF555562)),
+            ),
+          const SizedBox(height: 12),
+          // 预览紧跟在名称字段后面。
+          // 旧版把它孤零零挂在页顶，与它真正服务的两项隔着六个下拉。
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: accentName.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(9),
+            ),
             child: Text(
-              '将与「核心角色设定」并列注入，权重更高、全程有效。'
-              '适合玩家在开场白里填写的姓名、职业、属性等档案信息；'
-              '会随会话保存，清空聊天记录后需要重新填写。',
-              style: TextStyle(
-                fontSize: 11,
-                color: Color(0xFF777783),
-                height: 1.35,
+              '最终语义：${previewName.isEmpty ? '未命名' : previewName}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: accentName,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
-      ],
-      const SizedBox(height: 10),
-      dropdown(
-        llmWritePolicy,
-        '允许 AI 更新',
-        const [
-          DropdownMenuItem(value: 'none', child: Text('不允许')),
-          DropdownMenuItem(value: 'suggest_delta', child: Text('建议增量 +N/-N')),
-          DropdownMenuItem(value: 'suggest_replace', child: Text('建议替换新值')),
         ],
-        onWritePolicy,
       ),
-      const SizedBox(height: 10),
-      dropdown(
-        applyPolicy,
-        'AI 更新应用方式',
-        const [
-          DropdownMenuItem(value: 'confirm', child: Text('用户确认后应用')),
-          DropdownMenuItem(value: 'auto_low_risk', child: Text('低风险自动应用')),
-          DropdownMenuItem(value: 'never', child: Text('永不应用')),
+
+      // ================= ③ 怎么交互 =================
+      DataChannelSection(
+        index: 3,
+        title: '怎么交互',
+        subtitle: '与 AI 之间的读写',
+        accent: accentAi,
+        children: [
+          SegmentedField(
+            label: '发送当前值给 AI',
+            value: llmReadPolicy,
+            accent: accentAi,
+            options: const [
+              SegmentedFieldOption(value: 'none', label: '不发送'),
+              SegmentedFieldOption(value: 'prompt', label: '发送到 Prompt'),
+              SegmentedFieldOption(value: 'hidden_context', label: '隐藏上下文'),
+            ],
+            onChanged: onReadPolicy,
+          ),
+          if (llmReadPolicy != 'none') ...[
+            const SizedBox(height: 12),
+            SegmentedField(
+              label: '注入位置',
+              value: promptSection,
+              accent: accentAi,
+              options: const [
+                SegmentedFieldOption(
+                  value: DataChannelPromptItem.sectionUiData,
+                  label: '界面数据',
+                ),
+                SegmentedFieldOption(
+                  value: DataChannelPromptItem.sectionCoreSetting,
+                  label: '玩家档案',
+                ),
+              ],
+              helper: promptSection == DataChannelPromptItem.sectionCoreSetting
+                  ? '与「核心角色设定」并列注入，权重更高、全程有效。'
+                      '适合开场白里填写的姓名、职业、属性；'
+                      '随会话保存，清空聊天记录后需要重新填写。'
+                  : '作为运行时状态注入，随每轮对话更新。',
+              onChanged: onPromptSection,
+            ),
+          ],
+          const SizedBox(height: 12),
+          SegmentedField(
+            label: '允许 AI 更新',
+            value: llmWritePolicy,
+            accent: accentAi,
+            options: const [
+              SegmentedFieldOption(value: 'none', label: '不允许'),
+              SegmentedFieldOption(value: 'suggest_delta', label: '增量 +N/-N'),
+              SegmentedFieldOption(value: 'suggest_replace', label: '替换新值'),
+            ],
+            onChanged: onWritePolicy,
+          ),
         ],
-        onApplyPolicy,
       ),
     ];
+  }
+
+  /// 存放位置的一句话说明。
+  ///
+  /// 四个选项的差别不看说明根本猜不出来——
+  /// 「UI 内部状态」和「会话变量」从字面看几乎是同义词。
+  String _targetKindHelper(String targetKind) {
+    switch (targetKind) {
+      case 'local_ui_state':
+        return '只存在这张界面里，切页或重开会话即丢失。适合纯展示用的临时值。';
+      case 'session_var':
+        return '跟着当前会话走，清空聊天记录才消失。适合剧情进度、临时标记。';
+      case 'status_field':
+        return '写进角色卡状态栏，玩家能在状态栏看到。适合等级、好感度这类长期数值。';
+      case 'card_entry':
+        return '写进角色卡设定条目，作为长期设定的一部分。需要在下面指定写到哪一条。';
+      default:
+        return '';
+    }
   }
 
   void _createPage({required String type}) {

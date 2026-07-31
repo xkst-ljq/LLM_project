@@ -26,6 +26,7 @@ import '../services/ui_engine/ui_semantic_role.dart';
 import '../widgets/ui_assembly_runtime_view.dart';
 
 part 'character_assembly_page/logic.dart';
+part 'character_assembly_page/data_channel_controls.dart';
 
 /// 拖拽载荷
 class _AssemblyDragPayload {
