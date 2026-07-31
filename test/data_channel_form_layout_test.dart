@@ -26,9 +26,9 @@ class ChannelSection {
 
 /// 改造后的页面结构。
 const sections = <ChannelSection>[
-  ChannelSection(1, '存在哪里', ['targetKind', 'cardEntryTarget']),
-  ChannelSection(2, '叫什么', ['semanticSource', 'name', 'preview']),
-  ChannelSection(3, '怎么交互', ['llmReadPolicy', 'promptSection', 'llmWritePolicy']),
+  ChannelSection(1, '数据归属', ['targetKind', 'cardEntryTarget']),
+  ChannelSection(2, '数据标识', ['semanticSource', 'name', 'preview']),
+  ChannelSection(3, 'AI 读写', ['llmReadPolicy', 'promptSection', 'llmWritePolicy']),
 ];
 
 /// 已从 UI 删除的字段。
@@ -48,9 +48,18 @@ void main() {
   group('三段结构', () {
     test('恰好三段', () => expect(sections.length, 3));
 
-    test('顺序是 存哪里 → 叫什么 → 怎么交互', () {
+    test('顺序是 数据归属 → 数据标识 → AI 读写', () {
       expect(sections.map((s) => s.title).toList(),
-          ['存在哪里', '叫什么', '怎么交互']);
+          ['数据归属', '数据标识', 'AI 读写']);
+    });
+
+    test('标题是名词短语，不用口语化说法', () {
+      // 「存在哪里 / 叫什么 / 怎么交互」是讨论时的说法，
+      // 直接当界面标题过于随便。
+      const banned = ['存在哪里', '叫什么', '怎么交互'];
+      for (final s in sections) {
+        expect(banned, isNot(contains(s.title)));
+      }
     });
 
     test('序号连续从 1 开始', () {
@@ -231,4 +240,73 @@ class SegmentedFieldHarness extends StatelessWidget {
       ],
     );
   }
+
+  group('状态字段名称建议', () {
+    // 排序规则复刻 _statusFieldNameSuggestions。
+    List<String> order(List<String> fields, String input) {
+      final key = input.trim().toLowerCase();
+      if (key.isEmpty) return fields;
+      final hit = <String>[];
+      final rest = <String>[];
+      for (final f in fields) {
+        (f.toLowerCase().startsWith(key) ? hit : rest).add(f);
+      }
+      return [...hit, ...rest];
+    }
+
+    const fields = ['等级', '生命值', '生命上限', '金钱'];
+
+    test('输入为空时保持状态栏原顺序', () {
+      expect(order(fields, ''), fields);
+    });
+
+    test('前缀命中的排到前面', () {
+      expect(order(fields, '生命'), ['生命值', '生命上限', '等级', '金钱']);
+    });
+
+    test('无命中时顺序不变', () {
+      expect(order(fields, 'xyz'), fields);
+    });
+
+    test('完全一致的判定为 matched', () {
+      bool isMatched(String name, String input) =>
+          input.trim().isNotEmpty &&
+          name.toLowerCase() == input.trim().toLowerCase();
+      expect(isMatched('等级', '等级'), isTrue);
+      expect(isMatched('等级', ' 等级 '), isTrue);
+      expect(isMatched('等级', '等'), isFalse);
+      // 输入为空时不该把任何一项标成命中。
+      expect(isMatched('等级', ''), isFalse);
+    });
+
+    test('没有状态字段时返回空表（按钮应隐藏）', () {
+      expect(order(const [], '等级'), isEmpty);
+    });
+  });
+
+  group('建议不能干扰手动输入', () {
+    testWidgets('输入框可自由输入任意文本', (tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TextField(controller: controller),
+          ),
+        ),
+      );
+      // 输入一个状态栏里没有的名字，必须能照常输入。
+      await tester.enterText(find.byType(TextField), '自定义名称');
+      expect(controller.text, '自定义名称');
+    });
+
+    test('选中建议后光标应落在末尾', () {
+      // 不设 selection 的话，选完再点输入框光标会跳回开头，
+      // 想接着改就得先按一堆右方向键。
+      final controller = TextEditingController();
+      const picked = '生命值';
+      controller.text = picked;
+      controller.selection = TextSelection.collapsed(offset: picked.length);
+      expect(controller.selection.baseOffset, picked.length);
+    });
+  });
 }

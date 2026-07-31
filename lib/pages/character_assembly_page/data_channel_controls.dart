@@ -392,3 +392,180 @@ class DataChannelSection extends StatelessWidget {
     );
   }
 }
+
+/// 名称输入框 + 状态字段建议。
+///
+/// 用户诉求：绑定状态字段时不用手打名字，点一下从状态栏已有字段里选。
+/// **但不能影响手动输入**——所以：
+/// - 输入框本身始终是普通 `TextField`，随便打
+/// - 建议列表只由右侧按钮触发，聚焦、输入都不会弹出来打扰
+/// - 没有可选字段时按钮直接不显示，避免点开一片空白
+class NameSuggestion {
+  const NameSuggestion({
+    required this.name,
+    required this.detail,
+    this.matched = false,
+  });
+
+  final String name;
+
+  /// 副标题：类型 / 归属等，帮作者区分同名难辨的字段。
+  final String detail;
+
+  /// 是否与当前输入完全一致。
+  final bool matched;
+}
+
+class SuggestibleNameField extends StatefulWidget {
+  const SuggestibleNameField({
+    super.key,
+    required this.controller,
+    required this.label,
+    required this.suggestions,
+    this.onChanged,
+    this.accent = const Color(0xFF00897B),
+    this.emptyHint,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final List<NameSuggestion> suggestions;
+  final ValueChanged<String>? onChanged;
+  final Color accent;
+
+  /// 没有可选字段时，点按钮给出的说明。为空则连按钮都不显示。
+  final String? emptyHint;
+
+  @override
+  State<SuggestibleNameField> createState() => _SuggestibleNameFieldState();
+}
+
+class _SuggestibleNameFieldState extends State<SuggestibleNameField> {
+  final MenuController _menu = MenuController();
+
+  void _pick(String name) {
+    widget.controller.text = name;
+    // 光标移到末尾：不设的话选完再点输入框，光标会跳回开头，
+    // 想接着改就得先按一堆右方向键。
+    widget.controller.selection =
+        TextSelection.collapsed(offset: name.length);
+    widget.onChanged?.call(name);
+    _menu.close();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSuggestions = widget.suggestions.isNotEmpty;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return MenuAnchor(
+          controller: _menu,
+          alignmentOffset: const Offset(0, 4),
+          style: MenuStyle(
+            backgroundColor: const WidgetStatePropertyAll(Colors.white),
+            elevation: const WidgetStatePropertyAll(8),
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(vertical: 6),
+            ),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.black.withValues(alpha: 0.07)),
+              ),
+            ),
+            maximumSize:
+                WidgetStatePropertyAll(Size(constraints.maxWidth, 300)),
+            minimumSize: WidgetStatePropertyAll(Size(constraints.maxWidth, 0)),
+          ),
+          menuChildren: [
+            for (final s in widget.suggestions)
+              MenuItemButton(
+                onPressed: () => _pick(s.name),
+                style: ButtonStyle(
+                  backgroundColor: WidgetStatePropertyAll(
+                    s.matched
+                        ? widget.accent.withValues(alpha: 0.10)
+                        : Colors.transparent,
+                  ),
+                ),
+                child: SizedBox(
+                  width: constraints.maxWidth - 24,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              s.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: s.matched
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                color: s.matched
+                                    ? widget.accent
+                                    : const Color(0xFF333340),
+                              ),
+                            ),
+                            if (s.detail.isNotEmpty)
+                              Text(
+                                s.detail,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Color(0xFF9999A6),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (s.matched)
+                        Icon(Icons.check_rounded,
+                            size: 15, color: widget.accent),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+          builder: (context, controller, child) => TextField(
+            controller: widget.controller,
+            decoration: InputDecoration(
+              labelText: widget.label,
+              isDense: true,
+              border: const OutlineInputBorder(),
+              suffixIcon: (!hasSuggestions && widget.emptyHint == null)
+                  ? null
+                  : IconButton(
+                      tooltip: hasSuggestions ? '从状态栏字段中选择' : widget.emptyHint,
+                      icon: Icon(
+                        Icons.playlist_add_check_rounded,
+                        size: 19,
+                        color: hasSuggestions
+                            ? widget.accent
+                            : const Color(0xFFBDBDC6),
+                      ),
+                      onPressed: !hasSuggestions
+                          ? null
+                          : () {
+                              // 先收键盘：菜单从输入框正下方展开，
+                              // 键盘占着半屏时菜单会被挤到看不见。
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              controller.isOpen
+                                  ? controller.close()
+                                  : controller.open();
+                            },
+                    ),
+            ),
+            onChanged: (_) => widget.onChanged?.call(widget.controller.text),
+          ),
+        );
+      },
+    );
+  }
+}

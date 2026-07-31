@@ -6237,6 +6237,57 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     };
   }
 
+  /// 状态栏字段的名称建议列表。
+  ///
+  /// 只列**状态栏已有字段**——这个建议的价值就在于「照着现有的选，
+  /// 保证能绑上」。列别的来源反而会让作者选到一个绑不上的名字。
+  ///
+  /// 排序：与当前输入前缀匹配的排前面，其余按状态栏原顺序。
+  /// 完全一致的标记 matched，在列表里打勾。
+  List<NameSuggestion> _statusFieldNameSuggestions(String current) {
+    if (_statusFields.isEmpty) return const [];
+    final key = current.trim().toLowerCase();
+
+    String ownerLabel(String owner) {
+      switch (owner) {
+        case 'player':
+          return '玩家';
+        case 'char':
+          return '角色';
+        case 'neutral':
+          return '环境';
+        default:
+          return '';
+      }
+    }
+
+    final items = <NameSuggestion>[];
+    for (final field in _statusFields) {
+      final name = field.name.trim();
+      if (name.isEmpty) continue;
+      final owner = ownerLabel(field.owner);
+      items.add(
+        NameSuggestion(
+          name: name,
+          detail: [
+            field.isNumber ? '数值' : '文本',
+            if (owner.isNotEmpty) owner,
+          ].join(' · '),
+          matched: key.isNotEmpty && name.toLowerCase() == key,
+        ),
+      );
+    }
+
+    if (key.isEmpty) return items;
+    // 前缀命中的提到前面：作者打了几个字再点开，想找的多半在那几个字里。
+    final hit = <NameSuggestion>[];
+    final rest = <NameSuggestion>[];
+    for (final item in items) {
+      (item.name.toLowerCase().startsWith(key) ? hit : rest).add(item);
+    }
+    return [...hit, ...rest];
+  }
+
   /// 状态字段匹配提示：命中显示已绑定的字段 id 与类型，未命中提示将记为待创建。
   Widget _buildStatusFieldMatchHint(String name) {
     final trimmed = name.trim();
@@ -7158,8 +7209,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       // ================= ① 存在哪里 =================
       DataChannelSection(
         index: 1,
-        title: '存在哪里',
-        subtitle: '决定这个值的归属',
+        title: '数据归属',
+        subtitle: '这个值存在哪里',
         accent: accentWhere,
         children: [
           SegmentedField(
@@ -7205,8 +7256,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       // ================= ② 叫什么 =================
       DataChannelSection(
         index: 2,
-        title: '叫什么',
-        subtitle: 'AI 与卡片里看到的名字',
+        title: '数据标识',
+        subtitle: 'AI 与卡片里看到的名称',
         accent: accentName,
         children: [
           SegmentedField(
@@ -7222,13 +7273,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           ),
           const SizedBox(height: 12),
           if (semanticSource == 'manual')
-            TextField(
+            // 输入框始终可自由输入；右侧按钮才拉出状态栏字段建议。
+            // 建议不随聚焦/输入自动弹出——那会在作者正打字时挡住视线。
+            SuggestibleNameField(
               controller: nameController,
-              decoration: const InputDecoration(
-                labelText: '数据名称',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
+              label: '数据名称',
+              accent: accentName,
+              suggestions: _statusFieldNameSuggestions(nameController.text),
+              emptyHint: '角色卡还没有状态栏字段',
               onChanged: (_) => onNameChanged?.call(),
             )
           else if (semanticSource == 'text_label')
@@ -7291,8 +7343,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       // ================= ③ 怎么交互 =================
       DataChannelSection(
         index: 3,
-        title: '怎么交互',
-        subtitle: '与 AI 之间的读写',
+        title: 'AI 读写',
+        subtitle: '与模型之间的数据流向',
         accent: accentAi,
         children: [
           SegmentedField(
