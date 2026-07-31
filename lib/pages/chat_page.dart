@@ -439,6 +439,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   Future<void> _loadSessionState() async {
     if (_currentCharacter == null) {
       _sessionState = SessionState();
+      _openingDismissed = false;
+      _sessionReady = true;
       return;
     }
     final raw = await DatabaseService.getSessionStateJson(_currentCharacter!.id);
@@ -446,7 +448,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 快速标记跟着会话副本走：换角色 / 重进聊天都要重新对齐，
     // 否则上一个角色的「已确认」会带到下一个角色身上。
     _openingDismissed = OpeningGreetingState.isDismissed(_sessionState);
-    _invalidateOpeningCache();
+    _invalidateAssemblyCaches();
+    _sessionReady = true;
     _ensureStatusValuesInitialized();
   }
 
@@ -2056,6 +2059,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     if (char == null) return;
 
     _currentCharacter = char;
+    // 新角色的会话副本还没读，先关掉开场白判定的闸门。
+    // 不做这一步，下面那次 setState 会拿上一个角色的
+    // _openingDismissed 去判断新角色。
+    _sessionReady = false;
 
     await _loadPromptSettings();
 
@@ -3260,13 +3267,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   ///
   /// scene 完全顶替聊天页——原生消息气泡与输入框全部禁用，
   /// 聊天页只作为背景蒙版。**底层无法关闭**，只能删除该 UI 方案。
+  /// scene 判定缓存。与开场白同理——这个 getter 也是每帧跑，
+  /// 里面两次调用都要解析全部 UI 方案并反序列化所有页面元素。
+  bool? _sceneRunnableCache;
+  String? _sceneCacheCharacterId;
+
   bool get _sceneTakesOver {
     final character = _currentCharacter;
     if (character == null) return false;
-    if (!ChatAssemblyMount.hasAssembly(character.meta, 'scene')) return false;
-    // 缺少「打开聊天设置」标记时不接管：
-    // 否则玩家进不了设置页，连重置对话都做不到，等于被锁死。
-    return ChatAssemblyMount.canRun(character.meta, 'scene');
+    if (_sceneCacheCharacterId != character.id ||
+        _sceneRunnableCache == null) {
+      _sceneCacheCharacterId = character.id;
+      _sceneRunnableCache =
+          ChatAssemblyMount.hasAssembly(character.meta, 'scene') &&
+              // 缺少「打开聊天设置」标记时不接管：
+              // 否则玩家进不了设置页，连重置对话都做不到，等于被锁死。
+              ChatAssemblyMount.canRun(character.meta, 'scene');
+    }
+    return _sceneRunnableCache == true;
   }
 
   /// scene 场景 UI 层。
@@ -3376,12 +3394,31 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 会话副本重建（清空历史 / 切角色）时跟着重置。
   bool _openingDismissed = false;
 
+  /// 会话副本是否已经读进来了。
+  ///
+  /// **开场白在就绪前一律不渲染**——这是用户点出的关键：
+  /// 「开关如果是关上的，怎么会先开开一下才关上？」
+  ///
+  /// `_setCurrentCharacter` 里 `_currentCharacter = char` 之后立刻
+  /// setState 开始渲染，而 `_loadSessionState()` 还在三次 await 之后。
+  /// 那段窗口里 `_openingDismissed` 还是初始的 false，
+  /// 判定就会认为「没确认过」而把开场白铺出来，
+  /// 等会话副本读完才消失——那半秒不是动画也不是解析，
+  /// 是在等历史/用户/会话三次磁盘 IO。
+  ///
+  /// 宁可晚一帧显示，也不能先错误地显示再收回。
+  bool _sessionReady = false;
+
   /// 是否应展示开场白 UI。
   ///
   /// 判定顺序按代价从低到高排：先看内存标记，再看缓存，
   /// 最后才可能触发一次 JSON 解析。
   bool get _shouldShowOpeningAssembly {
-    // 最高优先级：已确认过就直接不渲染，不做任何后续计算。
+    // 会话副本没读完之前不做判断：此刻 _openingDismissed 还是默认值，
+    // 贸然渲染会让已确认过的开场白又闪一次。
+    if (!_sessionReady) return false;
+
+    // 已确认过就直接不渲染，不做任何后续计算。
     if (_openingDismissed) return false;
 
     final character = _currentCharacter;
@@ -3401,12 +3438,14 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return !OpeningGreetingState.isDismissed(_sessionState);
   }
 
-  /// 让开场白判定缓存失效。
+  /// 让 UI 方案判定缓存失效（开场白 + scene）。
   ///
   /// 角色卡的 UI 方案可能在编辑器里被改过，切回聊天页要重新判定。
-  void _invalidateOpeningCache() {
+  void _invalidateAssemblyCaches() {
     _openingRunnableCache = null;
     _openingCacheCharacterId = null;
+    _sceneRunnableCache = null;
+    _sceneCacheCharacterId = null;
   }
 
   Widget _buildOpeningAssembly(Size screen) {
