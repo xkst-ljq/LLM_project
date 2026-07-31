@@ -5340,6 +5340,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       text: existingChannel?['semanticLabel']?.toString() ?? module.name,
     );
     var channelEnabled = existingChannel != null;
+    // 专项页是否已经直接落盘过。落盘后本对话框的「取消」收不回那份改动。
+    var channelCommittedByPage = false;
     var channelSource =
         existingChannel?['semanticSource']?.toString() ?? 'manual';
     var channelLabelId = existingChannel?['labelElementId']?.toString() ?? '';
@@ -5932,7 +5934,60 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                 onPressed: () async {
                                   final changed =
                                       await _openDataChannelPage(module);
-                                  if (changed) setDialogState(() {});
+                                  if (!changed) return;
+                                  // 专项页保存即落盘，本对话框的「取消」
+                                  // 已经收不回它——如实告知，
+                                  // 免得作者以为取消能一并撤销。
+                                  channelCommittedByPage = true;
+                                  // 「双写覆盖」陷阱（HANDOFF 已记两次）：
+                                  // 专项页写的是 _elements，而本对话框的
+                                  // 这些变量仍是打开那一刻的旧值。
+                                  // 不回读的话——
+                                  //   1. 上面的「最终语义」预览不会变；
+                                  //   2. 本对话框保存时会用旧值重建 payload，
+                                  //      把专项页刚配好的内容整个盖掉。
+                                  final latest = _dataChannelOf(module);
+                                  setDialogState(() {
+                                    channelEnabled = latest != null;
+                                    channelNameController.text =
+                                        latest?['semanticLabel']?.toString() ??
+                                            module.name;
+                                    channelSource = latest?['semanticSource']
+                                            ?.toString() ??
+                                        'manual';
+                                    channelLabelId = latest?['labelElementId']
+                                            ?.toString() ??
+                                        '';
+                                    channelTargetKind =
+                                        latest?['targetKind']?.toString() ??
+                                            'local_ui_state';
+                                    channelVisibility =
+                                        latest?['visibility']?.toString() ??
+                                            'ui_only';
+                                    channelReadPolicy =
+                                        latest?['llmReadPolicy']?.toString() ??
+                                            'none';
+                                    channelWritePolicy =
+                                        latest?['llmWritePolicy']?.toString() ??
+                                            'none';
+                                    channelApplyPolicy =
+                                        latest?['llmUpdateApplyPolicy']
+                                                ?.toString() ??
+                                            'confirm';
+                                    channelPromptSection =
+                                        latest?['promptSection']?.toString() ??
+                                            DataChannelPromptItem
+                                                .sectionUiData;
+                                    channelCardTarget =
+                                        CardEntryTarget.fromJson(
+                                              latest?['cardEntryTarget'],
+                                            ) ??
+                                            const CardEntryTarget(
+                                              group: CardEntryTarget.groupIntro,
+                                              entryId: '',
+                                              fieldKey: '',
+                                            );
+                                  });
                                 },
                               ),
                             ),
@@ -5947,7 +6002,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             actions: [
               TextButton(
                 onPressed: () => closeAtomDialog(ctx, 'cancel'),
-                child: const Text('取消'),
+                child: Text(
+                  // 通道已由专项页落盘时，「取消」只作用于本对话框的
+                  // 其余字段，说清楚比让作者猜好。
+                  channelCommittedByPage ? '取消其余修改' : '取消',
+                ),
               ),
               FilledButton(
                 onPressed: () => closeAtomDialog(ctx, 'save'),
