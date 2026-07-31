@@ -441,7 +441,19 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final raw = snapshots[earliestId];
     if (raw == null || raw.isEmpty) return;
 
-    _sessionState = SessionState.fromJsonString(raw);
+    final restored = SessionState.fromJsonString(raw);
+
+    // 开场白「已确认」是**会话级的一次性事实**，不随消息回滚。
+    //
+    // 快照是在每条 AI 消息结算前拍的，可能早于玩家确认开场白。
+    // 整体覆盖会把标记抹回 false，于是删几条消息后开场白又弹出来，
+    // 而玩家明明已经看过了。
+    // 只有清空聊天记录（会话副本整个重建）才该让它重新出现。
+    if (OpeningGreetingState.isDismissed(_sessionState)) {
+      OpeningGreetingState.markDismissed(restored);
+    }
+
+    _sessionState = restored;
     _ensureStatusValuesInitialized();
     await _saveSessionState();
     if (mounted) setState(() {});

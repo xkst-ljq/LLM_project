@@ -140,6 +140,11 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   late List<AssemblyPage> _pages;
   late String _activePageId;
   late SessionState _session;
+
+  /// 抑制下一轮数据通道回写。
+  ///
+  /// 外部写入 session 后置位——见 didUpdateWidget 里的说明。
+  bool _suppressNextWriteBack = false;
   List<String> _lastChannelDebug = const <String>[];
   Timer? _channelPollTimer;
   StreamSubscription<LinkerPulseEvent>? _roleSubscription;
@@ -205,6 +210,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         (!identical(incoming, _session) ||
             oldWidget.sessionVersion != widget.sessionVersion)) {
       _session = incoming;
+      // 外部（LLM / 撤回）写入后，这一刻 session 是权威源。
+      //
+      // 必须抑制紧随其后的那一轮轮询回写：轮询里的 applyWrites 会
+      // 无条件用**组件当前值**覆盖 session，而组件此刻还没被刷新，
+      // 于是 LLM 刚写进去的新值在 300ms 内就被旧值顶掉了——
+      // 表现就是「Prompt 里变了、界面不动、通知也不弹」。
+      _suppressNextWriteBack = true;
       if (_applySessionToUI() && mounted) setState(() {});
     }
   }
@@ -398,6 +410,13 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       overrideChannels: overrideChannels,
     );
     _lastChannelDebug = DataChannelService.describeWrites(writes);
+
+    // 刚被外部写入过：这一轮跳过回写，只让 UI 追上 session。
+    // 下一轮（300ms 后）组件已是新值，回写就不会造成倒退。
+    if (_suppressNextWriteBack) {
+      _suppressNextWriteBack = false;
+      return;
+    }
 
     final changed = DataChannelService.applyWrites(
       _session,
