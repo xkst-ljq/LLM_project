@@ -443,6 +443,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
     final raw = await DatabaseService.getSessionStateJson(_currentCharacter!.id);
     _sessionState = SessionState.fromJsonString(raw);
+    // 快速标记跟着会话副本走：换角色 / 重进聊天都要重新对齐，
+    // 否则上一个角色的「已确认」会带到下一个角色身上。
+    _openingDismissed = OpeningGreetingState.isDismissed(_sessionState);
+    _invalidateOpeningCache();
     _ensureStatusValuesInitialized();
   }
 
@@ -497,6 +501,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
 
     _sessionState = restored;
+    _openingDismissed = OpeningGreetingState.isDismissed(restored);
     _ensureStatusValuesInitialized();
     await _saveSessionState();
     if (mounted) setState(() {});
@@ -2458,6 +2463,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 使 Prompt 回到角色卡母版（实现「改写后可还原」）。
     await DatabaseService.clearSessionState(_currentCharacter!.id);
     _sessionState = SessionState();
+    // 会话副本重建 → 开场白应重新出现。
+    _openingDismissed = false;
 
     if (resetUserSetting) {
       await DatabaseService.updateCharacter({
@@ -3349,14 +3356,57 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
+  /// 本卡是否有可运行的开场白 UI。null 表示尚未判定。
+  ///
+  /// **必须缓存**：`hasAssembly` 要解析全部 UI 方案的 JSON，
+  /// `canRun` 还要把所有页面的元素反序列化一遍
+  /// （跑团卡 5 页 100+ 元素）。这个 getter 每帧都跑，
+  /// 不缓存就是每帧解析两百多个元素——
+  /// 用户看到的「确认后还要卡半秒」主要来自这里，不是磁盘 IO。
+  bool? _openingRunnableCache;
+
+  /// 缓存对应的角色 id。切角色时失效。
+  String? _openingCacheCharacterId;
+
+  /// 开场白已被确认关闭的快速标记。
+  ///
+  /// 与 `OpeningGreetingState.isDismissed(_sessionState)` 等价，
+  /// 但省掉一次 Map 查找，且语义更直白：
+  /// **一旦置位，本轮对话就彻底不再考虑开场白**（用户建议）。
+  /// 会话副本重建（清空历史 / 切角色）时跟着重置。
+  bool _openingDismissed = false;
+
   /// 是否应展示开场白 UI。
+  ///
+  /// 判定顺序按代价从低到高排：先看内存标记，再看缓存，
+  /// 最后才可能触发一次 JSON 解析。
   bool get _shouldShowOpeningAssembly {
+    // 最高优先级：已确认过就直接不渲染，不做任何后续计算。
+    if (_openingDismissed) return false;
+
     final character = _currentCharacter;
     if (character == null) return false;
-    if (!ChatAssemblyMount.hasAssembly(character.meta, 'opening')) return false;
-    // 缺少「确认并关闭」标记时不铺遮罩，否则会出现点不掉的黑幕。
-    if (!ChatAssemblyMount.canRun(character.meta, 'opening')) return false;
+
+    if (_openingCacheCharacterId != character.id ||
+        _openingRunnableCache == null) {
+      _openingCacheCharacterId = character.id;
+      _openingRunnableCache =
+          ChatAssemblyMount.hasAssembly(character.meta, 'opening') &&
+              // 缺少「确认并关闭」标记时不铺遮罩，
+              // 否则会出现点不掉的黑幕。
+              ChatAssemblyMount.canRun(character.meta, 'opening');
+    }
+    if (_openingRunnableCache != true) return false;
+
     return !OpeningGreetingState.isDismissed(_sessionState);
+  }
+
+  /// 让开场白判定缓存失效。
+  ///
+  /// 角色卡的 UI 方案可能在编辑器里被改过，切回聊天页要重新判定。
+  void _invalidateOpeningCache() {
+    _openingRunnableCache = null;
+    _openingCacheCharacterId = null;
   }
 
   Widget _buildOpeningAssembly(Size screen) {
@@ -3426,6 +3476,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 落盘只是为了重启后不再弹，晚几十毫秒没有任何影响。
   Future<void> _dismissOpeningAssembly() async {
     if (!OpeningGreetingState.markDismissed(_sessionState)) return;
+    // 置位快速标记：之后 _shouldShowOpeningAssembly 第一行就返回 false，
+    // 不再走 JSON 解析那条路（用户建议）。
+    _openingDismissed = true;
     if (mounted) setState(() {});
     await _saveSessionState();
   }
