@@ -1468,6 +1468,57 @@ _refreshCache()             所有写入口走它：先重建缓存再 bump vers
 用户对此的判断：**「在角色库等待一会问题不大」**——
 启动慢一点可以接受，进页面闪一下不能接受。
 
+### 3.5e 全屏运行时 UI 的键盘避让（本轮连栽三次）
+
+**需求**：scene / 开场白里靠底部的输入框会被键盘盖住。
+
+**三次失败的尝试，每次的错法都不同：**
+
+**① 让 Scaffold 收缩** —— `UIAssemblyRuntimeView` 按可用高度算
+`safeContainScale` 等比缩放整张 PCB。可用高度一变，作者摆好的界面
+在打字时整体缩小。用户原话：「剪掉屏幕可渲染范围很差，会将整个界面给缩小」。
+
+**② `bottom: -keyboardInset` 把高度补回去** —— 界面确实不缩了，
+但输入框照样被盖住，等于没解决。而且这段代码**从来没生效过**，见 ③。
+
+**③ 在 body 内部读 `MediaQuery.viewInsetsOf`** —— 读到的恒为 **0**。
+Scaffold 在 `resizeToAvoidBottomInset: true` 下会**消费掉 viewInsets**：
+body 被塞进矮一个键盘高度的空间，同时向下传递的 MediaQuery 里
+`viewInsets.bottom` 被清零。所以 body 内的任何组件都测不到键盘。
+→ 必须在**进入 Scaffold 之前**取值，存进字段再往下传。
+
+**④ 让背景 `bottom: -inset` 溢出去盖住缝隙** —— 外层 `Stack` 默认
+`clipBehavior: Clip.hardEdge`，溢出部分被裁掉，黑边照旧。
+
+**最终正确解法（两条腿）：**
+
+1. **源头不压缩**：`resizeToAvoidBottomInset: !_sceneTakesOver && !_shouldShowOpeningAssembly`。
+   这两种模式下原生输入栏本就不渲染，没有任何东西需要跟着键盘上移，
+   压缩 body 纯属有害。关掉后 body 恒为全屏高度，
+   `safeContainScale` 全程不变，底部也不再产生缝隙。
+2. **平移而非缩放**：`KeyboardAvoidingStage`（`lib/widgets/`）用
+   `Transform.translate` 整体上移。平移**不参与布局**，
+   碰不到 PCB 重算缩放那条链路。
+
+**`KeyboardAvoidingStage` 的两个必踩点：**
+
+- **`keyboardInset` 必须由外部传入**，组件内部不能自己读 MediaQuery（理由见 ③）。
+  参数驱动要挂 `didUpdateWidget`，只写 `didChangeDependencies` 收不到参数变化。
+- **`localToGlobal` 返回的是已平移之后的坐标**。算目标偏移时要加回
+  `_offset + _manualOffset` 还原，否则第二次计算会把已推上去的量再算一遍，
+  越推越多。
+
+**用户想要的交互形态（原话）**：
+> 可以采用平移，不过可以手指滑动来向上翻。感觉上类似给整个渲染屏幕
+> 又添加了一段输入法高度的空白渲染区域
+
+即：自动推到刚好露出焦点组件（不多推一像素），
+额外允许手指在 `[0, 键盘高度]` 范围内手动上翻。
+
+**排查这类「底部露黑边」的通用顺序**：
+先看 Scaffold 是否在压缩 body → 再看外层 Stack 是否 clip 了溢出 →
+最后才怀疑绘制层本身。别一上来就给绘制层打补丁。
+
 ### 3.6 页面路由器触发规则
 - A7 阶段的 `page_router` 本体点击跳转只是临时编辑态测试入口，A5 后已退场。
 - 页面切换应通过 `button → linker → page_router` 触发。
