@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:llm_project/services/background_service.dart';
+import 'package:llm_project/services/character_draft_service.dart';
 import 'package:provider/provider.dart';
 import 'core/module_interface.dart';
 import 'modules/chat_module.dart';
@@ -43,6 +46,14 @@ void main() async {
   // 首帧就能同步拿到背景，不会先空一拍再补上。
   // ensurePresetsExist 已包含在 warmUp 内部，不需要再单独调。
   await BackgroundService.warmUp();
+
+  // 回收过期的编辑草稿（24h）。
+  //
+  // 不 await：它只是清理垃圾，没人等它的结果，
+  // 让启动画面为此多停一会儿不值得。
+  // 已删除的角色卡、再没打开过的卡，其草稿只能靠这里回收——
+  // CharacterDraftService.load 只清理「正在打开的那一张」。
+  unawaited(CharacterDraftService.purgeExpired());
 
   runApp(
     Provider<ChatModule>.value(

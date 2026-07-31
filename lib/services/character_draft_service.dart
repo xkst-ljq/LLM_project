@@ -24,6 +24,16 @@ class CharacterDraftService {
   /// 每张卡一个键，避免互相覆盖。
   static String _keyOf(String characterId) => 'character_draft_$characterId';
 
+  /// 键前缀，用于批量清理过期草稿。
+  static const String _keyPrefix = 'character_draft_';
+
+  /// 草稿保质期。
+  ///
+  /// 用户判断：「修改过后一般都会体验一下看看如何，所以被遗忘的概率很小」。
+  /// 这个机制针对的是**刚刚误触退出**那一下，不是长期存档；
+  /// 放太久反而会在几天后弹出一份自己都想不起来的修改，令人困惑。
+  static const Duration maxAge = Duration(hours: 24);
+
   /// 保存草稿。[payload] 由编辑页自己组织，本服务不关心其结构。
   static Future<void> save(
     String characterId,
@@ -40,10 +50,13 @@ class CharacterDraftService {
     );
   }
 
-  /// 读取草稿。没有 / 解析失败时返回 null。
+  /// 读取草稿。没有 / 已过期 / 解析失败时返回 null。
   ///
   /// 解析失败按「没有草稿」处理而不是抛出：草稿是锦上添花的功能，
   /// 不该因为一份坏数据就让用户进不了编辑页。
+  ///
+  /// 过期的草稿会**顺手删掉**——读取是它唯一的必经之路，
+  /// 在这里清理比额外跑一个定时任务简单可靠。
   static Future<CharacterDraft?> load(String characterId) async {
     if (characterId.isEmpty) return null;
     final prefs = await SharedPreferences.getInstance();
@@ -54,20 +67,58 @@ class CharacterDraftService {
       if (decoded is! Map) return null;
       final data = decoded['data'];
       if (data is! Map) return null;
-      return CharacterDraft(
-        savedAt: DateTime.fromMillisecondsSinceEpoch(
-          (decoded['savedAt'] as num?)?.toInt() ?? 0,
-        ),
-        data: Map<String, dynamic>.from(data),
+
+      final savedAt = DateTime.fromMillisecondsSinceEpoch(
+        (decoded['savedAt'] as num?)?.toInt() ?? 0,
       );
+
+      // 过期即作废。用 abs() 是为了兼容「用户把系统时间往回调」的情况——
+      // 那会让 difference 变成负数，不判绝对值就会让草稿永不过期。
+      if (DateTime.now().difference(savedAt).abs() >= maxAge) {
+        await prefs.remove(_keyOf(characterId));
+        return null;
+      }
+
+      return CharacterDraft(savedAt: savedAt, data: Map<String, dynamic>.from(data));
     } catch (_) {
+      // 坏数据也顺手清掉，免得每次进编辑页都白解析一遍。
+      await prefs.remove(_keyOf(characterId));
       return null;
     }
   }
 
-  /// 是否存在草稿。用于进入编辑页前的快速判断。
-  static Future<bool> has(String characterId) async =>
-      (await load(characterId)) != null;
+  /// 清理所有已过期的草稿。
+  ///
+  /// `load` 只在进入某张卡时清理那一张；已经删掉的角色卡、
+  /// 或者再也没打开过的卡，其草稿会一直躺在 SharedPreferences 里。
+  /// 在 App 启动时跑一次，把它们一并回收。
+  static Future<void> purgeExpired() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      for (final key in prefs.getKeys().toList()) {
+        if (!key.startsWith(_keyPrefix)) continue;
+        final raw = prefs.getString(key);
+        if (raw == null || raw.isEmpty) {
+          await prefs.remove(key);
+          continue;
+        }
+        try {
+          final decoded = jsonDecode(raw);
+          final savedAt = DateTime.fromMillisecondsSinceEpoch(
+            (decoded is Map ? (decoded['savedAt'] as num?)?.toInt() : null) ?? 0,
+          );
+          if (now.difference(savedAt).abs() >= maxAge) {
+            await prefs.remove(key);
+          }
+        } catch (_) {
+          await prefs.remove(key);
+        }
+      }
+    } catch (_) {
+      // 清理失败不影响任何功能，静默即可。
+    }
+  }
 
   /// 丢弃草稿。
   ///
@@ -95,7 +146,7 @@ class CharacterDraft {
     final diff = DateTime.now().difference(savedAt);
     if (diff.inMinutes < 1) return '刚刚';
     if (diff.inMinutes < 60) return '${diff.inMinutes} 分钟前';
-    if (diff.inHours < 24) return '${diff.inHours} 小时前';
-    return '${diff.inDays} 天前';
+    // 草稿最长只活 24h（见 maxAge），所以不会走到「天」这个量级。
+    return '${diff.inHours} 小时前';
   }
 }
