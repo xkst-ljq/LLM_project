@@ -278,7 +278,126 @@ class CharacterCardPngAssetService {
     c['opening_greetings'] =
         await rewrite(c['opening_greetings']?.toString() ?? '[]');
     c['description'] = await rewrite(c['description']?.toString() ?? '');
+    // UI 方案里的图片同样要内联。
+    //
+    // 这两个字段用的是 HTML 正则（<img src> / url()），
+    // 而 UI 组件把路径直接存在 JSON 的 assetPath 里，匹配不到——
+    // 漏掉的话对方导入后凡是用了图片的组件全是空白，
+    // 而且导入不报错，作者只会以为是原作者没配图。
+    c['meta_json'] = await _inlineAssemblyImages(
+      c['meta_json']?.toString() ?? '',
+      toDataUri,
+    );
     return c;
+  }
+
+  /// 把 `meta_json` 里 UI 组件引用的本地图片替换成 data URI。
+  ///
+  /// 只动 `assetPath`：`url` 存的是网络地址，导入方能自己下载；
+  /// `imageSource` 为动态头像时路径由运行时提供，本就没有静态值。
+  static Future<String> _inlineAssemblyImages(
+    String metaJson,
+    Future<String?> Function(String path) toDataUri,
+  ) async {
+    if (metaJson.trim().isEmpty) return metaJson;
+
+    Map<String, dynamic> meta;
+    try {
+      final decoded = jsonDecode(metaJson);
+      if (decoded is! Map) return metaJson;
+      meta = Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      // 解析失败就原样返回：图片内联是锦上添花，
+      // 不该因为它让整张卡导不出去。
+      return metaJson;
+    }
+
+    final assemblies = meta['ui_assemblies'];
+    if (assemblies is! List || assemblies.isEmpty) return metaJson;
+
+    var touched = false;
+
+    // 直接改原 Map，不能先 Map.from 拷一份——
+    // 那样写进副本，原 JSON 树纹丝不动。
+    Future<void> visitProps(Map<dynamic, dynamic> props) async {
+      final raw = props['assetPath']?.toString().trim() ?? '';
+      if (raw.isEmpty) return;
+      // 已经是内联数据 / 网络地址 / 打包资产的一律跳过。
+      if (raw.startsWith('data:') ||
+          raw.startsWith('http://') ||
+          raw.startsWith('https://') ||
+          raw.startsWith('assets/')) {
+        return;
+      }
+      final uri = await toDataUri(raw);
+      if (uri == null) return;
+      props['assetPath'] = uri;
+      touched = true;
+    }
+
+    Future<void> visitElements(List<dynamic> nodes) async {
+      for (final node in nodes) {
+        if (node is! Map) continue;
+        final module = node['module'];
+        if (module is Map && module['properties'] is Map) {
+          await visitProps(module['properties'] as Map);
+        }
+        // 复合组件的子元素同样要遍历。
+        final composite = node['composite'];
+        if (composite is Map && composite['children'] is List) {
+          await visitElements(composite['children'] as List);
+        }
+      }
+    }
+
+    for (var i = 0; i < assemblies.length; i++) {
+      final rawInfo = assemblies[i];
+      if (rawInfo is! String || rawInfo.trim().isEmpty) continue;
+      Map<String, dynamic> info;
+      try {
+        final decoded = jsonDecode(rawInfo);
+        if (decoded is! Map) continue;
+        info = Map<String, dynamic>.from(decoded);
+      } catch (_) {
+        continue;
+      }
+
+      final beforeThisInfo = touched;
+      final pagesRaw = info['pages']?.toString() ?? '';
+      if (pagesRaw.trim().isEmpty || pagesRaw.trim() == '[]') continue;
+      try {
+        final pages = jsonDecode(pagesRaw);
+        if (pages is! List) continue;
+        for (final page in pages) {
+          if (page is! Map) continue;
+          if (page['elements'] is List) {
+            await visitElements(page['elements'] as List);
+          }
+          // 复合件暴露项的覆写里也可能带图片路径。
+          final overrides = page['propertyOverrides'];
+          if (overrides is List) {
+            for (final ov in overrides) {
+              if (ov is Map && ov['overrides'] is Map) {
+                await visitProps(ov['overrides'] as Map);
+              }
+            }
+          }
+        }
+        // 用「本方案内是否有改动」判断，不能看全局 touched：
+        // 那样第一个方案有图会导致后面无图的方案也被重新编码，
+        // 白白改变 JSON 的键序与格式。
+        if (touched != beforeThisInfo) {
+          info['pages'] = jsonEncode(pages);
+          assemblies[i] = jsonEncode(info);
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+
+    if (!touched) return metaJson;
+    meta['ui_assemblies'] = assemblies;
+    return jsonEncode(meta);
   }
 
   static Future<File> exportCharacterCardPng({

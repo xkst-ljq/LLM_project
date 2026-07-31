@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -1424,7 +1426,23 @@ class UIRenderer {
     else if (fitStr == 'fill') { fit = BoxFit.fill; }
 
     Widget imgContent;
-    if (url.isNotEmpty) {
+    // data URI 优先判断：角色卡导出时会把本地图片内联成
+    // `data:image/png;base64,...`，导入方机器上没有原路径，
+    // 只能靠这条分支渲染。放在最前面是因为它既可能出现在 url
+    // 也可能出现在 assetPath（取决于作者当初填在哪一栏）。
+    final String inlineData =
+        url.startsWith('data:image') ? url : (assetPath.startsWith('data:image') ? assetPath : '');
+    if (inlineData.isNotEmpty) {
+      final bytes = _decodeDataUri(inlineData);
+      imgContent = bytes == null
+          ? _buildImagePlaceholder(module, '内联图片数据损坏')
+          : Image.memory(
+              bytes,
+              fit: fit,
+              errorBuilder: (_, _, _) =>
+                  _buildImagePlaceholder(module, '内联图片解码失败'),
+            );
+    } else if (url.isNotEmpty) {
       imgContent = Image.network(
         url,
         fit: fit,
@@ -1462,6 +1480,17 @@ class UIRenderer {
       return ClipRRect(borderRadius: BorderRadius.circular(radiusVal), child: imgContent);
     }
     return imgContent;
+  }
+
+  /// 解析 `data:image/xxx;base64,....`。格式不对或解码失败返回 null。
+  static Uint8List? _decodeDataUri(String uri) {
+    final comma = uri.indexOf(',');
+    if (comma == -1) return null;
+    try {
+      return base64Decode(uri.substring(comma + 1));
+    } catch (_) {
+      return null;
+    }
   }
 
   static Widget _buildImagePlaceholder(UIModule module, String tip) {
