@@ -196,50 +196,6 @@ void main() {
       expect(current, 'c');
     });
   });
-}
-
-/// 测试替身：复刻 SegmentedField 的对外行为。
-///
-/// 不直接引用 `character_assembly_page.dart` 里的 part 控件——
-/// 那个文件是 `part of`，导入会把整个 7700 行的编辑器一起拖进来，
-/// 测试启动会非常慢且需要一大堆无关的 mock。
-class SegmentedFieldHarness extends StatelessWidget {
-  const SegmentedFieldHarness({
-    super.key,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String value;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    const options = [
-      ('a', '选项A'),
-      ('b', '选项B'),
-      ('c', '选项C'),
-    ];
-    return Wrap(
-      spacing: 6,
-      children: [
-        for (final (v, label) in options)
-          InkWell(
-            onTap: () => onChanged(v),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: v == value ? Colors.teal : Colors.black12,
-                  width: v == value ? 1.4 : 1.0,
-                ),
-              ),
-              child: Text(label),
-            ),
-          ),
-      ],
-    );
-  }
 
   group('状态字段名称建议', () {
     // 排序规则复刻 _statusFieldNameSuggestions。
@@ -309,4 +265,48 @@ class SegmentedFieldHarness extends StatelessWidget {
       expect(controller.selection.baseOffset, picked.length);
     });
   });
+}
+
+/// 测试替身：复刻 SegmentedField 的对外行为。
+///
+/// 不直接引用 `character_assembly_page.dart` 里的 part 控件——
+/// 那个文件是 `part of`，导入会把整个 7700 行的编辑器一起拖进来，
+/// 测试启动会非常慢且需要一大堆无关的 mock。
+class SegmentedFieldHarness extends StatelessWidget {
+  const SegmentedFieldHarness({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const options = [
+      ('a', '选项A'),
+      ('b', '选项B'),
+      ('c', '选项C'),
+    ];
+    return Wrap(
+      spacing: 6,
+      children: [
+        for (final (v, label) in options)
+          InkWell(
+            onTap: () => onChanged(v),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: v == value ? Colors.teal : Colors.black12,
+                  width: v == value ? 1.4 : 1.0,
+                ),
+              ),
+              child: Text(label),
+            ),
+          ),
+      ],
+    );
+  }
 }
