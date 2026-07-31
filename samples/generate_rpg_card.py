@@ -252,35 +252,37 @@ h_flow = element(uid("el"), module(uid("m"), "叙事", "message_flow",
     20, 206, W-40, 300, layer=14, parent=HB)
 
 # 行动输入
-h_input = element(uid("el"), module(uid("m"), "行动", "input",
-    {"placeholder": "你打算做什么…", "text": "", "committedValue": "",
-     "maxLength": 300}, color=PARCH2, material=0, radius=8.0),
-    20, 518, 258, 44, layer=15, parent=HB)
-h_act_els, h_act_face, h_act_id = button_group("行动", 286, 518, 74, 44,
-    parent=HB, layer=16, color=BLOOD, sends_message=True)
-
+# input 自己标 sendsMessage：回车即发送框内文字。
+#
+# **不能靠按钮发送输入框内容**——引擎里所有指向 button 的方案
+# 都是「启用/可见」控制，没有一条能把值传给 button；
+# _resolveSendText 对 button 回落到按钮自身文字，
+# 结果就是点「行动」只发出「行动」两个字。
+h_input = element(uid("el"), module(uid("m"), "行动输入", "input",
+    {"placeholder": "写下你的行动，回车发送", "text": "", "committedValue": "",
+     "maxLength": 300, "sendsMessage": True},
+    color=PARCH2, material=0, radius=8.0),
+    20, 518, W-40, 44, layer=15, parent=HB)
 # 退出（scene 必须有 keyAction）
 h_exit_els, h_exit_face, h_exit_id = button_group("收起面板", 20, 572, W-40, 36,
     parent=HB, layer=19, color=INK2, key_action=True, font=12.0)
 
-h_hint = hint("← 角色卡    上滑掷骰    背包 →", HB, y=618)
+h_hint = hint("← 角色卡     下滑掷骰     行囊 →", HB, y=618)
 
-lk_h1 = linker("有字才能行动", "input_nonempty_to_button_enable",
-               h_input["id"], h_act_id)
 # 按压动画作用在按钮**自己的** surface 底上，不是整页背景。
-lk_h2 = linker("行动→按压", "click_to_surface_press", h_act_id, h_act_face)
 lk_h3 = linker("收起→按压", "click_to_surface_press", h_exit_id, h_exit_face)
 
 home = page(PAGES["home"], "主菜单", "base",
     [h_bg, h_title, h_sub, h_div, h_loc, h_hp, h_hp_lb, h_mp, h_mp_lb,
      h_gold, h_gold_lb, h_clue, h_clue_lb, h_div2, h_flow, h_input]
-    + h_act_els + h_exit_els +
-    [h_hint, lk_h1, lk_h2, lk_h3],
+    + h_exit_els + [h_hint, lk_h3],
     order=0,
     gestures=[
         gesture("swipe_right", PAGES["sheet"]),
         gesture("swipe_left",  PAGES["bag"]),
-        gesture("swipe_up",    PAGES["dice"],
+        # 不用 swipe_up：消息流占了页面中段，玩家上滑是想看历史记录，
+        # 占用它必然误触（用户反馈）。改用下滑——没有别的用途。
+        gesture("swipe_down",  PAGES["dice"],
                 action="open_overlay", transition="overlay_fade", duration=180),
     ])
 
@@ -416,10 +418,15 @@ b_shop_lb = element(uid("el"), module(uid("m"), "商店标题", "text",
     {"text": "锚链街杂货铺 · 灯油 8 银/瓶", "fontSize": 12.0}, color=INK),
     24, 292, W-48, 18, layer=7, parent=BB)
 
-b_qty = element(uid("el"), module(uid("m"), "数量", "slider",
+m_qty = module(uid("m"), "数量", "slider",
     {"current": 1.0, "min": 0.0, "max": 10.0, "step": 1.0,
-     "committedValue": 1.0}, color=GOLD),
-    24, 318, 210, 34, layer=8, parent=BB)
+     "committedValue": 1.0,
+     # 数量必须进 Prompt，否则 KP 不知道玩家买了几瓶——
+     # 按钮只能发固定文字，带不上数字。
+     "dataChannel": channel("购买数量", "session_var",
+        read="prompt", write="none", notify="silent")}, color=GOLD)
+b_qty = element(uid("el"), m_qty, 24, 318, 210, 34, layer=8, parent=BB)
+m_qty["properties"]["dataChannel"]["sourceComponentId"] = b_qty["id"]
 b_qty_lb = element(uid("el"), module(uid("m"), "数量标签", "text",
     {"text": "数量", "fontSize": 10.0}, color=INK2),
     24, 352, 60, 14, layer=9, parent=BB)
@@ -432,8 +439,12 @@ b_cost_lb = element(uid("el"), module(uid("m"), "总价标签", "text",
     {"text": "共需（银）", "fontSize": 9.0, "textAlign": "right"}, color=INK2),
     250, 344, 100, 12, layer=11, parent=BB)
 
-b_buy_els, b_buy_face, b_buy_id = button_group("向店主买下", 24, 376, W-48, 40,
-    parent=BB, layer=12, color=GREEN, sends_message=True)
+# 按钮只能发出固定文字（引擎限制，见上）。
+# 数量本身通过数据通道进 Prompt，KP 读得到，所以文案写成半句话，
+# 让「买 N 瓶」这个信息由通道补全，而不是指望按钮带上数字。
+b_buy_els, b_buy_face, b_buy_id = button_group("按当前数量向店主买下灯油",
+    24, 376, W-48, 40,
+    parent=BB, layer=12, color=GREEN, sends_message=True, font=12.0)
 
 # 开关：是否公开携带武器（演示 boolean_to_visible）
 b_arm = element(uid("el"), module(uid("m"), "明面持械", "switch",
@@ -503,25 +514,20 @@ l_filter_lb = element(uid("el"), module(uid("m"), "筛选标签", "text",
     24, 370, 60, 14, layer=7, parent=LB)
 
 l_note = element(uid("el"), module(uid("m"), "新线索", "input",
-    {"placeholder": "记下新发现…", "text": "", "committedValue": "",
-     "maxLength": 200}, color=PARCH2, material=0, radius=8.0),
-    24, 432, 240, 40, layer=8, parent=LB)
-l_add_els, l_add_face, l_add_id = button_group("记下", 274, 432, 82, 40,
-    parent=LB, layer=9, color=GREEN, sends_message=True)
+    {"placeholder": "记下新发现，回车提交", "text": "", "committedValue": "",
+     "maxLength": 200, "sendsMessage": True},
+    color=PARCH2, material=0, radius=8.0),
+    24, 432, W-48, 40, layer=8, parent=LB)
 
 l_exit_els, l_exit_face, l_exit_id = button_group("收起面板", 20, 566, W-40, 36,
     parent=LB, layer=12, color=INK2, key_action=True, font=12.0)
 l_hint = hint("角色卡 →", LB, y=618)
 
-lk_l1 = linker("有字才能记", "input_nonempty_to_button_enable",
-               l_note["id"], l_add_id)
-lk_l2 = linker("记下→按压", "click_to_surface_press", l_add_id, l_add_face)
 lk_l3 = linker("收起→按压", "click_to_surface_press", l_exit_id, l_exit_face)
 
 log = page(PAGES["log"], "日志", "base",
     [l_bg, l_title, l_div] + log_els +
-    [l_filter_lb, l_filter, l_note] + l_add_els + l_exit_els +
-    [l_hint, lk_l1, lk_l2, lk_l3],
+    [l_filter_lb, l_filter, l_note] + l_exit_els + [l_hint, lk_l3],
     order=3,
     gestures=[gesture("swipe_left", PAGES["sheet"])])
 
@@ -542,21 +548,28 @@ d_sub = element(uid("el"), module(uid("m"), "说明", "text",
     {"text": "选择难度后掷 1d20", "fontSize": 11.0, "textAlign": "center"},
     color=INK2), 56, 196, 268, 16, layer=2, parent=DC)
 
-d_diff = element(uid("el"), module(uid("m"), "难度", "select",
+m_diff = module(uid("m"), "难度", "select",
     {"options": [{"label": "简单 (DC 8)",  "value": "8"},
                  {"label": "普通 (DC 12)", "value": "12"},
                  {"label": "困难 (DC 16)", "value": "16"},
                  {"label": "极难 (DC 20)", "value": "20"}],
-     "current": "12", "defaultValue": "12"}, color=BLUE, radius=8.0),
-    64, 224, 252, 36, layer=3, parent=DC)
+     "current": "12", "defaultValue": "12",
+     "dataChannel": channel("检定难度", "session_var",
+        read="prompt", write="none", notify="silent", field_type="text")},
+    color=BLUE, radius=8.0)
+d_diff = element(uid("el"), m_diff, 64, 224, 252, 36, layer=3, parent=DC)
+m_diff["properties"]["dataChannel"]["sourceComponentId"] = d_diff["id"]
 
 d_mod_lb = element(uid("el"), module(uid("m"), "调整值标签", "text",
     {"text": "属性调整值", "fontSize": 10.0}, color=INK2),
     64, 270, 100, 14, layer=4, parent=DC)
-d_mod = element(uid("el"), module(uid("m"), "调整值", "slider",
+m_mod = module(uid("m"), "调整值", "slider",
     {"current": 2.0, "min": -5.0, "max": 10.0, "step": 1.0,
-     "committedValue": 2.0}, color=GOLD),
-    64, 286, 180, 32, layer=5, parent=DC)
+     "committedValue": 2.0,
+     "dataChannel": channel("检定调整值", "session_var",
+        read="prompt", write="none", notify="silent")}, color=GOLD)
+d_mod = element(uid("el"), m_mod, 64, 286, 180, 32, layer=5, parent=DC)
+m_mod["properties"]["dataChannel"]["sourceComponentId"] = d_mod["id"]
 d_mod_v = element(uid("el"), module(uid("m"), "调整值数", "text",
     {"text": "2", "fontSize": 14.0, "textAlign": "right"}, color=INK),
     252, 292, 64, 20, layer=6, parent=DC)
@@ -565,7 +578,7 @@ d_hint2 = element(uid("el"), module(uid("m"), "结果提示", "text",
     {"text": "掷骰结果由主持人判定", "fontSize": 10.5, "textAlign": "center"},
     color=INK2), 64, 328, 252, 16, layer=7, parent=DC)
 
-d_roll_els, d_roll_face, d_roll_id = button_group("掷 1d20", 64, 352, 252, 46,
+d_roll_els, d_roll_face, d_roll_id = button_group("按当前难度掷骰", 64, 352, 252, 46,
     parent=DC, layer=8, color=BLOOD, radius=10.0, sends_message=True, font=14.0)
 
 d_tip = element(uid("el"), module(uid("m"), "关闭提示", "text",
@@ -735,6 +748,12 @@ SYSTEM = """你是 KP，主持「灰港迷雾」。严格遵守：
 9. 消费或获得报酬时改银币；发现新线索时线索数 +1。
 10. 玩家移动到新地点时更新当前位置。
 11. 经验在完成阶段目标时给 20~50；满 300 时提示升级。
+
+【读取界面数据】
+15. 每轮 Prompt 会带上界面数据段，其中：
+    - 购买数量 / 检定难度 / 检定调整值 由玩家在面板上选定，
+      玩家点「按当前数量买下」「按当前难度掷骰」时按这些值处理。
+    - 按钮只能发出固定文字，具体数值一律从界面数据段读，不要反问玩家。
 
 【禁止】
 12. 不要主动推进剧情到玩家没参与的地方。

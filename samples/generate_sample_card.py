@@ -297,14 +297,16 @@ s_switch_lb = element(uid("el"), module(uid("m"), "加冰标签", "text",
     256, 410, 40, 14, layer=10, parent=BG)
 
 # 输入框
+# input 自己标 sendsMessage：回车即发。
+# 按钮带不上输入框内容——引擎里没有 input→button 的取值方案，
+# _resolveSendText 对 button 会回落到按钮自身文字。
 m_input = module(uid("m"), "点单输入", "input",
-    {"placeholder": "对织说点什么…", "text": "", "committedValue": "",
-     "maxLength": 200}, color=0xFF1A1A28, material=1, radius=10.0)
-s_input = element(uid("el"), m_input, 16, 452, 250, 44, layer=11, parent=BG)
+    {"placeholder": "对织说点什么，回车发送", "text": "", "committedValue": "",
+     "maxLength": 200, "sendsMessage": True},
+    color=0xFF1A1A28, material=1, radius=10.0)
+s_input = element(uid("el"), m_input, 16, 452, 328, 44, layer=11, parent=BG)
 
 # 发送按钮
-s_send_els, s_send_face, s_send_id = button_group("递上", 276, 452, 68, 44,
-    parent=BG, layer=12, color=PINK, radius=10.0, sends_message=True)
 
 # 退出按钮（scene 必须有 keyAction）
 s_exit_els, s_exit_face, s_exit_id = button_group("离开吧台", 16, 512, 328, 40,
@@ -338,21 +340,17 @@ lk_slider_math = linker("浓度→醉意参数", "slider_commit_to_math_param",
                         s_slider["id"], s_math["id"], {"targetParam": "paramA"})
 lk_math_text   = linker("醉意→文本", "result_to_text",
                         s_math["id"], s_drunk["id"])
-lk_send_press  = linker("递上→按压反馈", "click_to_surface_press",
-                        s_send_id, s_send_face)
 lk_exit_press  = linker("离开→按压反馈", "click_to_surface_press",
                         s_exit_id, s_exit_face)
-lk_input_send  = linker("有字才能递", "input_nonempty_to_button_enable",
-                        s_input["id"], s_send_id)
 
 scene = assembly("吧台场景", "scene", 360, 640,
     [page(uid("pg"), "主菜单", "base",
           [s_bg, s_title, s_sub, s_line, s_flow, s_slider_lb, s_slider,
            s_preview, s_drunk, s_select, s_switch, s_switch_lb, s_input]
-          + s_send_els + s_exit_els + [s_time,
+          + s_exit_els + [s_time,
            # 逻辑件排在最后：它们在 PCB 外，不参与容器组。
            s_math, lk_slider_prog, lk_slider_math, lk_math_text,
-           lk_send_press, lk_exit_press, lk_input_send])])
+           lk_exit_press])])
 
 # ==========================================================
 # 3. 开场白 opening —— 报上名号

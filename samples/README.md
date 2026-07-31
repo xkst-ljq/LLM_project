@@ -288,6 +288,46 @@ click_to_surface_press:  button → 它自己的那块 surface
 | `name_to_text` | surface → text | 源组件标识名称回写为目标文本 | — |
 | `to_string` | any → indicator | 将上游原始值交给状态灯自身的状态规则解释 | — |
 
+### 7.5 发送消息：让 input 自己发，不要指望按钮带内容
+
+**引擎里没有 `input → button` 的取值方案。** 所有指向 button 的方案
+（`input_nonempty_to_button_enable` 等）都只控制**启用/可见**，
+传不了值。
+
+`_resolveSendText` 对 button 的逻辑是：先查 linker 联动值，
+查不到就回落 `properties['text']`。所以：
+
+```
+❌ input 写内容 + button 标 sendsMessage
+   → 点按钮只发出按钮上那几个字，输入框内容根本没上传
+
+✅ input 自己标 sendsMessage
+   → 回车即发送框内文字，发完自动清空
+```
+
+```json
+{"type": "input", "properties": {
+  "placeholder": "写下你的行动，回车发送",
+  "text": "", "committedValue": "",
+  "sendsMessage": true          ← 标在 input 上
+}}
+```
+
+#### 那按钮还能做什么
+
+按钮适合发**固定指令**（选项式剧情：「向左走」「攻击」）。
+需要携带数值时，把数值配成**数据通道**进 Prompt，
+按钮文案写成半句话让 AI 去补：
+
+```
+滑块「购买数量」→ dataChannel(session_var, read: prompt)
+按钮文案「按当前数量向店主买下灯油」
+系统提示里写明：具体数值从界面数据段读，不要反问玩家
+```
+
+⚠️ `slider_commit_to_math_param` 读的是 **`committedValue`**，
+拖动过程中只有 `current` 在变——**松手提交后**参数才更新。
+
 ### 8. 多页面与页面跳转
 
 `灰港迷雾_跑团卡.llmcard` 演示了这一块。页面结构：
@@ -334,6 +374,7 @@ scene 一套 UI 内含 5 页
 | **左右手势互逆** | A 右滑到 B，B 就该能左滑回 A，否则手感错乱 |
 | **每个 base 页都要有 keyAction 按钮** | scene 接管全屏，每页都得有出口 |
 | **叠加页必须有容器面** | 带 `is_overlay_container: true` 的 surface。点它以外的区域才会关闭；没有它就关不掉 |
+| **不要占用 swipe_up** | 消息流通常在页面中段，玩家上滑是想看历史记录，占用它必然误触（实测反馈）。叠加页用 `swipe_down` 打开 |
 
 叠加页的容器面**不要铺满 PCB**——铺满了就没有「外部」可点，
 玩家会被困住。跑团卡里骰子面板是 300×340，居中留出四周空白。
