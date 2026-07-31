@@ -12,7 +12,7 @@ DataChannelPromptItem _item({
   String targetId = '',
   String read = 'prompt',
   String write = 'suggest_delta',
-  String apply = 'confirm',
+  String notify = 'silent',
   String value = '45',
 }) {
   return DataChannelPromptItem(
@@ -21,7 +21,7 @@ DataChannelPromptItem _item({
     targetId: targetId,
     llmReadPolicy: read,
     llmWritePolicy: write,
-    applyPolicy: apply,
+    notifyStyle: notify,
     value: value,
     rangeHint: '',
   );
@@ -39,17 +39,6 @@ void main() {
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+3'),
         items: [_item(label: '好感度', write: 'none')],
-        session: SessionState(vars: {'好感度': '45'}),
-      );
-
-      expect(result.isEmpty, isTrue);
-      expect(result.rejectedCount, 1);
-    });
-
-    test('applyPolicy 为 never 时拒绝', () {
-      final result = DataChannelUpdateEngine.parse(
-        reply: _reply('好感度:+3'),
-        items: [_item(label: '好感度', apply: 'never')],
         session: SessionState(vars: {'好感度': '45'}),
       );
 
@@ -88,8 +77,8 @@ void main() {
         session: SessionState(vars: {'好感度': '45'}),
       );
 
-      expect(result.needsConfirm.length, 1);
-      final update = result.needsConfirm.single;
+      expect(result.applied.length, 1);
+      final update = result.applied.single;
       expect(update.oldValue, '45');
       expect(update.newValue, '48');
       expect(update.rawSuggestion, '+3');
@@ -121,7 +110,7 @@ void main() {
         session: SessionState(vars: {'心情': '平静'}),
       );
 
-      expect(result.needsConfirm.single.newValue, '放松');
+      expect(result.applied.single.newValue, '放松');
     });
 
     test('值没有实际变化时不产生更新', () {
@@ -141,32 +130,37 @@ void main() {
         session: SessionState(vars: {'好感度': '45'}),
       );
 
-      expect(result.needsConfirm.length, 1);
-      expect(result.needsConfirm.single.newValue, '48');
+      expect(result.applied.length, 1);
+      expect(result.applied.single.newValue, '48');
     });
   });
 
   group('parse - 应用策略分流', () {
-    test('auto_low_risk 进自动应用组', () {
+    test('silent 照常写入，但不进通知列表', () {
+      // 值一律写入——「拒绝」的语义已废除，
+      // notifyStyle 只决定要不要告诉玩家。
       final result = DataChannelUpdateEngine.parse(
         reply: _reply('好感度:+3'),
-        items: [_item(label: '好感度', apply: 'auto_low_risk')],
+        items: [_item(label: '好感度', notify: 'silent')],
         session: SessionState(vars: {'好感度': '45'}),
       );
 
-      expect(result.autoApply.length, 1);
-      expect(result.needsConfirm, isEmpty);
+      expect(result.applied.length, 1);
+      expect(result.needsNotify, isEmpty);
     });
 
-    test('confirm 进待确认组', () {
-      final result = DataChannelUpdateEngine.parse(
-        reply: _reply('好感度:+3'),
-        items: [_item(label: '好感度', apply: 'confirm')],
-        session: SessionState(vars: {'好感度': '45'}),
-      );
+    test('toast / dialog 进通知列表', () {
+      for (final style in ['toast', 'dialog']) {
+        final result = DataChannelUpdateEngine.parse(
+          reply: _reply('好感度:+3'),
+          items: [_item(label: '好感度', notify: style)],
+          session: SessionState(vars: {'好感度': '45'}),
+        );
 
-      expect(result.autoApply, isEmpty);
-      expect(result.needsConfirm.length, 1);
+        expect(result.applied.length, 1, reason: style);
+        expect(result.needsNotify.length, 1, reason: style);
+        expect(result.needsNotify.single.notifyStyle, style);
+      }
     });
   });
 
@@ -181,7 +175,7 @@ void main() {
           oldValue: '45',
           newValue: '48',
           rawSuggestion: '+3',
-          applyPolicy: 'confirm',
+          notifyStyle: 'silent',
         ),
       ]);
 
@@ -199,7 +193,7 @@ void main() {
           oldValue: '',
           newValue: '放松',
           rawSuggestion: '放松',
-          applyPolicy: 'confirm',
+          notifyStyle: 'silent',
         ),
       ]);
 
@@ -217,7 +211,7 @@ void main() {
         session: SessionState(vars: {'好感度': '45'}),
       );
 
-      expect(result.needsConfirm.single.newValue, '48');
+      expect(result.applied.single.newValue, '48');
     });
 
     test('全角尖括号仍能解析', () {
@@ -229,7 +223,7 @@ void main() {
         session: SessionState(vars: {'好感度': '45'}),
       );
 
-      expect(result.needsConfirm.single.newValue, '48');
+      expect(result.applied.single.newValue, '48');
     });
 
     test('标签内多余空格仍能解析', () {
@@ -241,7 +235,7 @@ void main() {
         session: SessionState(vars: {'好感度': '45'}),
       );
 
-      expect(result.needsConfirm.single.newValue, '48');
+      expect(result.applied.single.newValue, '48');
     });
 
     test('容错格式的标记同样能从展示文本剥离', () {

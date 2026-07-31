@@ -46,13 +46,21 @@ class StatusFieldPolicy {
   /// LLM 可以建议更新该字段。
   final bool canWrite;
 
-  /// 'confirm' | 'auto_low_risk' | 'never'
-  final String applyPolicy;
+  /// 通知方式：'silent' | 'toast' | 'dialog'。
+  ///
+  /// 与数据通道收口到同一语义：**不决定值写不写**，只决定要不要提醒。
+  /// 旧的 applyPolicy 里 confirm 带否决权，已废除——
+  /// 不收口的话会留下「状态栏字段仍能被拒绝」的死角。
+  final String notifyStyle;
+
+  /// 自定义提醒文案，支持 {name} {old} {new}。
+  final String notifyTemplate;
 
   const StatusFieldPolicy({
     this.canRead = true,
     this.canWrite = true,
-    this.applyPolicy = 'auto_low_risk',
+    this.notifyStyle = 'silent',
+    this.notifyTemplate = '',
   });
 }
 

@@ -2478,8 +2478,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var visibility = existing?['visibility']?.toString() ?? 'ui_only';
     var llmReadPolicy = existing?['llmReadPolicy']?.toString() ?? 'none';
     var llmWritePolicy = existing?['llmWritePolicy']?.toString() ?? 'none';
-    var applyPolicy =
-        existing?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
+    // notifyStyle 取代旧的 llmUpdateApplyPolicy。
+    // 旧值里的 confirm 是「否决权」（勾掉就不写），语义已废除；
+    // never 由「允许 AI 更新 = 不允许」承担。这里一律回落 silent。
+    var notifyStyle =
+        StatusNotifyStyle.parse(existing?['notifyStyle']).storageValue;
+    final notifyTemplateController = TextEditingController(
+      text: existing?['notifyTemplate']?.toString() ?? '',
+    );
     var promptSection = existing?['promptSection']?.toString() ??
         DataChannelPromptItem.sectionUiData;
     var cardTarget = CardEntryTarget.fromJson(existing?['cardEntryTarget']) ??
@@ -2559,6 +2565,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       targetKind: targetKind,
                       llmReadPolicy: llmReadPolicy,
                       llmWritePolicy: llmWritePolicy,
+                      notifyStyle: notifyStyle,
+                      notifyTemplateController: notifyTemplateController,
                       promptSection: promptSection,
                       cardTarget: cardTarget,
                       cardCustomTitleController: cardCustomTitleController,
@@ -2574,6 +2582,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           setDialogState(() => llmReadPolicy = value),
                       onWritePolicy: (value) =>
                           setDialogState(() => llmWritePolicy = value),
+                      onNotifyStyle: (value) =>
+                          setDialogState(() => notifyStyle = value),
                       onPromptSection: (value) =>
                           setDialogState(() => promptSection = value),
                       onNormalizeLabelId: (value) => labelElementId = value,
@@ -2621,7 +2631,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           visibility: visibility,
           llmReadPolicy: llmReadPolicy,
           llmWritePolicy: llmWritePolicy,
-          applyPolicy: applyPolicy,
+          notifyStyle: notifyStyle,
+          notifyTemplate: notifyTemplateController.text,
           promptSection: promptSection,
           cardTarget: cardTarget,
         );
@@ -2637,6 +2648,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
     nameController.dispose();
     cardCustomTitleController.dispose();
+    notifyTemplateController.dispose();
   }
 
   Future<void> _showCompositeOverrideBindingEditor({
@@ -5421,8 +5433,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         existingChannel?['llmReadPolicy']?.toString() ?? 'none';
     var channelWritePolicy =
         existingChannel?['llmWritePolicy']?.toString() ?? 'none';
-    var channelApplyPolicy =
-        existingChannel?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
+    var channelNotifyStyle =
+        StatusNotifyStyle.parse(existingChannel?['notifyStyle']).storageValue;
+    final channelNotifyTemplateController = TextEditingController(
+      text: existingChannel?['notifyTemplate']?.toString() ?? '',
+    );
     var channelPromptSection = existingChannel?['promptSection']?.toString() ??
         DataChannelPromptItem.sectionUiData;
     var channelCardTarget =
@@ -6285,7 +6300,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               visibility: channelVisibility,
               llmReadPolicy: channelReadPolicy,
               llmWritePolicy: channelWritePolicy,
-              applyPolicy: channelApplyPolicy,
+              notifyStyle: channelNotifyStyle,
+              notifyTemplate: channelNotifyTemplateController.text,
               promptSection: channelPromptSection,
               cardTarget: channelCardTarget,
             );
@@ -6492,11 +6508,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String sourceComponentId,
     required UIModule module,
     required String targetKind,
-    // AB 批只改表单 UI，这两个字段继续按原样存写：
-    // visibility 已从 UI 删除（死字段），applyPolicy 的语义迁移留到 CD 批。
-    // 现在断掉存写会让已有角色卡的通道配置在下次保存时丢字段。
+    // visibility 已从 UI 删除（死字段），但继续按原样存写，
+    // 断掉会让已有角色卡的通道配置在下次保存时丢字段。
     required String visibility,
-    required String applyPolicy,
+    required String notifyStyle,
+    required String notifyTemplate,
     required String llmReadPolicy,
     required String llmWritePolicy,
     required String promptSection,
@@ -6521,7 +6537,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'visibility': visibility,
       'llmReadPolicy': llmReadPolicy,
       'llmWritePolicy': llmWritePolicy,
-      'llmUpdateApplyPolicy': applyPolicy,
+      // 取代 llmUpdateApplyPolicy：值一律写入，这里只决定要不要通知玩家。
+      'notifyStyle': notifyStyle,
+      if (notifyTemplate.trim().isNotEmpty)
+        'notifyTemplate': notifyTemplate.trim(),
       // A13-1：注入到 [界面数据] 还是 [玩家档案]。
       'promptSection': promptSection,
       // A13-2：指向角色卡设定条目时的三级定位。
@@ -7322,8 +7341,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var visibility = existing?['visibility']?.toString() ?? 'ui_only';
     var readPolicy = existing?['llmReadPolicy']?.toString() ?? 'none';
     var writePolicy = existing?['llmWritePolicy']?.toString() ?? 'none';
-    var applyPolicy =
-        existing?['llmUpdateApplyPolicy']?.toString() ?? 'confirm';
+    // notifyStyle 取代旧的 llmUpdateApplyPolicy。
+    // 旧值里的 confirm 是「否决权」（勾掉就不写），语义已废除；
+    // never 由「允许 AI 更新 = 不允许」承担。这里一律回落 silent。
+    var notifyStyle =
+        StatusNotifyStyle.parse(existing?['notifyStyle']).storageValue;
+    final notifyTemplateController = TextEditingController(
+      text: existing?['notifyTemplate']?.toString() ?? '',
+    );
     var promptSection = existing?['promptSection']?.toString() ??
         DataChannelPromptItem.sectionUiData;
     var cardTarget = CardEntryTarget.fromJson(existing?['cardEntryTarget']) ??
@@ -7372,6 +7397,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     targetKind: targetKind,
                     llmReadPolicy: readPolicy,
                     llmWritePolicy: writePolicy,
+                    notifyStyle: notifyStyle,
+                    notifyTemplateController: notifyTemplateController,
                     promptSection: promptSection,
                     cardTarget: cardTarget,
                     cardCustomTitleController: cardTitleController,
@@ -7383,6 +7410,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                     onTargetKind: (v) => setPageState(() => targetKind = v),
                     onReadPolicy: (v) => setPageState(() => readPolicy = v),
                     onWritePolicy: (v) => setPageState(() => writePolicy = v),
+                    onNotifyStyle: (v) => setPageState(() => notifyStyle = v),
                     onPromptSection: (v) =>
                         setPageState(() => promptSection = v),
                     onNormalizeLabelId: (v) => labelElementId = v,
@@ -7420,7 +7448,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             visibility: visibility,
             llmReadPolicy: readPolicy,
             llmWritePolicy: writePolicy,
-            applyPolicy: applyPolicy,
+            notifyStyle: notifyStyle,
+            notifyTemplate: notifyTemplateController.text,
             promptSection: promptSection,
             cardTarget: cardTarget,
           );
@@ -7445,6 +7474,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required String targetKind,
     required String llmReadPolicy,
     required String llmWritePolicy,
+    required String notifyStyle,
+    required TextEditingController notifyTemplateController,
     required String promptSection,
     required CardEntryTarget cardTarget,
     required TextEditingController cardCustomTitleController,
@@ -7454,6 +7485,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     required ValueChanged<String> onTargetKind,
     required ValueChanged<String> onReadPolicy,
     required ValueChanged<String> onWritePolicy,
+    required ValueChanged<String> onNotifyStyle,
     required ValueChanged<String> onPromptSection,
     required ValueChanged<String> onNormalizeLabelId,
     VoidCallback? onNameChanged,
@@ -7677,6 +7709,50 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ],
             onChanged: onWritePolicy,
           ),
+          // 通知方式只在「AI 能改这个值」时才有意义。
+          if (llmWritePolicy != 'none') ...[
+            const SizedBox(height: 12),
+            StatusLampField(
+              label: '变化时提醒玩家',
+              value: notifyStyle,
+              options: const [
+                StatusLampOption(
+                  value: 'silent',
+                  label: '静默',
+                  color: Color(0xFF9E9E9E),
+                  description: '值照常写入，不打扰玩家。适合频繁的小幅变化。',
+                ),
+                StatusLampOption(
+                  value: 'toast',
+                  label: '浮窗',
+                  color: Color(0xFF29B6F6),
+                  description: '顶部浮出几秒后自消，不打断操作。适合「知道就行」的变化。',
+                ),
+                StatusLampOption(
+                  value: 'dialog',
+                  label: '弹窗',
+                  color: Color(0xFFEF6C00),
+                  description: '需要玩家点确认。适合升级这类玩家要据此做决策的大事。'
+                      '同一轮里多条会堆叠，逐个查看。',
+                ),
+              ],
+              onChanged: onNotifyStyle,
+            ),
+            if (notifyStyle != 'silent') ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: notifyTemplateController,
+                decoration: const InputDecoration(
+                  labelText: '提醒文案（可留空）',
+                  hintText: '恭喜升到 {new} 级',
+                  helperText: '可用 {name} {old} {new}；留空则显示「等级：3 → 4」',
+                  helperMaxLines: 2,
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ],
         ],
       ),
     ];

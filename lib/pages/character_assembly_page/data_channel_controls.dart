@@ -151,6 +151,172 @@ class _SegmentChip extends StatelessWidget {
   }
 }
 
+/// 状态灯选择器：每项前面一个圆灯，选中就亮。
+///
+/// 与 [SegmentedField] 的区别是语义上的——状态灯表达的是
+/// 「当前处于哪一档」，适合有强弱之分的序列（静默 → 浮窗 → 弹窗）。
+class StatusLampOption {
+  const StatusLampOption({
+    required this.value,
+    required this.label,
+    required this.color,
+    this.description,
+  });
+
+  final String value;
+  final String label;
+  final Color color;
+  final String? description;
+}
+
+class StatusLampField extends StatelessWidget {
+  const StatusLampField({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final List<StatusLampOption> options;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF555562),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (var i = 0; i < options.length; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Expanded(
+                child: _LampChip(
+                  option: options[i],
+                  selected: options[i].value == value,
+                  onTap: () => onChanged(options[i].value),
+                ),
+              ),
+            ],
+          ],
+        ),
+        // 选中项的说明单独一行，不塞进灯里——
+        // 三个灯并排时每个只有约 100px 宽，塞说明必然被截断。
+        Builder(
+          builder: (context) {
+            final selected = options.where((o) => o.value == value);
+            if (selected.isEmpty) return const SizedBox.shrink();
+            final desc = selected.first.description;
+            if (desc == null || desc.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                desc,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF777783),
+                  height: 1.35,
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _LampChip extends StatelessWidget {
+  const _LampChip({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final StatusLampOption option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected
+          ? option.color.withValues(alpha: 0.10)
+          : const Color(0xFFF4F4F7),
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: selected
+                  ? option.color
+                  : Colors.black.withValues(alpha: 0.07),
+              width: selected ? 1.4 : 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 状态灯本体：选中实心 + 外发光，未选中空心。
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected ? option.color : Colors.transparent,
+                  border: Border.all(
+                    color: selected
+                        ? option.color
+                        : const Color(0xFFBDBDC6),
+                    width: 1.4,
+                  ),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: option.color.withValues(alpha: 0.5),
+                            blurRadius: 5,
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  option.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color:
+                        selected ? option.color : const Color(0xFF555562),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 圆角下拉：**固定向下展开**，样式与页面统一。
 ///
 /// 只用于项数不定的场景（如「标签文本」，数量取决于画布上有几个 Text）。

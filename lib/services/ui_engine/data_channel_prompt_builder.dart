@@ -32,7 +32,11 @@ class DataChannelPromptItem {
   ///
   /// Prompt 本身不需要这个字段，但 A9.6-4 解析 LLM 回复时要用它决定
   /// 是自动应用还是弹确认，因此在收集阶段一并带出来。
-  final String applyPolicy;
+  /// 通知方式：'silent' | 'toast' | 'dialog'。不影响写入，只管提不提醒。
+  final String notifyStyle;
+
+  /// 自定义提醒文案，支持 {name} {old} {new}。
+  final String notifyTemplate;
 
   /// 当前值；仅在允许读取时才会被注入。
   final String value;
@@ -65,7 +69,8 @@ class DataChannelPromptItem {
     required this.llmWritePolicy,
     required this.value,
     required this.rangeHint,
-    this.applyPolicy = 'confirm',
+    this.notifyStyle = 'silent',
+    this.notifyTemplate = '',
     this.promptSection = sectionUiData,
     this.cardTarget,
     this.cardEntryTitle = '',
@@ -172,8 +177,8 @@ class DataChannelPromptBuilder {
           targetId: targetId,
           llmReadPolicy: channel['llmReadPolicy']?.toString() ?? 'none',
           llmWritePolicy: channel['llmWritePolicy']?.toString() ?? 'none',
-          applyPolicy:
-              channel['llmUpdateApplyPolicy']?.toString() ?? 'confirm',
+          notifyStyle: channel['notifyStyle']?.toString() ?? 'silent',
+          notifyTemplate: channel['notifyTemplate']?.toString() ?? '',
           value: value,
           rangeHint: field == null ? '' : _rangeHint(field),
           promptSection: channel['promptSection']?.toString() ??
@@ -243,7 +248,8 @@ class DataChannelPromptBuilder {
       out[id] = StatusFieldPolicy(
         canRead: (existing?.canRead ?? false) || item.canRead,
         canWrite: (existing?.canWrite ?? false) || item.canWrite,
-        applyPolicy: existing?.applyPolicy ?? item.applyPolicy,
+        notifyStyle: existing?.notifyStyle ?? item.notifyStyle,
+        notifyTemplate: existing?.notifyTemplate ?? item.notifyTemplate,
       );
     }
     return out;

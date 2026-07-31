@@ -24,8 +24,14 @@ class DataChannelUpdate {
   /// LLM 给出的原始建议，例如 '+3'。用于确认弹窗展示。
   final String rawSuggestion;
 
-  /// 'confirm' | 'auto_low_risk' | 'never'
-  final String applyPolicy;
+  /// 通知方式：'silent' | 'toast' | 'dialog'。
+  ///
+  /// **不再决定值写不写**——值一律写入，它只决定要不要告诉玩家。
+  /// 旧的 applyPolicy 里 confirm 是否决权，语义已废除。
+  final String notifyStyle;
+
+  /// 作者自定义提醒文案，支持 {name} {old} {new}。
+  final String notifyTemplate;
 
   const DataChannelUpdate({
     required this.semanticLabel,
@@ -34,14 +40,12 @@ class DataChannelUpdate {
     required this.oldValue,
     required this.newValue,
     required this.rawSuggestion,
-    required this.applyPolicy,
+    this.notifyStyle = 'silent',
+    this.notifyTemplate = '',
   });
 
-  /// 该更新可以不经用户确认直接应用。
-  bool get isAutoApplicable => applyPolicy == 'auto_low_risk';
-
-  /// 该更新需要用户确认。
-  bool get needsConfirm => applyPolicy == 'confirm';
+  /// 需要以某种形式告知玩家。
+  bool get needsNotify => notifyStyle != 'silent';
 
   /// 展示用摘要，例如「好感度：45 → 48（+3）」。
   String get summary {
@@ -53,19 +57,25 @@ class DataChannelUpdate {
 
 /// 解析结果：分成「自动应用」「待确认」两组，外加被拒绝的条目数。
 class DataChannelUpdateResult {
-  final List<DataChannelUpdate> autoApply;
-  final List<DataChannelUpdate> needsConfirm;
+  /// 全部通过校验的更新。**都会被写入**——
+  /// 旧版分成 autoApply / needsConfirm 两组是因为 confirm 有否决权，
+  /// 那个语义已废除。
+  final List<DataChannelUpdate> applied;
 
   /// 因策略为 never / 通道不可写 / 名称不匹配而被丢弃的条数。
   final int rejectedCount;
 
   const DataChannelUpdateResult({
-    this.autoApply = const <DataChannelUpdate>[],
-    this.needsConfirm = const <DataChannelUpdate>[],
+    this.applied = const <DataChannelUpdate>[],
+
     this.rejectedCount = 0,
   });
 
-  bool get isEmpty => autoApply.isEmpty && needsConfirm.isEmpty;
+  bool get isEmpty => applied.isEmpty;
+
+  /// 需要以浮窗 / 弹窗告知玩家的子集。
+  List<DataChannelUpdate> get needsNotify =>
+      applied.where((u) => u.needsNotify).toList();
 }
 
 /// A9.6-4：解析 LLM 回复里的 `<界面状态变化>` 块。
@@ -141,8 +151,8 @@ class DataChannelUpdateEngine {
       byLabel[item.semanticLabel.trim()] = item;
     }
 
-    final autoApply = <DataChannelUpdate>[];
-    final needsConfirm = <DataChannelUpdate>[];
+    final applied = <DataChannelUpdate>[];
+
     var rejected = 0;
     final handled = <String>{};
 
@@ -172,11 +182,6 @@ class DataChannelUpdateEngine {
         continue;
       }
 
-      final applyPolicy = item.applyPolicy;
-      if (applyPolicy == 'never') {
-        rejected++;
-        continue;
-      }
 
       // 同一项重复输出只取第一条，避免叠加算账。
       if (!handled.add(name)) continue;
@@ -210,19 +215,16 @@ class DataChannelUpdateEngine {
         oldValue: oldValue,
         newValue: newValue,
         rawSuggestion: rawValue,
-        applyPolicy: applyPolicy,
+        notifyStyle: item.notifyStyle,
+        notifyTemplate: item.notifyTemplate,
       );
 
-      if (update.isAutoApplicable) {
-        autoApply.add(update);
-      } else {
-        needsConfirm.add(update);
-      }
+      applied.add(update);
     }
 
     return DataChannelUpdateResult(
-      autoApply: autoApply,
-      needsConfirm: needsConfirm,
+      applied: applied,
+
       rejectedCount: rejected,
     );
   }

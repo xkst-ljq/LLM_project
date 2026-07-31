@@ -33,6 +33,8 @@ import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/message_action.dart';
 import '../services/ui_engine/message_flow_scope.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
+import '../services/ui_engine/status_notification.dart';
+import '../widgets/status_notification_layer.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
 import '../widgets/chat_assembly_mount.dart';
@@ -467,50 +469,36 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       _collectUIChannelPromptItems(),
     );
 
-    // 按应用策略把字段分成两批：
-    //   - confirm         → 先算不写，弹卡片让用户逐条确认
-    //   - auto_low_risk   → 直接写入（未被数据通道引用的字段默认走这里，
-    //                       保持状态栏原有行为不变）
-    // never 已在 canWrite 层被排除，不会走到这里。
-    final confirmFields = <StatusBarField>[];
-    final autoFields = <StatusBarField>[];
-    for (final f in fields) {
-      final policy = policies[f.id];
-      if (policy != null && policy.applyPolicy == 'confirm') {
-        confirmFields.add(f);
-      } else {
-        autoFields.add(f);
-      }
-    }
+    // 值一律写入，不再分「自动 / 待确认」两批。
+    //
+    // 旧实现里 confirm 策略会先算不写、弹卡片让玩家逐条勾选——
+    // 那是「否决权」。用户判断这个语义不对：数据变化本身不该让玩家拒绝，
+    // 该做的是把重要变化**告知**他。勾掉一条会让状态分叉
+    // （AI 说升级了、玩家点拒绝，那这局到底算不算升级？）。
+    final applied = StatusBarEngine.applyFromReply(
+      reply,
+      fields,
+      _sessionState.statusValues,
+      policies: policies,
+    );
+    var changed = applied.isNotEmpty;
 
-    var changed = false;
-
-    if (autoFields.isNotEmpty) {
-      final applied = StatusBarEngine.applyFromReply(
-        reply,
-        autoFields,
-        _sessionState.statusValues,
-        policies: policies,
+    // 写完再通知——通知就是通知，不是预告。
+    if (applied.isNotEmpty) {
+      _notificationQueue.enqueue(
+        applied
+            .map((c) {
+              final policy = policies[c.fieldId];
+              return StatusNotification(
+                label: c.fieldName,
+                oldValue: c.oldValue,
+                newValue: c.newValue,
+                style: StatusNotifyStyle.parse(policy?.notifyStyle),
+                template: policy?.notifyTemplate ?? '',
+              );
+            })
+            .where((n) => !n.style.isSilent),
       );
-      if (applied.isNotEmpty) changed = true;
-    }
-
-    if (confirmFields.isNotEmpty) {
-      // commit: false —— 只算账不写入，等用户确认。
-      final pending = StatusBarEngine.applyFromReply(
-        reply,
-        confirmFields,
-        _sessionState.statusValues,
-        policies: policies,
-        commit: false,
-      );
-      if (pending.isNotEmpty && mounted) {
-        final accepted = await _confirmStatusChanges(pending);
-        for (final change in accepted) {
-          _sessionState.statusValues[change.fieldId] = change.newValue;
-          changed = true;
-        }
-      }
     }
 
     if (changed) {
@@ -520,66 +508,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return StatusBarEngine.stripFromReply(reply);
   }
 
-  /// 状态更新确认卡片：用户可逐条勾选后应用。
-  ///
-  /// 默认全部勾选，但必须点「应用所选」才生效；取消或关闭视为全部拒绝。
-  Future<List<StatusChange>> _confirmStatusChanges(
-    List<StatusChange> changes,
-  ) async {
-    final selected = {for (final change in changes) change: true};
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('状态更新'),
-          content: SizedBox(
-            width: 360,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'AI 根据剧情建议了以下状态变化，确认后才会生效：',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF777783)),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final change in changes)
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      value: selected[change] ?? false,
-                      title: Text(
-                        '${change.fieldName}：'
-                        '${change.oldValue} → ${change.newValue}',
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      onChanged: (value) => setDialogState(
-                        () => selected[change] = value ?? false,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('全部忽略'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('应用所选'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed != true) return const <StatusChange>[];
-    return changes.where((change) => selected[change] == true).toList();
-  }
 
   /// A9.6-4：处理 LLM 回复中的 `<界面状态变化>` 块。
   ///
@@ -604,19 +532,21 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final stripped = DataChannelUpdateEngine.stripFromReply(reply);
     if (result.isEmpty) return stripped;
 
-    var changed = false;
-    if (result.autoApply.isNotEmpty) {
-      changed = DataChannelUpdateEngine.apply(_sessionState, result.autoApply);
-    }
+    // 同上：值一律写入，不再有「待确认」这一批。
+    final changed =
+        DataChannelUpdateEngine.apply(_sessionState, result.applied);
 
-    if (result.needsConfirm.isNotEmpty && mounted) {
-      final accepted = await _confirmUIChannelUpdates(result.needsConfirm);
-      if (accepted.isNotEmpty) {
-        final applied =
-            DataChannelUpdateEngine.apply(_sessionState, accepted);
-        changed = changed || applied;
-      }
-    }
+    _notificationQueue.enqueue(
+      result.needsNotify.map(
+        (u) => StatusNotification(
+          label: u.semanticLabel,
+          oldValue: u.oldValue,
+          newValue: u.newValue,
+          style: StatusNotifyStyle.parse(u.notifyStyle),
+          template: u.notifyTemplate,
+        ),
+      ),
+    );
 
     if (changed) {
       await _saveSessionState();
@@ -625,66 +555,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return stripped;
   }
 
-  /// 界面状态更新确认卡片：用户可逐条勾选后应用。
-  ///
-  /// 默认全部勾选，但必须由用户点「应用」才会生效；
-  /// 取消或关闭视为全部拒绝。
-  Future<List<DataChannelUpdate>> _confirmUIChannelUpdates(
-    List<DataChannelUpdate> updates,
-  ) async {
-    final selected = {for (final update in updates) update: true};
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('界面状态更新'),
-          content: SizedBox(
-            width: 360,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'AI 根据剧情建议了以下界面数据变化，确认后才会生效：',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF777783)),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final update in updates)
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      value: selected[update] ?? false,
-                      title: Text(
-                        update.summary,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      onChanged: (value) => setDialogState(
-                        () => selected[update] = value ?? false,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('全部忽略'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('应用所选'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed != true) return const <DataChannelUpdate>[];
-    return updates.where((update) => selected[update] == true).toList();
-  }
 
   List<CharacterCard> _selectableCharacters = [];
 
@@ -1779,6 +1649,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   // 且全项目已按可空类型使用该字段。
   CharacterCard? _currentCharacter;
   final ScrollController _scrollController = ScrollController();
+
+  /// 状态变化通知队列（4.3b）。
+  ///
+  /// 弹窗堆叠逐个确认、浮窗向上顶最多 5 个、弹窗全部清空才放浮窗——
+  /// 编排规则在 StatusNotificationQueue 里。
+  final StatusNotificationQueue _notificationQueue =
+      StatusNotificationQueue();
   bool _inputExpanded = false;
   // 键盘弹出/收起时用来判断视口是否变化。见 didChangeDependencies。
   double _lastKeyboardInset = 0.0;
@@ -2431,6 +2308,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _keyboardFollowTimer?.cancel();
+    _notificationQueue.dispose();
     _aiReplySub?.cancel();
     UserService.versionNotifier.removeListener(_onGlobalUserChanged);
     PromptSettingsService.versionNotifier.removeListener(_onPromptSettingsChanged);
@@ -4851,9 +4729,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   // 场景再全屏也不该把它埋掉（用户反馈）。
                   // 仍排在开场白之前——开场白要求玩家先确认再进场景。
                   _buildStickyAssemblyLayer(screenWidth),
-                  // ===== 开场白 UI（最顶层，需覆盖输入栏）=====
+                  // ===== 开场白 UI（需覆盖输入栏）=====
                   // 必须排在输入栏之后：它要接管整个界面直到玩家确认。
                   _buildOpeningAssembly(MediaQuery.of(context).size),
+                  // ===== 状态变化通知（最顶层）=====
+                  // 排在最后：升级提示要盖在 scene / 常驻挂件之上，
+                  // 被挡住就失去了「告知」的意义。
+                  // scene 模式下浮窗照常走顶部（用户确认：盖住就盖住）。
+                  StatusNotificationLayer(
+                    queue: _notificationQueue,
+                    topInset: MediaQuery.of(context).padding.top,
+                  ),
                 ],
               ),
             ),
