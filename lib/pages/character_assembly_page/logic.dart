@@ -6072,10 +6072,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                     channelWritePolicy =
                                         latest?['llmWritePolicy']?.toString() ??
                                             'none';
-                                    channelApplyPolicy =
-                                        latest?['llmUpdateApplyPolicy']
+                                    channelNotifyStyle =
+                                        StatusNotifyStyle.parse(
+                                      latest?['notifyStyle'],
+                                    ).storageValue;
+                                    channelNotifyTemplateController.text =
+                                        latest?['notifyTemplate']
                                                 ?.toString() ??
-                                            'confirm';
+                                            '';
                                     channelPromptSection =
                                         latest?['promptSection']?.toString() ??
                                             DataChannelPromptItem
@@ -6138,6 +6142,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         imageAssetController,
         historyLimitController,
         channelNameController,
+      channelNotifyTemplateController,
+        channelNotifyTemplateController,
       ]);
       return;
     }
@@ -6349,6 +6355,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       imageAssetController,
       historyLimitController,
       channelNameController,
+      channelNotifyTemplateController,
     ]);
   }
 
@@ -7460,6 +7467,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       nameController.dispose();
       cardTitleController.dispose();
+      notifyTemplateController.dispose();
     });
     return DataChannelPageResult(saved: saved == true, channel: result);
   }
