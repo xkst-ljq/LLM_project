@@ -4,8 +4,10 @@
 
 | 文件 | 用途 |
 |---|---|
-| `织_夜航酒保_UI测试卡.llmcard` | 可直接导入的测试卡 |
-| `generate_sample_card.py` | 生成脚本，改参数即可产出新卡 |
+| `织_夜航酒保_UI测试卡.llmcard` | 单页 UI 测试卡（三套 UI，各 1 页） |
+| `灰港迷雾_跑团卡.llmcard` | **多页面** RPG 跑团卡（scene 含 5 页） |
+| `generate_sample_card.py` | 酒保卡生成脚本 |
+| `generate_rpg_card.py` | 跑团卡生成脚本 |
 
 ## 这张卡覆盖了什么
 
@@ -259,7 +261,70 @@ meta.ui_assemblies: [ JSON字符串, ... ]   ← 注意是字符串数组，不�
 | `name_to_text` | surface → text | 源组件标识名称回写为目标文本 | — |
 | `to_string` | any → indicator | 将上游原始值交给状态灯自身的状态规则解释 | — |
 
-### 8. 图片
+### 8. 多页面与页面跳转
+
+`灰港迷雾_跑团卡.llmcard` 演示了这一块。页面结构：
+
+```
+scene 一套 UI 内含 5 页
+  主菜单(base) ⇄ 角色卡(base) ⇄ 日志(base)
+       ⇅
+     行囊(base)
+       └ 骰子面板(overlay，挂在主菜单下)
+```
+
+#### ⚠️ 运行时只支持两种跳转方式
+
+已核实源码（`ui_assembly_runtime_view.dart`）：
+
+1. **滑动手势** —— `page.gestures` 里配 `direction → targetPageId`
+2. **点叠加页外部** —— 自动回父页，无需配置
+
+`button_to_page_route` 这条方案**虽然登记在方案表里，但运行时没有
+任何消费方**——按钮连上去点了不会切页。生成多页面 UI 时
+导航一律用手势，不要指望按钮跳转。
+
+#### 手势的结构
+
+写在 `page.gestures` 数组里，不是元素：
+
+```json
+"gestures": [
+  {"direction": "swipe_right", "action": "switch_base_page",
+   "targetPageId": "<目标页id>", "transition": "base_slide", "durationMs": 220},
+  {"direction": "swipe_up", "action": "open_overlay",
+   "targetPageId": "<叠加页id>", "transition": "overlay_fade", "durationMs": 180}
+]
+```
+
+`direction` 四选一：`swipe_left` / `swipe_right` / `swipe_up` / `swipe_down`。
+
+#### 多页面必须自查的四件事
+
+| 检查项 | 说明 |
+|---|---|
+| **每页都能回主菜单** | 否则玩家滑进去就出不来。叠加页靠点外部返回，不用配 |
+| **左右手势互逆** | A 右滑到 B，B 就该能左滑回 A，否则手感错乱 |
+| **每个 base 页都要有 keyAction 按钮** | scene 接管全屏，每页都得有出口 |
+| **叠加页必须有容器面** | 带 `is_overlay_container: true` 的 surface。点它以外的区域才会关闭；没有它就关不掉 |
+
+叠加页的容器面**不要铺满 PCB**——铺满了就没有「外部」可点，
+玩家会被困住。跑团卡里骰子面板是 300×340，居中留出四周空白。
+
+#### 页面字段
+
+```json
+{
+  "id": "pg_xxx", "name": "角色卡", "type": "base",   // base | overlay
+  "parentPageId": null,     // overlay 必须指向它挂靠的 base 页
+  "sortOrder": 1,
+  "elements": [...], "gestures": [...], "propertyOverrides": []
+}
+```
+
+**叠加页只能挂在平级页下，不能嵌套叠加页**（叠加层不能变成子叠加层）。
+
+### 9. 图片
 
 `image` 组件的 `assetPath` 若填本地路径，分享时会被自动内联成 data URI。
 LLM 生成时**不要编造本地路径**——要么留空，要么用 `https://` 网址。
