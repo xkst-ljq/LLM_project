@@ -4989,15 +4989,22 @@ slider / progress 等组件不会跟着变（状态栏是独立渲染的，所�
 （六种类型逐一验证写进去的和读出来的是同一个值），
 避免两个方向取值口径不一致导致静默丢值。
 
-**当前生效范围（重要）**：
-反向同步目前只在 **Assembly 编辑器的运行时预览**里生效。
-排查后确认：`UIAssemblyRuntimeView` 全项目仅有一处调用
-（`character_assembly_page.dart` 的预览），**聊天页尚未渲染任何 Assembly UI**。
-聊天页只使用 `uiAssemblies` 读取数据通道配置来注入 Prompt。
+**当前生效范围** ~~（重要）~~ —— ⚠️ **下面这段已过时，保留作为历史记录**：
 
-因此「LLM 更新状态后聊天页里的 UI 组件实时刷新」这个效果，
-缺的不是参数接线，而是「在聊天页挂载 Assembly UI」这块功能本身——
-它属于 A10 的范围（各 mode 的挂载位置与形态差异）。
+> 反向同步目前只在 Assembly 编辑器的运行时预览里生效。
+> `UIAssemblyRuntimeView` 全项目仅有一处调用，聊天页尚未渲染任何 Assembly UI。
+
+**现状（已修正）**：聊天页早已通过 `ChatAssemblyMount` 挂载 Assembly UI，
+`chat_page.dart` 里有 14 处引用，四种 mode 全部接通：
+
+| mode | 挂载形态 |
+|---|---|
+| `opening` | 进入会话时的全屏开场档案 |
+| `scene` | 全屏接管场景 |
+| `extra_sticky` | 消息流顶部常驻条（可折叠） |
+| `extra_companion` | 气泡内伴生 UI（超出部分等比缩小） |
+
+因此「LLM 更新状态后聊天页 UI 实时刷新」已经成立。
 反向同步的能力已就绪且有单测，A10 挂载完成后接上 `sessionState`
 与 `onSessionStateChanged` 即可直接生效。
 
