@@ -288,11 +288,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   /// 不改渲染器——这样被标记的组件仍可正常参与 linker 等既有配置。
   void _setupSemanticRoleListener() {
     _roleSubscription?.cancel();
-    if (widget.onDismissRequested == null &&
-        widget.onSendMessage == null &&
-        widget.onMessageAction == null) {
-      return;
-    }
+    // 注意：**不能**再因为三个回调都为空就 return。
+    // 按钮换页（button_to_page_route）纯粹是运行时视图内部的事，
+    // 不依赖任何外部回调；提前返回会让没接回调的挂件永远换不了页。
 
     _roleSubscription = LinkerEventBus().onPulse.listen((event) {
       if (!mounted) return;
@@ -300,6 +298,15 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       final module =
           _findModuleById(activePage.elements, event.sourceModuleId);
       if (module == null) return;
+
+      // 按钮换页：button --linker--> page_router。
+      //
+      // 这条方案早就登记在 _schemeRegistry 里，但**全项目没有消费方**，
+      // 作者连好线、保存成功，运行时却毫无反应。这里补上执行端。
+      //
+      // 放在最前面：换页会替换整棵子树，后面那些依赖 activePage 的
+      // 逻辑就没意义了。
+      if (_handleButtonPageRoute(event, activePage)) return;
 
       // 关键职责：点击触发（关闭 / 确认 / 打开设置）。
       if (event.eventType == 'tap' && UISemanticRole.isKeyAction(module)) {
@@ -741,6 +748,74 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       _activePageId = target.id;
     });
     _setupRuntimeLinkers();
+  }
+
+  /// 处理 button → page_router 的点击换页。返回是否消费了本次事件。
+  ///
+  /// 与手势换页共用同一套状态（_activePageId / _lastTransition /
+  /// _lastDurationMs）和同一个收尾动作（_setupRuntimeLinkers），
+  /// 保证两条入口的行为完全一致——过渡动画、联动重建都不会漏。
+  bool _handleButtonPageRoute(
+    LinkerPulseEvent event,
+    AssemblyPage activePage,
+  ) {
+    // 只认点击类事件。滑块拖动、定时器 tick 不该触发换页。
+    const clickTypes = {'tap', 'double_tap', 'long_press'};
+    if (!clickTypes.contains(event.eventType)) return false;
+
+    // 找出以本按钮为源、且目标是 page_router 的 linker。
+    for (final element in activePage.elements) {
+      if (element.isComposite) continue;
+      final lk = (element.module?.properties['linker'] as Map?)
+          ?.cast<String, dynamic>();
+      if (lk == null || lk['enabled'] == false) continue;
+      if (lk['scheme']?.toString() != 'button_to_page_route') continue;
+      if (lk['sourceModuleId']?.toString() != event.sourceModuleId) continue;
+
+      // 作者可以指定用哪种手势触发（单击 / 双击 / 长按），
+      // 与 button 的 sourceGesture 语义保持一致；没配就默认单击。
+      final gesture = lk['sourceGesture']?.toString() ?? 'tap';
+      if (gesture != event.eventType) continue;
+
+      final routerId = lk['targetModuleId']?.toString() ?? '';
+      final router = _findElementById(activePage.elements, routerId);
+      final route = (router?.module?.properties['route'] as Map?)
+          ?.cast<String, dynamic>();
+      if (route == null) continue;
+
+      final targetId = route['targetPageId']?.toString() ?? '';
+      if (targetId.isEmpty) continue;
+      final target = _pageById(_pages, targetId);
+      if (target == null) continue;
+
+      final action = route['action']?.toString() ?? 'switch_base_page';
+      final transition = route['transition']?.toString() ?? '';
+      final durationMs = (route['durationMs'] as num?)?.toInt() ?? 0;
+
+      setState(() {
+        _lastTransition =
+            transition.isNotEmpty ? transition : _defaultTransitionForAction(action);
+        _lastDurationMs =
+            durationMs > 0 ? durationMs : _defaultDurationForAction(action);
+        _activePageId = target.id;
+      });
+      _setupRuntimeLinkers();
+      return true;
+    }
+    return false;
+  }
+
+  /// 按 id 找元素（含复合件内部）。
+  UIElement? _findElementById(List<UIElement> elements, String id) {
+    if (id.isEmpty) return null;
+    for (final element in elements) {
+      if (element.id == id) return element;
+      if (element.isComposite && element.composite != null) {
+        final hit = _findElementById(element.composite!.children, id);
+        if (hit != null) return hit;
+      }
+    }
+    return null;
   }
 
   void _handleOverlayTap(
