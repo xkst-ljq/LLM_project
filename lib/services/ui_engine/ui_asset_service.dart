@@ -50,26 +50,6 @@ class UIAssetService {
       _retiredFoundationModuleIds.contains(module.id) ||
       atomModuleTypes.contains(module.type);
 
-  /// 是否是「只包了一个引擎原子」的复合件。
-  ///
-  /// **这才是用户看到的那几个「原子组件」的真身。**
-  /// Studio 的「保存」只会产出 `UIComposite`（见 logic.dart 的
-  /// `_saveAsComposite`），从不写 module。所以作者在画布上拖一个原子
-  /// 就点保存时，得到的是一个仅含单个原子子元素的复合件——
-  /// 它在资产库里和真正的复合组件长得一模一样，
-  /// 但本质上就是那个原子本身，陈列出来没有意义。
-  ///
-  /// 判据刻意收紧为「**恰好一个**子元素、且该子元素是原子」：
-  ///   - 两个原子拼起来（哪怕只是文字叠在面板上）已经是作者的设计，必须保留；
-  ///   - 子元素本身是复合件的（嵌套）也保留。
-  static bool isSingleAtomComposite(UIComposite composite) {
-    if (composite.children.length != 1) return false;
-    final only = composite.children.first;
-    if (only.isComposite) return false;
-    final module = only.module;
-    return module != null && atomModuleTypes.contains(module.type);
-  }
-
   // 全局原子模组库
   Map<String, UIModule> _modules = {};
   // 全局组合块库
@@ -259,8 +239,6 @@ class UIAssetService {
   }
 
   Future<void> _loadAssets() async {
-    // 是否丢弃过历史遗留的引擎原子（见下方一次性迁移）。
-    var purged = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       final data = prefs.getString(_storageKey);
@@ -269,43 +247,20 @@ class UIAssetService {
 
         // 加载原子模组 (与默认模组合并)
         final modulesJson = decoded['modules'] as Map<String, dynamic>? ?? {};
-        // 历史版本曾把引擎原子也写进用户资产（id 不在白名单、但 type
-        // 就是 button/text/…），它们会跑到「完成资产库」里冒充用户资产。
-        // 用户要求彻底删除，不只是隐藏。
         modulesJson.forEach((k, v) {
           // 内置原材料由当前引擎版本维护，不能被旧草稿中的历史默认样式覆盖。
-          if (_foundationModuleOrder.contains(k) ||
-              _retiredFoundationModuleIds.contains(k)) {
-            return;
+          if (!_foundationModuleOrder.contains(k) &&
+              !_retiredFoundationModuleIds.contains(k)) {
+            _modules[k] = UIModule.fromJson(v);
           }
-          final module = UIModule.fromJson(v);
-          // 一次性迁移：把混进来的引擎原子直接丢弃。
-          // 这里不能用 isAtomModule——上面已排除白名单 id，
-          // 剩下要判的就是 type 这一条。
-          if (atomModuleTypes.contains(module.type)) {
-            purged = true;
-            return;
-          }
-          _modules[k] = module;
         });
 
         // 加载组合块 (与默认组合块合并)
         final compositesJson = decoded['composites'] as Map<String, dynamic>? ?? {};
         compositesJson.forEach((k, v) {
-          final composite = UIComposite.fromJson(v);
-          // 一次性迁移：丢弃「只包了一个原子」的复合件。
-          // 它们是作者拖个原子就顺手保存留下的，等同于原子本身。
-          if (isSingleAtomComposite(composite)) {
-            purged = true;
-            return;
-          }
-          _composites[k] = composite;
+          _composites[k] = UIComposite.fromJson(v);
         });
       }
-
-      // 丢弃过历史原子就立刻回写，让删除真正落盘——
-      // 否则每次启动都要重新过滤一遍，而存储里那份脏数据永远还在。
-      if (purged) await saveAssets();
     } catch (_) {
       // 解析出错则保留默认初始化
     }
@@ -321,25 +276,18 @@ class UIAssetService {
   }
 
   // --- 原子模组操作 ---
-  void addModule(UIModule module) {
-    _modules[module.id] = module;
-    saveAssets();
-  }
+  //
+  // 没有 addModule：新资产一律走 addComposite。
+  // Studio 的「保存」只产出 UIComposite（见 logic.dart
+  // `_saveCurrentWorkspaceAsComposite`），_modules 只存引擎内置原子。
 
   UIModule? getModule(String id) => _modules[id];
 
-  /// 全部模组，**含内置引擎原子**。
+  /// 完成资产库使用：排除一切引擎原子，只留作者自己造的东西。
   ///
-  /// 展示类界面一律不要用它——内置原子是所有 UI 的默认元素，
-  /// 陈列出来只是噪音（用户反馈）。列表页请用 [getUserModules]，
-  /// 工作台左侧「原材料」区请用 [getFoundationModules]。
-  /// 目前仅保留给需要按 id 全量查找的场景。
-  List<UIModule> getAllModules() => _modules.values.toList();
-
-  /// 完成资产库使用：排除**一切引擎原子**，只留作者自己造的东西。
-  ///
-  /// 原先只按 id 白名单排除，漏掉了历史版本遗留的原子（id 不在白名单里，
-  /// 但 type 明明就是 button/text/…）。改为 [isAtomModule] 三重判据。
+  /// 正常情况下 `_modules` 里**只有**引擎原子，这里会返回空表。
+  /// 保留这层过滤是为了兜底旧存档：历史版本曾把原子写进用户资产，
+  /// 那些 id 不在白名单里、但 type 就是 button/text/…。
   List<UIModule> getUserModules() =>
       _modules.values.where((module) => !isAtomModule(module)).toList();
 
