@@ -4,7 +4,11 @@ part of 'ui_studio_page.dart';
 mixin _UIStudioDrawers on _UIStudioLogic, _UIStudioDialogs {
   // ===== 左侧原材料抽屉 =====
   Widget _buildLeftCompactAssetPreviewDrawer() {
-    final modules = _assetService.getFoundationModules();
+    // 按类别分组（外观 / 显示 / 交互 / 逻辑）。
+    // 只用一个淡框把同类圈起来，**不加任何文字标题**——
+    // 抽屉很窄，标题会挤占本就紧张的纵向空间；
+    // 而且原材料一共就 14 个，看形状比看字更快（用户要求）。
+    final groups = _assetService.foundationGroups();
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.85),
@@ -33,48 +37,76 @@ mixin _UIStudioDrawers on _UIStudioLogic, _UIStudioDialogs {
               Expanded(
                 child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  itemCount: modules.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final module = modules[index];
-                    return Container(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE4E4EA),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFDCDCE4),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                module.name,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF555562),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          _buildPreviewDraggableCard(module),
-                        ],
-                      ),
-                    );
-                  },
+                  itemCount: groups.length,
+                  // 组间距比组内大，配合淡框形成层次。
+                  separatorBuilder: (_, _) => const SizedBox(height: 14),
+                  itemBuilder: (context, index) =>
+                      _buildFoundationGroup(groups[index]),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// 一组同类原材料。
+  ///
+  /// 分组框刻意做得很淡（1px 描边 + 极浅底色，不加标题、不加图标）：
+  /// 它只是帮眼睛把同类归拢，不该和真正的内容抢注意力。
+  Widget _buildFoundationGroup(List<UIModule> modules) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.018),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < modules.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _buildFoundationTile(modules[i]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 单个原材料条目（名称胶囊 + 可拖拽预览）。
+  Widget _buildFoundationTile(UIModule module) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE4E4EA),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDCDCE4),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                module.name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF555562),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          _buildPreviewDraggableCard(module),
+        ],
       ),
     );
   }

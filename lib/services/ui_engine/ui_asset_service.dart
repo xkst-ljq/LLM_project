@@ -20,6 +20,36 @@ class UIAssetService {
     'atom_linker_basic', 'atom_logic_math_node', 'atom_timer_basic',
   ];
 
+  /// 原材料的分组切分点（每组的元素个数）。
+  ///
+  /// [_foundationModuleOrder] 的排序本来就暗含分组意图，这里只是把它
+  /// 显式化，供左侧抽屉画分隔框用：
+  ///   1. 外观：面板 / 图片 / 线条        —— 纯视觉，不产生数据
+  ///   2. 显示：文本 / 进度条 / 指示灯     —— 展示数据，不接受输入
+  ///   3. 交互：输入框 / 下拉 / 滑块 / 开关 / 按钮 —— 玩家可操作
+  ///   4. 逻辑：联动器 / 计算节点 / 定时器  —— 后台件，运行时不显形
+  ///
+  /// 用「个数」而非 id 列表，是为了和上面的顺序强绑定——
+  /// 改了顺序却忘了改分组，总数校验会立刻暴露（见 foundationGroups）。
+  static const List<int> _foundationGroupSizes = [3, 3, 5, 3];
+
+  /// 按组切分后的原材料。组内顺序与 [getFoundationModules] 一致。
+  List<List<UIModule>> foundationGroups() {
+    final all = getFoundationModules();
+    final groups = <List<UIModule>>[];
+    var cursor = 0;
+    for (final size in _foundationGroupSizes) {
+      if (cursor >= all.length) break;
+      final end = (cursor + size).clamp(0, all.length);
+      groups.add(all.sublist(cursor, end));
+      cursor = end;
+    }
+    // 分组个数与实际数量对不上时，把剩下的并成一组兜底，
+    // 绝不让任何原材料因为配置疏漏而从抽屉里消失。
+    if (cursor < all.length) groups.add(all.sublist(cursor));
+    return groups;
+  }
+
   /// 已移除的旧版基础面预设；加载历史资产时不将其误当成用户资产回收展示。
   static const Set<String> _retiredFoundationModuleIds = {
     'atom_surface_capsule',
