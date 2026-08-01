@@ -5379,13 +5379,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
 
     final nameController = TextEditingController(text: module.name);
-    final textController = TextEditingController(
-      text: module.properties['text']?.toString() ?? '',
-    );
-    final fontSizeController = TextEditingController(
-      text: (_numProp(module.properties, 'fontSize') ?? 14.0)
-          .toStringAsFixed(0),
-    );
+    // 已迁移到「字段组」的类型走这里；返回 null 表示还没迁，
+    // 继续用下面那些散落的控制器与 if(type=='xxx') 分支。
+    // 迁移进度与设计说明见 atom_field_groups.dart。
+    final fieldGroup = AtomFieldGroupRegistry.of(module);
+
     final radiusController = TextEditingController(
       text: (module.type == 'image'
               ? (_numProp(module.properties, 'borderRadius') ??
@@ -5493,24 +5491,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 group: CardEntryTarget.groupIntro, entryId: '', fieldKey: '');
     var isKeyAction = UISemanticRole.isKeyAction(module);
     var sendsMessage = UISemanticRole.sendsMessage(module);
-    var textOverflow = switch (module.properties['overflow']?.toString()) {
-      'scroll' => 'scroll',
-      'clip' => 'clip',
-      _ => 'ellipsis',
-    };
-    // A11-2 富文本开关（text 用）。默认值随显示模式而定：
-    //   滚动模式   → 开。readme / 道具说明几乎都带标题和列表。
-    //   其余模式   → 关。这类 text 多被 linker 指向来显示数值或短标签，
-    //                解析反而会把「HP<50」误判成 HTML 标签。
-    // 作者显式设过就以存档为准，不再按模式推断。
-    var textRichText = module.properties.containsKey('richText')
-        ? module.properties['richText'] == true
-        : textOverflow == 'scroll';
-    var textAlignMode = switch (module.properties['textAlign']?.toString()) {
-      'left' => 'left',
-      'right' => 'right',
-      _ => 'center',
-    };
+    // text 的 overflow / richText / textAlign 已迁入 TextFieldGroup。
     var switchValue = module.properties['value'] != false;
     // input 的文本落点与多行开关。
     var textVAlign =
@@ -5635,89 +5616,13 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         ),
                       ),
                     ],
-                    if (type == 'text') ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: textController,
-                        // 长文说明可能很长，给足编辑空间。
-                        maxLines: textOverflow == 'scroll' ? 10 : 3,
-                        minLines: textOverflow == 'scroll' ? 6 : 1,
-                        decoration: const InputDecoration(labelText: '文本内容'),
-                      ),
-                      const SizedBox(height: 12),
-                      numberField(fontSizeController, '字号'),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: textOverflow,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: '超出显示区时',
-                          isDense: true,
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                              value: 'ellipsis', child: Text('省略号截断')),
-                          DropdownMenuItem(
-                              value: 'clip', child: Text('直接裁切')),
-                          DropdownMenuItem(
-                              value: 'scroll', child: Text('可滚动（长文说明）')),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setDialogState(() => textOverflow = v);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: textAlignMode,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: '对齐方式',
-                          isDense: true,
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'left', child: Text('左对齐')),
-                          DropdownMenuItem(
-                              value: 'center', child: Text('居中')),
-                          DropdownMenuItem(
-                              value: 'right', child: Text('右对齐')),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setDialogState(() => textAlignMode = v);
-                        },
-                      ),
-                      const SizedBox(height: 4),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: const Text('富文本渲染',
-                            style: TextStyle(fontSize: 13)),
-                        subtitle: const Text(
-                          '识别 Markdown 标题 / 列表 / 表格与 HTML 排版。'
-                          '显示纯数值或短标签时建议关闭。',
-                          style: TextStyle(fontSize: 11, height: 1.3),
-                        ),
-                        value: textRichText,
-                        onChanged: (v) =>
-                            setDialogState(() => textRichText = v),
-                      ),
-                      if (textOverflow == 'scroll')
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text(
-                            '滚动模式：内容从顶部开始、可选中复制、带滚动条。'
-                            '适合角色说明、道具描述等长文；'
-                            '内容也可由联动器或数据通道动态注入。'
-                            '富文本默认开启——readme 与道具说明几乎都带标题和列表。',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF777783),
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                    ],
+                    // 已迁移的类型由字段组自己出表单。
+                    if (fieldGroup != null)
+                      ...fieldGroup.buildFields(AtomFieldContext(
+                        setDialogState: setDialogState,
+                        numberField: numberField,
+                        readDouble: readDouble,
+                      )),
                     // 圆角 / 透明度 / 颜色 / 材质 / 形状 → 外观专项页。
                     if (_supportsAppearanceEditor(type)) ...[
                       const SizedBox(height: 12),
@@ -6230,6 +6135,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     );
 
     if (!mounted) {
+      // 字段组自己持有的控制器由它自己释放。
+      fieldGroup?.dispose();
       _disposeAtomEditorControllers([
         nameController,
         textController,
@@ -6268,12 +6175,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             _deepCloneValue(currentModule.properties) as Map,
           );
           final type = currentModule.type;
-          if (type == 'text') {
-            props['text'] = textController.text;
-            props['fontSize'] = readDouble(fontSizeController, 14.0);
-            props['overflow'] = textOverflow;
-            props['textAlign'] = textAlignMode;
-            props['richText'] = textRichText;
+          // 已迁移的类型由字段组统一写回，不再散落在这条 if 链里。
+          if (fieldGroup != null) {
+            fieldGroup.applyTo(props);
           } else if (type == 'progress') {
             props['min'] = readDouble(minController, 0.0);
             props['max'] = readDouble(maxController, 100.0);
@@ -6460,6 +6364,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       }
     }
 
+    fieldGroup?.dispose();
     _disposeAtomEditorControllers([
       nameController,
       textController,
