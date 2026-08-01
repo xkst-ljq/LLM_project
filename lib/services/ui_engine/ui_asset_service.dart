@@ -27,6 +27,26 @@ class UIAssetService {
     'atom_surface_outline',
   };
 
+  /// 引擎原子的全部类型。
+  ///
+  /// **判定原子必须看 type，不能只看 id 白名单。**
+  /// 白名单只认得当前这批种子 id，历史版本存进库的原子（id 早已改名）
+  /// 会漏网，于是跑到「完成资产库」里冒充用户资产
+  /// （用户反馈：「完成资产库里面应该只能有复合组件才对，我这里还有 6 个原子组件」）。
+  ///
+  /// 类型是引擎渲染的依据，不会随版本漂移，用它兜底最稳。
+  static const Set<String> atomModuleTypes = {
+    'surface', 'text', 'image', 'line', 'progress', 'indicator',
+    'input', 'select', 'slider', 'switch', 'button',
+    'linker', 'math_node', 'timer',
+  };
+
+  /// 是否为引擎原子（三重判据，命中任一即是）。
+  static bool isAtomModule(UIModule module) =>
+      _foundationModuleOrder.contains(module.id) ||
+      _retiredFoundationModuleIds.contains(module.id) ||
+      atomModuleTypes.contains(module.type);
+
   // 全局原子模组库
   Map<String, UIModule> _modules = {};
   // 全局组合块库
@@ -268,12 +288,12 @@ class UIAssetService {
   /// 目前仅保留给需要按 id 全量查找的场景。
   List<UIModule> getAllModules() => _modules.values.toList();
 
-  /// 右侧完成资产库使用：排除内置基础原子与已废弃的历史基础预设。
-  List<UIModule> getUserModules() => _modules.values
-      .where((module) =>
-          !_foundationModuleOrder.contains(module.id) &&
-          !_retiredFoundationModuleIds.contains(module.id))
-      .toList();
+  /// 完成资产库使用：排除**一切引擎原子**，只留作者自己造的东西。
+  ///
+  /// 原先只按 id 白名单排除，漏掉了历史版本遗留的原子（id 不在白名单里，
+  /// 但 type 明明就是 button/text/…）。改为 [isAtomModule] 三重判据。
+  List<UIModule> getUserModules() =>
+      _modules.values.where((module) => !isAtomModule(module)).toList();
 
   /// 工作室左侧“原材料”只展示白名单内的引擎原子，并严格保持创作顺序。
   List<UIModule> getFoundationModules() => _foundationModuleOrder
