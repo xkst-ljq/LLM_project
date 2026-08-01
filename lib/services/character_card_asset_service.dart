@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
+import '../services/ui_engine/element_animation.dart';
 import '../services/ui_engine/ui_asset_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../utils/asset_magic.dart';
@@ -569,6 +570,9 @@ class CharacterCardAssetService {
             final composite = UIComposite.fromJson(
               Map<String, dynamic>.from(el['composite'] as Map),
             );
+            // 指纹只取骨架特征（类型/几何/配色/linker 方案），
+            // 本就不含 dataChannel 等实例键——所以同一个骨架配了不同
+            // 数据通道的两份，作为模板看是同一个，不会重复收录。
             if (!existing.add(_compositeFingerprint(composite))) {
               skipped++;
               continue;
@@ -580,7 +584,10 @@ class CharacterCardAssetService {
               id: 'imp_${IdUtils.timestampId()}_$added',
               name: composite.name,
               layoutType: composite.layoutType,
-              children: composite.children,
+              // 净化成**可复用模板**：剥掉那张卡特有的实例数据。
+              children: composite.children
+                  .map(sanitizeForTemplate)
+                  .toList(),
               material: composite.material,
               borderRadius: composite.borderRadius,
               color: composite.color,
@@ -599,6 +606,73 @@ class CharacterCardAssetService {
     } catch (e) {
       debugPrint('收录复合组件失败（不影响角色卡导入）: $e');
     }
+  }
+
+  /// **仅 Assembly 有编辑入口**的属性键。
+  ///
+  /// 这些是「这张卡怎么用这个组件」的实例数据，不是组件本身的一部分：
+  ///   · dataChannel   —— 绑到哪个状态字段 / 会话变量
+  ///   · keyAction     —— 是不是这套 UI 的关闭 / 设置按钮
+  ///   · sendsMessage  —— 点了要不要发消息
+  ///   · __anim        —— Assembly 的触发动画（Studio 没有这个编辑器）
+  ///
+  /// 混进资产库模板会造成两个问题（用户反馈）：
+  ///   1. **专一性过强**：模板带着某张卡的状态字段绑定，
+  ///      拖到别的卡里全是失效引用，可复用性极低；
+  ///   2. **语义污染**：Studio 能渲染 __anim 却提供不了编辑入口，
+  ///      作者看得见改不了。
+  static const Set<String> _instanceOnlyPropKeys = {
+    'dataChannel',
+    'keyAction',
+    'sendsMessage',
+    ElementAnimation.propsKey, // '__anim'
+  };
+
+  /// 把实例元素净化成可复用的模板元素。
+  ///
+  /// 只剥离实例级绑定，**保留一切外观与内部联动**——
+  /// 尺寸、配色、圆角、linker 连线、暴露端口都是组件的骨架，
+  /// 剥掉就不成其为组件了。
+  static UIElement sanitizeForTemplate(UIElement element) {
+    if (element.isComposite && element.composite != null) {
+      final inner = element.composite!;
+      return element.copyWith(
+        composite: UIComposite(
+          id: inner.id,
+          name: inner.name,
+          layoutType: inner.layoutType,
+          children: inner.children.map(sanitizeForTemplate).toList(),
+          material: inner.material,
+          borderRadius: inner.borderRadius,
+          color: inner.color,
+          opacity: inner.opacity,
+          renderingMode: inner.renderingMode,
+          exposedPorts: inner.exposedPorts,
+        ),
+      );
+    }
+    final module = element.module;
+    if (module == null) return element;
+
+    final props = Map<String, dynamic>.from(module.properties);
+    var touched = false;
+    for (final key in _instanceOnlyPropKeys) {
+      if (props.remove(key) != null) touched = true;
+    }
+    // 这两个是 UIModule 的顶层字段，不在 properties 里。
+    final hasBinding = module.boundVariable != null ||
+        module.statusFieldMirrorKey != null;
+    if (!touched && !hasBinding) return element;
+
+    return element.copyWith(
+      module: module.copyWith(
+        properties: props,
+        // copyWith 的可空参数遇 null 会保留原值，
+        // 所以要显式传空串来清除（模型里空串等价于「未绑定」）。
+        boundVariable: '',
+        statusFieldMirrorKey: '',
+      ),
+    );
   }
 
   /// 复合件的内容指纹。
