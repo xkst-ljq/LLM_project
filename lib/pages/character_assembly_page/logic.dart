@@ -5414,10 +5414,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       text: (_numProp(module.properties, 'current') ?? 0.0)
           .toStringAsFixed(0),
     );
-    final thicknessController = TextEditingController(
-      text: (_numProp(module.properties, 'thickness') ?? 2.0)
-          .toStringAsFixed(0),
-    );
     // button 的手势判定手感。默认值与渲染端 _ButtonGestureWidget 保持一致。
     final doubleTapIntervalController = TextEditingController(
       text: (_intProp(module.properties, 'doubleTapIntervalMs') ?? 300)
@@ -5453,10 +5449,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     // A11-2 富文本开关（message_flow 用）。默认开——
     // LLM 回复里带 Markdown 是常态，关掉会看到满屏的 ** 和 #。
     var flowRichText = module.properties['richText'] != false;
-    final dotSizeController = TextEditingController(
-      text: (_numProp(module.properties, 'dotSize') ?? 14.0)
-          .toStringAsFixed(0),
-    );
     final imageUrlController = TextEditingController(
       text: module.properties['url']?.toString() ?? '',
     );
@@ -5510,7 +5502,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     var textHAlign =
         module.properties['textHorizontalAlign']?.toString() ?? 'left';
     var inputMultiline = module.properties['multiline'] == true;
-    var indicatorGlow = module.properties['defaultGlow'] == true;
     // A11-2：图片来源。选了头像时路径由运行时提供，作者填的静态值被忽略。
     var imageSource = switch (module.properties['imageSource']?.toString()) {
       AvatarScope.sourceCharacter => AvatarScope.sourceCharacter,
@@ -5522,12 +5513,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       'fill' => 'fill',
       _ => 'cover',
     };
-    var lineAxis = module.properties['axis']?.toString() == 'vertical'
-        ? 'vertical'
-        : 'horizontal';
-    var lineStyle = module.properties['lineStyle']?.toString() == 'dashed'
-        ? 'dashed'
-        : 'solid';
 
     double readDouble(TextEditingController controller, double fallback) {
       return double.tryParse(controller.text.trim()) ?? fallback;
@@ -5569,7 +5554,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       minController,
       maxController,
       currentController,
-      thicknessController,
       doubleTapIntervalController,
       longPressThresholdController,
       placeholderController,
@@ -5577,7 +5561,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       stepController,
       optionsController,
       selectDefaultController,
-      dotSizeController,
       imageUrlController,
       imageAssetController,
       historyLimitController,
@@ -5728,36 +5711,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         ),
                       ],
                     ],
-                    if (type == 'line') ...[
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: lineAxis,
-                        decoration: const InputDecoration(labelText: '方向'),
-                        items: const [
-                          DropdownMenuItem(value: 'horizontal', child: Text('横向')),
-                          DropdownMenuItem(value: 'vertical', child: Text('纵向')),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() => lineAxis = value);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: lineStyle,
-                        decoration: const InputDecoration(labelText: '线型'),
-                        items: const [
-                          DropdownMenuItem(value: 'solid', child: Text('实线')),
-                          DropdownMenuItem(value: 'dashed', child: Text('虚线')),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() => lineStyle = value);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      numberField(thicknessController, '粗细'),
-                    ],
                     if (type == 'input') ...[
                       const SizedBox(height: 12),
                       TextField(
@@ -5828,16 +5781,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         },
                       ),
                     ],
-                    if (type == 'switch') ...[
-                      const SizedBox(height: 4),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('默认开启', style: TextStyle(fontSize: 13)),
-                        value: switchValue,
-                        onChanged: (value) =>
-                            setDialogState(() => switchValue = value),
-                      ),
-                    ],
                     if (type == 'slider') ...[
                       const SizedBox(height: 12),
                       Row(
@@ -5873,18 +5816,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         decoration: const InputDecoration(
                           labelText: '默认选中值（留空取第一项）',
                         ),
-                      ),
-                    ],
-                    if (type == 'indicator') ...[
-                      const SizedBox(height: 12),
-                      numberField(dotSizeController, '状态点直径', suffix: '8~28'),
-                      const SizedBox(height: 4),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('默认发光', style: TextStyle(fontSize: 13)),
-                        value: indicatorGlow,
-                        onChanged: (value) =>
-                            setDialogState(() => indicatorGlow = value),
                       ),
                     ],
                     if (type == 'message_flow') ...[
@@ -6096,7 +6027,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                     textController: textController,
                                     selectDefaultController:
                                         selectDefaultController,
-                                    onSwitchValue: (v) => switchValue = v,
+                                    // switch 已迁入字段组，回写到那里；
+                                    // 未迁移时仍用局部变量。
+                                    onSwitchValue: (v) {
+                                      switchValue = v;
+                                      if (fieldGroup is SwitchFieldGroup) {
+                                        fieldGroup.value = v;
+                                      }
+                                    },
                                   );
                                   // 「双写覆盖」陷阱（HANDOFF 已记两次）：
                                   // 专项页写的是 _elements，而本对话框的
@@ -6218,10 +6156,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             } else {
               props['longPressThresholdMs'] = threshold.clamp(150, 3000);
             }
-          } else if (type == 'line') {
-            props['axis'] = lineAxis;
-            props['lineStyle'] = lineStyle;
-            props['thickness'] = readDouble(thicknessController, 2.0);
           } else if (type == 'input') {
             props['placeholder'] = placeholderController.text.trim();
             props['text'] = textController.text;
@@ -6248,8 +6182,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             } else {
               props['textHorizontalAlign'] = textHAlign;
             }
-          } else if (type == 'switch') {
-            props['value'] = switchValue;
           } else if (type == 'slider') {
             final minVal = readDouble(minController, 0.0);
             var maxVal = readDouble(maxController, 100.0);
@@ -6282,10 +6214,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             final valid = options.any((option) => option.value == wanted);
             props['current'] = valid ? wanted : options.first.value;
             props['defaultValue'] = props['current'];
-          } else if (type == 'indicator') {
-            props['dotSize'] =
-                readDouble(dotSizeController, 14.0).clamp(8.0, 28.0).toDouble();
-            props['defaultGlow'] = indicatorGlow;
           } else if (type == 'message_flow') {
             final limit = int.tryParse(historyLimitController.text.trim());
             // 留空或非正数一律视为「显示全部」。

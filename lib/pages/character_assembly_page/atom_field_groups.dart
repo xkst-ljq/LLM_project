@@ -215,6 +215,141 @@ class TextFieldGroup extends AtomFieldGroup {
       ];
 }
 
+/// switch 组件：只有一个「默认开启」。
+class SwitchFieldGroup extends AtomFieldGroup {
+  SwitchFieldGroup(UIModule module)
+      : _value = module.properties['value'] != false;
+
+  bool _value;
+
+  /// 供外部回写（数据通道专项页可能改了开关的当前值）。
+  ///
+  /// 「双写覆盖」陷阱（HANDOFF 3.5b）：专项页写的是 `_elements`，
+  /// 而本字段组里的 `_value` 仍是打开对话框那一刻的旧值。
+  /// 不回写的话，保存时会用旧值把专项页刚改的覆盖掉。
+  set value(bool v) => _value = v;
+
+  @override
+  List<Widget> buildFields(AtomFieldContext ctx) => [
+        const SizedBox(height: 4),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('默认开启', style: TextStyle(fontSize: 13)),
+          value: _value,
+          onChanged: (v) => ctx.setDialogState(() => _value = v),
+        ),
+      ];
+
+  @override
+  void applyTo(Map<String, dynamic> props) => props['value'] = _value;
+
+  @override
+  List<ChangeNotifier> get disposables => const [];
+}
+
+/// line 组件：方向 / 线型 / 粗细。
+class LineFieldGroup extends AtomFieldGroup {
+  LineFieldGroup(UIModule module)
+      : _thicknessController = TextEditingController(
+          text: (_readNum(module.properties['thickness']) ?? 2.0)
+              .toStringAsFixed(0),
+        ),
+        _axis = module.properties['axis']?.toString() == 'vertical'
+            ? 'vertical'
+            : 'horizontal',
+        _style = module.properties['lineStyle']?.toString() == 'dashed'
+            ? 'dashed'
+            : 'solid';
+
+  final TextEditingController _thicknessController;
+  String _axis;
+  String _style;
+
+  @override
+  List<Widget> buildFields(AtomFieldContext ctx) => [
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _axis,
+          decoration: const InputDecoration(labelText: '方向'),
+          items: const [
+            DropdownMenuItem(value: 'horizontal', child: Text('横向')),
+            DropdownMenuItem(value: 'vertical', child: Text('纵向')),
+          ],
+          onChanged: (v) {
+            if (v == null) return;
+            ctx.setDialogState(() => _axis = v);
+          },
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _style,
+          decoration: const InputDecoration(labelText: '线型'),
+          items: const [
+            DropdownMenuItem(value: 'solid', child: Text('实线')),
+            DropdownMenuItem(value: 'dashed', child: Text('虚线')),
+          ],
+          onChanged: (v) {
+            if (v == null) return;
+            ctx.setDialogState(() => _style = v);
+          },
+        ),
+        const SizedBox(height: 12),
+        ctx.numberField(_thicknessController, '粗细'),
+      ];
+
+  @override
+  void applyTo(Map<String, dynamic> props) {
+    props['axis'] = _axis;
+    props['lineStyle'] = _style;
+    props['thickness'] =
+        double.tryParse(_thicknessController.text.trim()) ?? 2.0;
+  }
+
+  @override
+  List<ChangeNotifier> get disposables => [_thicknessController];
+}
+
+/// indicator 组件：状态点直径 / 默认发光。
+///
+/// 注意**没有** isOn / onColor 这类键——指示灯的颜色由 `statusRules`
+/// 决定（见 LinkerService.resolveIndicatorActiveState），
+/// 那套规则在别处编辑，不属于本字段组。
+class IndicatorFieldGroup extends AtomFieldGroup {
+  IndicatorFieldGroup(UIModule module)
+      : _dotSizeController = TextEditingController(
+          text: (_readNum(module.properties['dotSize']) ?? 14.0)
+              .toStringAsFixed(0),
+        ),
+        _glow = module.properties['defaultGlow'] == true;
+
+  final TextEditingController _dotSizeController;
+  bool _glow;
+
+  @override
+  List<Widget> buildFields(AtomFieldContext ctx) => [
+        const SizedBox(height: 12),
+        ctx.numberField(_dotSizeController, '状态点直径', suffix: '8~28'),
+        const SizedBox(height: 4),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('默认发光', style: TextStyle(fontSize: 13)),
+          value: _glow,
+          onChanged: (v) => ctx.setDialogState(() => _glow = v),
+        ),
+      ];
+
+  @override
+  void applyTo(Map<String, dynamic> props) {
+    props['dotSize'] = (double.tryParse(_dotSizeController.text.trim()) ?? 14.0)
+        .clamp(8.0, 28.0)
+        .toDouble();
+    props['defaultGlow'] = _glow;
+  }
+
+  @override
+  List<ChangeNotifier> get disposables => [_dotSizeController];
+}
+
 /// 宽松读数值。
 ///
 /// 与 `_numProp` 同款：**字符串形式的数字也要认**。
@@ -235,6 +370,12 @@ class AtomFieldGroupRegistry {
     switch (module.type) {
       case 'text':
         return TextFieldGroup(module);
+      case 'switch':
+        return SwitchFieldGroup(module);
+      case 'line':
+        return LineFieldGroup(module);
+      case 'indicator':
+        return IndicatorFieldGroup(module);
       default:
         return null;
     }
