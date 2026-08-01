@@ -5384,6 +5384,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     // 迁移进度与设计说明见 atom_field_groups.dart。
     final fieldGroup = AtomFieldGroupRegistry.of(module);
 
+    // ⚠️ 下面这两个控制器**跨类型共用**，不能因为 text 迁走就删：
+    //   textController     → text(已迁) / input 的「默认文本」
+    //   fontSizeController → text(已迁) / message_flow 的「字号」
+    // 迁移其余类型时同样要先确认控制器还有没有别的使用者。
+    final textController = TextEditingController(
+      text: module.properties['text']?.toString() ?? '',
+    );
+    final fontSizeController = TextEditingController(
+      text: (_numProp(module.properties, 'fontSize') ?? 14.0)
+          .toStringAsFixed(0),
+    );
     final radiusController = TextEditingController(
       text: (module.type == 'image'
               ? (_numProp(module.properties, 'borderRadius') ??
