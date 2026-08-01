@@ -37,7 +37,8 @@ def element(eid, mod, x, y, w, h, *, layer=0, parent=None):
             "module": mod}
 
 def composite_element(eid, name, children, x, y, w, h, *, layer=0, parent=None,
-                      color=0xFF8D6E63, radius=12.0, material=1):
+                      color=0xFF8D6E63, radius=12.0, material=1,
+                      expose=None):
     return {"id": eid, "isComposite": True,
             "offset": {"x": float(x), "y": float(y)},
             "size": {"width": float(w), "height": float(h)},
@@ -47,7 +48,16 @@ def composite_element(eid, name, children, x, y, w, h, *, layer=0, parent=None,
                 "id": uid("comp"), "name": name, "layoutType": "stack",
                 "children": children, "material": material,
                 "borderRadius": radius, "color": color, "opacity": 1.0,
-                "renderingMode": 2}}
+                "renderingMode": 2,
+                # 暴露端口：复合件是黑盒，**没有它就无法从外部连线**，
+                # 在 Assembly 的实例编辑器里也看不到任何可覆写项
+                # （用户反馈：「看不到暴露端口 / 内部覆写情况」）。
+                # expose 传子元素 id 列表即可。
+                "exposedPorts": [
+                    {"elementId": cid, "exposeInput": True,
+                     "exposeOutput": True}
+                    for cid in (expose or [])
+                ]}}
 
 def page(pid, name, ptype, elements, *, parent=None, order=0, gestures=None):
     return {"id": pid, "name": name, "type": ptype, "parentPageId": parent,
@@ -242,8 +252,10 @@ lamp_bar = element(uid("el"), module(uid("m"), "灯条", "progress",
     color=LAMP, radius=4.0), 36, 26, 230, 10, layer=1)
 lamp_bar["module"]["properties"]["dataChannel"]["sourceComponentId"] = lamp_bar["id"]
 lamp_kids.append(lamp_bar)
+# 暴露灯珠与灯条，外部可连线、实例编辑器里也能覆写。
 lamp_comp = composite_element(uid("el"), "灯油计", lamp_kids, 12, 10, 276, 46,
-                              layer=1, parent=SB, color=NIGHT)
+                              layer=1, parent=SB, color=NIGHT,
+                              expose=[lamp_kids[1]["id"], lamp_bar["id"]])
 sticky_els.append(lamp_comp)
 
 # 亲近度条（状态字段双向）
@@ -263,7 +275,7 @@ sticky_els.append(element(uid("el"), module(uid("m"), "亲近名", "text",
 # 折叠按钮（作者自定义，替代内置兜底按钮）
 s_fold, s_fold_face, s_fold_id = btn("收起", 234, 62, 54, 22, parent=SB,
                                      layer=2, color=0xFF4A3A2E, font=10.0,
-                                     key_action=True, press=False)
+                                     key_action=True)
 sticky_els += s_fold
 sticky_els.append(element(uid("el"), module(uid("m"), "提示", "text",
     {"text": "长按挂件任意空白处可拖动位置", "fontSize": 9.0,

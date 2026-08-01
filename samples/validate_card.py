@@ -1,10 +1,38 @@
 # -*- coding: utf-8 -*-
 """校验 .llmcard 是否符合引擎硬约束。"""
-import json, zipfile, sys, collections
+import json, zipfile, sys, collections, os
 
 ATOM_TYPES={'surface','text','image','line','progress','indicator','input',
             'select','slider','switch','button','linker','math_node','timer','page_router','message_flow'}
 BACKEND={'linker','math_node','timer','page_router'}
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+try:
+    SCHEMES = json.load(open(os.path.join(_HERE, '_schemes.json'), encoding='utf-8'))
+except Exception:
+    SCHEMES = {}
+
+def scheme_ok(scheme, src_type, tgt_type):
+    """方案名是否存在，且源/目标类型是否匹配。
+
+    引擎在 isSchemeSelectable 里校验方案名；名字对不上时**运行端静默跳过**，
+    编辑器却仍显示「已配置通路」——作者完全看不出问题
+    （用户实测：7 个 linker 只有 3 个真正生效）。
+    """
+    d = SCHEMES.get(scheme)
+    if d is None:
+        return f"方案 '{scheme}' 不存在"
+    def match(actual, declared, allow):
+        if allow:
+            return actual in allow
+        return declared == 'any' or declared == actual
+    if not match(src_type, d['src'], d['asrc']):
+        return (f"方案 '{scheme}' 的源要求 "
+                f"{d['asrc'] or d['src']}，实际是 {src_type}")
+    if not match(tgt_type, d['tgt'], d['atgt']):
+        return (f"方案 '{scheme}' 的目标要求 "
+                f"{d['atgt'] or d['tgt']}，实际是 {tgt_type}")
+    return None
 
 def load(p):
     with zipfile.ZipFile(p) as z:
@@ -136,14 +164,27 @@ def check(path):
             check_contrast(p['elements'], warn)
             print(f"     · {p['name']:10s} {p['type']:7s} {n_el:3d}个元素 {len(p['gestures'])}个手势")
         # linker 校验
+        types = {}
+        for p in pages:
+            for e in walk(p['elements']):
+                if e.get('module'):
+                    types[e['id']] = e['module']['type']
         for p in pages:
             for e in walk(p['elements']):
                 m=e.get('module')
                 if not m or m['type']!='linker': continue
                 lk=m['properties']['linker']
+                bad_ref=False
                 for k in ('sourceModuleId','targetModuleId'):
                     if lk[k] not in allids:
                         err.append(f"linker {m['name']} 的 {k} 指向不存在的元素")
+                        bad_ref=True
+                if not bad_ref:
+                    msg = scheme_ok(lk.get('scheme',''),
+                                    types.get(lk['sourceModuleId'],'?'),
+                                    types.get(lk['targetModuleId'],'?'))
+                    if msg:
+                        err.append(f"linker「{m['name']}」: {msg}")
                 if lk['scheme']=='button_to_page_route':
                     if lk['sourceModuleId'] not in btn_ids:
                         err.append(f"{m['name']}: 换页方案的源不是 button")

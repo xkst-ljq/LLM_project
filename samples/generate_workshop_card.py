@@ -37,7 +37,8 @@ def element(eid, mod, x, y, w, h, *, layer=0, parent=None):
             "module": mod}
 
 def composite_element(eid, name, children, x, y, w, h, *, layer=0, parent=None,
-                      color=0xFF2E7D6F, radius=14.0, material=1):
+                      color=0xFF2E7D6F, radius=14.0, material=1,
+                      expose=None):
     return {"id": eid, "isComposite": True,
             "offset": {"x": float(x), "y": float(y)},
             "size": {"width": float(w), "height": float(h)},
@@ -47,7 +48,16 @@ def composite_element(eid, name, children, x, y, w, h, *, layer=0, parent=None,
                 "id": uid("comp"), "name": name, "layoutType": "stack",
                 "children": children, "material": material,
                 "borderRadius": radius, "color": color, "opacity": 1.0,
-                "renderingMode": 2}}
+                "renderingMode": 2,
+                # 暴露端口：复合件是黑盒，**没有它就无法从外部连线**，
+                # 在 Assembly 的实例编辑器里也看不到任何可覆写项
+                # （用户反馈：「看不到暴露端口 / 内部覆写情况」）。
+                # expose 传子元素 id 列表即可。
+                "exposedPorts": [
+                    {"elementId": cid, "exposeInput": True,
+                     "exposeOutput": True}
+                    for cid in (expose or [])
+                ]}}
 
 def gesture(direction, target_page_id, *, action="switch_base_page",
             transition="base_slide", duration=220):
@@ -194,8 +204,10 @@ def make_meter(x, y, *, parent, layer):
         {"min": 0, "max": 12, "current": 6},
         color=AMBER, radius=5.0), 14, 78, 292, 10, layer=1)
     kids.append(bar)
+    # 暴露滑块/读数/进度条：外部的 linker 正是连到这三个子元素上。
     comp = composite_element(uid("el"), "配料计量器", kids, x, y, 320, 104,
-                             layer=layer, parent=parent, color=SLAB)
+                             layer=layer, parent=parent, color=SLAB,
+                             expose=[sld["id"], read["id"], bar["id"]])
     return comp, sld["id"], read["id"], bar["id"]
 
 # ============================================================
@@ -236,7 +248,7 @@ main.append(linker("双击→开关置假", "click_to_switch_set_false", h_tri, 
                    gesture_kind="double_tap"))
 main.append(linker("长按→开关翻转", "click_to_switch_toggle", h_tri, sw["id"],
                    gesture_kind="long_press"))
-main.append(linker("开关→灯", "switch_to_indicator", sw["id"], lamp["id"]))
+main.append(linker("开关→灯", "boolean_to_visible", sw["id"], lamp["id"]))
 
 # --- 定时器控制 ---
 main.append(label("② 定时器：启停 / 归零", MB, 24, 298, W - 48,
@@ -255,7 +267,7 @@ main.append(tmr_txt)
 b_run, f_run, h_run = btn("启/停", 134, 322, 106, 36, parent=MB, layer=4)
 b_rst, f_rst, h_rst = btn("归零", 250, 322, 106, 36, parent=MB, layer=7)
 main += b_run + b_rst
-main.append(linker("计时→读数", "timer_to_text", tmr["id"], tmr_txt["id"]))
+main.append(linker("计时→读数", "timer_value_to_text", tmr["id"], tmr_txt["id"]))
 main.append(linker("启停", "click_to_timer_toggle", h_run, tmr["id"]))
 main.append(linker("归零", "click_to_timer_reset", h_rst, tmr["id"]))
 
@@ -336,12 +348,12 @@ sum_txt = element(uid("el"), module(uid("m"), "总量读数", "text",
                 "curve": "bounceOut", "intensity": 0.8}},
     color=FOAM), 24, 194, 160, 40, layer=2, parent=LB)
 logic.append(sum_txt)
-logic.append(linker("总量→文字", "math_to_text", mn_sum["id"], sum_txt["id"]))
+logic.append(linker("总量→文字", "result_to_text", mn_sum["id"], sum_txt["id"]))
 sum_bar = element(uid("el"), module(uid("m"), "总量条", "progress",
     {"min": 0, "max": 100, "current": 35}, color=MOSS, radius=5.0),
     196, 206, 160, 14, layer=2, parent=LB)
 logic.append(sum_bar)
-logic.append(linker("总量→条", "math_to_progress", mn_sum["id"],
+logic.append(linker("总量→条", "result_to_progress", mn_sum["id"],
                     sum_bar["id"]))
 
 # 比较节点：总量 > 60 ?
@@ -349,7 +361,7 @@ logic.append(label("比较运算：总量 > 60 时警示灯亮", LB, 24, 248, W 
                    size=11.0, color=FOAM))
 mn_cmp = math_node("超量判定", ">", b=60.0)
 logic.append(mn_cmp)
-logic.append(linker("总量→比较A", "math_to_math_param", mn_sum["id"],
+logic.append(linker("总量→比较A", "value_to_math_param", mn_sum["id"],
                     mn_cmp["id"], {"targetParam": "paramA"}))
 warn = element(uid("el"), module(uid("m"), "警示灯", "indicator",
     {"isOn": False, "onColor": CORAL, "offColor": 0xFF37474F,
@@ -357,8 +369,10 @@ warn = element(uid("el"), module(uid("m"), "警示灯", "indicator",
     color=CORAL, radius=999.0), 24, 272, 26, 26, layer=2, parent=LB)
 logic.append(warn)
 logic.append(label("超过 60 会亮红", LB, 58, 278, 200, size=10.0))
-logic.append(linker("比较→警示", "math_to_indicator", mn_cmp["id"],
-                    warn["id"]))
+# 比较节点输出布尔值 → 状态灯。
+# math_node → indicator 全库只有 to_string 这一条
+# （sourceType: 'any'，把上游原始值交给灯自己的状态规则解释）。
+logic.append(linker("比较→警示", "to_string", mn_cmp["id"], warn["id"]))
 
 # 数据通道：把总量写进状态栏
 logic.append(label("④ 数据通道：下面三项分别写往不同目标", LB, 24, 312,

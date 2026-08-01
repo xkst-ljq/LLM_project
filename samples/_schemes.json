@@ -1,0 +1,510 @@
+{
+ "button_to_page_route": {
+  "src": "button",
+  "tgt": "page_router",
+  "asrc": [],
+  "atgt": []
+ },
+ "button_to_message_action": {
+  "src": "button",
+  "tgt": "message_flow",
+  "asrc": [],
+  "atgt": []
+ },
+ "pool_to_allocation": {
+  "src": "any",
+  "tgt": "any",
+  "asrc": [
+   "text",
+   "progress",
+   "math_node"
+  ],
+  "atgt": [
+   "slider",
+   "input"
+  ]
+ },
+ "sum_to_display": {
+  "src": "any",
+  "tgt": "any",
+  "asrc": [
+   "slider",
+   "progress",
+   "input",
+   "math_node",
+   "timer"
+  ],
+  "atgt": [
+   "text",
+   "progress",
+   "slider"
+  ]
+ },
+ "click_to_surface_press": {
+  "src": "button",
+  "tgt": "surface",
+  "asrc": [],
+  "atgt": []
+ },
+ "click_to_switch_toggle": {
+  "src": "button",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "click_to_switch_set_true": {
+  "src": "button",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "click_to_switch_set_false": {
+  "src": "button",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "click_to_input_clear": {
+  "src": "button",
+  "tgt": "input",
+  "asrc": [],
+  "atgt": []
+ },
+ "click_to_slider_reset": {
+  "src": "button",
+  "tgt": "slider",
+  "asrc": [],
+  "atgt": []
+ },
+ "click_to_timer_toggle": {
+  "src": "button",
+  "tgt": "timer",
+  "asrc": [],
+  "atgt": []
+ },
+ "click_to_timer_reset": {
+  "src": "button",
+  "tgt": "timer",
+  "asrc": [],
+  "atgt": []
+ },
+ "click_to_math_trigger": {
+  "src": "button",
+  "tgt": "math_node",
+  "asrc": [],
+  "atgt": []
+ },
+ "result_to_text": {
+  "src": "math_node",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "bool_result_to_text": {
+  "src": "math_node",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "result_to_progress": {
+  "src": "math_node",
+  "tgt": "progress",
+  "asrc": [],
+  "atgt": []
+ },
+ "bool_result_to_progress": {
+  "src": "math_node",
+  "tgt": "progress",
+  "asrc": [],
+  "atgt": []
+ },
+ "value_to_math_param": {
+  "src": "any",
+  "tgt": "math_node",
+  "asrc": [],
+  "atgt": []
+ },
+ "bool_to_text": {
+  "src": "switch",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "boolean_to_visible": {
+  "src": "switch",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "surface",
+   "surface_art",
+   "primitive_art",
+   "text",
+   "progress",
+   "slider",
+   "input",
+   "button",
+   "switch",
+   "select",
+   "indicator",
+   ""
+  ]
+ },
+ "boolean_to_enabled": {
+  "src": "switch",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "button",
+   "input",
+   "slider",
+   "switch",
+   "select",
+   "indicator",
+   ""
+  ]
+ },
+ "boolean_to_locked": {
+  "src": "switch",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "button",
+   "input",
+   "slider",
+   "switch",
+   "select"
+  ]
+ },
+ "boolean_to_frozen": {
+  "src": "switch",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "progress",
+   "math_node"
+  ]
+ },
+ "boolean_to_timer_running": {
+  "src": "switch",
+  "tgt": "timer",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_live_to_text": {
+  "src": "input",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_commit_to_text": {
+  "src": "input",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_submit_to_text_clear": {
+  "src": "input",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_nonempty_to_button_enable": {
+  "src": "input",
+  "tgt": "button",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_valid_to_button_enable": {
+  "src": "input",
+  "tgt": "button",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_validity_to_indicator": {
+  "src": "input",
+  "tgt": "indicator",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_length_to_indicator": {
+  "src": "input",
+  "tgt": "indicator",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_value_to_select_match": {
+  "src": "input",
+  "tgt": "select",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_value_to_select_filter": {
+  "src": "input",
+  "tgt": "select",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_to_progress": {
+  "src": "input",
+  "tgt": "progress",
+  "asrc": [],
+  "atgt": []
+ },
+ "input_to_slider": {
+  "src": "input",
+  "tgt": "slider",
+  "asrc": [],
+  "atgt": []
+ },
+ "slider_to_text": {
+  "src": "slider",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "slider_to_progress": {
+  "src": "slider",
+  "tgt": "progress",
+  "asrc": [],
+  "atgt": []
+ },
+ "slider_commit_to_text": {
+  "src": "slider",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "slider_commit_to_math_param": {
+  "src": "slider",
+  "tgt": "math_node",
+  "asrc": [],
+  "atgt": []
+ },
+ "select_to_text": {
+  "src": "select",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "select_value_to_surface_visible": {
+  "src": "select",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "surface",
+   "surface_art",
+   "primitive_art"
+  ]
+ },
+ "select_value_to_switch": {
+  "src": "select",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "progress_to_text": {
+  "src": "progress",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "progress_to_math_param": {
+  "src": "progress",
+  "tgt": "math_node",
+  "asrc": [],
+  "atgt": []
+ },
+ "progress_threshold_to_button_enable": {
+  "src": "progress",
+  "tgt": "button",
+  "asrc": [],
+  "atgt": []
+ },
+ "progress_threshold_to_switch": {
+  "src": "progress",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "text_extract_to_math_param": {
+  "src": "text",
+  "tgt": "math_node",
+  "asrc": [],
+  "atgt": []
+ },
+ "text_match_to_switch": {
+  "src": "text",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "text_nonempty_to_button_enable": {
+  "src": "text",
+  "tgt": "button",
+  "asrc": [],
+  "atgt": []
+ },
+ "text_match_to_button_enable": {
+  "src": "text",
+  "tgt": "button",
+  "asrc": [],
+  "atgt": []
+ },
+ "text_value_to_select_match": {
+  "src": "text",
+  "tgt": "select",
+  "asrc": [],
+  "atgt": []
+ },
+ "timer_tick_to_switch_toggle": {
+  "src": "timer",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "timer_tick_to_switch_set_true": {
+  "src": "timer",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "timer_tick_to_switch_set_false": {
+  "src": "timer",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "timer_tick_to_progress_increment": {
+  "src": "timer",
+  "tgt": "progress",
+  "asrc": [],
+  "atgt": []
+ },
+ "timer_tick_to_progress_decrement": {
+  "src": "timer",
+  "tgt": "progress",
+  "asrc": [],
+  "atgt": []
+ },
+ "timer_tick_to_math_trigger": {
+  "src": "timer",
+  "tgt": "math_node",
+  "asrc": [],
+  "atgt": []
+ },
+ "timer_value_to_text": {
+  "src": "timer",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "event_to_animation": {
+  "src": "any",
+  "tgt": "any",
+  "asrc": [
+   "button",
+   "timer"
+  ],
+  "atgt": [
+   "text",
+   "progress",
+   "slider",
+   "switch",
+   "select",
+   "input",
+   "image",
+   "surface",
+   "base_box",
+   "indicator",
+   "message_flow",
+   ""
+  ]
+ },
+ "event_to_indicator": {
+  "src": "any",
+  "tgt": "indicator",
+  "asrc": [
+   "button",
+   "timer"
+  ],
+  "atgt": []
+ },
+ "indicator_color_to_switch": {
+  "src": "indicator",
+  "tgt": "switch",
+  "asrc": [],
+  "atgt": []
+ },
+ "indicator_color_to_text": {
+  "src": "indicator",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "indicator_color_to_enabled": {
+  "src": "indicator",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "button",
+   "input",
+   "slider",
+   "switch",
+   "select",
+   "indicator",
+   ""
+  ]
+ },
+ "indicator_color_to_locked": {
+  "src": "indicator",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "button",
+   "input",
+   "slider",
+   "switch",
+   "select"
+  ]
+ },
+ "indicator_color_to_frozen": {
+  "src": "indicator",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "progress",
+   "math_node"
+  ]
+ },
+ "indicator_color_to_visible": {
+  "src": "indicator",
+  "tgt": "any",
+  "asrc": [],
+  "atgt": [
+   "surface",
+   "surface_art",
+   "primitive_art",
+   "text",
+   "progress",
+   "slider",
+   "input",
+   "button",
+   "switch",
+   "select",
+   "indicator",
+   ""
+  ]
+ },
+ "name_to_text": {
+  "src": "surface",
+  "tgt": "text",
+  "asrc": [],
+  "atgt": []
+ },
+ "to_string": {
+  "src": "any",
+  "tgt": "indicator",
+  "asrc": [],
+  "atgt": []
+ }
+}

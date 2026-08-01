@@ -46,7 +46,8 @@ def element(eid, mod, x, y, w, h, *, layer=0, parent=None):
             "module": mod}
 
 def composite_element(eid, name, children, x, y, w, h, *, layer=0, parent=None,
-                      color=0xFF7C4DFF, radius=14.0, material=1):
+                      color=0xFF7C4DFF, radius=14.0, material=1,
+                      expose=None):
     """复合组件实例。
 
     ⚠️ 子元素坐标以**复合件左上角**为原点（见 UIRenderer._renderComposite）。
@@ -62,7 +63,16 @@ def composite_element(eid, name, children, x, y, w, h, *, layer=0, parent=None,
                 "id": uid("comp"), "name": name, "layoutType": "stack",
                 "children": children, "material": material,
                 "borderRadius": radius, "color": color, "opacity": 1.0,
-                "renderingMode": 2}}
+                "renderingMode": 2,
+                # 暴露端口：复合件是黑盒，**没有它就无法从外部连线**，
+                # 在 Assembly 的实例编辑器里也看不到任何可覆写项
+                # （用户反馈：「看不到暴露端口 / 内部覆写情况」）。
+                # expose 传子元素 id 列表即可。
+                "exposedPorts": [
+                    {"elementId": cid, "exposeInput": True,
+                     "exposeOutput": True}
+                    for cid in (expose or [])
+                ]}}
 
 def gesture(direction, target_page_id, *, action="switch_base_page",
             transition="base_slide", duration=220):
@@ -190,8 +200,11 @@ def make_dial(cx, cy, *, parent, layer):
     kids.append(element(uid("el"), module(uid("m"), "刻度", "line",
         {"axis": "horizontal", "lineStyle": "dashed", "thickness": 1.0},
         color=0x33FFFFFF), 14, 96, 292, 2, layer=1))
+    # 暴露读数/进度条/状态灯三个口，外部才能连线与覆写。
     return composite_element(uid("el"), "星象仪表盘", kids, cx, cy, 320, 120,
-                             layer=layer, parent=parent, color=PANEL)
+                             layer=layer, parent=parent, color=PANEL,
+                             expose=[kids[2]["id"], kids[3]["id"],
+                                     kids[4]["id"]])
 
 # ============================================================
 # 页面 1：主控台（复合件 + 按钮换页）
@@ -308,8 +321,10 @@ ANIMS = [
 ]
 _y = 78
 for zh, kind, col, opt in ANIMS:
+    # 触发按钮自己也要有按压反馈——否则点下去毫无手感，
+    # 玩家分不清是没点到还是靶子没反应（用户反馈）。
     bl, fl, hl = btn(zh, 24, _y, 150, 42, parent=AB, layer=3,
-                     color=PANEL2, font=12.0, press_anim=False)
+                     color=PANEL2, font=12.0)
     animp += bl
     target = element(uid("el"), module(uid("m"), zh + "靶", "surface",
         {"__anim": anim(kind, duration=opt["duration"],

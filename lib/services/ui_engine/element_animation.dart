@@ -245,14 +245,37 @@ class ElementAnimation {
   /// 若元件没配动画则什么都不做——连线只负责「触发」，
   /// 「播什么」由元件自己决定。这正是参数归元件的意义：
   /// 作者没给这个元件配动画，就说明他不想让它动。
+  /// 「重播抑制」窗口内不重置时间戳的动画类型。
+  ///
+  /// 拖动滑块时值会连续变化，每一帧都 stamp 一次的话，
+  /// 动画永远停在第 0 帧的最大幅度，表现为**疯狂抖动**
+  /// （用户实测：「复合组件中的数值变化会跳得很厉害」）。
+  ///
+  /// 只挑「有明显位移/缩放」的类型：它们叠加时最难看。
+  /// flash / glowPulse 这类纯颜色变化重复触发反而是想要的效果
+  /// （连续命中时持续亮着），不在此列。
+  static const Set<ElementAnimationType> _restartGuarded = {
+    ElementAnimationType.numberPop,
+    ElementAnimationType.particleBurst,
+    ElementAnimationType.ripple,
+  };
+
+  /// 打时间戳，触发一次播放。
+  ///
+  /// 对 [_restartGuarded] 里的类型：**上一次还没播完就不重新开始**，
+  /// 让它自然跑完。这样连续触发的观感是「弹一下、停、再弹一下」，
+  /// 而不是卡在峰值疯狂抖。
   static bool stamp(Map<String, dynamic> props, {int? nowMs}) {
     final current = readFrom(props);
     if (current == null) return false;
-    props[propsKey] = current
-        .copyWith(
-          timestamp: nowMs ?? DateTime.now().millisecondsSinceEpoch,
-        )
-        .toJson();
+    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    if (_restartGuarded.contains(current.type) &&
+        current.timestamp > 0 &&
+        now - current.timestamp < current.durationMs) {
+      // 仍在播放窗口内，保持原时间戳。
+      return false;
+    }
+    props[propsKey] = current.copyWith(timestamp: now).toJson();
     return true;
   }
 }
