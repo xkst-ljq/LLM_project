@@ -2732,9 +2732,41 @@ class _InputBlockWidgetState extends State<_InputBlockWidget> {
     final visualMode = module.properties['visualMode']?.toString() ?? 'filled';
     final placeholderColor = Color((module.properties['placeholderColor'] as num?)?.toInt() ?? 0xFF888896);
     final inputTextColor = Color((module.properties['inputTextColor'] as num?)?.toInt() ?? 0xFF111116);
+
+    // 文本落点。
+    //
+    // 输入框被拉高后，单行 TextField 的文字仍垂直居中，作者往往期望
+    // 它贴着顶部开始（用户反馈）。这两个属性让作者自己决定。
+    final vAlign = module.properties['textVerticalAlign']?.toString() ?? 'center';
+    final hAlign = module.properties['textHorizontalAlign']?.toString() ?? 'left';
+    final multiline = module.properties['multiline'] == true;
+
+    // 多行时**必须**顶部对齐：TextAlignVertical 对多行框不起作用，
+    // 而且从中间往下写字本来也不合理。
+    final effectiveVAlign = multiline ? 'top' : vAlign;
+
+    const vAlignMap = {
+      'top': TextAlignVertical.top,
+      'center': TextAlignVertical.center,
+      'bottom': TextAlignVertical.bottom,
+    };
+    const hAlignMap = {
+      'left': TextAlign.left,
+      'center': TextAlign.center,
+      'right': TextAlign.right,
+    };
+
     return Container(
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      // 单行时靠 alignment 定位内容；多行要让 TextField 撑满，
+      // 否则 Container 会把它压成一行高，换行根本看不见。
+      alignment: multiline
+          ? null
+          : switch (effectiveVAlign) {
+              'top' => Alignment.topLeft,
+              'bottom' => Alignment.bottomLeft,
+              _ => Alignment.centerLeft,
+            },
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: visualMode == 'filled' ? Colors.white.withValues(alpha: 0.9) : Colors.transparent,
         borderRadius: BorderRadius.circular(4),
@@ -2746,6 +2778,16 @@ class _InputBlockWidgetState extends State<_InputBlockWidget> {
         enabled: widget.controls.enabled,
         readOnly: widget.controls.locked,
         maxLength: (module.properties['maxLength'] as num?)?.toInt(),
+        // maxLines: null + expands: true 让输入区填满可用高度，
+        // 文字自然从顶部开始排。
+        maxLines: multiline ? null : 1,
+        expands: multiline,
+        textAlign: hAlignMap[hAlign] ?? TextAlign.left,
+        textAlignVertical: vAlignMap[effectiveVAlign] ?? TextAlignVertical.center,
+        // 多行时回车用来换行，不能再当提交；
+        // 单行保持 done，回车即提交（sendsMessage 依赖这个）。
+        keyboardType: multiline ? TextInputType.multiline : null,
+        textInputAction: multiline ? TextInputAction.newline : null,
         style: TextStyle(fontSize: 13, color: inputTextColor),
         decoration: InputDecoration(
           border: InputBorder.none,

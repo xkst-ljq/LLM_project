@@ -106,7 +106,7 @@ meta.ui_assemblies: [ JSON字符串, ... ]   ← 注意是字符串数组，不�
 | `slider` | `current`, `min`, `max`, `step` |
 | `select` | `options`(label/value 数组), `current`, `defaultValue` |
 | `switch` | `value` |
-| `input` | `placeholder`, `text` |
+| `input` | `placeholder`, `text`；可选 `multiline`(bool)、`textVerticalAlign`(top/center/bottom)、`textHorizontalAlign`(left/center/right) |
 | `button` | `hitArea: true`；要显示文字加 `showTextOnRuntime: true` + `text` |
 | `message_flow` | `historyLimit`, `fontSize`, `showUser`, `showAssistant` |
 | `surface` | 作容器时加 `is_overlay_container: true` |

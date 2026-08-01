@@ -5512,6 +5512,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _ => 'center',
     };
     var switchValue = module.properties['value'] != false;
+    // input 的文本落点与多行开关。
+    var textVAlign =
+        module.properties['textVerticalAlign']?.toString() ?? 'center';
+    var textHAlign =
+        module.properties['textHorizontalAlign']?.toString() ?? 'left';
+    var inputMultiline = module.properties['multiline'] == true;
     var indicatorGlow = module.properties['defaultGlow'] == true;
     // A11-2：图片来源。选了头像时路径由运行时提供，作者填的静态值被忽略。
     var imageSource = switch (module.properties['imageSource']?.toString()) {
@@ -5818,6 +5824,62 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       ),
                       const SizedBox(height: 12),
                       numberField(maxLengthController, '最大字数（留空不限制）'),
+                      const SizedBox(height: 4),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('多行输入',
+                            style: TextStyle(fontSize: 13)),
+                        subtitle: Text(
+                          // 多行时回车用于换行，onSubmitted 不再触发，
+                          // 标了「发送消息」的输入框就发不出去了。
+                          // 这个冲突不拦，只提示——作者可能就是想要个
+                          // 多行草稿框，再配个确认按钮来提交。
+                          sendsMessage
+                              ? '开启后可换行、文字自动贴顶。\n'
+                                  '注意：本组件已标记「发送消息」，'
+                                  '多行下回车只换行，需另配确认按钮提交。'
+                              : '开启后可换行、文字自动贴顶；回车不再提交。',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        value: inputMultiline,
+                        onChanged: (value) =>
+                            setDialogState(() => inputMultiline = value),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: textVAlign,
+                        decoration: const InputDecoration(
+                          labelText: '文字垂直位置',
+                          // 多行时强制贴顶，下拉不可用，说明原因免得作者疑惑。
+                          helperText: '把输入框拉高后，决定文字从哪里开始',
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'top', child: Text('顶部')),
+                          DropdownMenuItem(value: 'center', child: Text('居中')),
+                          DropdownMenuItem(value: 'bottom', child: Text('底部')),
+                        ],
+                        onChanged: inputMultiline
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() => textVAlign = value);
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: textHAlign,
+                        decoration:
+                            const InputDecoration(labelText: '文字水平位置'),
+                        items: const [
+                          DropdownMenuItem(value: 'left', child: Text('靠左')),
+                          DropdownMenuItem(value: 'center', child: Text('居中')),
+                          DropdownMenuItem(value: 'right', child: Text('靠右')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => textHAlign = value);
+                        },
+                      ),
                     ],
                     if (type == 'switch') ...[
                       const SizedBox(height: 4),
@@ -6249,6 +6311,23 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
               props.remove('maxLength');
             } else {
               props['maxLength'] = maxLen;
+            }
+            // 默认值不落盘，保持 properties 精简——
+            // 渲染器读不到时用的正是同一组默认（center / left / 单行）。
+            if (inputMultiline) {
+              props['multiline'] = true;
+            } else {
+              props.remove('multiline');
+            }
+            if (textVAlign == 'center') {
+              props.remove('textVerticalAlign');
+            } else {
+              props['textVerticalAlign'] = textVAlign;
+            }
+            if (textHAlign == 'left') {
+              props.remove('textHorizontalAlign');
+            } else {
+              props['textHorizontalAlign'] = textHAlign;
             }
           } else if (type == 'switch') {
             props['value'] = switchValue;

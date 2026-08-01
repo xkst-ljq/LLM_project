@@ -415,6 +415,9 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
     bool required = props['required'] == true;
     int? maxLength = (props['maxLength'] as num?)?.toInt();
     String visualMode = props['visualMode']?.toString() ?? 'filled';
+    bool multiline = props['multiline'] == true;
+    String textVAlign = props['textVerticalAlign']?.toString() ?? 'center';
+    String textHAlign = props['textHorizontalAlign']?.toString() ?? 'left';
     String placeholderColorHex = ((props['placeholderColor'] as num?)?.toInt() ?? 0xFF888896).toRadixString(16).padLeft(8, '0');
     String inputTextColorHex = ((props['inputTextColor'] as num?)?.toInt() ?? 0xFF111116).toRadixString(16).padLeft(8, '0');
 
@@ -562,6 +565,72 @@ mixin _CompactEditorsDialogs on _UIStudioLogic, _StudioMenuDialogs {
                           } else {
                             props['maxLength'] = maxLength;
                           }
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      // 文本落点：输入框拉高后，决定文字从哪里开始。
+                      // 与 Assembly 实例编辑器保持同一组属性。
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('多行输入',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF555562))),
+                        subtitle: const Text('开启后可换行、文字自动贴顶；回车不再提交。',
+                            style: TextStyle(fontSize: 10, color: Color(0xFF888896))),
+                        value: multiline,
+                        onChanged: (value) {
+                          setDialogState(() => multiline = value);
+                          if (value) {
+                            props['multiline'] = true;
+                          } else {
+                            props.remove('multiline');
+                          }
+                          setState(() => syncLivePreview());
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: textVAlign,
+                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                        decoration: _softInputDecoration(label: '文字垂直位置'),
+                        items: const [
+                          DropdownMenuItem(value: 'top', child: Text('顶部')),
+                          DropdownMenuItem(value: 'center', child: Text('居中')),
+                          DropdownMenuItem(value: 'bottom', child: Text('底部')),
+                        ],
+                        // 多行强制贴顶，禁用下拉避免作者误以为能改。
+                        onChanged: multiline
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() => textVAlign = value);
+                                if (value == 'center') {
+                                  props.remove('textVerticalAlign');
+                                } else {
+                                  props['textVerticalAlign'] = value;
+                                }
+                                setState(() => syncLivePreview());
+                              },
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: textHAlign,
+                        style: const TextStyle(fontSize: 13, color: Color(0xFF111116)),
+                        decoration: _softInputDecoration(label: '文字水平位置'),
+                        items: const [
+                          DropdownMenuItem(value: 'left', child: Text('靠左')),
+                          DropdownMenuItem(value: 'center', child: Text('居中')),
+                          DropdownMenuItem(value: 'right', child: Text('靠右')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => textHAlign = value);
+                          if (value == 'left') {
+                            props.remove('textHorizontalAlign');
+                          } else {
+                            props['textHorizontalAlign'] = value;
+                          }
+                          setState(() => syncLivePreview());
                         },
                       ),
                       const SizedBox(height: 12),
