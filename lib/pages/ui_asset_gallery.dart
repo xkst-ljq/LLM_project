@@ -289,12 +289,89 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
                           size: 17, color: Color(0xFF00897B)),
                     ),
                   ),
+                  InkWell(
+                    onTap: () => _confirmDeleteComposite(c),
+                    borderRadius: BorderRadius.circular(6),
+                    child: const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: Icon(Icons.delete_outline_rounded,
+                          size: 18, color: Color(0xFFFF4081)),
+                    ),
+                  ),
                 ],
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  /// 删除复合组件。
+  ///
+  /// 此前只有 UI Studio 能删，而导入入口在本页——
+  /// 导错了文件却要跑去另一个页面清理，很别扭（用户反馈）。
+  ///
+  /// 删除是不可逆的（资产库没有回收站），所以一定要二次确认，
+  /// 并在文案里点明「已经用到角色卡里的实例不受影响」——
+  /// 否则作者不敢删：复合件在 Assembly 里是**值拷贝**
+  /// （UIElement 内嵌完整对象，不按 id 引用资产库），
+  /// 删模板不会让已经摆好的界面变空。
+  Future<void> _confirmDeleteComposite(UIComposite c) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text(
+          '删除资产',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF111116),
+          ),
+        ),
+        content: Text(
+          '确定从资产库删除「${c.name}」吗？\n\n'
+          '已经用到角色卡里的实例不受影响，只是以后不能再从库里取用。',
+          style: const TextStyle(
+            fontSize: 13,
+            color: Color(0xFF555562),
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消',
+                style: TextStyle(color: Color(0xFF888896))),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF4081),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '删除',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    // removeComposite 内部已经 saveAssets()。
+    _assetService.removeComposite(c.id);
+    // 与导入同理：资产列表变了就要重新注册事件总线，
+    // 否则总线里还留着已删组件的 linker 快照。
+    setState(_registerLinkerBus);
+    messenger.showSnackBar(
+      SnackBar(content: Text('已删除「${c.name}」')),
     );
   }
 
