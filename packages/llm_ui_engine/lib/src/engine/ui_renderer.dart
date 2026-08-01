@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
@@ -14,8 +14,8 @@ import 'element_animation.dart';
 import 'linker_event_bus.dart';
 import 'linker_matrix_engine.dart';
 import 'linker_service.dart';
-import 'ripple_shader.dart';
 import 'message_flow_scope.dart';
+import 'ripple_shader.dart';
 import 'select_option.dart';
 import 'text_highlight_scope.dart';
 import 'ui_models.dart';
@@ -1469,27 +1469,27 @@ class UIRenderer {
           : Image.memory(
               bytes,
               fit: fit,
-              errorBuilder: (_, _, _) =>
+              errorBuilder: (_, __, ___) =>
                   _buildImagePlaceholder(module, '内联图片解码失败'),
             );
     } else if (url.isNotEmpty) {
       imgContent = Image.network(
         url,
         fit: fit,
-        errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '加载网络图片失败'),
+        errorBuilder: (_, __, ___) => _buildImagePlaceholder(module, '加载网络图片失败'),
       );
     } else if (assetPath.isNotEmpty) {
       if (assetPath.startsWith('/') || assetPath.contains('\\')) {
         imgContent = Image.file(
           File(assetPath),
           fit: fit,
-          errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '读取本地文件失败'),
+          errorBuilder: (_, __, ___) => _buildImagePlaceholder(module, '读取本地文件失败'),
         );
       } else {
         imgContent = Image.asset(
           assetPath,
           fit: fit,
-          errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '未找到内部资产图片'),
+          errorBuilder: (_, __, ___) => _buildImagePlaceholder(module, '未找到内部资产图片'),
         );
       }
     } else {
