@@ -42,6 +42,9 @@ class UIAssetService {
   };
 
   /// 是否为引擎原子（三重判据，命中任一即是）。
+  ///
+  /// 注：删除库里的原子**不会**影响已保存的复合组件或角色卡 UI——
+  /// `UIElement` 内嵌完整的 `UIModule` 对象，不是按 id 引用资产库。
   static bool isAtomModule(UIModule module) =>
       _foundationModuleOrder.contains(module.id) ||
       _retiredFoundationModuleIds.contains(module.id) ||
@@ -236,6 +239,8 @@ class UIAssetService {
   }
 
   Future<void> _loadAssets() async {
+    // 是否丢弃过历史遗留的引擎原子（见下方一次性迁移）。
+    var purged = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       final data = prefs.getString(_storageKey);
@@ -244,12 +249,24 @@ class UIAssetService {
 
         // 加载原子模组 (与默认模组合并)
         final modulesJson = decoded['modules'] as Map<String, dynamic>? ?? {};
+        // 历史版本曾把引擎原子也写进用户资产（id 不在白名单、但 type
+        // 就是 button/text/…），它们会跑到「完成资产库」里冒充用户资产。
+        // 用户要求彻底删除，不只是隐藏。
         modulesJson.forEach((k, v) {
           // 内置原材料由当前引擎版本维护，不能被旧草稿中的历史默认样式覆盖。
-          if (!_foundationModuleOrder.contains(k) &&
-              !_retiredFoundationModuleIds.contains(k)) {
-            _modules[k] = UIModule.fromJson(v);
+          if (_foundationModuleOrder.contains(k) ||
+              _retiredFoundationModuleIds.contains(k)) {
+            return;
           }
+          final module = UIModule.fromJson(v);
+          // 一次性迁移：把混进来的引擎原子直接丢弃。
+          // 这里不能用 isAtomModule——上面已排除白名单 id，
+          // 剩下要判的就是 type 这一条。
+          if (atomModuleTypes.contains(module.type)) {
+            purged = true;
+            return;
+          }
+          _modules[k] = module;
         });
 
         // 加载组合块 (与默认组合块合并)
@@ -258,6 +275,10 @@ class UIAssetService {
           _composites[k] = UIComposite.fromJson(v);
         });
       }
+
+      // 丢弃过历史原子就立刻回写，让删除真正落盘——
+      // 否则每次启动都要重新过滤一遍，而存储里那份脏数据永远还在。
+      if (purged) await saveAssets();
     } catch (_) {
       // 解析出错则保留默认初始化
     }
