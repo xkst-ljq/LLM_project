@@ -1720,6 +1720,59 @@ controller.dispose();        // ← 错！
 ——整棵树序列化后不该残留任何旧 id 前缀。
 逐字段断言只能覆盖已知字段，新增字段时必漏；这条能兜住。
 
+### 3.5j 手写卡片 JSON 的「静默失效」清单（本轮连栽七次）
+
+做三张测试卡时，**每一个** bug 都是同一个模式：
+键名/结构写错 → 引擎读不到 → 用默认值 → **不报错、编辑器还显示「已配置」**。
+作者只能靠肉眼比对源码才能发现。
+
+| 写错的地方 | 正确写法 | 症状 |
+|---|---|---|
+| 方案名凭记忆编 | 必须取自 `_schemeRegistry` 的 68 条 | 连线不生效，编辑器显示「已配置通路」 |
+| `params` | **`schemeParams`** | 参数读不到，`targetParam` 恒为 paramA |
+| 只写 `sourceGesture` | **`sourcePort` 必须同值** | 双击/长按接不通（按 `srcPort == eventType` 匹配） |
+| indicator 写 `isOn`/`onColor` | **`statusRules` + `defaultColor`** | 灯永远是灰的 |
+| 固定条目填纯字符串 | 填**规定子字段的 JSON 对象** | 编辑页显示不出「姓」「名」子项 |
+| scene/opening 无 `keyAction` | 必须标一个 | **整层 UI 不渲染** |
+| 复合件 linker 放页面顶层 | 放进 `composite.children` | 解散后内部空空如也 |
+| 复合件底面无 `is_container_boundary` | 必须标 | 拖到画布边框多 20px 内边距 |
+
+**教训：这类错误不该靠记性，要靠脚本。**
+`samples/validate_card.py` 现已覆盖全部上述检查 + PCB 越界、元素出界、
+文字对比度（小字按 AAA 7:1）、mode 重复、叠加页缺父页等，共 10 类。
+方案表从 `linker_matrix_engine.dart` 导出到 `samples/_schemes.json`，
+校验时逐条核对方案名与源/目标类型是否匹配。
+
+**改卡或让 LLM 生成卡之后，务必先跑一遍：**
+```bash
+python3 samples/validate_card.py samples/*.llmcard
+```
+
+### 3.5k 资产库模板 ≠ 实例快照
+
+角色卡导入时会把卡里的复合件收进资产库（`harvestComposites`），
+但**必须先净化成模板**（`sanitizeForTemplate`），否则：
+
+1. **专一性过强**：带着原卡的 `dataChannel`（状态字段 id）拖到别的卡里
+   全是失效引用；带着「星轨稳定度」这类专属文案，第一件事就是逐个改字。
+2. **语义污染**：`__anim` 只有 Assembly 有编辑器，Studio 能渲染却改不了。
+
+**剥离**（这些键只有 Assembly 有编辑入口）：
+`dataChannel` / `keyAction` / `sendsMessage` / `__anim` /
+`boundVariable` / `statusFieldMirrorKey`，
+以及专属文案（按类型回落 `_neutralTextDefaults`）。
+
+**保留**：尺寸、配色、圆角、min/max、**内部 linker 连线**、暴露端口——
+这些是组件骨架，剥掉就不成其为组件。
+
+**去重用内容指纹，不能用角色卡 id**：导入时 `c['id'] = newId` 会换新 id，
+同一张卡导入两次得到两个不同 id，照样重复。
+指纹只取骨架特征，**刻意排除所有 id**（复合件自身、子元素、linker 的
+source/target），因为它们每次导入都会被重映射。
+
+**净化要幂等**：干净时返回**原对象**，调用方用 `identical` 判断是否写盘。
+复合件分支若无条件 `copyWith`，嵌套复合件会每次都被判为脏，白白重写整库。
+
 ### 3.6 页面路由器触发规则
 - A7 阶段的 `page_router` 本体点击跳转只是临时编辑态测试入口，A5 后已退场。
 - 页面切换应通过 `button → linker → page_router` 触发。
