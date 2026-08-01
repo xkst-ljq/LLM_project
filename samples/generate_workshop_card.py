@@ -112,7 +112,7 @@ DEEP   = 0xFF0F2027
 SLAB   = 0xFF17323B
 SLAB2  = 0xFF1F4550
 FOAM   = 0xFFE8F4F2
-MUTED  = 0xFF7FA8A8
+MUTED  = 0xFFA6C6C6
 TEAL   = 0xFF2EC4B6
 AMBER  = 0xFFFFB703
 CORAL  = 0xFFFF6B6B
@@ -292,11 +292,16 @@ main.append(linker("去计算", "button_to_page_route", h_lg, r_lg["id"]))
 main.append(linker("开配方", "button_to_page_route", h_rc, r_rc["id"]))
 
 # --- 发消息按钮 ---
-b_snd, f_snd, h_snd = btn("按当前投放量开工", 24, 546, 332, 46,
-                          parent=MB, layer=16, color=TEAL, tcolor=DEEP,
+# ⚠️ scene **必须**有 keyAction 标记（「打开聊天设置」），否则
+# ChatAssemblyMount.canRun 返回 false，**整层 UI 不渲染**。
+# 见 UISemanticRole.blocksWithoutKeyAction。
+b_set, f_set, h_set = btn("⚙", 24, 546, 56, 46, parent=MB, layer=16,
+                          color=SLAB2, key_action=True, font=15.0)
+b_snd, f_snd, h_snd = btn("按当前投放量开工", 90, 546, 266, 46,
+                          parent=MB, layer=19, color=TEAL, tcolor=DEEP,
                           sends=True, font=13.0)
-main += b_snd
-main.append(label("数量由界面数据段传给 AI，按钮本身只发固定文字",
+main += b_set + b_snd
+main.append(label("左侧齿轮打开聊天设置；数量由界面数据段传给 AI",
                   MB, 24, 598, 332, size=9.0, align="center"))
 
 # ============================================================

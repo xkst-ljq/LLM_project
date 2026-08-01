@@ -112,7 +112,7 @@ VOID   = 0xFF0E1020   # 底
 PANEL  = 0xFF1A1E38   # 面板
 PANEL2 = 0xFF252B4A   # 面板（浅一档）
 STAR   = 0xFFE8ECFF   # 主文字
-DIM    = 0xFF8A93C2   # 次要文字
+DIM    = 0xFFAAB2D8   # 次要文字
 CYAN   = 0xFF35E0E8
 GOLD   = 0xFFFFC857
 ROSE   = 0xFFFF5C8A
@@ -237,6 +237,25 @@ _dial_indicator = dial["composite"]["children"][4]["id"]
 home.append(linker("心跳→闪灯", "event_to_animation", tmr["id"],
                    _dial_indicator))
 
+# ⚠️ scene **必须**有一个标了 keyAction 的按钮（「打开聊天设置」），
+# 否则 ChatAssemblyMount.canRun 返回 false，**整层 UI 根本不渲染**。
+# 这是引擎硬约束（UISemanticRole.blocksWithoutKeyAction），
+# 不是可选项——缺了它玩家连设置页都进不去，等于被锁死。
+b_set, f_set, h_set = btn("⚙ 设置", 30, 410, 152, 40,
+                          parent=HB, layer=14, color=PANEL2,
+                          key_action=True, font=12.0)
+home += b_set
+
+# scene 接管后原生输入栏不渲染，必须自己提供发消息的入口。
+say = element(uid("el"), module(uid("m"), "呼叫", "input",
+    {"placeholder": "对 VESPER 说…", "text": "",
+     "visualMode": "outline", "inputTextColor": STAR,
+     "placeholderColor": DIM, "sendsMessage": True},
+    color=CYAN, radius=8.0), 30, 466, 320, 42, layer=17, parent=HB)
+home.append(say)
+home.append(label("输入后按回车发送", HB, 30, 512, 320, size=9.0,
+                  align="center"))
+
 home.append(label("提示：三个按钮走 page_router 换页；第三个是长按触发",
                   HB, 20, H - 40, W - 40, size=10.0, align="center", layer=90))
 
@@ -282,7 +301,7 @@ animp.append(label("点左侧按钮，看右侧靶子的反应", AB, 20, 48, W -
 ANIMS = [
     ("按压凹陷", "press",          GOLD,  {"duration": 180, "intensity": 0.6}),
     ("水波扩散", "ripple",         CYAN,  {"duration": 700, "intensity": 0.7}),
-    ("短暂高亮", "flash",          ROSE,  {"duration": 320, "intensity": 0.8}),
+    ("短暂高亮", "flash",          0xFFFF8FB0,  {"duration": 320, "intensity": 0.8}),
     ("数值跳动", "number_pop",     LIME,  {"duration": 520, "intensity": 0.9}),
     ("发光脉冲", "glow_pulse",     CYAN,  {"duration": 900, "intensity": 0.8}),
     ("粒子迸发", "particle_burst", GOLD,  {"duration": 800, "intensity": 0.9}),

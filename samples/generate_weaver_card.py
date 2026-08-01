@@ -93,14 +93,21 @@ def anim(kind, *, duration=400, curve="easeOut", intensity=0.6, color=None):
     return d
 
 # ---------- 配色：暖灯下的织房 ----------
+# 对比度已按 WCAG 核算（配 CLOTH 纸面）：
+#   INK   11.1:1   AAA — 标题、正文
+#   INK2   7.1:1   AAA — 副题/脚注/占位符（这些是 9~12px 小字，
+#                        4.5:1 的门槛是给 14px+ 定的，小字必须更高）
+#   CLOTH on THREAD 6.0:1 AA — 按钮白字
+# 用户反馈「开场白文字对比度太低看不清」，原先 INK2 只有 4.66:1、
+# 按钮字 3.84:1，两个都不够。
 NIGHT  = 0xFF2B211C
 CLOTH  = 0xFFF5EBDC
 CLOTH2 = 0xFFE4D5C0
 INK    = 0xFF3A2E26
-INK2   = 0xFF7A6555
+INK2   = 0xFF5C4A3A
 LAMP   = 0xFFE8A33D
-THREAD = 0xFF9C6B4F
-JADE   = 0xFF6B8F71
+THREAD = 0xFF6B432E
+JADE   = 0xFF4F7355
 
 F_TRUST, F_LAMP, F_TOPIC = "wv_trust", "wv_lamp", "wv_topic"
 status_fields = [
@@ -147,8 +154,8 @@ opening_els.append(element(uid("el"), module(uid("m"), "标题", "text",
     {"text": "织房夜话", "fontSize": 20.0, "textAlign": "center"}, color=INK),
     20, 26, OW - 40, 28, layer=1, parent=OB))
 opening_els.append(element(uid("el"), module(uid("m"), "副题", "text",
-    {"text": "门没锁。灯还亮着。", "fontSize": 12.0, "textAlign": "center"},
-    color=INK2), 20, 58, OW - 40, 18, layer=1, parent=OB))
+    {"text": "门没锁。灯还亮着。", "fontSize": 13.0, "textAlign": "center"},
+    color=INK2), 20, 58, OW - 40, 20, layer=1, parent=OB))
 opening_els.append(element(uid("el"), module(uid("m"), "分隔", "line",
     {"axis": "horizontal", "lineStyle": "solid", "thickness": 1.0},
     color=0x22000000), 40, 86, OW - 80, 2, layer=1, parent=OB))
@@ -192,8 +199,8 @@ opening_els += o_go
 opening_els.append(linker("填名才能进", "input_nonempty_to_button_enable",
                           o_name["id"], o_go_id))
 opening_els.append(element(uid("el"), module(uid("m"), "脚注", "text",
-    {"text": "填好名字才能推门", "fontSize": 10.0, "textAlign": "center"},
-    color=INK2), 30, 376, OW - 60, 16, layer=4, parent=OB))
+    {"text": "填好名字才能推门", "fontSize": 11.0, "textAlign": "center"},
+    color=INK2), 30, 376, OW - 60, 18, layer=4, parent=OB))
 
 opening = json.dumps({
     "id": uid("ui"), "name": "推门", "mode": "opening",
@@ -260,7 +267,7 @@ s_fold, s_fold_face, s_fold_id = btn("收起", 234, 62, 54, 22, parent=SB,
 sticky_els += s_fold
 sticky_els.append(element(uid("el"), module(uid("m"), "提示", "text",
     {"text": "长按挂件任意空白处可拖动位置", "fontSize": 9.0,
-     "textAlign": "center"}, color=INK2),
+     "textAlign": "center"}, color=CLOTH2),
     12, 92, 276, 14, layer=1, parent=SB))
 
 sticky = json.dumps({
@@ -303,7 +310,7 @@ c_re, c_re_f, c_re_id = btn("重讲", 12, 74, 58, 30, parent=CB, layer=2,
 c_ed, c_ed_f, c_ed_id = btn("改写", 74, 74, 58, 30, parent=CB, layer=5,
                             color=THREAD, font=11.0)
 c_dl, c_dl_f, c_dl_id = btn("删掉", 136, 74, 56, 30, parent=CB, layer=8,
-                            color=0xFF8C5A5A, font=11.0)
+                            color=0xFF6E3F3F, font=11.0)
 comp_els += c_re + c_ed + c_dl
 
 flow = element(uid("el"), module(uid("m"), "消息锚", "message_flow",

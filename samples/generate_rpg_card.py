@@ -141,13 +141,13 @@ def button_group(label, x, y, w, h, *, parent, layer, color=0xFF9B3B2E,
 
 # 羊皮纸色板：浅底深字，避开上一版深底黑字的可读性问题
 INK    = 0xFF2E2419   # 主文字
-INK2   = 0xFF6B5B45   # 次要文字
+INK2   = 0xFF4C3F2E   # 次要文字
 PARCH  = 0xFFF2E8D5   # 纸面
 PARCH2 = 0xFFE6D8BE   # 纸面（深一档）
-GOLD   = 0xFFB8860B
-BLOOD  = 0xFF9B3B2E
-GREEN  = 0xFF4A7C4E
-BLUE   = 0xFF3E6B8C
+GOLD   = 0xFF614708
+BLOOD  = 0xFF6E281E
+GREEN  = 0xFF2C5030
+BLUE   = 0xFF264760
 
 W, H = 380, 660
 PAGES = {}   # 先占 id，供手势互相引用

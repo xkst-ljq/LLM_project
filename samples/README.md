@@ -5,9 +5,21 @@
 | 文件 | 用途 |
 |---|---|
 | `织_夜航酒保_UI测试卡.llmcard` | 单页 UI 测试卡（三套 UI，各 1 页） |
-| `灰港迷雾_跑团卡.llmcard` | **多页面** RPG 跑团卡（scene 含 5 页） |
-| `generate_sample_card.py` | 酒保卡生成脚本 |
-| `generate_rpg_card.py` | 跑团卡生成脚本 |
+| `灰港迷雾_跑团卡.llmcard` | **多页面** RPG 跑团卡（scene 含 5 页，纯手势导航） |
+| `星轨观测站_图形动画卡.llmcard` | **图形专项**：复合组件 / 网络图片 ×4 / 六种动画 / 按钮换页 |
+| `潮汐工坊_交互逻辑卡.llmcard` | **逻辑专项**：单击双击长按分流 / math_node 串联 / 四种数据通道 / 叠加页 |
+| `织房夜话_伴生常驻卡.llmcard` | **伴生专项**：伴生 UI + 常驻 UI + 开场白（无 scene，两者互斥） |
+| `generate_*.py` | 各卡的生成脚本 |
+| `validate_card.py` | **卡片结构校验器**，生成后务必跑一遍 |
+
+```bash
+python3 samples/generate_gallery_card.py      # 重新生成
+python3 samples/validate_card.py samples/*.llmcard   # 全量校验
+```
+
+校验器会检查：PCB 尺寸越界、元素超出 PCB、linker 指向不存在的元素、
+换页方案的源不是 button、叠加页缺父页、mode 重复、复合件外框与内容
+不符、**缺 keyAction 标记**、**文字对比度不足**。
 
 ## 这张卡覆盖了什么
 
@@ -56,7 +68,42 @@ meta.ui_assemblies: [ JSON字符串, ... ]   ← 注意是字符串数组，不�
 | **sourceComponentId** | 数据通道里这个值必须等于所在元素的 `id` |
 | **id 唯一** | 同一张卡内所有元素 id 不得重复 |
 
-### 3. 数据通道
+### 2.9 两条会让 UI「完全不显示」的硬约束
+
+这两条踩中后**没有任何报错**，UI 直接不渲染或看不清，务必先检查。
+
+### ① scene / opening 必须有 keyAction 标记
+
+`UISemanticRole.blocksWithoutKeyAction` 规定：
+`opening` 与 `scene` 缺少关键职责标记时，`ChatAssemblyMount.canRun`
+返回 false，**整层 UI 根本不渲染**——表现为「装了卡但界面没出来」。
+
+| mode | 需要的标记 | 缺失后果 |
+|---|---|---|
+| `opening` | 确认并关闭 | 整层不渲染 |
+| `scene` | 打开聊天设置 | 整层不渲染 |
+| `extra_sticky` | 折叠界面 | 仅少一个折叠按钮，有内置兜底 |
+
+写法：在某个 button 的 properties 里加 `"keyAction": true`。
+多页面 scene 可以每页各放一个（每页都要有出口），但**同一页只放一个**。
+
+另外 scene 接管后原生输入栏不渲染，**必须自己提供发消息的入口**
+（button 或 input 标 `"sendsMessage": true`），否则玩家无法说话。
+
+### ② 文字对比度
+
+小字（<14px）按 WCAG **AAA 7:1** 要求，不是 4.5:1——
+后者是给 14px+ 正文定的门槛，9~12px 的注释用 4.5:1 实际看不清
+（用户实测反馈）。深色主题尤其容易踩：底色越深，中间调的灰蓝
+看起来越"够"，实际远远不够。
+
+`samples/validate_card.py` 会自动算每个 text 与其背后 surface 的
+对比度并给出警告，生成卡片后跑一遍即可。
+
+**同一个颜色不能既当深底上的文字、又当白字按钮的底色**——
+前者要够亮、后者要够暗，方向相反，必须拆成两个色值。
+
+## 3. 数据通道
 
 ```json
 "dataChannel": {

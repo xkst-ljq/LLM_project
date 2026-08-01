@@ -89,7 +89,7 @@ def assembly(name, mode, w, h, pages, *, color=0xF20A0A14, radius=18.0):
 
 
 
-def button_group(label, x, y, w, h, *, parent, layer, color=0xFFFF4081,
+def button_group(label, x, y, w, h, *, parent, layer, color=0xFFAD1457,
                  text_color=0xFFFFFFFF, radius=8.0, key_action=False,
                  sends_message=False, font=13.0):
     """可见按钮 = surface 底 + text 字 + button 热区（三者几何重合）。
@@ -153,7 +153,13 @@ def math_node(name, operation, *, a=0.0, b=0.0, c=0.0):
         {"operation": operation, "paramA": a, "paramB": b, "paramC": c},
         color=0xFF7E57C2, radius=8.0), x, y, w, h)
 
-CYAN, PINK, AMBER, GREEN, GREY = 0xFF00E5FF, 0xFFFF4081, 0xFFFFB300, 0xFF66BB6A, 0xFF546E7A
+# 对比度已按 WCAG 核算。同一个粉色不能既当暗底上的文字、又当白字按钮的底：
+# 前者要够亮、后者要够暗，方向相反。所以拆成两个。
+CYAN, AMBER, GREEN = 0xFF00E5FF, 0xFFFFB300, 0xFF66BB6A
+PINK      = 0xFFFF6E9C   # 暗底上的文字（好感度数字），对 0x0D0D16 达 5.9:1
+PINK_BTN  = 0xFFAD1457   # 白字按钮的底色，白字 6.97:1
+GREY      = 0xFF3B4E58   # 白字按钮的底色，白字 8.69:1
+DIMTXT    = 0xFFA8A8B8   # 暗底次要文字，8.25:1（原 0xFF7E7E8F 仅 4.85:1）
 
 reset_logic_layout()
 
@@ -238,7 +244,7 @@ s_title = element(uid("el"), module(uid("m"), "招牌", "text",
 
 s_sub = element(uid("el"), module(uid("m"), "副标题", "text",
     {"text": "深夜 · 只剩你一位客人", "fontSize": 11.0, "textAlign": "center"},
-    color=0xFF7E7E8F), 20, 52, 320, 16, layer=2, parent=BG)
+    color=DIMTXT), 20, 52, 320, 16, layer=2, parent=BG)
 
 s_line = element(uid("el"), module(uid("m"), "分割线", "line",
     {"axis": "horizontal", "lineStyle": "solid", "thickness": 1.0},
@@ -318,7 +324,7 @@ m_time = module(uid("m"), "时段", "text",
     {"text": "深夜", "fontSize": 11.0, "textAlign": "right",
      "dataChannel": channel("店内时段", "status_field", F_TIME,
         read="prompt", write="suggest_replace", notify="toast",
-        field_type="text")}, color=0xFF7E7E8F)
+        field_type="text")}, color=DIMTXT)
 s_time = element(uid("el"), m_time, 240, 24, 100, 16, layer=14, parent=BG)
 m_time["properties"]["dataChannel"]["sourceComponentId"] = s_time["id"]
 
@@ -398,7 +404,7 @@ o_job = element(uid("el"), m_job, 30, 232, 260, 40, layer=4, parent=OBG)
 m_job["properties"]["dataChannel"]["sourceComponentId"] = o_job["id"]
 
 o_go_els, o_go_face, o_go_id = button_group("坐到吧台前", 30, 292, 260, 46,
-    parent=OBG, layer=5, color=PINK, radius=12.0, key_action=True, font=14.0)
+    parent=OBG, layer=5, color=PINK_BTN, radius=12.0, key_action=True, font=14.0)
 
 lk_name_go = linker("填了名字才能坐下", "input_nonempty_to_button_enable",
                     o_name["id"], o_go_id)
