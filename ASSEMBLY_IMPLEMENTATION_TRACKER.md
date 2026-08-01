@@ -4847,30 +4847,72 @@ direction: none | upload_only | bidirectional
 
 ---
 
-### 4.7 Assembly 复合组件编辑页重做 —— **待办（用户已提出）**
+### 4.7 Assembly 复合组件编辑页重做 —— ✅ 已完成
 
 用户原话：
-> 等会 logic 改完后准备着手修改 assembly 的复合组件的编辑页，
-> 这一个有很多问题和交互别扭。
+> 复合组件的页面只有覆写，但是覆写本身就是一个改名字的功能，
+> 而且复合组件的 LLM 数据交换/状态栏联动是单独做的，
+> 我想要在编辑页里面给每一个单独的原子组件都可以配置他们的专属设置，
+> 这样子的话动画也可以完成。外观通道和数据通道都整合进他们
+> 每一个原子的专属页面里面。这样就和外面无异了。
 
-**前置条件已完成**：`_showAtomInstanceEditorDialog` 的字段组迁移
-已分四批全部收尾（13 种类型全部迁入 `atom_field_groups.dart`，
-方法体 1123 → 480 行）。「每类型一个字段组」的模式已跑通，
-复合件编辑页可直接复用同一套结构。
+#### 做了什么
 
-**动手前要先问清楚「哪里别扭」**——用户说的是「很多问题」，
-不要自己猜着改。已知的相关入口：
-- `_showCompositeOverrideEntryDialog`（328 行）
-- `_showCompositeOverrideValueEditor`（181 行）
-- `_showCompositeOverrideBindingEditor`（125 行）
-- `_showExposedDataChannelEditor`（199 行）
-- `_instantiateComposite`（118 行）
+新建 `composite_child_editor.dart`：点任一子件进**整页**编辑器，
+四大块与画布上的独立原子完全一致。
 
-**已知的历史坑**（改之前务必读）：
-- HANDOFF 3.5b「双写覆盖」——从对话框进子页面，返回后必须重新回读
-  **全部**相关状态，且不能用闭包捕获的 `module`
-- 复合件是黑盒，外部只能连到 `exposedPorts` 声明的子元素
-- 实例覆写不回写资产库模板（见 logic.dart 里多处注释）
+| 区块 | 实现 |
+|---|---|
+| 组件设置 | **直接复用 `AtomFieldGroup`**，13 种类型全支持 |
+| 外观 | 主色 / 材质 / 形状 / 圆角 / 透明度 |
+| 动画 | 类型 / 时长 / 幅度 / 曲线 / 动画色，同一套引擎 |
+| 数据通道 | LLM 数据交换 + 状态栏联动 |
+| 改名 | 顶部直接改，留空回落模板名 |
+
+**可编辑范围放开**：不再受 `exposedPorts` 限制，
+复合件内所有原子子件（含嵌套）都能改。
+`exposedPorts` 回归本职——只管对外连线。
+理由（用户原话）：「暴露项本来就是用来暴露端口以实现连线的，
+不包含组件本身的设计」。
+
+#### 两个必须知道的实现约束
+
+**1. 外观键不能直接塞进 overrides。**
+`color` / `material` / `shape` / `borderRadius` / `opacity` 是
+`UIModule` 的**独立字段**，不在 `properties` 里。
+往 overrides 写 `color` 不报错、也存下了，但渲染读的是 `module.color`
+——**改了等于没改**（3.5j 静默失效）。
+统一走 `AppearanceOverrideKeys` 的 `__ovr_` 前缀键，
+**编辑器端与运行时端两处 patch 逻辑必须同步改**，否则画布与实际运行两个样。
+`name` 同理（`kCompositeChildNameOverrideKey`）。
+
+**2. 覆写只存「改过的」。**
+`AtomFieldGroup.applyTo` 会写**全部**字段（它不知道作者动过哪些）。
+原样存下等于把模板当时的默认值固化成实例覆写，日后模板更新就跟不上。
+保存时用 `_diffAgainstTemplate` 做深比对，只留真改过的键；
+全部改回默认则**自动删除整个槽位**。
+
+比对要点：`12` 与 `12.0` 视为相同；嵌套 Map/List 按内容比（引用不同不算改）；
+模板里有而编辑后没有的键写 `null`，套用时执行 `remove` 而不是设成 null。
+
+#### 顺带删掉的死功能：挂载位绑定（AssemblyBinding）
+
+用户问「有了数据通道就用不着这个了吧」——查证结果比这更严重：
+`statusKey` 写进去后**全库没有任何读取方**，运行时与引擎层完全不消费。
+是数据通道体系建立前的残留，但编辑器还显示「已绑定」，
+属于典型的静默失效。
+
+数据通道是严格超集（字段 ID 而非字符串名、读写策略分离、
+另支持 session_var / card_entry / user_profile），已整类删除：
+模型层 `AssemblyBinding`、`PropertyOverride.binding`、
+`copyWith` 的 `clearBinding`、JSON 读写、五个 UI 方法。
+
+#### 遗留
+
+- 首帧 RenderFlex 竖向溢出（角色编辑页，仅冷启动首次出现，
+  三次复现不了）。日志开头 `The relevant error-causing widget was:`
+  那行被 logcat 截断，无法定位。纯渲染警告，不影响数据。
+  再遇到时抓 `flutter run 2>&1 | tee log.txt` 再 `grep -B5 "overflowed by"`。
 
 ## 五、阻塞等级定义
 

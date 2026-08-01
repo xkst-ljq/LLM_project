@@ -1800,6 +1800,95 @@ source/target），因为它们每次导入都会被重映射。
 
 ---
 
+### 3.5l 拆分 part / mixin：五类只有 analyze 才报的错
+
+`character_assembly_page.dart` 的 `logic.dart` 从 9420 行拆到 1662 行，
+过程中连续**五轮**被 `flutter analyze` 打回，每次都是一类新的结构错误。
+括号平衡、逐行 diff 这些文本级校验**全部通过**却依然编译不过——
+这几条务必先读。
+
+#### 1. part 文件不能续写别的 part 里打开的类体
+
+```dart
+// logic.dart
+mixin _AssemblyLogic on State<X> {
+  void foo() {}
+// ← 没闭合，想在下一个 part 里接着写
+```
+
+**不成立。** 每个 part 必须自成完整的顶层声明。
+正确做法：各 part 各自一个 mixin，由 State 类一并 `with` 进去。
+私有成员在同一个库（part 组成的整体）内仍互相可见。
+
+#### 2. 两个 mixin 不能互相 `on`
+
+拆分时很容易出现「列表页要打开编辑器、编辑器又要调列表页的增删方法」。
+两边都在 `on` 里声明对方 = 循环依赖，Dart 直接拒绝。
+
+**解法**：把双方共用的成员移到依赖链**上游**（或库顶层），
+让依赖变成单向。本项目最终链路：
+
+```
+_AssemblyLogic → _AssemblyPageLogic → _AssemblyCanvasLogic
+              → _AssemblyEditorsLogic / _AssemblyElementsLogic / _AssemblyLinkerLogic
+```
+
+#### 3~5. 静态成员**不参与 mixin 继承**（连栽三轮）
+
+这条是最反直觉的：`on` 子句只带来**实例**成员。
+
+| 写法 | 结果 |
+|---|---|
+| `mixin B on A` 里裸写 `_fooStatic`（定义在 A） | ❌ `Undefined name` |
+| `A._fooStatic` 但常量已被搬到 B | ❌ `isn't defined for the type 'A'` |
+| `A._fooStatic` 但常量已提到**库顶层** | ❌ 同上，要去掉 `A.` 前缀 |
+
+**推荐解法**：跨组共享的常量一律提到**库顶层**（`const` 顶层声明），
+part 之间可直接引用，不受 mixin 可见性约束。
+
+例外：已经被 `A.kXxx` 形式点名访问的（如 build 方法里的
+`_AssemblyLogic.kResizeHandlePadding`），保持原位不要动。
+
+顺带一个连带效应：`static const String _pageRouterType` 挂在 mixin 上时，
+别的 part 拿它填 `const {...}` 集合会报
+`The values in a const set literal must be constants`；
+提到顶层后自动消失。
+
+#### 工具：`tools/check_mixins.py`
+
+上面五类问题**全部**可以在提交前静态查出来。脚本已入库，五项检查：
+
+1. 循环依赖
+2. 重复定义（同一成员被搬进两个文件）
+3. 静态限定访问（`A.member` 的归属是否正确，含「已提到顶层」的情形）
+4. 跨 mixin 裸用静态成员
+5. 跨 mixin 调用可达性（用了别的 mixin 的方法但 `on` 链够不着）
+
+每一项都用「人为制造问题 → 确认必报 → 还原 → 确认通过」验证过。
+
+```bash
+python3 tools/check_mixins.py    # 退出码非 0 即有问题
+```
+
+**但它只是文本分析**，抓不到类型错误、缺参数等。
+沙箱没有 Dart SDK 时它能挡住绝大多数结构问题，
+**提交前仍必须本地 `flutter analyze`**。
+
+#### 附：脚本切分源码的两个坑
+
+用脚本按成员边界搬运时，我的解析器两次切错导致代码丢失：
+
+- `UIModule get _x => UIModule(...)` —— 箭头函数体跨行，
+  遇到第一个 `;` 就收尾会**从中间截断**；
+- `({String a, int b}) _resolveXxx(...)` —— 返回**记录类型**，
+  开头是 `(` 不是标识符，正则识别不到，**整个方法被丢掉**。
+
+最终判定规则：圆括号 / 花括号 / 方括号**三者同时配平**才算成员结束，
+且只有在圆括号已闭合处出现的 `{` 才算方法体（签名里的 `{` 是具名参数）。
+另加两条硬断言：**成员区间不许重叠**、**mixin 内每一行都必须被某个成员覆盖**。
+
+---
+
 ## 4. 当前临时测试/调试信息
 
 这些不是最终产品 UI，后面要评估删除：
@@ -1838,9 +1927,41 @@ source/target），因为它们每次导入都会被重映射。
   施工跟踪档案，记录阶段状态 / MVP / 灵感池 / 调试信息清理规则
 
 ### 关键代码文件
+
 - `lib/models/ui_assembly_info.dart`
+  —— `UIAssemblyInfo` / `AssemblyPage` / `PropertyOverride`
+  / `AppearanceOverrideKeys`（复合件子件的外观覆写键）
+
 - `lib/pages/character_assembly_page.dart`
-- `lib/pages/character_assembly_page/logic.dart`
+  —— 库入口：import / part 声明 / `State` 类与 build
+
+- `tools/check_mixins.py`
+  —— **改 part / mixin 结构前后必跑**，五项检查见 3.5l
+
+#### part 文件一览（原 `logic.dart` 9420 行拆分而来）
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `logic.dart` | 1662 | 状态字段 · 持久化 · 跨组共用工具 · **顶层常量** |
+| `logic_canvas.dart` | 1810 | 缩放手柄 · 选中轮廓 · 面组 · PCB · 后台位 · 落件 |
+| `logic_editors.dart` | 1642 | 原子实例 · 外观动画 · timer · math_node · 几何 |
+| `logic_linker.dart` | 1534 | 端口几何 · 拖拽接线 · 连线图层 · 方案配置 |
+| `logic_page.dart` | 771 | 页面层级 · 路由器 · 翻页手势 · 拖拽重排 |
+| `logic_elements.dart` | 311 | 删除 · 复制 · 图层顺序 · 锁定 |
+| `atom_field_groups.dart` | 1063 | 13 种原子类型的字段组（**画布与复合件共用**） |
+| `composite_child_editor.dart` | 937 | 复合件子件整页编辑器 + 覆写增删 + 暴露通道 |
+| `logic_composite.dart` | 502 | 复合件实例列表页与摘要文案 |
+| `data_channel_controls.dart` | 737 | 数据通道页共用表单控件 |
+
+mixin 依赖链（单向无环，`with` 顺序必须与此一致）：
+
+```
+_AssemblyLogic
+  → _AssemblyPageLogic
+  → _AssemblyCanvasLogic
+       → _AssemblyEditorsLogic / _AssemblyElementsLogic / _AssemblyLinkerLogic
+  → _CompositeChildEditor → _AssemblyCompositeLogic
+```
 
 ---
 
