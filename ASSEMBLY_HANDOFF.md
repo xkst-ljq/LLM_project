@@ -1889,6 +1889,52 @@ python3 tools/check_mixins.py    # 退出码非 0 即有问题
 
 ---
 
+### 3.5m 把引擎抽成本地 package（`packages/llm_ui_engine`）
+
+为了让 PC 转译工具能预览 UI，渲染引擎从主项目抽成了本地 package。
+**同一份源码，两边 path 依赖，不是拷贝**——拷贝必然漂移，
+而漂移导致的是静默失效（3.5j）。
+
+#### 边界
+
+包内只放**渲染运行时**（25 个文件）：models + ui_engine + runtime_view。
+**不含** `ui_asset_service.dart`（编辑器资产库，与应用层耦合）、
+Assembly 编辑器本身、数据库 / 聊天页。
+
+#### 迁移时栽的四个坑
+
+**1. 绝对路径 import 会被漏掉。**
+批量改 import 时只处理了 `import '../models/xxx.dart'`（相对路径），
+漏了 `import 'package:llm_project/models/xxx.dart'`（绝对路径）52 条，
+直接导致 2202 条 `Undefined class`。
+→ 改 import 时**两种写法都要扫**。
+
+**2. SDK 约束决定语言版本，不只是依赖求解。**
+包的 `environment.sdk` 误写 `^3.5.0`，语言版本被压到 3.5，
+`ui_renderer.dart` 里原有的 `(_, _, _)` wildcard 参数（Dart 3.7+）
+突然报 `duplicate_definition: '_'`——**源码一个字没改**。
+→ 抽包时 SDK 约束必须与宿主一致。
+
+**3. 跨包资源要加 `packages/<包名>/` 前缀。**
+`ripple_shader.dart` 原来写 `'shaders/xxx.frag'`，
+作为 package 提供后必须改成
+`'packages/llm_ui_engine/shaders/xxx.frag'`。
+写错只表现为「水波动画没了」，不报错。
+
+**4. Windows 跨盘符会让 Kotlin 增量编译崩溃。**
+Pub 缓存在 `C:`、项目在 `D:` 时，
+`desktop_drop` 的增量缓存算相对路径会抛
+`this and base files have different roots`。
+→ `android/gradle.properties` 加 `kotlin.incremental=false`。
+
+#### 工具
+
+`tools/check_pkg_wiring.py` —— 检查包有没有被 pub 解析到。
+包没挂上时 analyze 会报**上千条**连锁错误，但真正该看的只有
+`package_config.json` 里有没有它。这个脚本一秒给结论。
+
+---
+
 ## 4. 当前临时测试/调试信息
 
 这些不是最终产品 UI，后面要评估删除：

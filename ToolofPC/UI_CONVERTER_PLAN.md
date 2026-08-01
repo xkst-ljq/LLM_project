@@ -173,7 +173,7 @@ enum PipelineStage { rule, aiClassify, refine }
 
 ## 三、施工计划
 
-### 阶段 0：path 依赖可行性验证 🟡 **待用户本地验证**
+### 阶段 0：引擎移植与渲染验证 ✅ **已完成**
 
 **为什么排第一**：这是「成本最低、风险最高」的一步。
 若不通，后面所有工作的前提都不成立。
@@ -219,6 +219,37 @@ progress（数值量程）、button（交互热区 + keyAction 标记）。
 ⚠️ 写验证 JSON 时**又踩了一次 3.5j**：keyAction 键名误写成 `is_key_action`，
 正确是 `keyAction`（`UISemanticRole.propKey`）。已修正——
 这恰好说明阶段 2 的强校验是必需的。
+
+#### 验收结果（用户实测通过）
+
+验证页三个指示灯全绿，深色面板正常渲染（标题 / 说明文本 / 68% 胶囊进度条）。
+
+**着色器绿灯是关键证据**——它证明跨包资源路径
+`packages/llm_ui_engine/shaders/ripple_refraction.frag` 生效，
+而这是移植中最容易静默失败的一环。
+
+#### 过程中踩的坑（都记在这，别重蹈）
+
+| 问题 | 根因 | 修法 |
+|---|---|---|
+| 2202 条 `Undefined class` | 52 条 `package:llm_project/...` **绝对路径** import 指向已迁走的文件。我第一轮只改了相对路径 | 批量改指向 `package:llm_ui_engine` |
+| `duplicate_definition: '_'` | 包 SDK 误写 `^3.5.0`，**语言版本被压到 3.5**，`(_, _, _)` wildcard（3.7+）失效。**源码没变，是约束变了** | 三方统一 `^3.11.5`；回调另改写为 `(_, __, ___)` 双保险 |
+| `RippleShader` 未定义 | 类名实为 `RippleShaderLoader`，我凭记忆写错 | 改调用 |
+| `type 'String' is not a subtype of 'num?'` | `createdAt` 要**毫秒时间戳**，我写了 ISO 字符串 | 改为 `1785572774665` |
+| Kotlin 增量编译崩溃 | `desktop_drop` 源码在 C: 盘 Pub 缓存、项目在 D: 盘，跨盘相对路径计算失败 | `android/gradle.properties` 加 `kotlin.incremental=false` |
+
+**最值得记住的一条**：`UIAssemblyInfo.fromJson` 的 10 个字段里，
+9 个都有 `?? 默认值` 兜底——**类型写错只会静默回落，不报错**。
+只有 `createdAt` 是硬转才抛了异常，等于帮我暴露了问题。
+若当初写错的是 `pcbWidth`，就会得到一块尺寸不对的面板而毫无提示。
+
+这正是阶段 2「强校验」的必要性依据：**人工核对 JSON 靠不住**，
+我在这个项目里已经因手写 JSON 栽过三次（键名 / 类型 / 结构各一次）。
+
+#### 工具
+
+- `tools/check_pkg_wiring.py` —— 一秒判断包有没有挂上
+  （直接查 `package_config.json`，不用在上千条报错里翻）
 
 ---
 
@@ -348,8 +379,8 @@ UI 生成依赖 stage2 的产物（状态栏字段、条目内容）；
 
 | 阶段 | 状态 | 备注 |
 |---|---|---|
-| 0 · path 依赖验证 | ⬜ | **下一步做这个** |
-| 1 · 预览面板 | ⬜ | |
+| 0 · 引擎移植与渲染验证 | ✅ | 三灯全绿，面板正常渲染 |
+| 1 · 预览面板 | ⬜ | **下一步做这个** |
 | 2 · 契约与校验 | ⬜ | |
 | 3 · UI 生成 | ⬜ | |
 | 4 · 自检扩展 | ⬜ | |
