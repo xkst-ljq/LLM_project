@@ -1393,14 +1393,35 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         final props = Map<String, dynamic>.from(
           _deepCloneValue(node.module!.properties) as Map,
         );
+        // 与编辑器端 `_applyPropertyOverridesToElement` 必须保持同一套规则，
+        // 否则画布上看到的和实际运行的是两个样。见 AppearanceOverrideKeys。
+        final merged = <String, dynamic>{};
         for (final override in matched) {
-          props.addAll(
+          merged.addAll(
             Map<String, dynamic>.from(
               _deepCloneValue(override.overrides) as Map,
             ),
           );
         }
-        return node.copyWith(module: node.module!.copyWith(properties: props));
+        // null 表示「模板里有、覆写要求删掉」（字段组的 props.remove 路径）。
+        // 直接 addAll 会把值设成 null，渲染端多半按「有这个键」处理，
+        // 与「回落默认」不是一回事，因此显式 remove。
+        final plain = AppearanceOverrideKeys.stripFrom(merged)
+          ..remove(kCompositeChildNameOverrideKey);
+        for (final entry in plain.entries) {
+          if (entry.value == null) {
+            props.remove(entry.key);
+          } else {
+            props[entry.key] = entry.value;
+          }
+        }
+        var patched = node.module!.copyWith(properties: props);
+        patched = AppearanceOverrideKeys.applyTo(patched, merged);
+        final overriddenName = merged[kCompositeChildNameOverrideKey]?.toString();
+        if (overriddenName != null && overriddenName.trim().isNotEmpty) {
+          patched = patched.copyWith(name: overriddenName.trim());
+        }
+        return node.copyWith(module: patched);
       }
       if (node.isComposite && node.composite != null) {
         return node.copyWith(

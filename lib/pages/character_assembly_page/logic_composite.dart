@@ -20,8 +20,8 @@ part of '../character_assembly_page.dart';
 /// | 覆写摘要文案 | `_propertyOverrideStatusText` / `_bindingSummary` 等 |
 /// | 覆写项主列表 | `_showCompositeOverrideEntryDialog`（323 行，最大） |
 /// | 暴露数据通道 | `_showExposedDataChannelEditor` |
+/// | 子件整页编辑 | 见 `composite_child_editor.dart` |
 /// | 挂载位绑定 | `_showCompositeOverrideBindingEditor` |
-/// | 覆写值编辑 | `_showCompositeOverrideValueEditor` |
 /// | 覆写增删查 | `_ensurePropertyOverride` / `_upsertPropertyOverride` 等 |
 ///
 /// ## 改这里之前务必知道
@@ -34,6 +34,21 @@ part of '../character_assembly_page.dart';
 ///   否则会覆盖作者刚改的数值（见 commit `98af02e`）。
 ///
 /// 待办：TRACKER 4.7「复合组件编辑页重做」——用户已反馈交互别扭。
+
+/// ## 为什么是独立 mixin 而不是接着写 `_AssemblyLogic`
+///
+/// Dart 的 `part` 文件**不能续写另一个 part 里打开的类体**——
+/// 每个 part 各自都必须是完整的顶层声明。第一版切分时我把方法体
+/// 直接裸放在这里，语法上根本不成立。
+///
+/// 正确做法是本文件自成一个 mixin，由 `_CharacterAssemblyPageState`
+/// 一并 `with` 进去。私有成员在同一个库（part 组成的整体）内
+/// 仍然互相可见，因此调用关系不受影响。
+///
+/// `on _AssemblyLogic` 声明了依赖：本文件用到 `_activePropertyOverrides`
+/// / `_persistAssemblyElements` / `_deepCloneValue` 等成员，
+/// 它们都定义在 `logic.dart` 里。
+mixin _AssemblyCompositeLogic on State<CharacterAssemblyPage>, _AssemblyLogic {
 
   String _propertyOverrideStatusText(PropertyOverride override) {
     final parts = <String>[];
@@ -126,9 +141,46 @@ part of '../character_assembly_page.dart';
     );
   }
 
+  /// 复合件内**全部**可编辑的原子子件（递归展开嵌套复合件）。
+  ///
+  /// 与 `_exposedChildrenOfComposite` 的区别：
+  /// 那个按 `exposedPorts` 过滤，用于**对外连线**；
+  /// 这个不过滤，用于**实例内编辑**。
+  ///
+  /// 复合件对外仍是黑盒（外部只能连到暴露端口），
+  /// 但作者点进实例编辑器后，理应能调整里面每一个零件——
+  /// 就像拆开机箱后每颗螺丝都拧得动，不代表机箱外壳多了接口。
+  List<UIElement> _editableChildrenOfComposite(UIElement compositeElement) {
+    final composite = compositeElement.composite;
+    if (!compositeElement.isComposite || composite == null) return const [];
+    final result = <UIElement>[];
+    void walk(List<UIElement> nodes) {
+      for (final node in nodes) {
+        if (node.isComposite && node.composite != null) {
+          walk(node.composite!.children);
+          continue;
+        }
+        final module = node.module;
+        if (module == null) continue;
+        // linker / page_router 是纯逻辑件，没有实例级可调项。
+        if (const {'linker', 'page_router'}.contains(module.type)) continue;
+        result.add(node);
+      }
+    }
+
+    walk(composite.children);
+    return result;
+  }
+
   Future<void> _showCompositeOverrideEntryDialog(UIElement compositeElement) async {
     if (!compositeElement.isComposite || compositeElement.composite == null) return;
-    final exposedChildren = _exposedChildrenOfComposite(compositeElement);
+    // 列出**全部**原子子件，不再只限暴露项。
+    //
+    // exposedPorts 的本职是「对外连线时允许接到哪个子元素」，
+    // 拿它兼任「哪些子件可编辑」是历史误用：
+    // 作者想改复合件里某个文字的字号，却因为模板没暴露它而改不了。
+    // 现在两者解耦——连线仍受 exposedPorts 约束，编辑不再受限。
+    final editableChildren = _editableChildrenOfComposite(compositeElement);
 
     await showKeyboardSafeDialog<void>(
       context: context,
@@ -140,7 +192,9 @@ part of '../character_assembly_page.dart';
                 .toList();
           }
 
-          final hasEditableChildren = exposedChildren.any(_supportsBasicOverrideEditor);
+          // 13 种原子类型现在全部可编辑（走字段组），
+          // 不再有「该类型不支持」的死角。
+          final hasEditableChildren = editableChildren.isNotEmpty;
 
           return AlertDialog(
             title: const Text('复合组件实例编辑器'),
@@ -170,13 +224,13 @@ part of '../character_assembly_page.dart';
                     '(${compositeElement.offset.dx.toStringAsFixed(0)}, ${compositeElement.offset.dy.toStringAsFixed(0)})',
                   ),
                   const SizedBox(height: 10),
-                  _buildCompositeEditorSectionTitle('暴露项覆写 / Binding'),
+                  _buildCompositeEditorSectionTitle('子件设置'),
                   Text(
-                    exposedChildren.isEmpty
-                        ? '该复合组件实例当前没有暴露项。可在 Studio / 资产库模板端编辑暴露端口；Assembly 里不会回写模板。'
-                        : hasEditableChildren
-                            ? '这里管理当前页面内这个复合组件实例的覆写槽位，只影响当前实例。已支持 text / progress / switch 的基础字段覆写。'
-                            : '这里管理当前页面内这个复合组件实例的覆写槽位，只影响当前实例。当前暴露项尚无已支持的字段类型。',
+                    hasEditableChildren
+                        ? '点进任一子件即可像编辑画布上的独立组件那样，'
+                            '调整它的专属设置、外观、动画与数据通道。'
+                            '所有改动只作用于当前这个实例，不回写资产库模板。'
+                        : '该复合组件内没有可编辑的原子子件。',
                     style: const TextStyle(
                       fontSize: 11,
                       color: Color(0xFF777783),
@@ -184,7 +238,7 @@ part of '../character_assembly_page.dart';
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (exposedChildren.isEmpty)
+                  if (editableChildren.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
@@ -193,7 +247,7 @@ part of '../character_assembly_page.dart';
                         border: Border.all(color: const Color(0xFFFFECB3)),
                       ),
                       child: const Text(
-                        '没有可覆写的暴露项。当前实例仍可移动、缩放和参与页面布局。',
+                        '没有可编辑的原子子件。当前实例仍可移动、缩放和参与页面布局。',
                         style: TextStyle(
                           fontSize: 11,
                           color: Color(0xFF8D6E00),
@@ -207,20 +261,19 @@ part of '../character_assembly_page.dart';
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                      for (var index = 0; index < exposedChildren.length; index++)
+                      for (var index = 0; index < editableChildren.length; index++)
                         Builder(builder: (context) {
-                        final child = exposedChildren[index];
+                        final child = editableChildren[index];
                         final type = child.module?.type ?? 'unknown';
                         final overrides = overridesOf(child);
                         final hasSlot = overrides.isNotEmpty;
-                        final canEdit = _supportsBasicOverrideEditor(child);
                         final statusText = hasSlot
                             ? _propertyOverrideStatusText(overrides.first)
                             : '未创建覆写槽位';
                         return Container(
                           margin: EdgeInsets.only(
                             bottom:
-                                index == exposedChildren.length - 1 ? 0 : 8,
+                                index == editableChildren.length - 1 ? 0 : 8,
                           ),
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -274,30 +327,30 @@ part of '../character_assembly_page.dart';
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  if (!hasSlot)
-                                    FilledButton.tonal(
-                                      onPressed: () async {
-                                        final created = _ensurePropertyOverride(
-                                          componentId: child.id,
-                                          sourceElementId: compositeElement.id,
-                                          sourceCompositeId:
-                                              compositeElement.composite?.id,
-                                        );
-                                        setState(() {
-                                          _persistAssemblyElements();
-                                        });
-                                        setDialogState(() {});
-                                        if (canEdit) {
-                                          await _showCompositeOverrideValueEditor(
-                                            compositeElement: compositeElement,
-                                            child: child,
-                                            propertyOverride: created,
-                                          );
-                                          setDialogState(() {});
-                                        }
-                                      },
-                                      child: const Text('创建'),
-                                    ),
+                                  // 不再区分「创建槽位」与「编辑」两步：
+                                  // 槽位是实现细节，作者只想改这个零件。
+                                  // 需要时按需创建，全改回默认时自动移除。
+                                  FilledButton.tonal(
+                                    onPressed: () async {
+                                      final target = hasSlot
+                                          ? overrides.first
+                                          : _ensurePropertyOverride(
+                                              componentId: child.id,
+                                              sourceElementId:
+                                                  compositeElement.id,
+                                              sourceCompositeId:
+                                                  compositeElement
+                                                      .composite?.id,
+                                            );
+                                      await _openCompositeChildEditor(
+                                        compositeElement: compositeElement,
+                                        child: child,
+                                        propertyOverride: target,
+                                      );
+                                      setDialogState(() {});
+                                    },
+                                    child: Text(hasSlot ? '编辑' : '设置'),
+                                  ),
                                 ],
                               ),
                               // 覆写槽位的操作按钮独占一行并允许换行，
@@ -307,19 +360,9 @@ part of '../character_assembly_page.dart';
                                   spacing: 4,
                                   runSpacing: -8,
                                   children: [
-                                    if (canEdit)
-                                      TextButton(
-                                        onPressed: () async {
-                                          final override = overrides.first;
-                                          await _showCompositeOverrideValueEditor(
-                                            compositeElement: compositeElement,
-                                            child: child,
-                                            propertyOverride: override,
-                                          );
-                                          setDialogState(() {});
-                                        },
-                                        child: const Text('编辑'),
-                                      ),
+                                    // 外观 / 字段 / 动画 / 通道 / 改名
+                                    // 已全部并入整页编辑器，
+                                    // 这里只留「挂载位绑定」与「移除」。
                                     TextButton(
                                       onPressed: () async {
                                         final override = overrides.first;
@@ -329,19 +372,7 @@ part of '../character_assembly_page.dart';
                                         );
                                         setDialogState(() {});
                                       },
-                                      child: const Text('绑定'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () async {
-                                        final override = overrides.first;
-                                        await _showExposedDataChannelEditor(
-                                          compositeElement: compositeElement,
-                                          child: child,
-                                          propertyOverride: override,
-                                        );
-                                        setDialogState(() {});
-                                      },
-                                      child: const Text('通道'),
+                                      child: const Text('挂载位'),
                                     ),
                                     TextButton(
                                       onPressed: () {
@@ -350,7 +381,7 @@ part of '../character_assembly_page.dart';
                                         });
                                         setDialogState(() {});
                                       },
-                                      child: const Text('移除'),
+                                      child: const Text('清除覆写'),
                                     ),
                                   ],
                                 ),
@@ -375,17 +406,6 @@ part of '../character_assembly_page.dart';
                                     style: const TextStyle(
                                       fontSize: 10,
                                       color: Color(0xFF5E35B1),
-                                    ),
-                                  ),
-                                ),
-                              if (hasSlot && !canEdit)
-                                const Padding(
-                                  padding: EdgeInsets.only(top: 8),
-                                  child: Text(
-                                    '该暴露类型的字段编辑将在后续步骤开放。',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Color(0xFF777783),
                                     ),
                                   ),
                                 ),
@@ -785,11 +805,6 @@ part of '../character_assembly_page.dart';
     }
   }
 
-  bool _supportsBasicOverrideEditor(UIElement child) {
-    final type = child.module?.type;
-    return type == 'text' || type == 'progress' || type == 'switch';
-  }
-
   UIElement _applyPropertyOverridesToElement(
     UIElement element,
     List<PropertyOverride> overrides,
@@ -807,13 +822,39 @@ part of '../character_assembly_page.dart';
         final props = Map<String, dynamic>.from(
           _deepCloneValue(node.module!.properties) as Map,
         );
+        // 先把多条覆写合并成一张表，再分「外观键」与「普通属性」两路套用。
+        //
+        // 外观五项不在 properties 里，是 UIModule 的独立字段；
+        // 直接 addAll 进 props 不会报错但**渲染时读不到**
+        // （HANDOFF 3.5j 那类静默失效）。见 AppearanceOverrideKeys。
+        final merged = <String, dynamic>{};
         for (final override in matched) {
-          final patch = Map<String, dynamic>.from(
-            _deepCloneValue(override.overrides) as Map,
-          )..remove('dataChannel');
-          props.addAll(patch);
+          merged.addAll(
+            Map<String, dynamic>.from(
+              _deepCloneValue(override.overrides) as Map,
+            )..remove('dataChannel'),
+          );
         }
-        return node.copyWith(module: node.module!.copyWith(properties: props));
+        // null 表示「模板里有、覆写要求删掉」（字段组的 props.remove 路径）。
+        // 直接 addAll 会把值设成 null，渲染端多半按「有这个键」处理，
+        // 与「回落默认」不是一回事，因此显式 remove。
+        final plain = AppearanceOverrideKeys.stripFrom(merged)
+          ..remove(kCompositeChildNameOverrideKey);
+        for (final entry in plain.entries) {
+          if (entry.value == null) {
+            props.remove(entry.key);
+          } else {
+            props[entry.key] = entry.value;
+          }
+        }
+        var patched = node.module!.copyWith(properties: props);
+        patched = AppearanceOverrideKeys.applyTo(patched, merged);
+        // 实例改名：与外观同理，name 也是独立字段。
+        final overriddenName = merged[kCompositeChildNameOverrideKey]?.toString();
+        if (overriddenName != null && overriddenName.trim().isNotEmpty) {
+          patched = patched.copyWith(name: overriddenName.trim());
+        }
+        return node.copyWith(module: patched);
       }
       if (node.isComposite && node.composite != null) {
         return node.copyWith(
@@ -830,187 +871,6 @@ part of '../character_assembly_page.dart';
         children: element.composite!.children.map(patchNode).toList(),
       ),
     );
-  }
-
-  Future<void> _showCompositeOverrideValueEditor({
-    required UIElement compositeElement,
-    required UIElement child,
-    required PropertyOverride propertyOverride,
-  }) async {
-    final type = child.module?.type;
-    if (!_supportsBasicOverrideEditor(child)) return;
-
-    Future<void> closeDialog(BuildContext ctx, bool? value) async {
-      FocusManager.instance.primaryFocus?.unfocus();
-      await Future<void>.delayed(const Duration(milliseconds: 16));
-      if (!ctx.mounted) return;
-      Navigator.pop(ctx, value);
-    }
-
-    if (type == 'text') {
-      final controller = TextEditingController(
-        text: propertyOverride.overrides['text']?.toString() ??
-            child.module?.properties['text']?.toString() ??
-            '',
-      );
-      final saved = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text('覆写文本 · ${child.module?.name ?? child.id}'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: '输入实例专属文本',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => closeDialog(ctx, false),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () {
-                controller.clear();
-              },
-              child: const Text('恢复默认'),
-            ),
-            FilledButton(
-              onPressed: () => closeDialog(ctx, true),
-              child: const Text('应用'),
-            ),
-          ],
-        ),
-      );
-      if (saved == true && mounted) {
-        final nextOverrides =
-            Map<String, dynamic>.from(propertyOverride.overrides);
-        final text = controller.text.trim();
-        if (text.isEmpty) {
-          nextOverrides.remove('text');
-        } else {
-          nextOverrides['text'] = text;
-        }
-        final updated = propertyOverride.copyWith(overrides: nextOverrides);
-        setState(() => _upsertPropertyOverride(updated));
-      }
-      controller.dispose();
-      return;
-    }
-
-    if (type == 'switch') {
-      var currentValue = propertyOverride.overrides['value'] is bool
-          ? propertyOverride.overrides['value'] as bool
-          : (child.module?.properties['value'] == true);
-      final saved = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setDialogState) => AlertDialog(
-            title: Text('覆写开关 · ${child.module?.name ?? child.id}'),
-            content: SwitchListTile(
-              value: currentValue,
-              title: Text(currentValue ? '开启' : '关闭'),
-              onChanged: (value) => setDialogState(() => currentValue = value),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => closeDialog(ctx, false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () => closeDialog(ctx, true),
-                child: const Text('应用'),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (saved == true && mounted) {
-        final updated = propertyOverride.copyWith(
-          overrides: {
-            ...propertyOverride.overrides,
-            'value': currentValue,
-          },
-        );
-        setState(() => _upsertPropertyOverride(updated));
-      }
-      return;
-    }
-
-    if (type == 'progress') {
-      final childProps = child.module?.properties ?? const <String, dynamic>{};
-      final min = _numProp(childProps, 'min') ?? 0.0;
-      final max = _numProp(childProps, 'max') ?? 100.0;
-      final actualMin = math.min(min, max);
-      final actualMax = math.max(min, max);
-      double current = _numProp(propertyOverride.overrides, 'current') ??
-          _numProp(childProps, 'current') ??
-          actualMin;
-      current = current.clamp(actualMin, actualMax).toDouble();
-      final controller = TextEditingController(text: current.toStringAsFixed(0));
-      final saved = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setDialogState) => AlertDialog(
-            title: Text('覆写进度值 · ${child.module?.name ?? child.id}'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('范围：${actualMin.toStringAsFixed(0)} ~ ${actualMax.toStringAsFixed(0)}'),
-                const SizedBox(height: 8),
-                Slider(
-                  value: current,
-                  min: actualMin,
-                  max: actualMax,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      current = value;
-                      controller.text = value.toStringAsFixed(0);
-                    });
-                  },
-                ),
-                TextField(
-                  controller: controller,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    hintText: '输入当前值',
-                  ),
-                  onChanged: (value) {
-                    final parsed = double.tryParse(value);
-                    if (parsed == null) return;
-                    setDialogState(() {
-                      current = parsed.clamp(actualMin, actualMax).toDouble();
-                    });
-                  },
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => closeDialog(ctx, false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () => closeDialog(ctx, true),
-                child: const Text('应用'),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (saved == true && mounted) {
-        final updated = propertyOverride.copyWith(
-          overrides: {
-            ...propertyOverride.overrides,
-            'current': current,
-          },
-        );
-        setState(() => _upsertPropertyOverride(updated));
-      }
-      controller.dispose();
-    }
   }
 
   Color _compositeChildAccentColor(String type) {
@@ -1068,3 +928,4 @@ part of '../character_assembly_page.dart';
         .removeWhere((override) => override.componentId == componentId);
     _persistAssemblyElements();
   }
+}

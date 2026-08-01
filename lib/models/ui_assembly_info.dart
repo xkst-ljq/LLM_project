@@ -337,3 +337,112 @@ class PropertyOverride {
     );
   }
 }
+
+/// 复合件子件的「实例改名」覆写键。
+///
+/// 和外观键同理：`name` 是 [UIModule] 的独立字段而非 properties 条目，
+/// 必须走 `copyWith(name:)` 才生效。
+///
+/// 留空 / 全空白视为「不覆写」，回落模板名——
+/// 这样作者清空输入框就能恢复默认，不需要额外的「重置」按钮。
+const String kCompositeChildNameOverrideKey = '__ovr_name';
+
+/// 复合件子件「外观覆写」的键名与套用规则。
+///
+/// ## 为什么需要这一层
+///
+/// [PropertyOverride.overrides] 是个 `Map<String, dynamic>`，
+/// 原本只会被 `addAll` 进 `UIModule.properties`。
+/// 但外观五项（color / material / shape / borderRadius / opacity）
+/// **不在 properties 里**，它们是 [UIModule] 的独立字段。
+///
+/// 于是出现一个隐蔽的坑：往 overrides 里写 `color` 不会报错，
+/// 也确实进了 properties，但渲染时读的是 `module.color`，
+/// **改了等于没改**——正是 HANDOFF 3.5j 记的那类「静默失效」。
+///
+/// 这里把外观键单独拎出来，套用时改走 `copyWith` 的具名参数。
+/// 编辑器端与运行时端都必须用这份规则，否则画布和实际运行两个样。
+class AppearanceOverrideKeys {
+  const AppearanceOverrideKeys._();
+
+  static const String color = '__ovr_color';
+  static const String material = '__ovr_material';
+  static const String shape = '__ovr_shape';
+  static const String borderRadius = '__ovr_borderRadius';
+  static const String opacity = '__ovr_opacity';
+
+  /// 双下划线前缀：与作者可见的普通属性区分，
+  /// 和 `ElementAnimation.propsKey`（`__anim`）同一套约定。
+  ///
+  /// 动画**不在这里**——它本来就存在 properties 的 `__anim` 键里，
+  /// 走普通 `addAll` 路径就能生效，不需要特殊套用。
+  static const Set<String> all = {
+    color,
+    material,
+    shape,
+    borderRadius,
+    opacity,
+  };
+
+  static bool isAppearanceKey(String key) => all.contains(key);
+
+  /// 把 overrides 里的外观键套到 [module] 上。
+  ///
+  /// [patch] 应当是已经合并好的覆写表；不含外观键时原样返回。
+  static UIModule applyTo(UIModule module, Map<String, dynamic> patch) {
+    if (patch.isEmpty) return module;
+
+    UIModuleMaterial? material;
+    final rawMaterial = patch[AppearanceOverrideKeys.material]?.toString();
+    if (rawMaterial != null) {
+      for (final value in UIModuleMaterial.values) {
+        if (value.name == rawMaterial) {
+          material = value;
+          break;
+        }
+      }
+    }
+
+    UIModuleShape? shape;
+    final rawShape = patch[AppearanceOverrideKeys.shape]?.toString();
+    if (rawShape != null) {
+      for (final value in UIModuleShape.values) {
+        if (value.name == rawShape) {
+          shape = value;
+          break;
+        }
+      }
+    }
+
+    // 宽松读数值：历史存档里可能存成字符串形式（"12"）。
+    // 只写 `as num?` 会让它静默回落，等于打开编辑器就把值改了。
+    double? readNum(String key) {
+      final raw = patch[key];
+      if (raw is num) return raw.toDouble();
+      if (raw is String) return double.tryParse(raw.trim());
+      return null;
+    }
+
+    final rawColor = patch[AppearanceOverrideKeys.color];
+    final colorValue = rawColor is num
+        ? rawColor.toInt()
+        : (rawColor is String ? int.tryParse(rawColor.trim()) : null);
+
+    return module.copyWith(
+      color: colorValue == null ? null : Color(colorValue),
+      material: material,
+      shape: shape,
+      borderRadius: readNum(AppearanceOverrideKeys.borderRadius),
+      opacity: readNum(AppearanceOverrideKeys.opacity),
+    );
+  }
+
+  /// 从覆写表里剔除外观键，剩下的才是要并进 properties 的部分。
+  static Map<String, dynamic> stripFrom(Map<String, dynamic> patch) {
+    final result = Map<String, dynamic>.from(patch);
+    for (final key in all) {
+      result.remove(key);
+    }
+    return result;
+  }
+}

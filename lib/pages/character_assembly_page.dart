@@ -10,6 +10,7 @@ import '../models/card_entry_target.dart';
 import '../models/character_entry.dart';
 import '../models/status_bar_field.dart';
 import '../models/ui_assembly_info.dart';
+import '../widgets/keyboard_avoiding_stage.dart';
 import '../widgets/keyboard_safe_dialog.dart';
 import '../services/ui_engine/dashed_selection_border_painter.dart';
 import '../services/ui_engine/element_animation.dart';
@@ -30,6 +31,7 @@ import '../widgets/ui_assembly_runtime_view.dart';
 
 part 'character_assembly_page/logic.dart';
 part 'character_assembly_page/logic_composite.dart';
+part 'character_assembly_page/composite_child_editor.dart';
 part 'character_assembly_page/data_channel_controls.dart';
 part 'character_assembly_page/atom_field_groups.dart';
 
@@ -158,7 +160,7 @@ class CharacterAssemblyPage extends StatefulWidget {
 }
 
 class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
-    with _AssemblyLogic {
+    with _AssemblyLogic, _AssemblyCompositeLogic, _CompositeChildEditor {
   Offset _startTouchScreenPos = Offset.zero;
   Offset _startTouchElemOffset = Offset.zero;
 
