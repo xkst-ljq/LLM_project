@@ -163,6 +163,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _ => _pageRouterTemplate,
     };
   }
+
   void _initFromInfo(UIAssemblyInfo info) {
     _info = info;
     _nameCtrl = TextEditingController(text: info.name);
@@ -188,6 +189,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       if (mounted) setState(() {});
     });
   }
+
   void _restoreAssemblyPages() {
     _pages.clear();
     final rawPages = _info.pagesJson.trim();
@@ -531,12 +533,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _persistAssemblyElements();
     }
   }
+
   AssemblyPage get _activePage {
     return _pages.firstWhere(
       (page) => page.id == _activePageId,
       orElse: () => _pages.first,
     );
   }
+
   PropertyOverride _clonePropertyOverride(PropertyOverride override) {
     return override.copyWith(
       overrides: Map<String, dynamic>.from(
@@ -544,6 +548,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ),
     );
   }
+
   void _syncCanvasStateIntoActivePage() {
     final targetIndex = _pages.indexWhere((page) => page.id == _activePageId);
     if (targetIndex == -1) return;
@@ -554,6 +559,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         .map(_clonePropertyOverride)
         .toList();
   }
+
   void _loadActivePageState() {
     _elements
       ..clear()
@@ -568,6 +574,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       );
     _sanitizeActivePropertyOverrides();
   }
+
   int get _activePropertyOverrideCount => _activePropertyOverrides.length;
   void _sanitizeActivePropertyOverrides() {
     final validIds = <String>{};
@@ -595,12 +602,14 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       return false;
     });
   }
+
   List<PropertyOverride> _propertyOverridesForComposite(String sourceElementId) {
     return _activePropertyOverrides
         .where((override) => override.sourceElementId == sourceElementId)
         .map(_clonePropertyOverride)
         .toList();
   }
+
   List<AssemblyPage> _orderedPages() {
     final bases = _pages.where((page) => page.isBase).toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
@@ -623,17 +632,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
     return ordered;
   }
+
   AssemblyPage get _rootBasePage {
     final bases = _pages.where((page) => page.isBase).toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     return bases.first;
   }
+
   AssemblyPage? _pageById(String pageId) {
     for (final page in _pages) {
       if (page.id == pageId) return page;
     }
     return null;
   }
+
   AssemblyPage? _baseAncestorOf(AssemblyPage page) {
     if (page.isBase) return page;
     var parentId = page.parentPageId;
@@ -646,16 +658,19 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
     return null;
   }
+
   Map<String, dynamic> _linkerDataOf(UIModule module) {
     final raw = module.properties['linker'];
     if (raw is Map) return Map<String, dynamic>.from(raw);
     return <String, dynamic>{};
   }
+
   Map<String, dynamic>? _dataChannelOf(UIModule? module) {
     final raw = module?.properties['dataChannel'];
     if (raw is Map) return Map<String, dynamic>.from(raw);
     return null;
   }
+
   String _sourcePortForModule(UIModule module) {
     return switch (module.type) {
       'input' => 'text',
@@ -667,6 +682,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _ => 'value',
     };
   }
+
   String _fieldTypeForModule(UIModule module) {
     return switch (module.type) {
       'slider' || 'progress' => 'number',
@@ -674,6 +690,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _ => 'string',
     };
   }
+
   String _dataChannelSummary(Map<String, dynamic> channel) {
     final name = channel['semanticLabel']?.toString().trim();
     final label = name == null || name.isEmpty ? '未命名' : name;
@@ -696,6 +713,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 : '';
     return ai.isEmpty ? '$prefix · $label' : '$prefix · $label · $ai';
   }
+
   Color _dataChannelChipColor(Map<String, dynamic> channel) {
     final pendingStatus = channel['targetKind']?.toString() == 'status_field' &&
         (channel['targetId']?.toString().trim().isEmpty ?? true);
@@ -707,17 +725,20 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     if (write) return const Color(0xFFE65100);
     return const Color(0xFF546E7A);
   }
+
   List<UIElement> _textLabelCandidates() {
     return _elements
         .where((element) =>
             !element.isComposite && element.module?.type == 'text')
         .toList();
   }
+
   String _textValueOf(UIElement textElement) {
     return textElement.module?.properties['text']?.toString().trim() ??
         textElement.module?.name ??
         textElement.id;
   }
+
   String _resolveDataChannelName({
     required String semanticSource,
     required String manualName,
@@ -733,6 +754,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     if (semanticSource == 'component_name') return fallbackName;
     return manualName.trim();
   }
+
   List<StatusBarField> get _statusFields => widget.statusFields;
   List<CharacterEntry> get _cardEntries => widget.cardEntries;
   String get _cardType => widget.cardType;
@@ -753,6 +775,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
     return out;
   }
+
   CharacterEntry? _cardEntryById(String id) {
     final hit = _cardEntries.where((e) => e.id == id);
     return hit.isEmpty ? null : hit.first;
@@ -780,6 +803,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       pending: false,
     );
   }
+
   Map<String, dynamic> _buildDataChannelPayload({
     required String name,
     required String semanticSource,
@@ -1538,6 +1562,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         return '';
     }
   }
+
   void _scheduleInitialViewportCenter() {
     if (_didInitialViewportCenter) return;
     _didInitialViewportCenter = true;
@@ -1552,6 +1577,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       });
     });
   }
+
   void _setupEventBusListener() {
     LinkerService.initEventBusListener(_elements, () {
       if (!mounted) return;
@@ -1593,6 +1619,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       _history.removeAt(0);
     }
   }
+
   void _persistAssemblyElements() {
     _pushHistory();
     _sanitizeActivePropertyOverrides();
@@ -1608,6 +1635,7 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _info.pcbColorValue = _pcbColor.toARGB32();
     _info.pcbRadius = _pcbRadius;
   }
+
   dynamic _deepCloneValue(dynamic value) {
     if (value is Map) {
       return value.map(
