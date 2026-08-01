@@ -5545,14 +5545,15 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       );
     }
 
-    Future<void> closeAtomDialog(BuildContext ctx, String value) async {
-      FocusManager.instance.primaryFocus?.unfocus();
-      await Future<void>.delayed(const Duration(milliseconds: 16));
-      if (!ctx.mounted) return;
+    // 关闭交给 showKeyboardSafeDialog 统一处理，这里只负责 pop。
+    //
+    // 旧写法是 unfocus + 16ms 延迟，两个洞（见 HANDOFF 3.5h）：
+    // 点遮罩/返回键绕过按钮；16ms 只有一帧而键盘收起要 200~300ms。
+    void closeAtomDialog(BuildContext ctx, String value) {
       Navigator.pop(ctx, value);
     }
 
-    final result = await showDialog<String>(
+    final result = await showKeyboardSafeDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -6169,7 +6170,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         imageAssetController,
         historyLimitController,
         channelNameController,
-      channelNotifyTemplateController,
         channelNotifyTemplateController,
       ]);
       return;
@@ -6401,8 +6401,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     ]);
   }
 
+  /// 逐个释放，**允许重复调用**。
+  ///
+  /// 对已 dispose 的 controller 再调一次会抛
+  /// 「A TextEditingController was used after being disposed」，
+  /// 整棵 widget 树塌成 RenderErrorBox，随后 hit test 也跟着报错
+  /// （用户实测：改文本后点输入法保存必现）。
+  /// 根因是列表里混进了重复项——这里加一道去重兜底。
   void _disposeAtomEditorControllers(List<TextEditingController> controllers) {
+    final seen = <TextEditingController>{};
     for (final controller in controllers) {
+      if (!seen.add(controller)) continue;
       controller.dispose();
     }
   }
