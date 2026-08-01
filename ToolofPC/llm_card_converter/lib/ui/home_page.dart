@@ -11,6 +11,7 @@ import '../core/history_service.dart';
 import '../core/png_chara_reader.dart';
 import 'api_config_dialog.dart';
 import 'workspace_page.dart';
+import 'engine_probe_page.dart';
 
 /// 主页：选/拖入文件（支持多个、文件夹）→ 列表检查 → 开始转译。
 class HomePage extends StatefulWidget {
@@ -128,6 +129,18 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('文件'),
         actions: [
+          // 阶段 0：UI 引擎移植验证入口。
+          // 验证通过、预览面板落地后可移除。
+          IconButton(
+            icon: const Icon(Icons.bug_report_outlined),
+            tooltip: 'UI 引擎验证',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const EngineProbePage(),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: '设置',

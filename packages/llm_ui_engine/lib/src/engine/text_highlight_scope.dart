@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import '../../models/text_highlight_rule.dart';
+import '../models/text_highlight_rule.dart';
 
 /// 向 UI 引擎子树传递角色卡的正则着色规则。
 ///

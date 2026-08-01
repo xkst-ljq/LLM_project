@@ -8,6 +8,7 @@ import 'package:llm_project/models/session_state.dart';
 import 'package:llm_project/models/ui_assembly_info.dart';
 import 'package:llm_project/services/ui_engine/ui_models.dart';
 import 'package:llm_project/widgets/chat_assembly_mount.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 String _assemblyJson({
   required String id,

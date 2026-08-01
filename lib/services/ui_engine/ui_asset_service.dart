@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'ui_models.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 class UIAssetService {
   static const String _storageKey = 'global_ui_assets_flat_foundation_v2';

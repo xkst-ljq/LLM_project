@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/status_bar_field.dart';
-import '../services/ui_engine/data_channel_service.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// 状态栏字段定义编辑页。
 ///

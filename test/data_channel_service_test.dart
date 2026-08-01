@@ -5,6 +5,7 @@ import 'package:llm_project/models/session_state.dart';
 import 'package:llm_project/models/status_bar_field.dart';
 import 'package:llm_project/services/ui_engine/data_channel_service.dart';
 import 'package:llm_project/services/ui_engine/ui_models.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 UIElement _atom({
   required String id,

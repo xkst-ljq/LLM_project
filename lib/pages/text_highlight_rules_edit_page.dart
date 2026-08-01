@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/text_highlight_rule.dart';
-import '../services/text_highlight_engine.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// 文本着色规则编辑页。
 ///

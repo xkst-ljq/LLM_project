@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../models/character_entry.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../models/character_meta.dart';
-import '../models/status_bar_field.dart';
-import '../models/ui_assembly_info.dart';
 import 'character_assembly_page.dart';
 
 /// 角色 UI 拼装列表页：浏览已有 UI，新建 UI（选模式后进拼装页）

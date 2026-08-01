@@ -6,27 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
-import '../models/card_entry_target.dart';
-import '../models/character_entry.dart';
-import '../models/status_bar_field.dart';
-import '../models/ui_assembly_info.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../widgets/keyboard_safe_dialog.dart';
 import '../services/ui_engine/dashed_selection_border_painter.dart';
-import '../services/ui_engine/element_animation.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
-import '../services/ui_engine/data_channel_service.dart';
 import '../services/ui_engine/linker_connection_painter.dart';
-import '../services/ui_engine/linker_matrix_engine.dart';
-import '../services/ui_engine/message_action.dart';
-import '../services/ui_engine/linker_service.dart';
-import '../services/ui_engine/select_option.dart';
 import '../services/ui_engine/status_notification.dart';
 import '../services/ui_engine/ui_asset_service.dart';
-import '../services/ui_engine/ui_models.dart';
-import '../services/ui_engine/ui_renderer.dart';
-import '../services/ui_engine/avatar_scope.dart';
-import '../services/ui_engine/ui_semantic_role.dart';
-import '../widgets/ui_assembly_runtime_view.dart';
 
 part 'character_assembly_page/logic.dart';
 part 'character_assembly_page/logic_page.dart';

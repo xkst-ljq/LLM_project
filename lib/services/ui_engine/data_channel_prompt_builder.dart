@@ -1,12 +1,7 @@
 import 'dart:convert';
 
-import '../../models/card_entry_target.dart';
-import '../../models/character_entry.dart';
-import '../../models/session_state.dart';
-import '../../models/status_bar_field.dart';
-import '../../models/ui_assembly_info.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../status_bar_engine.dart';
-import 'ui_models.dart';
 
 /// 一条参与 Prompt 的数据通道描述。
 ///

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../services/ui_engine/select_option.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// 下拉单选框规格编辑器
 /// 对应 UI 模块类型：UIModuleType.select

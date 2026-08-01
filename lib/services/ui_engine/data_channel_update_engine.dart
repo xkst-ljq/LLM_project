@@ -1,5 +1,4 @@
-import '../../models/session_state.dart';
-import '../../models/status_bar_field.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../status_bar_engine.dart';
 import 'data_channel_prompt_builder.dart';
 

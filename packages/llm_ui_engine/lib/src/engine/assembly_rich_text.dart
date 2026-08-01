@@ -6,8 +6,8 @@ import 'package:flutter_html/flutter_html.dart' as fhtml;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md hide Text;
 
-import '../../models/text_highlight_rule.dart';
-import '../text_highlight_engine.dart';
+import '../models/text_highlight_rule.dart';
+import 'text_highlight_engine.dart';
 
 /// A11-2：Assembly 组件的富文本渲染。
 ///

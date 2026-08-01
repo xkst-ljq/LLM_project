@@ -7,6 +7,7 @@ import 'package:llm_project/models/session_state.dart';
 import 'package:llm_project/models/ui_assembly_info.dart';
 import 'package:llm_project/services/ui_engine/data_channel_prompt_builder.dart';
 import 'package:llm_project/services/ui_engine/ui_models.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// A13-1：注入位置可选（`[界面数据]` / `[玩家档案]`）。
 ///

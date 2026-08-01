@@ -1,0 +1,32 @@
+name: llm_ui_engine
+description: "LLM Project 的 UI 引擎：组件模型、联动器、数据通道与运行时渲染。主项目与 PC 转译工具共用同一份源码。"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 富文本渲染（text / message_flow 的 Markdown 与 HTML）
+  flutter_markdown: ^0.7.1
+  markdown: ^7.3.1
+  flutter_html: ^3.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # 水波折射着色器。
+  #
+  # 作为 package 资源声明后，运行时路径变为
+  # `packages/llm_ui_engine/shaders/ripple_refraction.frag`
+  # ——见 ripple_shader.dart 里的加载逻辑。
+  shaders:
+    - shaders/ripple_refraction.frag

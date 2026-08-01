@@ -5,7 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../services/android_download_service.dart';
-import '../services/ui_engine/ui_models.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../utils/asset_magic.dart';
 
 /// 复合组件的导出 / 导入。

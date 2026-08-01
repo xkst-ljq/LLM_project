@@ -2,8 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'ui_models.dart';
-import 'ui_renderer.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// 选中态虚线外框。
 ///

@@ -1,8 +1,6 @@
 import 'dart:convert';
 
-import '../services/ui_engine/ui_models.dart';
-import 'status_bar_field.dart';
-import 'text_highlight_rule.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// 角色扩展元信息。
 ///

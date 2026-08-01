@@ -173,7 +173,7 @@ enum PipelineStage { rule, aiClassify, refine }
 
 ## 三、施工计划
 
-### 阶段 0：path 依赖可行性验证 ⬜ **必须最先做**
+### 阶段 0：path 依赖可行性验证 🟡 **待用户本地验证**
 
 **为什么排第一**：这是「成本最低、风险最高」的一步。
 若不通，后面所有工作的前提都不成立。
@@ -192,8 +192,33 @@ enum PipelineStage { rule, aiClassify, refine }
 **验收**：验证页面能渲染出一份含 text / progress / button 的 UI，
 且 `flutter run -d windows` 无报错。
 
-**若不通的备选**：把渲染闭包抽成 `packages/ui_engine/` 独立 local package，
-主项目与工具都依赖它。成本更高但更规范。
+**实际结果：直接采用了备选方案。** 探查发现两个阻碍，
+使「path 指向整个主项目」不可行：
+
+1. **依赖冲突**：`desktop_drop` 主项目 `^0.5.0` vs 工具 `^0.7.1`，版本区间无交集；
+2. **无关依赖**：会把 `sqflite` / `image_picker` 等拖进工具，
+   而渲染闭包**只需要 3 个第三方包**（`flutter_markdown` / `markdown` / `flutter_html`）。
+
+因此抽出 `packages/llm_ui_engine/`（25 个文件），主项目与工具都依赖它。
+**仍是同一份源码，不是拷贝**，不存在漂移。
+
+已完成的改动：
+
+| 项 | 内容 |
+|---|---|
+| 新建包 | `packages/llm_ui_engine/`，`lib/src/{models,engine,widgets}` + 统一导出 |
+| 着色器 | 随包提供，加载路径改为 `packages/llm_ui_engine/shaders/...` |
+| 主项目 | 删除原 25 个文件与根目录 `shaders/`，改 `package:` 引用 |
+| import | 主项目 + 测试共 46 个文件改写（含 27 个原本靠间接引用的） |
+| 工具 | 加 path 依赖 + `engine_probe_page.dart` 验证页，主页放大镜图标进入 |
+
+**验证页覆盖四类渲染路径**：surface（材质/圆角/ARGB）、text（绘制）、
+progress（数值量程）、button（交互热区 + keyAction 标记）。
+顶部三个指示灯分别报告「模型解析 / 着色器 / 渲染」。
+
+⚠️ 写验证 JSON 时**又踩了一次 3.5j**：keyAction 键名误写成 `is_key_action`，
+正确是 `keyAction`（`UISemanticRole.propKey`）。已修正——
+这恰好说明阶段 2 的强校验是必需的。
 
 ---
 

@@ -3,13 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../models/character_meta.dart';
-import '../models/session_state.dart';
-import '../models/status_bar_field.dart';
-import '../models/ui_assembly_info.dart';
-import '../services/ui_engine/message_action.dart';
-import '../services/ui_engine/message_flow_scope.dart';
-import '../services/ui_engine/ui_semantic_role.dart';
-import 'ui_assembly_runtime_view.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// A10-1：聊天页挂载 Assembly UI 的共性基础设施。
 ///

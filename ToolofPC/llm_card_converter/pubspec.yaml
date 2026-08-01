@@ -31,6 +31,13 @@ dependencies:
   # 自定义窗口标题栏（去系统黑边，把最小化/最大化/关闭做进应用内）
   window_manager: ^0.4.2
 
+  # UI 引擎：与主项目共用同一份源码（不是拷贝）。
+  #
+  # 用途：预览转译出的 UI、以及后续的 AI UI 设计工作台。
+  # 引擎改动后本工具下次编译自动跟上，不存在两份实现漂移的问题。
+  llm_ui_engine:
+    path: ../../packages/llm_ui_engine
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

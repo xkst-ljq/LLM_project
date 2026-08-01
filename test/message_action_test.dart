@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llm_project/services/ui_engine/avatar_scope.dart';
 import 'package:llm_project/services/ui_engine/linker_matrix_engine.dart';
 import 'package:llm_project/services/ui_engine/message_action.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 void main() {
   group('MessageAction 取值', () {

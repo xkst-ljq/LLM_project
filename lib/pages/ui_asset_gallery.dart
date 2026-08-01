@@ -4,10 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../services/ui_composite_asset_service.dart';
-import '../services/ui_engine/linker_service.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../services/ui_engine/ui_asset_service.dart';
-import '../services/ui_engine/ui_models.dart';
-import '../services/ui_engine/ui_renderer.dart';
 
 class UIAssetGallery extends StatefulWidget {
   const UIAssetGallery({super.key});

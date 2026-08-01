@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llm_project/services/ui_engine/linker_matrix_engine.dart';
 import 'package:llm_project/services/ui_engine/linker_service.dart';
 import 'package:llm_project/services/ui_engine/ui_models.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// A13-3：数值求和汇总（`sum_to_display`）。
 ///

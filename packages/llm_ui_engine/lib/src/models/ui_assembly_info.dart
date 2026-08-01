@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 
-import '../services/ui_engine/ui_models.dart';
+import '../engine/ui_models.dart';
 
 /// 角色卡 UI 组装方案的轻量快照
 class UIAssemblyInfo {

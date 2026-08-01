@@ -1,6 +1,6 @@
 import 'dart:convert';
 import '../models/character_card.dart';
-import '../models/character_entry.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 class ProtagonistSettingUtils {
   static const Map<String, String> detailLabels = {

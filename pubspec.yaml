@@ -31,6 +31,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # UI 引擎（组件模型 / 联动器 / 数据通道 / 运行时渲染）。
+  # 抽成本地 package，与 PC 转译工具共用同一份源码，避免拷贝漂移。
+  llm_ui_engine:
+    path: packages/llm_ui_engine
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -75,13 +80,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # A12：水波折射着色器。
+  # A12 水波折射着色器已随 `packages/llm_ui_engine` 提供。
   #
-  # 方案 A（片元着色器）是唯一能让**组件内容本身**发生扭曲的做法。
-  # Canvas 叠加绘制（前五版水波）无论怎么调渐变与混合模式，
-  # 底层像素都不会移动，用户评价「很像是两个图层」——那是事实而非观感。
-  shaders:
-    - shaders/ripple_refraction.frag
+  # 不要在这里重复声明：同一份资源注册两次会让
+  # `packages/llm_ui_engine/shaders/...` 与 `shaders/...` 两条路径并存，
+  # 而引擎按前者加载（见 ripple_shader.dart）。
 
   # To add assets to your application, add an assets section, like this:
   # assets:

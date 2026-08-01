@@ -1,7 +1,7 @@
-import '../../models/card_entry_target.dart';
-import '../../models/session_state.dart';
-import '../../models/status_bar_field.dart';
-import '../../models/ui_assembly_info.dart';
+import '../models/card_entry_target.dart';
+import '../models/session_state.dart';
+import '../models/status_bar_field.dart';
+import '../models/ui_assembly_info.dart';
 import 'ui_models.dart';
 
 /// 进入编辑器那一刻，某个已绑定组件的值与量程。

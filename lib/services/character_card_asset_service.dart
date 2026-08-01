@@ -9,9 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
-import '../services/ui_engine/element_animation.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../services/ui_engine/ui_asset_service.dart';
-import '../services/ui_engine/ui_models.dart';
 import '../utils/asset_magic.dart';
 import '../utils/id_utils.dart';
 

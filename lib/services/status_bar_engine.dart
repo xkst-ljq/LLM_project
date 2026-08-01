@@ -1,4 +1,4 @@
-import '../models/status_bar_field.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// 标签块工具（通用：将来背包 / 动态设定演化等"LLM 返回变更指令"的场景共用）。
 ///

@@ -54,8 +54,11 @@ class RippleShaderLoader {
     if (_program != null || _loading || _failed) return;
     _loading = true;
     try {
+      // 作为独立 package 提供着色器时，资源路径必须带 `packages/<包名>/` 前缀。
+      // 直接写 'shaders/xxx.frag' 只在「资源属于当前应用」时有效；
+      // 从 package 引用会找不到文件，表现为水波动画静默失效。
       _program = await ui.FragmentProgram.fromAsset(
-        'shaders/ripple_refraction.frag',
+        'packages/llm_ui_engine/shaders/ripple_refraction.frag',
       );
     } catch (error, stack) {
       // 着色器缺失或编译失败时不应拖垮整个 UI，
