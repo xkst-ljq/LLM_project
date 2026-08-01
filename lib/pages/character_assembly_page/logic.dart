@@ -5429,9 +5429,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final maxLengthController = TextEditingController(
       text: _intProp(module.properties, 'maxLength')?.toString() ?? '',
     );
-    final stepController = TextEditingController(
-      text: (_numProp(module.properties, 'step') ?? 1.0).toStringAsFixed(2),
-    );
     final optionsController = TextEditingController(
       text: SelectOption.parseList(module.properties['options'])
           .map((option) => option.label == option.value
@@ -5558,7 +5555,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       longPressThresholdController,
       placeholderController,
       maxLengthController,
-      stepController,
       optionsController,
       selectDefaultController,
       imageUrlController,
@@ -5662,18 +5658,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           },
                         ),
                       ),
-                    ],
-                    if (type == 'progress') ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: numberField(minController, '最小值')),
-                          const SizedBox(width: 10),
-                          Expanded(child: numberField(maxController, '最大值')),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      numberField(currentController, '当前值'),
                     ],
 
                     if (type == 'button') ...[
@@ -5779,24 +5763,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                           if (value == null) return;
                           setDialogState(() => textHAlign = value);
                         },
-                      ),
-                    ],
-                    if (type == 'slider') ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: numberField(minController, '最小值')),
-                          const SizedBox(width: 10),
-                          Expanded(child: numberField(maxController, '最大值')),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: numberField(currentController, '当前值')),
-                          const SizedBox(width: 10),
-                          Expanded(child: numberField(stepController, '步长')),
-                        ],
                       ),
                     ],
                     if (type == 'select') ...[
@@ -6018,12 +5984,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                   // 保存时 props['min'] = readDouble(minController)
                                   // 会用打开那一刻的旧值，把刚同步好的
                                   // 量程与数值整个覆盖回去。
+                                  // 已迁移的数值型类型用字段组自己的
+                                  // controller；否则用本对话框的旧变量。
+                                  final range = fieldGroup?.rangeControllers;
                                   _fillControllersFromStatusField(
                                     channel: latest,
                                     moduleType: module.type,
-                                    minController: minController,
-                                    maxController: maxController,
-                                    currentController: currentController,
+                                    minController: range?.min ?? minController,
+                                    maxController: range?.max ?? maxController,
+                                    currentController:
+                                        range?.current ?? currentController,
                                     textController: textController,
                                     selectDefaultController:
                                         selectDefaultController,
@@ -6131,10 +6101,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           // 已迁移的类型由字段组统一写回，不再散落在这条 if 链里。
           if (fieldGroup != null) {
             fieldGroup.applyTo(props);
-          } else if (type == 'progress') {
-            props['min'] = readDouble(minController, 0.0);
-            props['max'] = readDouble(maxController, 100.0);
-            props['current'] = readDouble(currentController, 0.0);
           } else if (type == 'button') {
             // 热区不再承载文案：清掉历史遗留键，
             // 否则旧卡里存着的 text 会在升级后继续被渲染端误读。
@@ -6182,17 +6148,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             } else {
               props['textHorizontalAlign'] = textHAlign;
             }
-          } else if (type == 'slider') {
-            final minVal = readDouble(minController, 0.0);
-            var maxVal = readDouble(maxController, 100.0);
-            if (maxVal < minVal) maxVal = minVal;
-            props['min'] = minVal;
-            props['max'] = maxVal;
-            props['current'] = readDouble(currentController, minVal)
-                .clamp(minVal, maxVal)
-                .toDouble();
-            final step = readDouble(stepController, 1.0).abs();
-            props['step'] = step <= 0 ? 1.0 : step;
           } else if (type == 'select') {
             final parsed = <Map<String, dynamic>>[];
             for (final rawLine in optionsController.text.split('\n')) {

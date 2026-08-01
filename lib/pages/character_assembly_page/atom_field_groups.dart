@@ -70,6 +70,15 @@ abstract class AtomFieldGroup {
   /// [props] 是 module.properties 的深拷贝，直接改即可。
   void applyTo(Map<String, dynamic> props);
 
+  /// 数值型字段组可实现它，接收来自数据通道专项页的量程回读。
+  ///
+  /// 「双写覆盖」（HANDOFF 3.5b）：专项页绑定状态字段后会改写
+  /// `_elements`，而字段组里的控制器仍是打开那一刻的旧值。
+  /// 不回读的话，保存时会用旧量程覆盖掉刚绑好的。
+  ///
+  /// 返回 null 表示本类型没有量程概念（如 text / switch）。
+  RangeControllers? get rangeControllers => null;
+
   /// 本组持有的控制器，交给对话框统一托管。
   ///
   /// **不要自己在 `await showDialog(...)` 之后 dispose**：
@@ -215,6 +224,22 @@ class TextFieldGroup extends AtomFieldGroup {
       ];
 }
 
+/// 数值型字段组对外暴露的三个量程控制器。
+///
+/// 让 `_fillControllersFromStatusField` 直接写这些 controller，
+/// 而不是让字段组再维护一份影子状态——两份状态必然漂移。
+class RangeControllers {
+  const RangeControllers({
+    required this.min,
+    required this.max,
+    required this.current,
+  });
+
+  final TextEditingController min;
+  final TextEditingController max;
+  final TextEditingController current;
+}
+
 /// switch 组件：只有一个「默认开启」。
 class SwitchFieldGroup extends AtomFieldGroup {
   SwitchFieldGroup(UIModule module)
@@ -350,6 +375,128 @@ class IndicatorFieldGroup extends AtomFieldGroup {
   List<ChangeNotifier> get disposables => [_dotSizeController];
 }
 
+/// progress 组件：最小值 / 最大值 / 当前值。
+///
+/// 与 [SliderFieldGroup] 的差别**刻意保留**：progress 不做区间夹取，
+/// 因为它常被 linker 驱动，作者填的只是初值；
+/// slider 是玩家直接拖的，越界会让滑块跑到轨道外。
+class ProgressFieldGroup extends AtomFieldGroup {
+  ProgressFieldGroup(UIModule module)
+      : _min = TextEditingController(
+          text: (_readNum(module.properties['min']) ?? 0.0).toStringAsFixed(0),
+        ),
+        _max = TextEditingController(
+          text:
+              (_readNum(module.properties['max']) ?? 100.0).toStringAsFixed(0),
+        ),
+        _current = TextEditingController(
+          text: (_readNum(module.properties['current']) ?? 0.0)
+              .toStringAsFixed(0),
+        );
+
+  final TextEditingController _min;
+  final TextEditingController _max;
+  final TextEditingController _current;
+
+  @override
+  List<Widget> buildFields(AtomFieldContext ctx) => [
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: ctx.numberField(_min, '最小值')),
+            const SizedBox(width: 10),
+            Expanded(child: ctx.numberField(_max, '最大值')),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ctx.numberField(_current, '当前值'),
+      ];
+
+  @override
+  void applyTo(Map<String, dynamic> props) {
+    props['min'] = double.tryParse(_min.text.trim()) ?? 0.0;
+    props['max'] = double.tryParse(_max.text.trim()) ?? 100.0;
+    props['current'] = double.tryParse(_current.text.trim()) ?? 0.0;
+  }
+
+  @override
+  RangeControllers get rangeControllers =>
+      RangeControllers(min: _min, max: _max, current: _current);
+
+  @override
+  List<ChangeNotifier> get disposables => [_min, _max, _current];
+}
+
+/// slider 组件：最小值 / 最大值 / 当前值 / 步长。
+///
+/// 保存时做三重校正（与迁移前一致）：
+///   1. max < min 时把 max 抬到 min，避免出现负区间；
+///   2. current 夹取到 [min, max]，否则滑块会跑到轨道外；
+///   3. step 取绝对值，且 0 回落为 1——步长为 0 会让滑块拖不动。
+class SliderFieldGroup extends AtomFieldGroup {
+  SliderFieldGroup(UIModule module)
+      : _min = TextEditingController(
+          text: (_readNum(module.properties['min']) ?? 0.0).toStringAsFixed(0),
+        ),
+        _max = TextEditingController(
+          text:
+              (_readNum(module.properties['max']) ?? 100.0).toStringAsFixed(0),
+        ),
+        _current = TextEditingController(
+          text: (_readNum(module.properties['current']) ?? 0.0)
+              .toStringAsFixed(0),
+        ),
+        _step = TextEditingController(
+          text: (_readNum(module.properties['step']) ?? 1.0).toStringAsFixed(2),
+        );
+
+  final TextEditingController _min;
+  final TextEditingController _max;
+  final TextEditingController _current;
+  final TextEditingController _step;
+
+  @override
+  List<Widget> buildFields(AtomFieldContext ctx) => [
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: ctx.numberField(_min, '最小值')),
+            const SizedBox(width: 10),
+            Expanded(child: ctx.numberField(_max, '最大值')),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: ctx.numberField(_current, '当前值')),
+            const SizedBox(width: 10),
+            Expanded(child: ctx.numberField(_step, '步长')),
+          ],
+        ),
+      ];
+
+  @override
+  void applyTo(Map<String, dynamic> props) {
+    final minVal = double.tryParse(_min.text.trim()) ?? 0.0;
+    var maxVal = double.tryParse(_max.text.trim()) ?? 100.0;
+    if (maxVal < minVal) maxVal = minVal;
+    props['min'] = minVal;
+    props['max'] = maxVal;
+    props['current'] = (double.tryParse(_current.text.trim()) ?? minVal)
+        .clamp(minVal, maxVal)
+        .toDouble();
+    final step = (double.tryParse(_step.text.trim()) ?? 1.0).abs();
+    props['step'] = step <= 0 ? 1.0 : step;
+  }
+
+  @override
+  RangeControllers get rangeControllers =>
+      RangeControllers(min: _min, max: _max, current: _current);
+
+  @override
+  List<ChangeNotifier> get disposables => [_min, _max, _current, _step];
+}
+
 /// 宽松读数值。
 ///
 /// 与 `_numProp` 同款：**字符串形式的数字也要认**。
@@ -376,6 +523,10 @@ class AtomFieldGroupRegistry {
         return LineFieldGroup(module);
       case 'indicator':
         return IndicatorFieldGroup(module);
+      case 'progress':
+        return ProgressFieldGroup(module);
+      case 'slider':
+        return SliderFieldGroup(module);
       default:
         return null;
     }

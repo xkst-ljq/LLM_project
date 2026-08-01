@@ -4847,6 +4847,30 @@ direction: none | upload_only | bidirectional
 
 ---
 
+### 4.7 Assembly 复合组件编辑页重做 —— **待办（用户已提出）**
+
+用户原话：
+> 等会 logic 改完后准备着手修改 assembly 的复合组件的编辑页，
+> 这一个有很多问题和交互别扭。
+
+**排在 `_showAtomInstanceEditorDialog` 字段组迁移之后做**，
+理由：那次迁移正在建立「每类型一个字段组」的模式，
+复合件编辑页大概率能复用同一套结构，先把模式跑通再动它。
+
+**动手前要先问清楚「哪里别扭」**——用户说的是「很多问题」，
+不要自己猜着改。已知的相关入口：
+- `_showCompositeOverrideEntryDialog`（328 行）
+- `_showCompositeOverrideValueEditor`（181 行）
+- `_showCompositeOverrideBindingEditor`（125 行）
+- `_showExposedDataChannelEditor`（199 行）
+- `_instantiateComposite`（118 行）
+
+**已知的历史坑**（改之前务必读）：
+- HANDOFF 3.5b「双写覆盖」——从对话框进子页面，返回后必须重新回读
+  **全部**相关状态，且不能用闭包捕获的 `module`
+- 复合件是黑盒，外部只能连到 `exposedPorts` 声明的子元素
+- 实例覆写不回写资产库模板（见 logic.dart 里多处注释）
+
 ## 五、阻塞等级定义
 
 ### P0：立即阻塞，单独修复
