@@ -4,7 +4,12 @@ publish_to: 'none'
 version: 0.1.0
 
 environment:
-  sdk: ^3.5.0
+  # 与主项目保持一致。
+  #
+  # 包的约束比宿主宽松本身合法（^3.5.0 已包含 3.11.5），
+  # 但求解依赖时多一个变量就多一分失败可能，
+  # 这里直接对齐，避免 `pub get` 在版本求解阶段出意外。
+  sdk: ^3.11.5
 
 dependencies:
   flutter:
