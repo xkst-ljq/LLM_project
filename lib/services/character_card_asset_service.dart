@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/database_service.dart';
+import '../services/ui_engine/ui_asset_service.dart';
+import '../services/ui_engine/ui_models.dart';
 import '../utils/asset_magic.dart';
 import '../utils/id_utils.dart';
 
@@ -511,5 +513,93 @@ class CharacterCardAssetService {
     c['background_id'] = '';
 
     await DatabaseService.insertCharacter(c);
+
+    // 把卡里用到的复合组件收进资产库。
+    //
+    // 用户反馈：「复合组件我觉得在人物卡导入后就应该放进 UI 组件库里面」。
+    // 在此之前导入只写 characters 表，卡里的复合件对作者完全不可见——
+    // 想拿来改一改、或在 Studio 里拆开看构造都做不到。
+    await harvestComposites(c['meta_json']?.toString() ?? '');
+  }
+
+  /// 从角色卡的 meta 里提取全部复合组件，存入资产库。
+  ///
+  /// 失败不影响导入本身：角色卡已经入库了，
+  /// 收不收得到复合件只是锦上添花，不该让整个导入报错。
+  static Future<void> harvestComposites(String metaJson) async {
+    if (metaJson.trim().isEmpty) return;
+    try {
+      final meta = jsonDecode(metaJson);
+      if (meta is! Map) return;
+      final assemblies = meta['ui_assemblies'];
+      if (assemblies is! List) return;
+
+      final service = UIAssetService();
+      await service.ensureLoaded();
+      // 按「名称 + 子元素数」去重：同一张卡的多套 UI 常复用同一个复合件，
+      // 逐个塞会在库里堆出一串同名项。
+      final existing = <String>{
+        for (final c in service.getAllComposites())
+          '${c.name}|${c.children.length}',
+      };
+
+      var added = 0;
+      for (final raw in assemblies) {
+        final info = jsonDecode(raw is String ? raw : jsonEncode(raw));
+        if (info is! Map) continue;
+        final pagesRaw = info['pages'];
+        if (pagesRaw == null) continue;
+        final pages = jsonDecode(
+          pagesRaw is String ? pagesRaw : jsonEncode(pagesRaw),
+        );
+        if (pages is! List) continue;
+        for (final page in pages) {
+          if (page is! Map) continue;
+          final elements = page['elements'];
+          if (elements is! List) continue;
+          for (final el in _walkComposites(elements)) {
+            final composite = UIComposite.fromJson(
+              Map<String, dynamic>.from(el['composite'] as Map),
+            );
+            final key = '${composite.name}|${composite.children.length}';
+            if (!existing.add(key)) continue;
+            // 换新 id，避免与库里既有资产撞号。
+            // UIComposite.copyWith **不接受 id**（id 是 final 且原样继承），
+            // 只能走构造函数重建。
+            service.addComposite(UIComposite(
+              id: 'imp_${IdUtils.timestampId()}_$added',
+              name: composite.name,
+              layoutType: composite.layoutType,
+              children: composite.children,
+              material: composite.material,
+              borderRadius: composite.borderRadius,
+              color: composite.color,
+              opacity: composite.opacity,
+              renderingMode: composite.renderingMode,
+              exposedPorts: composite.exposedPorts,
+            ));
+            added++;
+          }
+        }
+      }
+      if (added > 0) debugPrint('导入角色卡：收录 $added 个复合组件');
+    } catch (e) {
+      debugPrint('收录复合组件失败（不影响角色卡导入）: $e');
+    }
+  }
+
+  /// 递归找出所有复合件节点（含嵌套在别的复合件里的）。
+  static Iterable<Map<String, dynamic>> _walkComposites(
+    List<dynamic> elements,
+  ) sync* {
+    for (final el in elements) {
+      if (el is! Map) continue;
+      final m = Map<String, dynamic>.from(el);
+      if (m['isComposite'] == true && m['composite'] is Map) {
+        yield m;
+        final kids = (m['composite'] as Map)['children'];
+        if (kids is List) yield* _walkComposites(kids);
+      }
+    }
   }
 }

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/character_card.dart';
 import '../services/android_download_service.dart';
+import '../services/character_card_asset_service.dart';
 import '../services/database_service.dart';
 import '../utils/asset_magic.dart';
 import '../utils/id_utils.dart';
@@ -605,5 +606,11 @@ class CharacterCardPngAssetService {
     c['background_id'] = '';
 
     await DatabaseService.insertCharacter(c);
+
+    // 与 .llmcard 导入同款：把卡里的复合组件收进资产库。
+    // 两条导入路径共用一份实现，避免只改一边而漂移。
+    await CharacterCardAssetService.harvestComposites(
+      c['meta_json']?.toString() ?? '',
+    );
   }
 }
