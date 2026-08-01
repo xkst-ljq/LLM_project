@@ -536,14 +536,22 @@ class CharacterCardAssetService {
 
       final service = UIAssetService();
       await service.ensureLoaded();
-      // 按「名称 + 子元素数」去重：同一张卡的多套 UI 常复用同一个复合件，
-      // 逐个塞会在库里堆出一串同名项。
+      // 按**内容指纹**去重。
+      //
+      // 不能用角色卡 id 做键：导入时 `c['id'] = newId` 会换一个新 id
+      // （见上方 importCharacterCard），同一张卡导入两次得到两个不同 id，
+      // 照样会重复收录。
+      //
+      // 指纹只看复合件自身的内容，因此：
+      //   · 同一张卡反复导入 → 指纹相同 → 只存一份（用户诉求）
+      //   · 不同卡里用了同一个复合件 → 也只存一份
+      //   · 作者改过内容再导出 → 指纹变了 → 作为新资产收录
       final existing = <String>{
-        for (final c in service.getAllComposites())
-          '${c.name}|${c.children.length}',
+        for (final c in service.getAllComposites()) _compositeFingerprint(c),
       };
 
       var added = 0;
+      var skipped = 0;
       for (final raw in assemblies) {
         final info = jsonDecode(raw is String ? raw : jsonEncode(raw));
         if (info is! Map) continue;
@@ -561,8 +569,10 @@ class CharacterCardAssetService {
             final composite = UIComposite.fromJson(
               Map<String, dynamic>.from(el['composite'] as Map),
             );
-            final key = '${composite.name}|${composite.children.length}';
-            if (!existing.add(key)) continue;
+            if (!existing.add(_compositeFingerprint(composite))) {
+              skipped++;
+              continue;
+            }
             // 换新 id，避免与库里既有资产撞号。
             // UIComposite.copyWith **不接受 id**（id 是 final 且原样继承），
             // 只能走构造函数重建。
@@ -582,10 +592,77 @@ class CharacterCardAssetService {
           }
         }
       }
-      if (added > 0) debugPrint('导入角色卡：收录 $added 个复合组件');
+      if (added > 0 || skipped > 0) {
+        debugPrint('导入角色卡：收录 $added 个复合组件'
+            '${skipped > 0 ? '，跳过 $skipped 个已存在的（内容指纹相同）' : ''}');
+      }
     } catch (e) {
       debugPrint('收录复合组件失败（不影响角色卡导入）: $e');
     }
+  }
+
+  /// 复合件的内容指纹。
+  ///
+  /// **刻意排除 id**：每次导入都会重新分配 id，算进去的话指纹永远不同，
+  /// 去重就失效了。子元素 id 同理——它们只是内部引用，
+  /// 换一批 id 不改变「这是同一个组件」的事实。
+  ///
+  /// 名称也排除在外：作者可能只是改了个名字，内容一模一样，
+  /// 不该因此多存一份。
+  static String _compositeFingerprint(UIComposite c) {
+    final buffer = StringBuffer()
+      ..write(c.layoutType)
+      ..write('|')
+      ..write(c.material.index)
+      ..write('|')
+      ..write(c.borderRadius.toStringAsFixed(1))
+      ..write('|')
+      ..write(c.color.toARGB32())
+      ..write('|')
+      ..write(c.opacity.toStringAsFixed(2))
+      ..write('|')
+      ..write(c.renderingMode.index)
+      ..write('|ports:')
+      ..write((c.exposedPorts ?? const []).length)
+      ..write('|kids:');
+    for (final child in c.children) {
+      buffer
+        ..write(child.isComposite ? 'C' : (child.module?.type ?? '?'))
+        ..write('@')
+        ..write(child.offset.dx.toStringAsFixed(1))
+        ..write(',')
+        ..write(child.offset.dy.toStringAsFixed(1))
+        ..write(':')
+        ..write(child.size.width.toStringAsFixed(1))
+        ..write('x')
+        ..write(child.size.height.toStringAsFixed(1));
+      final module = child.module;
+      if (module != null) {
+        buffer
+          ..write('#')
+          ..write(module.name)
+          ..write('#')
+          ..write(module.color.toARGB32());
+        // linker 只取方案名：source/target 存的是会被重映射的元素 id，
+        // 算进指纹会让「同一个组件」在每次导入后都算成新的。
+        final linker = module.properties['linker'];
+        if (linker is Map) {
+          buffer
+            ..write('#lk:')
+            ..write(linker['scheme'])
+            ..write('/')
+            ..write(linker['sourcePort'] ?? '');
+        }
+      }
+      buffer.write(';');
+    }
+    // 取长度 + 简单散列，避免键过长撑大内存。
+    final raw = buffer.toString();
+    var hash = 0;
+    for (var i = 0; i < raw.length; i++) {
+      hash = (hash * 31 + raw.codeUnitAt(i)) & 0x7FFFFFFF;
+    }
+    return '${c.children.length}:${raw.length}:$hash';
   }
 
   /// 递归找出所有复合件节点（含嵌套在别的复合件里的）。
