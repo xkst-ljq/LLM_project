@@ -518,18 +518,21 @@ entries = [
     {"id": "system_summary", "title": "系统概要",
      "content": "礁岩上的手工作坊，掐着潮位干活。本卡为 UI 测试卡，专攻交互逻辑。",
      "enabled": True, "is_custom": False, "sort_order": 1},
+    # ⚠️ 子字段名必须与模板完全一致，见 card_entry_target.fieldLabelOf。
     {"id": "system_details", "title": "系统详情",
      "content": json.dumps({
-        "world": "退潮才露出的礁岩作坊，涨潮即停工。",
-        "tone": "短句、务实、少形容词。",
-        "ui": "scene 含 2 个平级页 + 1 个叠加页，按钮与手势两种换页方式并存。",
+        "world_setting": "建在退潮才露出的礁岩上的手工作坊，涨潮时整座泡在水里。",
+        "worldview": "一切工序都掐着潮位做；潮水是这里唯一的时钟。",
+        "system_mechanism": "玩家在工作台调配料、开熔炉，"
+                            "在计算工坊看配比换算，叠加页可查当日配方。",
      }, ensure_ascii=False),
      "enabled": True, "is_custom": False, "sort_order": 2},
-    {"id": "protagonist", "title": "主角",
+    {"id": "protagonist", "title": "主角设定",
      "content": json.dumps({
-        "name": "", "relationship": "新来的学徒",
-        "body": "", "psychology": "急着证明自己。",
-        "background": "刚被送来学手艺。",
+        "name": "",
+        "detail": {"race": "人类", "gender": "", "age": "十六七",
+                   "body": "手上还没有茧。",
+                   "background": "刚被送来学手艺，急着证明自己。"},
      }, ensure_ascii=False),
      "enabled": True, "is_custom": False, "sort_order": 3},
     {"id": "plot", "title": "剧情",

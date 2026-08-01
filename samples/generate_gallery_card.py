@@ -440,17 +440,21 @@ entries = [
     {"id": "system_summary", "title": "系统概要",
      "content": "深空观测站的值守 AI。本卡为 UI 测试卡，专攻图形与动画。",
      "enabled": True, "is_custom": False, "sort_order": 1},
+    # ⚠️ 子字段名必须与模板完全一致，见 card_entry_target.fieldLabelOf。
     {"id": "system_details", "title": "系统详情",
      "content": json.dumps({
-        "world": "大气层边缘的无人观测站，只剩一台 AI 值守。",
-        "tone": "冷静、简短、偶有失当的比喻。",
-        "ui": "scene 内含 4 个平级页，全部用按钮换页。",
+        "world_setting": "大气层边缘的无人观测站，编号 VESPER-4017。"
+                         "上一批人类观测员在第七年撤离。",
+        "worldview": "深空链路时断时续，星轨扰动被认为是可记录但不可解释的现象。",
+        "system_mechanism": "玩家远程接入观测站，通过四个面板"
+                            "（主控台/图库/动画演示台/说明）与 VESPER 交互。",
      }, ensure_ascii=False),
      "enabled": True, "is_custom": False, "sort_order": 2},
-    {"id": "protagonist", "title": "主角",
+    {"id": "protagonist", "title": "主角设定",
      "content": json.dumps({
-        "name": "", "relationship": "远程接入的技术员",
-        "body": "", "psychology": "", "background": "例行巡检。",
+        "name": "",
+        "detail": {"race": "人类", "gender": "", "age": "",
+                   "body": "", "background": "远程接入的技术员，例行巡检。"},
      }, ensure_ascii=False),
      "enabled": True, "is_custom": False, "sort_order": 3},
     {"id": "plot", "title": "剧情",

@@ -68,7 +68,39 @@ meta.ui_assemblies: [ JSON字符串, ... ]   ← 注意是字符串数组，不�
 | **sourceComponentId** | 数据通道里这个值必须等于所在元素的 `id` |
 | **id 唯一** | 同一张卡内所有元素 id 不得重复 |
 
-### 2.9 两条会让 UI「完全不显示」的硬约束
+### 2.8 固定条目必须填**结构化子字段**，不是纯字符串
+
+固定条目除了 id 要对，`content` 还必须是**带规定子字段的 JSON 对象**。
+只塞一个字符串的话，编辑页显示不出「姓」「名」这类子项目标题
+（用户实测反馈）。
+
+权威来源：`character_edit_page._createDefaultEntries`（id/标题/字段）
+　　　　　`card_entry_target.fieldLabelOf`（字段中文名）
+
+### character 卡
+
+| id | 标题 | content 结构 |
+|---|---|---|
+| `name_entry` | 名称 | `{last_name:姓, first_name:名, other:其他}` |
+| `relationship` | 与用户关系 | **纯文本** |
+| `body` | 身体数据 | `{race, gender, age, height, weight, measurements, other}` |
+| `psychology` | 心理数据 | `{personality, thoughts, interests}` |
+| `background` | 背景数据 | `{origin, experiences, current}` |
+
+### system 卡
+
+| id | 标题 | content 结构 |
+|---|---|---|
+| `system_name` | 系统名称 | **纯文本** |
+| `system_summary` | 系统概要 | **纯文本** |
+| `system_details` | 系统详情 | `{world_setting, worldview, system_mechanism}` |
+| `protagonist` | 主角设定 | `{name, detail:{race,gender,age,body,background}}` |
+| `plot` | 剧情 | `{cause, events, goal, possible_endings}` |
+
+**子字段名一个都不能少、也不能多**——`validate_card.py` 会逐个核对。
+注意 `protagonist` 的 detail 是**嵌套一层**的，不是平铺。
+
+## 2.9 两条会让 UI「完全不显示」的硬约束
 
 这两条踩中后**没有任何报错**，UI 直接不渲染或看不清，务必先检查。
 

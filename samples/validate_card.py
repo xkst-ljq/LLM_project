@@ -34,6 +34,67 @@ def scheme_ok(scheme, src_type, tgt_type):
                 f"{d['atgt'] or d['tgt']}，实际是 {tgt_type}")
     return None
 
+# 固定条目的规定结构。权威来源：
+#   character_edit_page._createDefaultEntries（id / title / 子字段）
+#   card_entry_target.fieldLabelOf（子字段中文名）
+# 只填一个纯字符串会让编辑页显示不出子项目标题（用户反馈）。
+FIXED_ENTRIES = {
+ 'character': [
+  ('name_entry',   '名称',      ['last_name', 'first_name', 'other']),
+  ('relationship', '与用户关系', None),   # None = 纯文本
+  ('body',         '身体数据',   ['race', 'gender', 'age', 'height',
+                                  'weight', 'measurements', 'other']),
+  ('psychology',   '心理数据',   ['personality', 'thoughts', 'interests']),
+  ('background',   '背景数据',   ['origin', 'experiences', 'current']),
+ ],
+ 'system': [
+  ('system_name',    '系统名称', None),
+  ('system_summary', '系统概要', None),
+  ('system_details', '系统详情', ['world_setting', 'worldview',
+                                  'system_mechanism']),
+  ('protagonist',    '主角设定', ['name', 'detail']),
+  ('plot',           '剧情',     ['cause', 'events', 'goal',
+                                  'possible_endings']),
+ ],
+}
+
+def check_entries(card_type, entries_json, err, warn):
+    """固定条目的 id / 标题 / 子字段结构。"""
+    try:
+        entries = json.loads(entries_json)
+    except Exception:
+        err.append('entries_json 解析失败')
+        return
+    spec = FIXED_ENTRIES.get(card_type)
+    if not spec:
+        return
+    by_id = {e.get('id'): e for e in entries}
+    for eid, title, fields in spec:
+        e = by_id.get(eid)
+        if e is None:
+            err.append(f"缺少固定条目 '{eid}'（{title}）")
+            continue
+        if e.get('title') != title:
+            warn.append(f"条目 '{eid}' 标题是「{e.get('title')}」，"
+                        f"模板为「{title}」")
+        if fields is None:
+            continue
+        raw = e.get('content', '')
+        try:
+            obj = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            obj = None
+        if not isinstance(obj, dict):
+            err.append(f"条目 '{eid}'（{title}）应是含子字段的 JSON 对象 "
+                       f"{fields}，实际是纯文本——编辑页显示不出子项目标题")
+            continue
+        missing = [k for k in fields if k not in obj]
+        extra = [k for k in obj if k not in fields]
+        if missing:
+            err.append(f"条目 '{eid}' 缺子字段 {missing}")
+        if extra:
+            err.append(f"条目 '{eid}' 有模板外的子字段 {extra}")
+
 def load(p):
     with zipfile.ZipFile(p) as z:
         return json.loads(z.read('data/character.json'))
@@ -107,6 +168,7 @@ def check(path):
     meta=json.loads(ch['meta_json'])
     print(f"=== {path.split('/')[-1]} ===")
     print(f"  卡类型 {ch['card_type']}  UI方案 {len(meta['ui_assemblies'])} 套")
+    check_entries(ch['card_type'], ch.get('entries_json', '[]'), err, warn)
 
     modes=collections.Counter()
     for raw in meta['ui_assemblies']:
