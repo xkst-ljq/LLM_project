@@ -36,6 +36,11 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
   /// 之前这个页面漏了，所以拖滑块只有滑块自己在动（用户实测）。
   ///
   /// 传入全部复合件的根元素——总线内部会递归收集其中的 linker。
+  ///
+  /// **资产列表一变就要重新调用**：订阅时传进去的是当时那份快照，
+  /// 新导入的组件不在里面，它的 linker 自然收不到 pulse。
+  /// 表现就是「导入后必须退出再进来联动才生效」——
+  /// 退出会重建 State、重跑 initState，等于被动刷新了一次（用户实测）。
   void _registerLinkerBus() {
     final elements = _assetService.getAllComposites().map((c) {
       return UIElement(
@@ -341,7 +346,9 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
       // addComposite 内部已经 saveAssets()。
       _assetService.addComposite(composite);
       if (!mounted) return;
-      setState(() {});
+      // 必须重新注册：事件总线里存的是导入前那份元素快照，
+      // 不刷新的话新组件的 linker 永远收不到事件。
+      setState(_registerLinkerBus);
       messenger.showSnackBar(
         SnackBar(content: Text('已导入「${composite.name}」')),
       );
