@@ -1644,4 +1644,26 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   }
 
   bool _isRootBasePage(AssemblyPage page) => page.id == _rootBasePage.id;
+
+  // ===== 被 build 方法以 `_AssemblyLogic.xxx` 形式引用的公开常量 =====
+  //
+  // 必须留在这个 mixin 里：这几个是**静态**成员，
+  // 而静态成员不会随 mixin 继承——`character_assembly_page.dart`
+  // 里写的是 `_AssemblyLogic.kResizeHandlePadding`，
+  // 搬到别的 mixin 就会「找不到 getter」。
+
+  /// linker 两侧接线热区的宽度。
+  static const double kLinkerPortHotZone = 24.0;
+
+  /// 选中可形变元件时四周撑出的边距。
+  ///
+  /// 把手是 22px 的圆，热区取 2×padding = 24，略大于圆本身好点。
+  /// 与 Studio 的 p=20 同量级，但更紧凑——Assembly 画布本就挤。
+  static const double kResizeHandlePadding = 12.0;
+
+  /// 复合组件缩放后，内部文字仍可辨认的最小比例。
+  ///
+  /// 复合件内常见字号是 9~12，乘 0.45 后约 4~5.4px，
+  /// 再小就完全糊成一团了。用户要求「最小不可让内部文字不可见」。
+  static const double kMinCompositeScale = 0.45;
 }

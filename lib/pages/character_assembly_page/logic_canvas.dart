@@ -15,24 +15,12 @@ part of '../character_assembly_page.dart';
 /// 被多个分组共用的成员留在 `logic.dart`（依赖链根部），避免形成环。
 mixin _AssemblyCanvasLogic
     on State<CharacterAssemblyPage>, _AssemblyLogic, _AssemblyPageLogic {
-  /// linker 两侧接线热区的宽度。
-  static const double kLinkerPortHotZone = 24.0;
 
-  /// 选中可形变元件时四周撑出的边距。
-  ///
-  /// 把手是 22px 的圆，热区取 2×padding = 24，略大于圆本身好点。
-  /// 与 Studio 的 p=20 同量级，但更紧凑——Assembly 画布本就挤。
-  static const double kResizeHandlePadding = 12.0;
 
   Size _resizeStartSize = Size.zero;
 
   Offset _resizeStartGlobal = Offset.zero;
 
-  /// 复合组件缩放后，内部文字仍可辨认的最小比例。
-  ///
-  /// 复合件内常见字号是 9~12，乘 0.45 后约 4~5.4px，
-  /// 再小就完全糊成一团了。用户要求「最小不可让内部文字不可见」。
-  static const double kMinCompositeScale = 0.45;
 
   /// 各类组件的最小尺寸。
   ///
@@ -1808,5 +1796,6 @@ mixin _AssemblyCanvasLogic
     return Size(mx + 20, my + 20);
   }
 }
+
 
 

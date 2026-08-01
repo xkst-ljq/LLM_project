@@ -42,7 +42,10 @@ for f in files:
         # 只认「恰好两格缩进」的顶层成员声明；
         # 缩进更深的是方法体内的调用/局部变量，不是定义。
         if not re.match(r'^  [A-Za-z_@]', l): continue
-        mm=re.match(r'^  (?:static\s+)?(?:final\s+|const\s+|late\s+)?[\w<>?,\s\[\]]*?\s(_\w+)\s*[({=]', l)
+        # 公开成员（无下划线）也要收：本项目有
+        # `kResizeHandlePadding` 这类 public 静态常量，
+        # 只扫 `_\w+` 会漏掉，曾因此漏报一轮编译错误。
+        mm=re.match(r'^  (?:static\s+)?(?:final\s+|const\s+|late\s+)?[\w<>?,\s\[\]]*?\s(\w+)\s*[({=]', l)
         if mm: defs.add(mm.group(1))
     # 去掉注释后的正文，供引用扫描
     nocmt='\n'.join(l for l in body.split('\n')
@@ -74,6 +77,27 @@ def visible(n,seen=frozenset()):
     return out
 
 allnames=set().union(*[v['defs'] for v in mixins.values()]) if mixins else set()
+
+# 盲区2：`MixinName.staticMember` 形式的限定访问。
+#
+# 静态成员**不随 mixin 继承**：`character_assembly_page.dart` 里
+# 写的是 `_AssemblyLogic.kResizeHandlePadding`，那个常量就必须
+# 真的定义在 `_AssemblyLogic` 里，搬到别的 mixin 会「找不到 getter」。
+# 这类错误 on 链检查看不出来，得单独扫。
+libsrc=open('lib/pages/character_assembly_page.dart').read()
+libsrc='\n'.join(l for l in libsrc.split('\n') if not l.strip().startswith(('//','///')))
+for f in files: 
+    t=open(f).read()
+    libsrc+='\n'+'\n'.join(l for l in t.split('\n') if not l.strip().startswith(('//','///')))
+qbad=False
+for mx,mem in set(re.findall(r'\b(_[A-Z]\w+)\.(\w+)', libsrc)):
+    if mx in mixins and mem not in mixins[mx]['defs']:
+        if any(mem in v['defs'] for v in mixins.values()):
+            owner=[n for n,v in mixins.items() if mem in v['defs']]
+            print(f'  ❌ 限定访问 {mx}.{mem} 但它定义在 {owner}')
+            qbad=True
+if not qbad: print('  静态限定访问 ✅')
+
 bad=False
 print('\n=== 跨 mixin 调用可达性 ===')
 for n,v in mixins.items():
@@ -84,4 +108,4 @@ for n,v in mixins.items():
         bad=True
         print(f'  ❌ {n} 够不着: {sorted(missing)}')
 if not bad: print('  全部可达 ✅')
-sys.exit(1 if (bad or cyc or dup) else 0)
+sys.exit(1 if (bad or cyc or dup or qbad) else 0)
