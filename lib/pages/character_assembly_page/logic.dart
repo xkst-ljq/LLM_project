@@ -537,7 +537,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       overrides: Map<String, dynamic>.from(
         _deepCloneValue(override.overrides) as Map,
       ),
-      binding: override.binding?.copyWith(),
     );
   }
 

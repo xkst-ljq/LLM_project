@@ -248,54 +248,32 @@ class AssemblyPageGesture {
       );
 }
 
-class AssemblyBinding {
-  String? statusKey;
-  String? fieldType;
-  String direction; // 'bidirectional' | 'upload_only' | 'none'
-
-  AssemblyBinding({
-    this.statusKey,
-    this.fieldType,
-    this.direction = 'none',
-  });
-
-  Map<String, dynamic> toJson() => {
-    'statusKey': statusKey,
-    'fieldType': fieldType,
-    'direction': direction,
-  };
-
-  factory AssemblyBinding.fromJson(Map<String, dynamic> json) =>
-      AssemblyBinding(
-        statusKey: json['statusKey']?.toString(),
-        fieldType: json['fieldType']?.toString(),
-        direction: json['direction']?.toString() ?? 'none',
-      );
-
-  AssemblyBinding copyWith({
-    String? statusKey,
-    String? fieldType,
-    String? direction,
-  }) {
-    return AssemblyBinding(
-      statusKey: statusKey ?? this.statusKey,
-      fieldType: fieldType ?? this.fieldType,
-      direction: direction ?? this.direction,
-    );
-  }
-}
+/// 历史遗留的「挂载位绑定」(AssemblyBinding) 已删除。
+///
+/// 它想做的事——把复合件子件挂到状态栏字段上——
+/// 已经被**数据通道**完整覆盖，而且数据通道是严格超集：
+///
+/// | 挂载位 | 数据通道 |
+/// |---|---|
+/// | `statusKey` 字符串名 | `targetKind: 'status_field'` + 真实字段 ID |
+/// | `fieldType` | 从状态字段本身读取，不用手填 |
+/// | `direction` 三态 | `llmReadPolicy` / `llmWritePolicy` 分开控制 |
+/// | — | 另支持 session_var / card_entry / user_profile |
+///
+/// 决定性的一点：挂载位写进去的 `statusKey`
+/// **全库没有任何读取方**，运行时与引擎层完全不消费，
+/// 是数据通道体系建立之前的设计残留。留着只会让作者
+/// 以为「配了就会生效」——正是 HANDOFF 3.5j 那类静默失效。
 
 class PropertyOverride {
   String componentId;
   Map<String, dynamic> overrides;
-  AssemblyBinding? binding;
   String? sourceCompositeId;
   String? sourceElementId;
 
   PropertyOverride({
     required this.componentId,
     Map<String, dynamic>? overrides,
-    this.binding,
     this.sourceCompositeId,
     this.sourceElementId,
   }) : overrides = overrides ?? <String, dynamic>{};
@@ -303,7 +281,6 @@ class PropertyOverride {
   Map<String, dynamic> toJson() => {
     'componentId': componentId,
     'overrides': overrides,
-    'binding': binding?.toJson(),
     'sourceCompositeId': sourceCompositeId,
     'sourceElementId': sourceElementId,
   };
@@ -311,11 +288,6 @@ class PropertyOverride {
   factory PropertyOverride.fromJson(Map<String, dynamic> json) => PropertyOverride(
         componentId: json['componentId']?.toString() ?? '',
         overrides: Map<String, dynamic>.from(json['overrides'] ?? const {}),
-        binding: json['binding'] is Map
-            ? AssemblyBinding.fromJson(
-                Map<String, dynamic>.from(json['binding'] as Map),
-              )
-            : null,
         sourceCompositeId: json['sourceCompositeId']?.toString(),
         sourceElementId: json['sourceElementId']?.toString(),
       );
@@ -323,15 +295,12 @@ class PropertyOverride {
   PropertyOverride copyWith({
     String? componentId,
     Map<String, dynamic>? overrides,
-    AssemblyBinding? binding,
     String? sourceCompositeId,
     String? sourceElementId,
-    bool clearBinding = false,
   }) {
     return PropertyOverride(
       componentId: componentId ?? this.componentId,
       overrides: overrides ?? Map<String, dynamic>.from(this.overrides),
-      binding: clearBinding ? null : (binding ?? this.binding?.copyWith()),
       sourceCompositeId: sourceCompositeId ?? this.sourceCompositeId,
       sourceElementId: sourceElementId ?? this.sourceElementId,
     );
