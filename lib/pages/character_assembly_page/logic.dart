@@ -5553,8 +5553,38 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       Navigator.pop(ctx, value);
     }
 
+    // 所有 controller 交给弹窗托管。
+    //
+    // **不能在 await 之后自己 dispose**：future 在 pop 那一刻完成，
+    // 但退场动画还要跑 ~150ms，期间 TextField 仍在重建，
+    // 会抛「used after being disposed」并把整棵树塌成 RenderErrorBox
+    // （用户实测：改文本后点空白处必现）。见 HANDOFF 3.5h。
     final result = await showKeyboardSafeDialog<String>(
       context: context,
+      disposables: [
+      nameController,
+      textController,
+      fontSizeController,
+      radiusController,
+      minController,
+      maxController,
+      currentController,
+      thicknessController,
+      doubleTapIntervalController,
+      longPressThresholdController,
+      placeholderController,
+      maxLengthController,
+      stepController,
+      optionsController,
+      selectDefaultController,
+      dotSizeController,
+      imageUrlController,
+      imageAssetController,
+      historyLimitController,
+      channelNameController,
+      channelNotifyTemplateController,
+        ...?fieldGroup?.disposables,
+      ],
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           final type = module.type;
@@ -6146,34 +6176,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       ),
     );
 
-    if (!mounted) {
-      // 字段组自己持有的控制器由它自己释放。
-      fieldGroup?.dispose();
-      _disposeAtomEditorControllers([
-        nameController,
-        textController,
-        fontSizeController,
-        radiusController,
-        minController,
-        maxController,
-        currentController,
-        thicknessController,
-        doubleTapIntervalController,
-        longPressThresholdController,
-        placeholderController,
-        maxLengthController,
-        stepController,
-        optionsController,
-        selectDefaultController,
-        dotSizeController,
-        imageUrlController,
-        imageAssetController,
-        historyLimitController,
-        channelNameController,
-        channelNotifyTemplateController,
-      ]);
-      return;
-    }
+    // controller 由弹窗统一释放，这里不再手动 dispose。
+    if (!mounted) return;
 
     if (result == 'save') {
       final index = _elements.indexWhere((candidate) => candidate.id == element.id);
@@ -6375,45 +6379,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       }
     }
 
-    fieldGroup?.dispose();
-    _disposeAtomEditorControllers([
-      nameController,
-      textController,
-      fontSizeController,
-      radiusController,
-      minController,
-      maxController,
-      currentController,
-      thicknessController,
-      doubleTapIntervalController,
-      longPressThresholdController,
-      placeholderController,
-      maxLengthController,
-      stepController,
-      optionsController,
-      selectDefaultController,
-      dotSizeController,
-      imageUrlController,
-      imageAssetController,
-      historyLimitController,
-      channelNameController,
-      channelNotifyTemplateController,
-    ]);
-  }
-
-  /// 逐个释放，**允许重复调用**。
-  ///
-  /// 对已 dispose 的 controller 再调一次会抛
-  /// 「A TextEditingController was used after being disposed」，
-  /// 整棵 widget 树塌成 RenderErrorBox，随后 hit test 也跟着报错
-  /// （用户实测：改文本后点输入法保存必现）。
-  /// 根因是列表里混进了重复项——这里加一道去重兜底。
-  void _disposeAtomEditorControllers(List<TextEditingController> controllers) {
-    final seen = <TextEditingController>{};
-    for (final controller in controllers) {
-      if (!seen.add(controller)) continue;
-      controller.dispose();
-    }
   }
 
   Map<String, dynamic>? _dataChannelOf(UIModule? module) {

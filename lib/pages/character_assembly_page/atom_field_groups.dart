@@ -70,11 +70,16 @@ abstract class AtomFieldGroup {
   /// [props] 是 module.properties 的深拷贝，直接改即可。
   void applyTo(Map<String, dynamic> props);
 
-  /// 释放持有的控制器。
+  /// 本组持有的控制器，交给对话框统一托管。
   ///
-  /// **不要在这里做别的事**：调用方是在对话框关闭后统一调的，
-  /// 此时 widget 树已经拆掉。
-  void dispose();
+  /// **不要自己在 `await showDialog(...)` 之后 dispose**：
+  /// future 在 pop 那一刻就完成，但退场动画还要跑 ~150ms，
+  /// 期间 TextField 仍在重建，会抛
+  /// 「A TextEditingController was used after being disposed」
+  /// （见 HANDOFF 3.5h；本文件也栽过一次）。
+  /// 一律传给 `showKeyboardSafeDialog(disposables: ...)`，
+  /// 由它在路由彻底移除后释放。
+  List<ChangeNotifier> get disposables;
 }
 
 /// text 组件的字段组。
@@ -204,10 +209,10 @@ class TextFieldGroup extends AtomFieldGroup {
   }
 
   @override
-  void dispose() {
-    _textController.dispose();
-    _fontSizeController.dispose();
-  }
+  List<ChangeNotifier> get disposables => [
+        _textController,
+        _fontSizeController,
+      ];
 }
 
 /// 宽松读数值。

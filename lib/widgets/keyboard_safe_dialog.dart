@@ -120,7 +120,13 @@ class _KeyboardSafeDialogHostState extends State<_KeyboardSafeDialogHost> {
   void dispose() {
     _routeAnimation?.removeStatusListener(_handleRouteStatus);
     // 到这里路由已彻底移除，没有人会再用这些 controller 了。
+    //
+    // 去重：调用方的列表可能因为拼接（如 `...?fieldGroup?.disposables`）
+    // 而混进同一个对象，重复 dispose 会抛
+    // 「used after being disposed」，把整棵树塌成 RenderErrorBox。
+    final seen = <ChangeNotifier>{};
     for (final item in widget.disposables) {
+      if (!seen.add(item)) continue;
       item.dispose();
     }
     super.dispose();
