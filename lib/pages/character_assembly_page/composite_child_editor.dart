@@ -242,302 +242,304 @@ mixin _CompositeChildEditor on State<CharacterAssemblyPage>, _AssemblyLogic {
                   ),
                 ],
               ),
-              body: KeyboardAvoidingStage(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                  children: [
-                    // ===== 归属提示 =====
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF3E5F5),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFD1C4E9)),
-                      ),
-                      child: Text(
-                        '所属复合件：'
-                        '${compositeElement.composite?.name ?? compositeElement.id}\n'
-                        '这里的改动**只作用于当前这一个实例**，不会回写资产库模板。',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF4A148C),
-                          height: 1.4,
-                        ),
-                      ),
+              // 不用 KeyboardAvoidingStage：那个组件是给**固定尺寸的**
+              // 全屏运行时 UI 做整体平移用的（需要 stageHeight/keyboardInset）。
+              // 本页是可滚动 ListView，Scaffold 默认的
+              // resizeToAvoidBottomInset 会把它顶上去，行为与外观页一致。
+              body: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                children: [
+                  // ===== 归属提示 =====
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3E5F5),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFD1C4E9)),
                     ),
-                    const SizedBox(height: 16),
-
-                    // ===== 名称 =====
-                    sectionTitle('名称', hint: '留空则回落模板名「${module.name}」。'),
-                    TextField(
-                      controller: nameController,
-                      decoration: InputDecoration(
-                        labelText: '实例内显示名',
-                        hintText: module.name,
-                        isDense: true,
-                      ),
-                      onChanged: (_) => setPageState(() {}),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '类型：$type · 子件 ID：${child.id}',
+                    child: Text(
+                      '所属复合件：'
+                      '${compositeElement.composite?.name ?? compositeElement.id}\n'
+                      '这里的改动**只作用于当前这一个实例**，不会回写资产库模板。',
                       style: const TextStyle(
                         fontSize: 11,
-                        color: Color(0xFF777783),
+                        color: Color(0xFF4A148C),
+                        height: 1.4,
                       ),
                     ),
-                    const Divider(height: 28),
+                  ),
+                  const SizedBox(height: 16),
 
-                    // ===== 类型专属字段（复用外部原子的字段组）=====
-                    if (fieldGroup != null) ...[
-                      sectionTitle(
-                        '组件设置',
-                        hint: '与画布上同类型组件的编辑项完全一致。',
-                      ),
-                      ...fieldGroup.buildFields(AtomFieldContext(
-                        setDialogState: setPageState,
-                        numberField: (controller, label, {suffix}) => TextField(
-                          controller: controller,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          decoration: InputDecoration(
-                              labelText: label, suffixText: suffix),
-                        ),
-                        readDouble: (controller, fallback) =>
-                            double.tryParse(controller.text.trim()) ?? fallback,
-                        // 复合件内部的 button 连线在模板里，
-                        // 这里拿不到画布级联动器，一律给出手感参数。
-                        usesNonTapGesture: type == 'button',
-                        sendsMessage: UISemanticRole.sendsMessage(module),
-                      )),
-                      const Divider(height: 28),
-                    ],
+                  // ===== 名称 =====
+                  sectionTitle('名称', hint: '留空则回落模板名「${module.name}」。'),
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: '实例内显示名',
+                      hintText: module.name,
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setPageState(() {}),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '类型：$type · 子件 ID：${child.id}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                    ),
+                  ),
+                  const Divider(height: 28),
 
-                    // ===== 外观 =====
-                    sectionTitle('外观'),
-                    colorRow('主色', color, (c) => setPageState(() => color = c)),
-                    if (const {'surface', 'base_box'}.contains(type)) ...[
-                      dropdown<UIModuleMaterial>(
-                        '材质',
-                        material,
-                        const [
-                          DropdownMenuItem(
-                              value: UIModuleMaterial.glass, child: Text('毛玻璃')),
-                          DropdownMenuItem(
-                              value: UIModuleMaterial.solid, child: Text('纯色')),
-                          DropdownMenuItem(
-                              value: UIModuleMaterial.gradient,
-                              child: Text('渐变')),
-                          DropdownMenuItem(
-                              value: UIModuleMaterial.outline, child: Text('描边')),
-                        ],
-                        (v) => setPageState(() => material = v),
-                      ),
-                      dropdown<UIModuleShape>(
-                        '形状',
-                        shape,
-                        const [
-                          DropdownMenuItem(
-                              value: UIModuleShape.rectangle, child: Text('矩形')),
-                          DropdownMenuItem(
-                              value: UIModuleShape.rounded, child: Text('圆角矩形')),
-                          DropdownMenuItem(
-                              value: UIModuleShape.capsule, child: Text('胶囊')),
-                          DropdownMenuItem(
-                              value: UIModuleShape.circle, child: Text('圆形')),
-                          DropdownMenuItem(
-                              value: UIModuleShape.heart, child: Text('心形')),
-                          DropdownMenuItem(
-                              value: UIModuleShape.star5, child: Text('五角星')),
-                          DropdownMenuItem(
-                              value: UIModuleShape.star4, child: Text('四角星')),
-                        ],
-                        (v) => setPageState(() => shape = v),
-                      ),
-                    ],
-                    slider('圆角', radius, 0, 40,
-                        (v) => setPageState(() => radius = v)),
-                    slider('不透明度', opacity, 0.1, 1.0,
-                        (v) => setPageState(() => opacity = v)),
-                    const Divider(height: 28),
-
-                    // ===== 动画 =====
+                  // ===== 类型专属字段（复用外部原子的字段组）=====
+                  if (fieldGroup != null) ...[
                     sectionTitle(
-                      '触发动画',
-                      hint: '复合件内部的子件同样支持动画，'
-                          '与画布上的独立组件用的是同一套引擎。',
+                      '组件设置',
+                      hint: '与画布上同类型组件的编辑项完全一致。',
                     ),
-                    DropdownButtonFormField<String>(
-                      initialValue: animation?.type.storageKey ?? '',
+                    ...fieldGroup.buildFields(AtomFieldContext(
+                      setDialogState: setPageState,
+                      numberField: (controller, label, {suffix}) => TextField(
+                        controller: controller,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: InputDecoration(
+                            labelText: label, suffixText: suffix),
+                      ),
+                      readDouble: (controller, fallback) =>
+                          double.tryParse(controller.text.trim()) ?? fallback,
+                      // 复合件内部的 button 连线在模板里，
+                      // 这里拿不到画布级联动器，一律给出手感参数。
+                      usesNonTapGesture: type == 'button',
+                      sendsMessage: UISemanticRole.sendsMessage(module),
+                    )),
+                    const Divider(height: 28),
+                  ],
+
+                  // ===== 外观 =====
+                  sectionTitle('外观'),
+                  colorRow('主色', color, (c) => setPageState(() => color = c)),
+                  if (const {'surface', 'base_box'}.contains(type)) ...[
+                    dropdown<UIModuleMaterial>(
+                      '材质',
+                      material,
+                      const [
+                        DropdownMenuItem(
+                            value: UIModuleMaterial.glass, child: Text('毛玻璃')),
+                        DropdownMenuItem(
+                            value: UIModuleMaterial.solid, child: Text('纯色')),
+                        DropdownMenuItem(
+                            value: UIModuleMaterial.gradient,
+                            child: Text('渐变')),
+                        DropdownMenuItem(
+                            value: UIModuleMaterial.outline, child: Text('描边')),
+                      ],
+                      (v) => setPageState(() => material = v),
+                    ),
+                    dropdown<UIModuleShape>(
+                      '形状',
+                      shape,
+                      const [
+                        DropdownMenuItem(
+                            value: UIModuleShape.rectangle, child: Text('矩形')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.rounded, child: Text('圆角矩形')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.capsule, child: Text('胶囊')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.circle, child: Text('圆形')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.heart, child: Text('心形')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.star5, child: Text('五角星')),
+                        DropdownMenuItem(
+                            value: UIModuleShape.star4, child: Text('四角星')),
+                      ],
+                      (v) => setPageState(() => shape = v),
+                    ),
+                  ],
+                  slider('圆角', radius, 0, 40,
+                      (v) => setPageState(() => radius = v)),
+                  slider('不透明度', opacity, 0.1, 1.0,
+                      (v) => setPageState(() => opacity = v)),
+                  const Divider(height: 28),
+
+                  // ===== 动画 =====
+                  sectionTitle(
+                    '触发动画',
+                    hint: '复合件内部的子件同样支持动画，'
+                        '与画布上的独立组件用的是同一套引擎。',
+                  ),
+                  DropdownButtonFormField<String>(
+                    initialValue: animation?.type.storageKey ?? '',
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                        labelText: '动画类型', isDense: true),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('不播放')),
+                      for (final t in ElementAnimationType.values)
+                        DropdownMenuItem(
+                          value: t.storageKey,
+                          child: Text(t.label),
+                        ),
+                    ],
+                    onChanged: (next) {
+                      setPageState(() {
+                        if (next == null || next.isEmpty) {
+                          animation = null;
+                          return;
+                        }
+                        final picked =
+                            ElementAnimationTypeX.fromStorage(next)!;
+                        // 换类型时套用该类型的建议时长，
+                        // 沿用上一个类型的往往不合适。
+                        animation =
+                            (animation ?? ElementAnimation(type: picked))
+                                .copyWith(
+                          type: picked,
+                          durationMs: picked.defaultDurationMs,
+                        );
+                      });
+                    },
+                  ),
+                  if (animation != null) ...[
+                    const SizedBox(height: 12),
+                    slider(
+                      '时长',
+                      animation!.durationMs.toDouble(),
+                      80,
+                      1500,
+                      (v) => setPageState(() => animation =
+                          animation!.copyWith(durationMs: v.round())),
+                      suffix: 'ms',
+                    ),
+                    slider(
+                      '幅度',
+                      animation!.intensity,
+                      0.1,
+                      1.0,
+                      (v) => setPageState(() =>
+                          animation = animation!.copyWith(intensity: v)),
+                    ),
+                    if (const {'progress', 'text', 'slider', 'select', 'input'}
+                        .contains(type))
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Text(
+                          '这个组件的数值发生变化时会自动播放，无需接线。',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF2E7D32),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    DropdownButtonFormField<ElementAnimationCurve>(
+                      initialValue: animation!.curve,
                       isExpanded: true,
                       decoration: const InputDecoration(
-                          labelText: '动画类型', isDense: true),
+                          labelText: '缓动曲线', isDense: true),
                       items: [
-                        const DropdownMenuItem(value: '', child: Text('不播放')),
-                        for (final t in ElementAnimationType.values)
-                          DropdownMenuItem(
-                            value: t.storageKey,
-                            child: Text(t.label),
-                          ),
+                        for (final c in ElementAnimationCurve.values)
+                          DropdownMenuItem(value: c, child: Text(c.label)),
                       ],
                       onChanged: (next) {
-                        setPageState(() {
-                          if (next == null || next.isEmpty) {
-                            animation = null;
-                            return;
-                          }
-                          final picked =
-                              ElementAnimationTypeX.fromStorage(next)!;
-                          // 换类型时套用该类型的建议时长，
-                          // 沿用上一个类型的往往不合适。
-                          animation =
-                              (animation ?? ElementAnimation(type: picked))
-                                  .copyWith(
-                            type: picked,
-                            durationMs: picked.defaultDurationMs,
-                          );
-                        });
+                        if (next == null) return;
+                        setPageState(
+                            () => animation = animation!.copyWith(curve: next));
                       },
                     ),
-                    if (animation != null) ...[
+                    if (const {
+                      ElementAnimationType.flash,
+                      ElementAnimationType.glowPulse,
+                      ElementAnimationType.particleBurst,
+                    }.contains(animation!.type)) ...[
                       const SizedBox(height: 12),
-                      slider(
-                        '时长',
-                        animation!.durationMs.toDouble(),
-                        80,
-                        1500,
-                        (v) => setPageState(() => animation =
-                            animation!.copyWith(durationMs: v.round())),
-                        suffix: 'ms',
+                      colorRow(
+                        '动画颜色',
+                        Color(animation!.colorValue ?? color.toARGB32()),
+                        (c) => setPageState(() => animation =
+                            animation!.copyWith(colorValue: c.toARGB32())),
                       ),
-                      slider(
-                        '幅度',
-                        animation!.intensity,
-                        0.1,
-                        1.0,
-                        (v) => setPageState(() =>
-                            animation = animation!.copyWith(intensity: v)),
+                    ],
+                  ],
+                  const Divider(height: 28),
+
+                  // ===== 数据通道 =====
+                  sectionTitle(
+                    '数据通道',
+                    hint: 'LLM 数据交换与状态栏联动。'
+                        '与画布上的组件用同一套配置，'
+                        '绑定后这个子件就能被 AI 读写、或与状态栏字段同步。',
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: pendingChannel != null
+                          ? const Color(0xFFE8F5E9)
+                          : const Color(0xFFF6F6F9),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: pendingChannel != null
+                            ? const Color(0xFFA5D6A7)
+                            : Colors.black.withValues(alpha: 0.05),
                       ),
-                      if (const {'progress', 'text', 'slider', 'select', 'input'}
-                          .contains(type))
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 10),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
                           child: Text(
-                            '这个组件的数值发生变化时会自动播放，无需接线。',
+                            pendingChannel is Map
+                                ? '已配置：'
+                                    '${(pendingChannel as Map)['semanticLabel'] ?? module.name}'
+                                : '未配置数据通道',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Color(0xFF2E7D32),
+                              color: pendingChannel != null
+                                  ? const Color(0xFF1B5E20)
+                                  : const Color(0xFF777783),
                               height: 1.35,
                             ),
                           ),
                         ),
-                      DropdownButtonFormField<ElementAnimationCurve>(
-                        initialValue: animation!.curve,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                            labelText: '缓动曲线', isDense: true),
-                        items: [
-                          for (final c in ElementAnimationCurve.values)
-                            DropdownMenuItem(value: c, child: Text(c.label)),
-                        ],
-                        onChanged: (next) {
-                          if (next == null) return;
-                          setPageState(
-                              () => animation = animation!.copyWith(curve: next));
-                        },
-                      ),
-                      if (const {
-                        ElementAnimationType.flash,
-                        ElementAnimationType.glowPulse,
-                        ElementAnimationType.particleBurst,
-                      }.contains(animation!.type)) ...[
-                        const SizedBox(height: 12),
-                        colorRow(
-                          '动画颜色',
-                          Color(animation!.colorValue ?? color.toARGB32()),
-                          (c) => setPageState(() => animation =
-                              animation!.copyWith(colorValue: c.toARGB32())),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.tune_rounded, size: 16),
+                          label: const Text('配置'),
+                          onPressed: () async {
+                            // 专项编辑器直接写 PropertyOverride，
+                            // 返回后必须重新回读（HANDOFF 3.5b 双写覆盖）。
+                            await _showExposedDataChannelEditor(
+                              compositeElement: compositeElement,
+                              child: child,
+                              propertyOverride: propertyOverride,
+                            );
+                            if (!pageContext.mounted) return;
+                            final latest = _activePropertyOverrides
+                                .where((o) => o.componentId == child.id)
+                                .toList();
+                            setPageState(() {
+                              pendingChannel = latest.isEmpty
+                                  ? null
+                                  : latest.first.overrides['dataChannel'];
+                              channelTouched = true;
+                            });
+                          },
                         ),
                       ],
-                    ],
-                    const Divider(height: 28),
-
-                    // ===== 数据通道 =====
-                    sectionTitle(
-                      '数据通道',
-                      hint: 'LLM 数据交换与状态栏联动。'
-                          '与画布上的组件用同一套配置，'
-                          '绑定后这个子件就能被 AI 读写、或与状态栏字段同步。',
                     ),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: pendingChannel != null
-                            ? const Color(0xFFE8F5E9)
-                            : const Color(0xFFF6F6F9),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: pendingChannel != null
-                              ? const Color(0xFFA5D6A7)
-                              : Colors.black.withValues(alpha: 0.05),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              pendingChannel is Map
-                                  ? '已配置：'
-                                      '${(pendingChannel as Map)['semanticLabel'] ?? module.name}'
-                                  : '未配置数据通道',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: pendingChannel != null
-                                    ? const Color(0xFF1B5E20)
-                                    : const Color(0xFF777783),
-                                height: 1.35,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.tune_rounded, size: 16),
-                            label: const Text('配置'),
-                            onPressed: () async {
-                              // 专项编辑器直接写 PropertyOverride，
-                              // 返回后必须重新回读（HANDOFF 3.5b 双写覆盖）。
-                              await _showExposedDataChannelEditor(
-                                compositeElement: compositeElement,
-                                child: child,
-                                propertyOverride: propertyOverride,
-                              );
-                              if (!pageContext.mounted) return;
-                              final latest = _activePropertyOverrides
-                                  .where((o) => o.componentId == child.id)
-                                  .toList();
-                              setPageState(() {
-                                pendingChannel = latest.isEmpty
-                                    ? null
-                                    : latest.first.overrides['dataChannel'];
-                                channelTouched = true;
-                              });
-                            },
-                          ),
-                        ],
-                      ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    '提示：把某一项改回模板默认值，该项的覆写会自动移除，'
+                    '之后模板更新时这个实例会跟着变。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.black.withValues(alpha: 0.45),
+                      height: 1.4,
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      '提示：把某一项改回模板默认值，该项的覆写会自动移除，'
-                      '之后模板更新时这个实例会跟着变。',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.black.withValues(alpha: 0.45),
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             );
           },
@@ -721,5 +723,215 @@ mixin _CompositeChildEditor on State<CharacterAssemblyPage>, _AssemblyLogic {
     _activePropertyOverrides
         .removeWhere((override) => override.componentId == componentId);
     _persistAssemblyElements();
+  }
+
+  /// 复合组件暴露项的数据通道编辑器。
+  ///
+  /// 通道配置写入 `PropertyOverride.overrides['dataChannel']`，
+  /// 属于当前 Assembly 实例覆写的一部分，不回写资产库模板。
+  Future<void> _showExposedDataChannelEditor({
+    required UIElement compositeElement,
+    required UIElement child,
+    required PropertyOverride propertyOverride,
+  }) async {
+    final module = child.module;
+    if (module == null) return;
+
+    final raw = propertyOverride.overrides['dataChannel'];
+    final existing = raw is Map ? Map<String, dynamic>.from(raw) : null;
+    // 与原子实例编辑器同理：本来就绑着状态字段时，
+    // 保存后**不能**再拉取字段值，否则会把作者刚改的覆盖回去。
+    final wasBoundOnOpen =
+        DataChannelService.statusFieldIdOfChannel(existing) != null;
+    final labels = _textLabelCandidates();
+    final nameController = TextEditingController(
+      text: existing?['semanticLabel']?.toString() ?? module.name,
+    );
+    var enabled = existing != null;
+    var semanticSource = existing?['semanticSource']?.toString() ?? 'manual';
+    var labelElementId = existing?['labelElementId']?.toString() ?? '';
+    var targetKind = existing?['targetKind']?.toString() ?? 'local_ui_state';
+    var visibility = existing?['visibility']?.toString() ?? 'ui_only';
+    var llmReadPolicy = existing?['llmReadPolicy']?.toString() ?? 'none';
+    var llmWritePolicy = existing?['llmWritePolicy']?.toString() ?? 'none';
+    // notifyStyle 取代旧的 llmUpdateApplyPolicy。
+    // 旧值里的 confirm 是「否决权」（勾掉就不写），语义已废除；
+    // never 由「允许 AI 更新 = 不允许」承担。这里一律回落 silent。
+    var notifyStyle =
+        StatusNotifyStyle.parse(existing?['notifyStyle']).storageValue;
+    final notifyTemplateController = TextEditingController(
+      text: existing?['notifyTemplate']?.toString() ?? '',
+    );
+    var promptSection = existing?['promptSection']?.toString() ??
+        DataChannelPromptItem.sectionUiData;
+    var cardTarget = CardEntryTarget.fromJson(existing?['cardEntryTarget']) ??
+        const CardEntryTarget(
+            group: CardEntryTarget.groupIntro, entryId: '', fieldKey: '');
+    final cardCustomTitleController =
+        TextEditingController(text: cardTarget.isCustomEntry ? cardTarget.fieldKey : '');
+
+    Future<void> closeDialog(BuildContext ctx, bool value) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!ctx.mounted) return;
+      Navigator.pop(ctx, value);
+    }
+
+    final saved = await showKeyboardSafeDialog<bool>(
+      context: context,
+      // controller 交给弹窗托管：await 返回时退场动画还要跑 ~150ms，
+      // 期间 TextField 仍在重建，自行 dispose 会抛
+      // 「A TextEditingController was used after being disposed」。
+      disposables: [
+        nameController,
+        cardCustomTitleController,
+        notifyTemplateController,
+      ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('数据通道 · ${module.name}'),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '所属复合实例：${compositeElement.composite?.name ?? compositeElement.id}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF777783),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '启用数据通道',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF111116),
+                          ),
+                        ),
+                      ),
+                      Switch(
+                        value: enabled,
+                        onChanged: (value) =>
+                            setDialogState(() => enabled = value),
+                      ),
+                    ],
+                  ),
+                  if (!enabled)
+                    const Text(
+                      '关闭并应用后，将清除该暴露项的数据通道配置。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF777783),
+                        height: 1.35,
+                      ),
+                    )
+                  else ...[
+                    const Text(
+                      '当前仅保存配置，不写入 SessionState、不注入 Prompt。',
+                      style:
+                          TextStyle(fontSize: 11, color: Color(0xFF777783)),
+                    ),
+                    const SizedBox(height: 10),
+                    ..._buildDataChannelFormFields(
+                      labels: labels,
+                      fallbackName: module.name,
+                      nameController: nameController,
+                      semanticSource: semanticSource,
+                      labelElementId: labelElementId,
+                      targetKind: targetKind,
+                      llmReadPolicy: llmReadPolicy,
+                      llmWritePolicy: llmWritePolicy,
+                      notifyStyle: notifyStyle,
+                      notifyTemplateController: notifyTemplateController,
+                      promptSection: promptSection,
+                      cardTarget: cardTarget,
+                      cardCustomTitleController: cardCustomTitleController,
+                      onCardTarget: (value) =>
+                          setDialogState(() => cardTarget = value),
+                      onSemanticSource: (value) =>
+                          setDialogState(() => semanticSource = value),
+                      onLabelElementId: (value) =>
+                          setDialogState(() => labelElementId = value),
+                      onTargetKind: (value) =>
+                          setDialogState(() => targetKind = value),
+                      onReadPolicy: (value) =>
+                          setDialogState(() => llmReadPolicy = value),
+                      onWritePolicy: (value) =>
+                          setDialogState(() => llmWritePolicy = value),
+                      onNotifyStyle: (value) =>
+                          setDialogState(() => notifyStyle = value),
+                      onPromptSection: (value) =>
+                          setDialogState(() => promptSection = value),
+                      onNormalizeLabelId: (value) => labelElementId = value,
+                      onNameChanged: () => setDialogState(() {}),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => closeDialog(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => closeDialog(ctx, true),
+              child: const Text('应用'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true && mounted) {
+      final name = _resolveDataChannelName(
+        semanticSource: semanticSource,
+        manualName: nameController.text,
+        labelElementId: labelElementId,
+        labels: labels,
+        fallbackName: module.name,
+      ).trim();
+      final nextOverrides =
+          Map<String, dynamic>.from(propertyOverride.overrides);
+      if (!enabled || name.isEmpty) {
+        nextOverrides.remove('dataChannel');
+      } else {
+        nextOverrides['dataChannel'] = _buildDataChannelPayload(
+          name: name,
+          semanticSource: semanticSource,
+          labelElementId: labelElementId,
+          sourceComponentId: child.id,
+          module: module,
+          targetKind: targetKind,
+          visibility: visibility,
+          llmReadPolicy: llmReadPolicy,
+          llmWritePolicy: llmWritePolicy,
+          notifyStyle: notifyStyle,
+          notifyTemplate: notifyTemplateController.text,
+          promptSection: promptSection,
+          cardTarget: cardTarget,
+        );
+      }
+      final nextOverride =
+          propertyOverride.copyWith(overrides: nextOverrides);
+      setState(() {
+        _upsertPropertyOverride(nextOverride);
+      });
+      // 只在**刚建立**绑定时同步值与量程并登记基线。
+      // 已绑定时作者改的是字段本身的数值，保留他填的。
+      if (!wasBoundOnOpen) {
+        _syncStatusFieldForOverride(nextOverride);
+      }
+      _persistAssemblyElements();
+    }
   }
 }
