@@ -259,6 +259,13 @@ class UIAssetService {
   }
 
   UIModule? getModule(String id) => _modules[id];
+
+  /// 全部模组，**含内置引擎原子**。
+  ///
+  /// 展示类界面一律不要用它——内置原子是所有 UI 的默认元素，
+  /// 陈列出来只是噪音（用户反馈）。列表页请用 [getUserModules]，
+  /// 工作台左侧「原材料」区请用 [getFoundationModules]。
+  /// 目前仅保留给需要按 id 全量查找的场景。
   List<UIModule> getAllModules() => _modules.values.toList();
 
   /// 右侧完成资产库使用：排除内置基础原子与已废弃的历史基础预设。

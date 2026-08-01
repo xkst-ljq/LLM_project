@@ -28,8 +28,13 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
 
   @override
   Widget build(BuildContext context) {
-    final modules = _assetService.getAllModules();
+    // 用 getUserModules 而非 getAllModules：内置引擎原子（文本、按钮、
+    // 滑块……）是所有 UI 的默认元素，作者在工作台左侧「原材料」区
+    // 随时能取用，在成品库里再陈列一遍纯属噪音（用户反馈）。
+    // 这里只展示作者**自己保存**的资产。
+    final modules = _assetService.getUserModules();
     final composites = _assetService.getAllComposites();
+    final isEmpty = modules.isEmpty && composites.isEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -42,11 +47,30 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
           ),
         ],
       ),
-      body: ListView(
+      body: isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  '还没有保存的资产。\n'
+                  '在 UI 工作台拼好积木后点「保存」，就会出现在这里。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF888896),
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            )
+          : ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          // 两个分区都做空判断：只存过复合件时不该留一个空的「自定义模组」
+          // 标题杵在上面。
+          if (modules.isNotEmpty) ...[
           Text(
-            'UI 模组预览',
+            '自定义模组',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: Colors.black54,
@@ -76,8 +100,10 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
             }).toList(),
           ),
           const SizedBox(height: 24),
+          ],
+          if (composites.isNotEmpty) ...[
           Text(
-            '组合块预览',
+            '组合块',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.bold,
               color: Colors.black38,
@@ -137,6 +163,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
               );
             }).toList(),
           ),
+          ],
         ],
       ),
     );
