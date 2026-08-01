@@ -4853,9 +4853,10 @@ direction: none | upload_only | bidirectional
 > 等会 logic 改完后准备着手修改 assembly 的复合组件的编辑页，
 > 这一个有很多问题和交互别扭。
 
-**排在 `_showAtomInstanceEditorDialog` 字段组迁移之后做**，
-理由：那次迁移正在建立「每类型一个字段组」的模式，
-复合件编辑页大概率能复用同一套结构，先把模式跑通再动它。
+**前置条件已完成**：`_showAtomInstanceEditorDialog` 的字段组迁移
+已分四批全部收尾（13 种类型全部迁入 `atom_field_groups.dart`，
+方法体 1123 → 480 行）。「每类型一个字段组」的模式已跑通，
+复合件编辑页可直接复用同一套结构。
 
 **动手前要先问清楚「哪里别扭」**——用户说的是「很多问题」，
 不要自己猜着改。已知的相关入口：

@@ -322,11 +322,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   bool _fillControllersFromStatusField({
     required Map<String, dynamic>? channel,
     required String moduleType,
-    required TextEditingController minController,
-    required TextEditingController maxController,
-    required TextEditingController currentController,
-    required TextEditingController textController,
-    required TextEditingController selectDefaultController,
+    required RangeControllers? range,
+    required TextEditingController? content,
     required void Function(bool) onSwitchValue,
   }) {
     final fieldId = DataChannelService.statusFieldIdOfChannel(channel);
@@ -337,36 +334,37 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final raw = field.initialValue.trim();
 
     if (field.isNumber) {
-      // 数值型：量程 + 当前值。
+      // 数值型：量程 + 当前值。没有量程概念的类型（text）只写内容。
       final min = field.minValue ?? 0.0;
       final max = field.maxValue ?? 100.0;
-      minController.text = min.toStringAsFixed(0);
-      maxController.text = max.toStringAsFixed(0);
-      final parsed = double.tryParse(raw);
-      if (parsed != null) {
-        currentController.text = parsed.clamp(min, max).toStringAsFixed(0);
+      if (range != null) {
+        range.min.text = min.toStringAsFixed(0);
+        range.max.text = max.toStringAsFixed(0);
+        final parsed = double.tryParse(raw);
+        if (parsed != null) {
+          range.current.text = parsed.clamp(min, max).toStringAsFixed(0);
+        }
       }
       // 数值字段绑到 text 组件上是合法的（用文字显示数值）。
-      if (moduleType == 'text' && parsed != null) {
-        textController.text = raw;
+      if (moduleType == 'text' && double.tryParse(raw) != null) {
+        content?.text = raw;
       }
-      return true;
+      return range != null || moduleType == 'text';
     }
 
-    // 文本型：按组件类型写到各自承载内容的那个 controller。
+    // 文本型：写进该类型承载内容的那个 controller。
     if (raw.isEmpty) return false;
     switch (moduleType) {
       case 'text':
       case 'input':
-        textController.text = raw;
-        return true;
       case 'select':
-        // 填进去，但**不保证生效**：保存时有一道
+        // select 填进去但**不保证生效**：保存时有一道
         // `valid ? wanted : options.first.value` 的校验，
         // 状态字段的值不在选项列表里就会被打回第一项。
         // 这是 select 的固有约束（当前值必须是合法选项），
         // 不是同步的 bug——作者需要自己保证选项覆盖了字段可能的取值。
-        selectDefaultController.text = raw;
+        if (content == null) return false;
+        content.text = raw;
         return true;
       case 'switch':
         onSwitchValue(raw == 'true' || raw == '1' || raw == '开启');
@@ -4451,10 +4449,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     return null;
   }
 
-  int? _intProp(Map<String, dynamic> props, String key) {
-    return _numProp(props, key)?.toInt();
-  }
-
   /// 关键职责标签。点亮后配色与所属 UI 模式一致。
   Widget _buildKeyActionTag({
     required String mode,
@@ -5386,84 +5380,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     }
 
     final nameController = TextEditingController(text: module.name);
-    // 已迁移到「字段组」的类型走这里；返回 null 表示还没迁，
-    // 继续用下面那些散落的控制器与 if(type=='xxx') 分支。
-    // 迁移进度与设计说明见 atom_field_groups.dart。
+    // 类型专属编辑逻辑全在字段组里（见 atom_field_groups.dart）。
+    // 返回 null 表示该类型没有专属字段（如 surface），
+    // 只出通用部分：名称 / 语义标记 / 外观 / 数据通道。
     final fieldGroup = AtomFieldGroupRegistry.of(module);
 
-    // ⚠️ 下面这两个控制器**跨类型共用**，不能因为 text 迁走就删：
-    //   textController     → text(已迁) / input 的「默认文本」
-    //   fontSizeController → text(已迁) / message_flow 的「字号」
-    // 迁移其余类型时同样要先确认控制器还有没有别的使用者。
-    final textController = TextEditingController(
-      text: module.properties['text']?.toString() ?? '',
-    );
-    final fontSizeController = TextEditingController(
-      text: (_numProp(module.properties, 'fontSize') ?? 14.0)
-          .toStringAsFixed(0),
-    );
-    final radiusController = TextEditingController(
-      text: (module.type == 'image'
-              ? (_numProp(module.properties, 'borderRadius') ??
-                  module.borderRadius)
-              : module.borderRadius)
-          .toStringAsFixed(0),
-    );
-    final minController = TextEditingController(
-      text: (_numProp(module.properties, 'min') ?? 0.0).toStringAsFixed(0),
-    );
-    final maxController = TextEditingController(
-      text: (_numProp(module.properties, 'max') ?? 100.0).toStringAsFixed(0),
-    );
-    final currentController = TextEditingController(
-      // select 的 current 是选项 value（字符串），这里解析失败会回落 0，
-      // 且 select 分支实际使用 selectDefaultController，不受影响。
-      text: (_numProp(module.properties, 'current') ?? 0.0)
-          .toStringAsFixed(0),
-    );
-    // button 的手势判定手感。默认值与渲染端 _ButtonGestureWidget 保持一致。
-    final doubleTapIntervalController = TextEditingController(
-      text: (_intProp(module.properties, 'doubleTapIntervalMs') ?? 300)
-          .toString(),
-    );
-    final longPressThresholdController = TextEditingController(
-      text: (_intProp(module.properties, 'longPressThresholdMs') ?? 500)
-          .toString(),
-    );
-    final placeholderController = TextEditingController(
-      text: module.properties['placeholder']?.toString() ?? '',
-    );
-    final maxLengthController = TextEditingController(
-      text: _intProp(module.properties, 'maxLength')?.toString() ?? '',
-    );
-    final optionsController = TextEditingController(
-      text: SelectOption.parseList(module.properties['options'])
-          .map((option) => option.label == option.value
-              ? option.label
-              : '${option.label}|${option.value}')
-          .join('\n'),
-    );
-    final historyLimitController = TextEditingController(
-      text: (_intProp(module.properties, 'historyLimit') ?? 0) == 0
-          ? ''
-          : '${_intProp(module.properties, 'historyLimit')}',
-    );
-    var flowShowUser = module.properties['showUser'] != false;
-    var flowShowAssistant = module.properties['showAssistant'] != false;
-    // A11-2 富文本开关（message_flow 用）。默认开——
-    // LLM 回复里带 Markdown 是常态，关掉会看到满屏的 ** 和 #。
-    var flowRichText = module.properties['richText'] != false;
-    final imageUrlController = TextEditingController(
-      text: module.properties['url']?.toString() ?? '',
-    );
-    final imageAssetController = TextEditingController(
-      text: module.properties['assetPath']?.toString() ?? '',
-    );
-    final selectDefaultController = TextEditingController(
-      text: module.properties['current']?.toString() ??
-          module.properties['defaultValue']?.toString() ??
-          '',
-    );
     final existingChannel = _dataChannelOf(module);
     // 打开这个对话框时**是否已经绑定**状态字段。
     //
@@ -5508,25 +5429,8 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                 group: CardEntryTarget.groupIntro, entryId: '', fieldKey: '');
     var isKeyAction = UISemanticRole.isKeyAction(module);
     var sendsMessage = UISemanticRole.sendsMessage(module);
-    // text 的 overflow / richText / textAlign 已迁入 TextFieldGroup。
-    var switchValue = module.properties['value'] != false;
-    // input 的文本落点与多行开关。
-    var textVAlign =
-        module.properties['textVerticalAlign']?.toString() ?? 'center';
-    var textHAlign =
-        module.properties['textHorizontalAlign']?.toString() ?? 'left';
-    var inputMultiline = module.properties['multiline'] == true;
-    // A11-2：图片来源。选了头像时路径由运行时提供，作者填的静态值被忽略。
-    var imageSource = switch (module.properties['imageSource']?.toString()) {
-      AvatarScope.sourceCharacter => AvatarScope.sourceCharacter,
-      AvatarScope.sourceUser => AvatarScope.sourceUser,
-      _ => AvatarScope.sourceCustom,
-    };
-    var imageFit = switch (module.properties['fit']?.toString()) {
-      'contain' => 'contain',
-      'fill' => 'fill',
-      _ => 'cover',
-    };
+    // 13 种组件类型的专属状态已全部迁入 atom_field_groups.dart，
+    // 这里只剩跨类型共用的语义标记（上面的 isKeyAction / sendsMessage）。
 
     double readDouble(TextEditingController controller, double fallback) {
       return double.tryParse(controller.text.trim()) ?? fallback;
@@ -5561,24 +5465,9 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     final result = await showKeyboardSafeDialog<String>(
       context: context,
       disposables: [
-      nameController,
-      textController,
-      fontSizeController,
-      radiusController,
-      minController,
-      maxController,
-      currentController,
-      doubleTapIntervalController,
-      longPressThresholdController,
-      placeholderController,
-      maxLengthController,
-      optionsController,
-      selectDefaultController,
-      imageUrlController,
-      imageAssetController,
-      historyLimitController,
-      channelNameController,
-      channelNotifyTemplateController,
+        nameController,
+        channelNameController,
+        channelNotifyTemplateController,
         ...?fieldGroup?.disposables,
       ],
       builder: (ctx) => StatefulBuilder(
@@ -5660,6 +5549,12 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                         setDialogState: setDialogState,
                         numberField: numberField,
                         readDouble: readDouble,
+                        // 手感参数要查全页联动器才知道用不用得上，
+                        // 字段组自己看不到，只能从这里传。
+                        usesNonTapGesture:
+                            type == 'button' &&
+                                _buttonUsesNonTapGesture(element.id),
+                        sendsMessage: sendsMessage,
                       )),
                     // 圆角 / 透明度 / 颜色 / 材质 / 形状 → 外观专项页。
                     if (_supportsAppearanceEditor(type)) ...[
@@ -5677,249 +5572,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                       ),
                     ],
 
-                    if (type == 'button') ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF3F3F6),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Text(
-                          '按钮是一块「点击热区」，运行时不显形。\n'
-                          '想让玩家看到按下的反馈，请用联动器把它连到一个'
-                          ' surface，选择按压或涟漪方案。',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF555562),
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
-                      // 手感参数只在真的用到双击 / 长按时才出现，
-                      // 否则平白多两个数字框，作者还得猜它们干嘛用。
-                      if (_buttonUsesNonTapGesture(element.id)) ...[
-                        const SizedBox(height: 12),
-                        numberField(
-                          doubleTapIntervalController,
-                          '双击判定间隔（毫秒，100~1000）',
-                        ),
-                        const SizedBox(height: 12),
-                        numberField(
-                          longPressThresholdController,
-                          '长按判定时长（毫秒，150~3000）',
-                        ),
-                      ],
-                    ],
-                    if (type == 'input') ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: placeholderController,
-                        decoration: const InputDecoration(labelText: '占位提示'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: textController,
-                        decoration: const InputDecoration(labelText: '默认文本（可留空）'),
-                      ),
-                      const SizedBox(height: 12),
-                      numberField(maxLengthController, '最大字数（留空不限制）'),
-                      const SizedBox(height: 4),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('多行输入',
-                            style: TextStyle(fontSize: 13)),
-                        subtitle: Text(
-                          // 多行时回车用于换行，onSubmitted 不再触发，
-                          // 标了「发送消息」的输入框就发不出去了。
-                          // 这个冲突不拦，只提示——作者可能就是想要个
-                          // 多行草稿框，再配个确认按钮来提交。
-                          sendsMessage
-                              ? '开启后可换行、文字自动贴顶。\n'
-                                  '注意：本组件已标记「发送消息」，'
-                                  '多行下回车只换行，需另配确认按钮提交。'
-                              : '开启后可换行、文字自动贴顶；回车不再提交。',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        value: inputMultiline,
-                        onChanged: (value) =>
-                            setDialogState(() => inputMultiline = value),
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: textVAlign,
-                        decoration: const InputDecoration(
-                          labelText: '文字垂直位置',
-                          // 多行时强制贴顶，下拉不可用，说明原因免得作者疑惑。
-                          helperText: '把输入框拉高后，决定文字从哪里开始',
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'top', child: Text('顶部')),
-                          DropdownMenuItem(value: 'center', child: Text('居中')),
-                          DropdownMenuItem(value: 'bottom', child: Text('底部')),
-                        ],
-                        onChanged: inputMultiline
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setDialogState(() => textVAlign = value);
-                              },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: textHAlign,
-                        decoration:
-                            const InputDecoration(labelText: '文字水平位置'),
-                        items: const [
-                          DropdownMenuItem(value: 'left', child: Text('靠左')),
-                          DropdownMenuItem(value: 'center', child: Text('居中')),
-                          DropdownMenuItem(value: 'right', child: Text('靠右')),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() => textHAlign = value);
-                        },
-                      ),
-                    ],
-                    if (type == 'select') ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: optionsController,
-                        maxLines: 5,
-                        decoration: const InputDecoration(
-                          labelText: '选项列表',
-                          helperText: '每行一个：显示文本 或 显示文本|值',
-                          helperMaxLines: 2,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: selectDefaultController,
-                        decoration: const InputDecoration(
-                          labelText: '默认选中值（留空取第一项）',
-                        ),
-                      ),
-                    ],
-                    if (type == 'message_flow') ...[
-                      const SizedBox(height: 12),
-                      numberField(
-                        historyLimitController,
-                        '显示条数（留空显示全部）',
-                      ),
-                      const SizedBox(height: 12),
-                      numberField(fontSizeController, '字号'),
-                      const SizedBox(height: 4),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: const Text('显示玩家消息',
-                            style: TextStyle(fontSize: 13)),
-                        value: flowShowUser,
-                        onChanged: (v) =>
-                            setDialogState(() => flowShowUser = v),
-                      ),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: const Text('显示角色消息',
-                            style: TextStyle(fontSize: 13)),
-                        value: flowShowAssistant,
-                        onChanged: (v) =>
-                            setDialogState(() => flowShowAssistant = v),
-                      ),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: const Text('富文本渲染',
-                            style: TextStyle(fontSize: 13)),
-                        subtitle: const Text(
-                          '识别 Markdown 与 HTML。默认开启——'
-                          '关闭后 LLM 回复里的 ** 和 # 会原样显示。',
-                          style: TextStyle(fontSize: 11, height: 1.3),
-                        ),
-                        value: flowRichText,
-                        onChanged: (v) =>
-                            setDialogState(() => flowRichText = v),
-                      ),
-                      const Text(
-                        '窗口内可滚动；新消息自动滚到底，向上翻看历史时不会被拽回。',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF777783),
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                    if (type == 'image') ...[
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: imageSource,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: '图片来源',
-                          isDense: true,
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                              value: AvatarScope.sourceCustom,
-                              child: Text('自定义（下方填写）')),
-                          DropdownMenuItem(
-                              value: AvatarScope.sourceCharacter,
-                              child: Text('角色头像')),
-                          DropdownMenuItem(
-                              value: AvatarScope.sourceUser,
-                              child: Text('用户头像')),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() => imageSource = value);
-                        },
-                      ),
-                      if (AvatarScope.isDynamic(imageSource))
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text(
-                            '头像路径在运行时才确定，下面的地址与路径会被忽略。'
-                            '玩家没设置头像时这里显示为空。',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF777783),
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: imageUrlController,
-                        enabled: !AvatarScope.isDynamic(imageSource),
-                        decoration: const InputDecoration(labelText: '网络图片地址（可留空）'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: imageAssetController,
-                        enabled: !AvatarScope.isDynamic(imageSource),
-                        decoration: const InputDecoration(
-                          labelText: '本地/内部资产路径（可留空）',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: imageFit,
-                        decoration: const InputDecoration(labelText: '填充方式'),
-                        items: const [
-                          DropdownMenuItem(value: 'cover', child: Text('裁剪填满 cover')),
-                          DropdownMenuItem(value: 'contain', child: Text('完整显示 contain')),
-                          DropdownMenuItem(value: 'fill', child: Text('拉伸铺满 fill')),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() => imageFit = value);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      numberField(radiusController, '圆角'),
-                    ],
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(10),
@@ -5995,29 +5647,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
                                   channelTouchedByPage = true;
                                   final latest = res.channel;
                                   // 绑定状态字段后，值与量程要立刻反映到
-                                  // 本对话框的三个输入框里。
+                                  // 字段组的输入框里。
                                   //
                                   // 不刷新的话不只是「显示不同步」——
-                                  // 保存时 props['min'] = readDouble(minController)
-                                  // 会用打开那一刻的旧值，把刚同步好的
-                                  // 量程与数值整个覆盖回去。
-                                  // 已迁移的数值型类型用字段组自己的
-                                  // controller；否则用本对话框的旧变量。
-                                  final range = fieldGroup?.rangeControllers;
+                                  // 保存时 applyTo 会用打开那一刻的旧值，
+                                  // 把刚同步好的量程与数值整个覆盖回去。
                                   _fillControllersFromStatusField(
                                     channel: latest,
                                     moduleType: module.type,
-                                    minController: range?.min ?? minController,
-                                    maxController: range?.max ?? maxController,
-                                    currentController:
-                                        range?.current ?? currentController,
-                                    textController: textController,
-                                    selectDefaultController:
-                                        selectDefaultController,
-                                    // switch 已迁入字段组，回写到那里；
-                                    // 未迁移时仍用局部变量。
+                                    range: fieldGroup?.rangeControllers,
+                                    content: fieldGroup?.contentController,
                                     onSwitchValue: (v) {
-                                      switchValue = v;
                                       if (fieldGroup is SwitchFieldGroup) {
                                         fieldGroup.value = v;
                                       }
@@ -6114,96 +5754,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           final props = Map<String, dynamic>.from(
             _deepCloneValue(currentModule.properties) as Map,
           );
-          final type = currentModule.type;
-          // 已迁移的类型由字段组统一写回，不再散落在这条 if 链里。
+          // 类型专属字段由字段组统一写回；
+          // 13 种类型全部迁完后，这里不再有 if(type=='xxx') 长链。
           if (fieldGroup != null) {
             fieldGroup.applyTo(props);
-          } else if (type == 'button') {
-            // 热区不再承载文案：清掉历史遗留键，
-            // 否则旧卡里存着的 text 会在升级后继续被渲染端误读。
-            props
-              ..remove('text')
-              ..remove('showTextOnRuntime')
-              ..remove('active_gesture');
-            final interval =
-                int.tryParse(doubleTapIntervalController.text.trim());
-            if (interval == null) {
-              props.remove('doubleTapIntervalMs');
-            } else {
-              props['doubleTapIntervalMs'] = interval.clamp(100, 1000);
-            }
-            final threshold =
-                int.tryParse(longPressThresholdController.text.trim());
-            if (threshold == null) {
-              props.remove('longPressThresholdMs');
-            } else {
-              props['longPressThresholdMs'] = threshold.clamp(150, 3000);
-            }
-          } else if (type == 'input') {
-            props['placeholder'] = placeholderController.text.trim();
-            props['text'] = textController.text;
-            final maxLen = int.tryParse(maxLengthController.text.trim());
-            if (maxLen == null || maxLen <= 0) {
-              props.remove('maxLength');
-            } else {
-              props['maxLength'] = maxLen;
-            }
-            // 默认值不落盘，保持 properties 精简——
-            // 渲染器读不到时用的正是同一组默认（center / left / 单行）。
-            if (inputMultiline) {
-              props['multiline'] = true;
-            } else {
-              props.remove('multiline');
-            }
-            if (textVAlign == 'center') {
-              props.remove('textVerticalAlign');
-            } else {
-              props['textVerticalAlign'] = textVAlign;
-            }
-            if (textHAlign == 'left') {
-              props.remove('textHorizontalAlign');
-            } else {
-              props['textHorizontalAlign'] = textHAlign;
-            }
-          } else if (type == 'select') {
-            final parsed = <Map<String, dynamic>>[];
-            for (final rawLine in optionsController.text.split('\n')) {
-              final line = rawLine.trim();
-              if (line.isEmpty) continue;
-              final parts = line.split('|');
-              final label = parts.first.trim();
-              if (label.isEmpty) continue;
-              final value = parts.length > 1 && parts[1].trim().isNotEmpty
-                  ? parts[1].trim()
-                  : label;
-              parsed.add({'label': label, 'value': value});
-            }
-            if (parsed.isNotEmpty) {
-              props['options'] = parsed;
-            }
-            final options = SelectOption.parseList(props['options']);
-            final wanted = selectDefaultController.text.trim();
-            final valid = options.any((option) => option.value == wanted);
-            props['current'] = valid ? wanted : options.first.value;
-            props['defaultValue'] = props['current'];
-          } else if (type == 'message_flow') {
-            final limit = int.tryParse(historyLimitController.text.trim());
-            // 留空或非正数一律视为「显示全部」。
-            props['historyLimit'] = (limit == null || limit <= 0) ? 0 : limit;
-            props['fontSize'] = readDouble(fontSizeController, 12.5);
-            props['showUser'] = flowShowUser;
-            props['showAssistant'] = flowShowAssistant;
-            props['richText'] = flowRichText;
-          } else if (type == 'image') {
-            props['imageSource'] = imageSource;
-            // 静态地址照常保存：作者切回「自定义」时不用重填。
-            props['url'] = imageUrlController.text.trim();
-            props['assetPath'] = imageAssetController.text.trim();
-            props['fit'] = imageFit;
-            props['borderRadius'] =
-                readDouble(radiusController, 8.0).clamp(0.0, 999.0).toDouble();
           }
-
           if (isKeyAction) {
             props[UISemanticRole.propKey] = true;
           } else {
