@@ -33,8 +33,8 @@ mixin _AssemblyCanvasLogic
     if (element != null && element.isComposite && element.composite != null) {
       final natural = UIRenderer.compositeNaturalSize(element.composite!);
       return Size(
-        natural.width * kMinCompositeScale,
-        natural.height * kMinCompositeScale,
+        natural.width * _AssemblyLogic.kMinCompositeScale,
+        natural.height * _AssemblyLogic.kMinCompositeScale,
       );
     }
     if (type == 'progress') return const Size(12, 6);

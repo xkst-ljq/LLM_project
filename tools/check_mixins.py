@@ -108,4 +108,34 @@ for n,v in mixins.items():
         bad=True
         print(f'  ❌ {n} 够不着: {sorted(missing)}')
 if not bad: print('  全部可达 ✅')
-sys.exit(1 if (bad or cyc or dup or qbad) else 0)
+
+# ---- 检查 4：跨 mixin 的静态成员引用 ----
+#
+# **静态成员不参与 mixin 继承**：`static const _foo` 挂在 A 上时，
+# `mixin B on A` 里裸写 `_foo` 会报 `Undefined name`——
+# `on` 子句只带来实例成员。
+#
+# 这是本项目栽过两轮的坑（先是 `_AssemblyLogic.kResizeHandlePadding`
+# 被搬走，后是 `_dragThreshold` / `_pageRouterType` 等六个常量）。
+# 修法通常是把常量提到**库顶层**（part 文件间可直接共享）。
+statics={}
+for n,v in mixins.items():
+    st=set()
+    for l in open(v['file']).read().split('\n'):
+        if l.strip().startswith(('//','///')): continue
+        mm=re.match(r'^  static\s+(?:final\s+|const\s+|late\s+)?[\w<>?,\s\[\]]*?\s(\w+)\s*[({=]', l)
+        if mm: st.add(mm.group(1))
+    statics[n]=st
+sbad=False
+for n,v in mixins.items():
+    for o,ost in statics.items():
+        if o==n: continue
+        for name in ost:
+            # (?<![\w.]) 排除 `Owner.name` 这种已限定的写法
+            if re.search(r'(?<![\w.])'+re.escape(name)+r'\b', v['src']):
+                print(f'  \u274c {n} 裸用静态成员 {name}，它属于 {o}'
+                      f'（静态成员不随 mixin 继承，请提到库顶层或加类名前缀）')
+                sbad=True
+if not sbad: print('  跨 mixin 静态引用 \u2705')
+
+sys.exit(1 if (bad or cyc or dup or qbad or sbad) else 0)

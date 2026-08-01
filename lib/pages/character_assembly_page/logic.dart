@@ -1,5 +1,33 @@
 part of '../character_assembly_page.dart';
 
+/// 跨 mixin 共享的常量。
+///
+/// ## 为什么放在顶层而不是某个 mixin 里
+///
+/// **静态成员不参与 mixin 继承**。`static const` 挂在 `_AssemblyLogic`
+/// 上时，`_AssemblyCanvasLogic` 即便 `on _AssemblyLogic` 也**看不见它**
+/// ——裸写 `_dragThreshold` 会报 `Undefined name`，
+/// 写 `_AssemblyLogic._dragThreshold` 又只在同库内且名字对得上才行。
+///
+/// 拆分 `logic.dart` 时这批常量被多个分组同时引用，
+/// 挂在任何一个 mixin 上都会让其余分组编译不过。
+/// 提到库顶层后，所有 part 文件都能直接用。
+///
+/// 例外：`kResizeHandlePadding` / `kLinkerPortHotZone` /
+/// `kMinCompositeScale` 仍留在 `_AssemblyLogic` 里，
+/// 因为 `character_assembly_page.dart` 的 build 方法是以
+/// `_AssemblyLogic.kXxx` 形式点名访问的。
+
+const Size _defaultPcbSize = Size(360, 800);
+const double _pcbMinHeight = UIAssemblyInfo.minPcbHeight;
+const double _pcbMaxHeight = UIAssemblyInfo.maxPcbHeight;
+const double _pcbMinWidth = UIAssemblyInfo.minPcbWidth;
+
+/// 从资产抽屉拖出多远才算「开始放置」。
+const double _dragThreshold = 24.0;
+
+const String _pageRouterType = 'page_router';
+
 mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   final UIAssetService _assetService = UIAssetService();
   late UIAssemblyInfo _info;
@@ -21,10 +49,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   bool _showAssetDrawer = false;
   String _activeAssetCategory = 'logic';
   int _generatedElementIdSeed = 0;
-  static const Size _defaultPcbSize = Size(360, 800);
-  static const double _pcbMinHeight = UIAssemblyInfo.minPcbHeight;
-  static const double _pcbMaxHeight = UIAssemblyInfo.maxPcbHeight;
-  static const double _pcbMinWidth = UIAssemblyInfo.minPcbWidth;
   late Size _pcbSize;
   late Offset _pcbOffset;
   late Color _pcbColor;
@@ -36,8 +60,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
   double _pcbResizeStartGlobalDx = 0.0;
   // 拖放状态
   _AssemblyDragPayload? _activePlacement;
-  static const double _dragThreshold = 24.0;
-  static const String _pageRouterType = 'page_router';
   UIModule get _pageRouterTemplate => UIModule(
         id: 'atom_logic_page_router',
         name: '页面路由器',
