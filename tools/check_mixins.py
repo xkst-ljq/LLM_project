@@ -91,11 +91,18 @@ for f in files:
     libsrc+='\n'+'\n'.join(l for l in t.split('\n') if not l.strip().startswith(('//','///')))
 qbad=False
 for mx,mem in set(re.findall(r'\b(_[A-Z]\w+)\.(\w+)', libsrc)):
-    if mx in mixins and mem not in mixins[mx]['defs']:
-        if any(mem in v['defs'] for v in mixins.values()):
-            owner=[n for n,v in mixins.items() if mem in v['defs']]
-            print(f'  ❌ 限定访问 {mx}.{mem} 但它定义在 {owner}')
-            qbad=True
+    if mx not in mixins or mem in mixins[mx]['defs']: continue
+    owner=[n for n,v in mixins.items() if mem in v['defs']]
+    if owner:
+        print(f'  ❌ 限定访问 {mx}.{mem} 但它定义在 {owner}')
+    else:
+        # 成员既不在被点名的 mixin 里，也不在其它 mixin 里
+        # ——多半是被提到了库顶层，此时前缀必须去掉。
+        # 上一轮把 `_pageRouterType` 提到顶层却漏改这里，
+        # 旧版检查只在「定义在别的 mixin」时才报，于是漏掉了。
+        print(f'  ❌ 限定访问 {mx}.{mem} 但 {mx} 里没有它'
+              f'（若已提到库顶层，请去掉 `{mx}.` 前缀）')
+    qbad=True
 if not qbad: print('  静态限定访问 ✅')
 
 bad=False

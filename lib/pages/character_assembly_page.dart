@@ -1505,7 +1505,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         ),
       );
     }
-    if (el.module != null && el.module!.type == _AssemblyLogic._pageRouterType) {
+    if (el.module != null && el.module!.type == _pageRouterType) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onDoubleTap: () => _showPageRouterConfigDialog(el),
