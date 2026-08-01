@@ -537,6 +537,13 @@ class CharacterCardAssetService {
 
       final service = UIAssetService();
       await service.ensureLoaded();
+      // 顺手净化库里**之前**收录的脏模板。
+      //
+      // 净化只在收录时执行，而这个功能是后加的——在此之前入库的模板
+      // 仍带着 __anim、dataChannel 和「星轨稳定度」这类专属文案
+      // （用户实测：Studio 里还是看得到动画）。
+      // 放在导入流程里做，不额外加启动开销。
+      await _sanitizeExistingTemplates(service);
       // 按**内容指纹**去重。
       //
       // 不能用角色卡 id 做键：导入时 `c['id'] = newId` 会换一个新 id
@@ -608,6 +615,47 @@ class CharacterCardAssetService {
     }
   }
 
+  /// 净化资产库里已存在的模板（一次性迁移）。
+  ///
+  /// 幂等：已经干净的模板 `sanitizeForTemplate` 会原样返回，
+  /// 不会触发写盘。
+  static Future<void> _sanitizeExistingTemplates(UIAssetService service) async {
+    try {
+      var changed = 0;
+      for (final composite in service.getAllComposites().toList()) {
+        final cleaned =
+            composite.children.map(sanitizeForTemplate).toList();
+        // 逐个比对，全都没变就跳过——避免每次导入都无谓重写整个库。
+        var dirty = cleaned.length != composite.children.length;
+        if (!dirty) {
+          for (var i = 0; i < cleaned.length; i++) {
+            if (!identical(cleaned[i], composite.children[i])) {
+              dirty = true;
+              break;
+            }
+          }
+        }
+        if (!dirty) continue;
+        service.addComposite(UIComposite(
+          id: composite.id,
+          name: composite.name,
+          layoutType: composite.layoutType,
+          children: cleaned,
+          material: composite.material,
+          borderRadius: composite.borderRadius,
+          color: composite.color,
+          opacity: composite.opacity,
+          renderingMode: composite.renderingMode,
+          exposedPorts: composite.exposedPorts,
+        ));
+        changed++;
+      }
+      if (changed > 0) debugPrint('净化了 $changed 个历史模板');
+    } catch (e) {
+      debugPrint('净化历史模板失败（不影响导入）: $e');
+    }
+  }
+
   /// **仅 Assembly 有编辑入口**的属性键。
   ///
   /// 这些是「这张卡怎么用这个组件」的实例数据，不是组件本身的一部分：
@@ -628,6 +676,25 @@ class CharacterCardAssetService {
     ElementAnimation.propsKey, // '__anim'
   };
 
+  /// 作者写死的**专属文案**，按组件类型回落到引擎的中性默认值。
+  ///
+  /// 「星轨稳定度」「配料投放量」这类字是**这张卡赋予的语义**，
+  /// 不是组件本身的一部分（用户反馈）。模板带着它们，
+  /// 拖到别的卡里第一件事就是逐个改字，可复用性大打折扣。
+  ///
+  /// 默认值取自 `UIAssetService._initDefaultAssets` 里各原子的初始
+  /// properties，保持「新拖一个原子」与「从模板拖出来」观感一致。
+  static const Map<String, Map<String, dynamic>> _neutralTextDefaults = {
+    'text': {'text': '文本'},
+    'input': {'placeholder': '请输入...', 'text': '', 'committedValue': ''},
+    'select': {
+      'options': ['选项 1'],
+      'current': '选项 1',
+      'selectedIndex': 0,
+    },
+    'button': {'label': ''},
+  };
+
   /// 把实例元素净化成可复用的模板元素。
   ///
   /// 只剥离实例级绑定，**保留一切外观与内部联动**——
@@ -636,12 +703,24 @@ class CharacterCardAssetService {
   static UIElement sanitizeForTemplate(UIElement element) {
     if (element.isComposite && element.composite != null) {
       final inner = element.composite!;
+      final cleaned = inner.children.map(sanitizeForTemplate).toList();
+      // 子元素一个都没变就返回**原对象**。
+      // 调用方用 identical 判断「要不要写盘」，这里无条件 copyWith
+      // 会让嵌套复合件每次都被判为脏，白白重写整个资产库。
+      var dirty = false;
+      for (var i = 0; i < cleaned.length; i++) {
+        if (!identical(cleaned[i], inner.children[i])) {
+          dirty = true;
+          break;
+        }
+      }
+      if (!dirty) return element;
       return element.copyWith(
         composite: UIComposite(
           id: inner.id,
           name: inner.name,
           layoutType: inner.layoutType,
-          children: inner.children.map(sanitizeForTemplate).toList(),
+          children: cleaned,
           material: inner.material,
           borderRadius: inner.borderRadius,
           color: inner.color,
@@ -658,6 +737,18 @@ class CharacterCardAssetService {
     var touched = false;
     for (final key in _instanceOnlyPropKeys) {
       if (props.remove(key) != null) touched = true;
+    }
+    // 专属文案回落中性默认值。
+    final neutral = _neutralTextDefaults[module.type];
+    if (neutral != null) {
+      for (final entry in neutral.entries) {
+        // 只改**已存在**的键，不凭空塞。组件没写 placeholder
+        // 就说明它不需要，补一个反而多余。
+        if (!props.containsKey(entry.key)) continue;
+        if (props[entry.key] == entry.value) continue;
+        props[entry.key] = entry.value;
+        touched = true;
+      }
     }
     // 这两个是 UIModule 的顶层字段，不在 properties 里。
     final hasBinding = module.boundVariable != null ||
