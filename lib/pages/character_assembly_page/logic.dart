@@ -2467,6 +2467,10 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
 
     final raw = propertyOverride.overrides['dataChannel'];
     final existing = raw is Map ? Map<String, dynamic>.from(raw) : null;
+    // 与原子实例编辑器同理：本来就绑着状态字段时，
+    // 保存后**不能**再拉取字段值，否则会把作者刚改的覆盖回去。
+    final wasBoundOnOpen =
+        DataChannelService.statusFieldIdOfChannel(existing) != null;
     final labels = _textLabelCandidates();
     final nameController = TextEditingController(
       text: existing?['semanticLabel']?.toString() ?? module.name,
@@ -2650,8 +2654,11 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       setState(() {
         _upsertPropertyOverride(nextOverride);
       });
-      // 复合件暴露项刚建立绑定：同样要立即同步值与量程并登记基线。
-      _syncStatusFieldForOverride(nextOverride);
+      // 只在**刚建立**绑定时同步值与量程并登记基线。
+      // 已绑定时作者改的是字段本身的数值，保留他填的。
+      if (!wasBoundOnOpen) {
+        _syncStatusFieldForOverride(nextOverride);
+      }
       _persistAssemblyElements();
     }
   }
@@ -5458,6 +5465,16 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
           '',
     );
     final existingChannel = _dataChannelOf(module);
+    // 打开这个对话框时**是否已经绑定**状态字段。
+    //
+    // 决定保存后要不要拉取状态字段的值：
+    //   · 本来就绑着 → 作者这次是在**改数值**，
+    //     必须保留他填的值，之后由离开页面时的
+    //     `_buildStatusFieldWriteBack` 反写回状态栏；
+    //   · 本来没绑、这次刚绑上 → 拉取一次，
+    //     让组件立刻显示该字段的当前值与量程。
+    final wasBoundOnOpen =
+        DataChannelService.boundStatusFieldId(module) != null;
     final channelLabels = _textLabelCandidates();
     final channelNameController = TextEditingController(
       text: existingChannel?['semanticLabel']?.toString() ?? module.name,
@@ -6255,9 +6272,17 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
             ),
           );
         });
-        // 实例编辑器里也可能刚打开通道开关并绑上状态字段，
-        // 与专项页保存走同一条即时同步。
-        _syncStatusFieldForElement(_elements[index]);
+        // 只在「本次刚建立绑定」时拉取状态字段的值。
+        //
+        // 之前这里无条件同步，导致**已绑定的组件改不动**——
+        // 字段组刚把新值写进 props，紧接着就被状态字段的旧值覆盖回去
+        // （用户实测：「绑定了字段的组件就修改不动了」）。
+        //
+        // 已绑定时作者改的是「这个字段的整体数值」，
+        // 保留他填的值，离开页面时由 _buildStatusFieldWriteBack 反写。
+        if (!wasBoundOnOpen) {
+          _syncStatusFieldForElement(_elements[index]);
+        }
         _persistAssemblyElements();
       }
     }
