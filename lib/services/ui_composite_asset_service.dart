@@ -236,15 +236,49 @@ class UICompositeAssetService {
       for (final node in nodes) {
         if (node is! Map) continue;
         final module = node['module'];
+        if (module is Map) {
+          // 联动源 id 列表（同组件内 scope）。Assembly 内部的复制粘贴
+          // 已经处理了它（logic.dart 的 remap），导入路径此前漏了。
+          final sources = module['linkedSources'];
+          if (sources is List) {
+            for (var i = 0; i < sources.length; i++) {
+              final old = sources[i]?.toString() ?? '';
+              if (old.isNotEmpty && idMap.containsKey(old)) {
+                sources[i] = idMap[old];
+              }
+            }
+          }
+        }
         if (module is Map && module['properties'] is Map) {
           final props = module['properties'] as Map;
           final linker = props['linker'];
           if (linker is Map) {
-            for (final key in ['sourceId', 'targetId', 'sourceElementId',
-                'targetElementId']) {
+            // 键名必须与引擎一致。
+            //
+            // 这里原先写的是 sourceId / targetId / sourceElementId /
+            // targetElementId —— **四个都不存在**。引擎实际用的是
+            // sourceModuleId(35 处) / targetModuleId(27 处)。
+            // 于是导入后元素 id 全换了新的、linker 却还指着旧 id，
+            // 组件看着正常，一解散就发现连线全断
+            // （用户实测：「解散后发现内部的所有连线都断开了」）。
+            for (final key in ['sourceModuleId', 'targetModuleId']) {
               final old = linker[key]?.toString() ?? '';
               if (old.isNotEmpty && idMap.containsKey(old)) {
                 linker[key] = idMap[old];
+              }
+            }
+
+            // 中转连线结构（见 ui_models.dart 里的 linker 元数据说明）：
+            // inputConnection/outputConnection 的 from、to 同样存元素 id。
+            // 漏掉它们的话，编辑器里连线会显示成断头线。
+            for (final key in ['inputConnection', 'outputConnection']) {
+              final conn = linker[key];
+              if (conn is! Map) continue;
+              for (final endpoint in ['from', 'to']) {
+                final old = conn[endpoint]?.toString() ?? '';
+                if (old.isNotEmpty && idMap.containsKey(old)) {
+                  conn[endpoint] = idMap[old];
+                }
               }
             }
           }

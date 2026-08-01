@@ -1689,6 +1689,37 @@ controller.dispose();        // ← 错！
 **凡是内容里有 TextField 的 showDialog，一律改用这个包装。**
 已替换：assembly 编辑器 8 处 + Studio 的 math_node_editor 1 处。
 
+### 3.5i 导入复合件时的 id 重映射：键名必须与引擎一致
+
+**症状**：导出 `.llmui` 再导入，组件看着正常，**一解散就发现内部连线全断**。
+
+**根因**：`UICompositeAssetService.remapIds` 改写的是
+`sourceId` / `targetId` / `sourceElementId` / `targetElementId`——
+**这四个键在引擎里根本不存在**。真实键名是：
+
+| 位置 | 键 |
+|---|---|
+| `module.properties.linker` | `sourceModuleId`（35 处）/ `targetModuleId`（27 处） |
+| `linker.inputConnection` / `outputConnection` | `from` / `to` |
+| `module.linkedSources` | 字符串数组，元素 id |
+| `composite.exposedPorts[]` | `elementId` |
+| `module.properties.dataChannel` | `sourceComponentId` |
+
+于是导入后元素 id 全换了新的，linker 却还指着旧 id，引用全部悬空。
+
+**为什么一直没被发现**：`test/ui_composite_asset_test.dart`
+**自己复刻了一份 remapIds 实现**（而不是 import 真实实现），
+复刻时抄了同一批错误键名，样本数据也用错误键名构造——
+测试与实现犯同样的错，于是恒绿。
+
+**教训**：测试里复刻实现逻辑等于把 bug 抄两遍。
+能 import 就 import；实在要复刻，样本数据必须取自**真实产物**
+（导出一个真组件看它的 JSON），不能凭记忆写键名。
+
+**已加兜底断言**：`expect(jsonEncode(out).contains('el_'), isFalse)`
+——整棵树序列化后不该残留任何旧 id 前缀。
+逐字段断言只能覆盖已知字段，新增字段时必漏；这条能兜住。
+
 ### 3.6 页面路由器触发规则
 - A7 阶段的 `page_router` 本体点击跳转只是临时编辑态测试入口，A5 后已退场。
 - 页面切换应通过 `button → linker → page_router` 触发。

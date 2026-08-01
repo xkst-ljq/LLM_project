@@ -60,19 +60,38 @@ Map<String, dynamic> remapIds(Map<String, dynamic> raw) {
     for (final node in nodes) {
       if (node is! Map) continue;
       final module = node['module'];
+      if (module is Map) {
+        final sources = module['linkedSources'];
+        if (sources is List) {
+          for (var i = 0; i < sources.length; i++) {
+            final old = sources[i]?.toString() ?? '';
+            if (old.isNotEmpty && idMap.containsKey(old)) {
+              sources[i] = idMap[old];
+            }
+          }
+        }
+      }
       if (module is Map && module['properties'] is Map) {
         final props = module['properties'] as Map;
         final linker = props['linker'];
         if (linker is Map) {
-          for (final key in [
-            'sourceId',
-            'targetId',
-            'sourceElementId',
-            'targetElementId',
-          ]) {
+          // 键名与引擎一致：sourceModuleId / targetModuleId。
+          // 这份复刻曾和实现一起写错成 sourceId / targetId，
+          // 于是测试恒绿、真实导入却连线全断。
+          for (final key in ['sourceModuleId', 'targetModuleId']) {
             final old = linker[key]?.toString() ?? '';
             if (old.isNotEmpty && idMap.containsKey(old)) {
               linker[key] = idMap[old];
+            }
+          }
+          for (final key in ['inputConnection', 'outputConnection']) {
+            final conn = linker[key];
+            if (conn is! Map) continue;
+            for (final endpoint in ['from', 'to']) {
+              final old = conn[endpoint]?.toString() ?? '';
+              if (old.isNotEmpty && idMap.containsKey(old)) {
+                conn[endpoint] = idMap[old];
+              }
             }
           }
         }
@@ -130,13 +149,22 @@ Map<String, dynamic> _sample() => {
           'module': {
             'id': 'm_b',
             'properties': {
-              'linker': {'sourceId': 'el_a', 'targetId': 'el_c'},
+              'linker': {
+                'sourceModuleId': 'el_a',
+                'targetModuleId': 'el_c',
+                'inputConnection': {'from': 'el_a', 'to': 'el_b'},
+                'outputConnection': {'from': 'el_b', 'to': 'el_c'},
+              },
             },
           },
         },
         {
           'id': 'el_c',
-          'module': {'id': 'm_c', 'properties': <String, dynamic>{}},
+          'module': {
+            'id': 'm_c',
+            'linkedSources': ['el_a'],
+            'properties': <String, dynamic>{},
+          },
         },
       ],
       'exposedPorts': [
@@ -180,8 +208,39 @@ void main() {
       final newC = (children[2] as Map)['id'];
       final linker = ((children[1] as Map)['module']
           as Map)['properties']['linker'] as Map;
-      expect(linker['sourceId'], newA);
-      expect(linker['targetId'], newC);
+      expect(linker['sourceModuleId'], newA);
+      expect(linker['targetModuleId'], newC);
+    });
+
+    test('中转连线 inputConnection / outputConnection 跟着改写', () {
+      // 漏改会让编辑器里的连线显示成断头线。
+      final out = remapIds(_sample());
+      final children = out['children'] as List;
+      final newA = (children[0] as Map)['id'];
+      final newB = (children[1] as Map)['id'];
+      final newC = (children[2] as Map)['id'];
+      final linker = ((children[1] as Map)['module']
+          as Map)['properties']['linker'] as Map;
+      expect((linker['inputConnection'] as Map)['from'], newA);
+      expect((linker['inputConnection'] as Map)['to'], newB);
+      expect((linker['outputConnection'] as Map)['from'], newB);
+      expect((linker['outputConnection'] as Map)['to'], newC);
+    });
+
+    test('linkedSources 跟着改写', () {
+      final out = remapIds(_sample());
+      final children = out['children'] as List;
+      final newA = (children[0] as Map)['id'];
+      final sources =
+          ((children[2] as Map)['module'] as Map)['linkedSources'] as List;
+      expect(sources.single, newA);
+    });
+
+    test('改写后不残留任何旧 id', () {
+      // 兜底断言：整棵树序列化后不该再出现 el_ 前缀的旧 id。
+      // 前面那些逐字段断言只能覆盖已知字段，新增字段时容易漏。
+      final out = remapIds(_sample());
+      expect(jsonEncode(out).contains('el_'), isFalse);
     });
 
     test('exposedPorts 跟着改写', () {
@@ -239,7 +298,10 @@ void main() {
             'module': {
               'id': 'm1',
               'properties': {
-                'linker': {'sourceId': 'e1', 'targetId': 'ghost'},
+                'linker': {
+                  'sourceModuleId': 'e1',
+                  'targetModuleId': 'ghost',
+                },
               },
             },
           },
@@ -248,7 +310,10 @@ void main() {
       final out = remapIds(src);
       final linker = (((out['children'] as List).first as Map)['module']
           as Map)['properties']['linker'] as Map;
-      expect(linker['targetId'], 'ghost');
+      // 悬空的 targetModuleId 原样保留；sourceModuleId 指向真实元素，
+      // 应当被换成新 id。旧写法用的是不存在的键名，两条都恒真。
+      expect(linker['targetModuleId'], 'ghost');
+      expect(linker['sourceModuleId'], isNot('e1'));
     });
   });
 
