@@ -56,11 +56,11 @@ class _EngineProbePageState extends State<EngineProbePage> {
   ///
   /// 失败**不影响**其余渲染：引擎内部会退回「不播水波动画」，
   /// 这是设计好的降级路径。这里单独把结果显示出来，
-  /// 是因为它静默失败时最难发现（见 ripple_shader.dart 的注释）。
+  /// 是因为它静默失败时最难发现（见 RippleShaderLoader 的注释）。
   Future<void> _probeShader() async {
-    await RippleShader.ensureLoaded();
+    await RippleShaderLoader.ensureLoaded();
     if (!mounted) return;
-    setState(() => _shaderOk = RippleShader.isReady);
+    setState(() => _shaderOk = RippleShaderLoader.isReady);
   }
 
   void _parse() {

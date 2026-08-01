@@ -4,7 +4,11 @@ publish_to: 'none'
 version: 0.1.0+1
 
 environment:
-  sdk: ^3.5.0
+  # 与主项目及 llm_ui_engine 对齐。
+  #
+  # 不能低于 3.7：引擎源码用了 wildcard 变量（Dart 3.7+），
+  # 宿主语言版本过低会让同一份源码报 `duplicate_definition`。
+  sdk: ^3.11.5
 
 dependencies:
   flutter:
