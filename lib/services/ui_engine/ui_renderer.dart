@@ -1359,9 +1359,32 @@ class UIRenderer {
     }
     final visualMode = module.properties['visualMode']?.toString() ?? 'filled';
     final placeholderColor = Color((module.properties['placeholderColor'] as num?)?.toInt() ?? 0xFF888896);
+
+    // 编辑态占位预览也要跟随文本落点设置。
+    //
+    // 这里是一条**独立于运行时 TextField 的分支**（编辑器里不该出现
+    // 可聚焦的真输入框），所以新属性必须在两处各读一遍。
+    // 只改运行时那边的话，作者在画布上看到的永远是居中，
+    // 改了设置却没有任何反馈（用户反馈）。
+    final vAlign = module.properties['textVerticalAlign']?.toString() ?? 'center';
+    final hAlign = module.properties['textHorizontalAlign']?.toString() ?? 'left';
+    final multiline = module.properties['multiline'] == true;
+    // 与运行时同一条规则：多行强制贴顶。
+    final effectiveVAlign = multiline ? 'top' : vAlign;
+
     final displayBox = Container(
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: switch ((effectiveVAlign, hAlign)) {
+        ('top', 'center') => Alignment.topCenter,
+        ('top', 'right') => Alignment.topRight,
+        ('top', _) => Alignment.topLeft,
+        ('bottom', 'center') => Alignment.bottomCenter,
+        ('bottom', 'right') => Alignment.bottomRight,
+        ('bottom', _) => Alignment.bottomLeft,
+        (_, 'center') => Alignment.center,
+        (_, 'right') => Alignment.centerRight,
+        _ => Alignment.centerLeft,
+      },
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: visualMode == 'filled' ? module.color.withValues(alpha: module.opacity * 0.12) : Colors.transparent,
         borderRadius: BorderRadius.circular(4),
@@ -1370,7 +1393,14 @@ class UIRenderer {
       child: Text(
         placeholder,
         style: TextStyle(color: placeholderColor, fontSize: 13),
-        overflow: TextOverflow.ellipsis,
+        textAlign: switch (hAlign) {
+          'center' => TextAlign.center,
+          'right' => TextAlign.right,
+          _ => TextAlign.left,
+        },
+        // 多行时让占位文字也能折行，直观反映「这是个多行框」。
+        maxLines: multiline ? null : 1,
+        overflow: multiline ? TextOverflow.clip : TextOverflow.ellipsis,
       ),
     );
 
