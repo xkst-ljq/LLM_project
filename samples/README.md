@@ -340,16 +340,29 @@ scene 一套 UI 内含 5 页
        └ 骰子面板(overlay，挂在主菜单下)
 ```
 
-#### ⚠️ 运行时只支持两种跳转方式
+#### 运行时支持三种跳转方式
 
 已核实源码（`ui_assembly_runtime_view.dart`）：
 
 1. **滑动手势** —— `page.gestures` 里配 `direction → targetPageId`
 2. **点叠加页外部** —— 自动回父页，无需配置
+3. **按钮换页** —— `button --linker(button_to_page_route)--> page_router`
 
-`button_to_page_route` 这条方案**虽然登记在方案表里，但运行时没有
-任何消费方**——按钮连上去点了不会切页。生成多页面 UI 时
-导航一律用手势，不要指望按钮跳转。
+第 3 条曾长期只登记在方案表里、**没有运行时消费方**（连线保存成功但
+点了没反应），已补齐。用法：
+
+```
+button 元素  --linker: button_to_page_route-->  page_router 元素
+                                                  └ properties.route = {
+                                                      action: switch_base_page | open_overlay,
+                                                      targetPageId: "pg_xxx",
+                                                      transition: base_slide | base_fade | overlay_fade,
+                                                      durationMs: 260 }
+```
+
+linker 上可写 `sourceGesture: tap | double_tap | long_press`
+指定用哪种点击触发，缺省为 `tap`。
+`page_router` 是逻辑件，摆在 PCB 外的机房区，默认尺寸 124×56。
 
 #### 手势的结构
 

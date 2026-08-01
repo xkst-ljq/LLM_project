@@ -5,11 +5,12 @@
     主菜单(base) ⇄ 角色卡(base) ⇄ 背包(base) ⇄ 日志(base)
         └ 骰子面板(overlay，挂在主菜单下)
 
-导航方式（**运行时只支持这两种**，已核实源码）：
-  1. page.gestures：滑动方向 → 目标页
+导航方式：
+  1. page.gestures：滑动方向 → 目标页（本卡用的这种）
   2. 点叠加页外部 → 自动回父页
-`button_to_page_route` 方案虽在方案表里登记，但运行时无消费方，
-按钮点了不会切页——所以导航一律用手势。
+  3. button --linker--> page_router（后来补齐了运行时消费方，
+     见 generate_gallery_card.py / generate_workshop_card.py 的用法）
+本卡写于第 3 种可用之前，故一律用手势；保留原样作为「纯手势导航」的样例。
 """
 import json, time, zipfile, os
 
