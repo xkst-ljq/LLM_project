@@ -22,7 +22,8 @@ part of '../character_assembly_page.dart';
 /// | 暴露数据通道 | `_showExposedDataChannelEditor` |
 /// | 子件整页编辑 | 见 `composite_child_editor.dart` |
 /// | 挂载位绑定 | `_showCompositeOverrideBindingEditor` |
-/// | 覆写增删查 | `_ensurePropertyOverride` / `_upsertPropertyOverride` 等 |
+/// 覆写槽位的增删查（`_ensurePropertyOverride` 等）在
+/// `composite_child_editor.dart` —— 两边都要用，放在依赖链下游。
 ///
 /// ## 改这里之前务必知道
 ///
@@ -48,7 +49,8 @@ part of '../character_assembly_page.dart';
 /// `on _AssemblyLogic` 声明了依赖：本文件用到 `_activePropertyOverrides`
 /// / `_persistAssemblyElements` / `_deepCloneValue` 等成员，
 /// 它们都定义在 `logic.dart` 里。
-mixin _AssemblyCompositeLogic on State<CharacterAssemblyPage>, _AssemblyLogic {
+mixin _AssemblyCompositeLogic
+    on State<CharacterAssemblyPage>, _AssemblyLogic, _CompositeChildEditor {
 
   String _propertyOverrideStatusText(PropertyOverride override) {
     final parts = <String>[];
@@ -891,41 +893,4 @@ mixin _AssemblyCompositeLogic on State<CharacterAssemblyPage>, _AssemblyLogic {
     }
   }
 
-  PropertyOverride _ensurePropertyOverride({
-    required String componentId,
-    required String sourceElementId,
-    String? sourceCompositeId,
-  }) {
-    final existingIndex = _activePropertyOverrides.indexWhere(
-      (override) => override.componentId == componentId,
-    );
-    if (existingIndex != -1) {
-      return _activePropertyOverrides[existingIndex];
-    }
-    final created = PropertyOverride(
-      componentId: componentId,
-      sourceElementId: sourceElementId,
-      sourceCompositeId: sourceCompositeId,
-    );
-    _activePropertyOverrides.add(created);
-    return created;
-  }
-
-  void _upsertPropertyOverride(PropertyOverride override) {
-    final index = _activePropertyOverrides.indexWhere(
-      (candidate) => candidate.componentId == override.componentId,
-    );
-    if (index == -1) {
-      _activePropertyOverrides.add(_clonePropertyOverride(override));
-    } else {
-      _activePropertyOverrides[index] = _clonePropertyOverride(override);
-    }
-    _persistAssemblyElements();
-  }
-
-  void _removePropertyOverride(String componentId) {
-    _activePropertyOverrides
-        .removeWhere((override) => override.componentId == componentId);
-    _persistAssemblyElements();
-  }
 }

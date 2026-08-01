@@ -603,17 +603,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
         .toList();
   }
 
-  List<UIElement> _exposedChildrenOfComposite(UIElement compositeElement) {
-    final composite = compositeElement.composite;
-    if (!compositeElement.isComposite || composite == null) return const [];
-    final exposedIds = (composite.exposedPorts ?? const <ExposedPort>[])
-        .map((port) => port.elementId)
-        .toSet();
-    return composite.children
-        .where((child) => exposedIds.contains(child.id))
-        .toList();
-  }
-
   // ===== A14-4：linker 连线可视化 =====
   //
   // 采用 Studio 的连线方式（用户明确要求）：操作性、可视性、
@@ -3401,18 +3390,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
       });
       _persistAssemblyElements();
     }
-  }
-
-  /// 宽容读取数值属性。
-  ///
-  /// 组件属性里同一个键在不同类型下语义不同：例如 select 的 `current`
-  /// 存的是选项 value（String），而 progress / slider 的 `current` 是数值。
-  /// 直接 `as num?` 会在 select 上抛 type cast 异常，因此统一走这里。
-  double? _numProp(Map<String, dynamic> props, String key) {
-    final raw = props[key];
-    if (raw is num) return raw.toDouble();
-    if (raw is String) return double.tryParse(raw.trim());
-    return null;
   }
 
   /// 关键职责标签。点亮后配色与所属 UI 模式一致。

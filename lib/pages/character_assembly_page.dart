@@ -30,8 +30,8 @@ import '../services/ui_engine/ui_semantic_role.dart';
 import '../widgets/ui_assembly_runtime_view.dart';
 
 part 'character_assembly_page/logic.dart';
-part 'character_assembly_page/logic_composite.dart';
 part 'character_assembly_page/composite_child_editor.dart';
+part 'character_assembly_page/logic_composite.dart';
 part 'character_assembly_page/data_channel_controls.dart';
 part 'character_assembly_page/atom_field_groups.dart';
 
@@ -160,7 +160,7 @@ class CharacterAssemblyPage extends StatefulWidget {
 }
 
 class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
-    with _AssemblyLogic, _AssemblyCompositeLogic, _CompositeChildEditor {
+    with _AssemblyLogic, _CompositeChildEditor, _AssemblyCompositeLogic {
   Offset _startTouchScreenPos = Offset.zero;
   Offset _startTouchElemOffset = Offset.zero;
 

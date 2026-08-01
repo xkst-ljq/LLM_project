@@ -51,12 +51,16 @@ part of '../character_assembly_page.dart';
 /// 每个 part 必须自成完整的顶层声明。因此本文件单独一个 mixin，
 /// 由 `_CharacterAssemblyPageState` 一并 `with` 进去。
 ///
-/// `on ... , _AssemblyLogic, _AssemblyCompositeLogic` 声明了依赖：
-/// 本文件用到 `_deepCloneValue` / `_buildColorPalette`
-/// / `_activePropertyOverrides` / `_upsertPropertyOverride`
-/// / `_showExposedDataChannelEditor` 等，分别来自那两个 mixin。
-mixin _CompositeChildEditor
-    on State<CharacterAssemblyPage>, _AssemblyLogic, _AssemblyCompositeLogic {
+/// ## mixin 顺序：本文件必须排在 `_AssemblyCompositeLogic` **之前**
+///
+/// 两者互相调用——列表页要打开本编辑器，本编辑器又要调用
+/// `_upsertPropertyOverride` / `_showExposedDataChannelEditor`。
+/// 若两个 mixin 的 `on` 互相声明对方就成了循环依赖，Dart 不允许。
+///
+/// 打破循环的办法：本文件**只** `on _AssemblyLogic`（那些属性覆写的
+/// 增删方法一并搬到了这里，见文件末尾），由
+/// `_AssemblyCompositeLogic` 单向依赖本文件。
+mixin _CompositeChildEditor on State<CharacterAssemblyPage>, _AssemblyLogic {
   /// 打开某个复合件子件的整页编辑器。
   ///
   /// 返回是否发生了改动（调用方据此决定要不要刷新列表）。
@@ -673,5 +677,49 @@ mixin _CompositeChildEditor
     // 数值统一按 double 比：存档里 12 与 12.0 是同一个值。
     if (a is num && b is num) return (a - b).abs() < 1e-9;
     return a == b;
+  }
+
+  // ===== 覆写槽位的增删查 =====
+  //
+  // 放在这里而不是 logic_composite.dart：本编辑器与那边的列表页
+  // 都要用，而 mixin 不能互相 on（循环依赖）。放在依赖链下游的
+  // 本文件里，两边都能拿到。
+
+  PropertyOverride _ensurePropertyOverride({
+    required String componentId,
+    required String sourceElementId,
+    String? sourceCompositeId,
+  }) {
+    final existingIndex = _activePropertyOverrides.indexWhere(
+      (override) => override.componentId == componentId,
+    );
+    if (existingIndex != -1) {
+      return _activePropertyOverrides[existingIndex];
+    }
+    final created = PropertyOverride(
+      componentId: componentId,
+      sourceElementId: sourceElementId,
+      sourceCompositeId: sourceCompositeId,
+    );
+    _activePropertyOverrides.add(created);
+    return created;
+  }
+
+  void _upsertPropertyOverride(PropertyOverride override) {
+    final index = _activePropertyOverrides.indexWhere(
+      (candidate) => candidate.componentId == override.componentId,
+    );
+    if (index == -1) {
+      _activePropertyOverrides.add(_clonePropertyOverride(override));
+    } else {
+      _activePropertyOverrides[index] = _clonePropertyOverride(override);
+    }
+    _persistAssemblyElements();
+  }
+
+  void _removePropertyOverride(String componentId) {
+    _activePropertyOverrides
+        .removeWhere((override) => override.componentId == componentId);
+    _persistAssemblyElements();
   }
 }

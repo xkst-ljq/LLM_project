@@ -132,16 +132,21 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                 hasCompanion: hasCompanion,
               ).isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(
-                  '已达上限：已有' +
-                      _existingModeLabels(
-                        hasOpening: hasOpening,
-                        hasScene: hasScene,
-                        hasSticky: hasSticky,
-                        hasCompanion: hasCompanion,
-                      ).join('、'),
-                  style: const TextStyle(fontSize: 11, color: Color(0xFFE65100)),
-                ),
+                Builder(builder: (context) {
+                  // 先算出文案再插值：把多行方法调用塞进 ${} 里
+                  // 可读性差，嵌套引号也容易出错。
+                  final taken = _existingModeLabels(
+                    hasOpening: hasOpening,
+                    hasScene: hasScene,
+                    hasSticky: hasSticky,
+                    hasCompanion: hasCompanion,
+                  ).join('、');
+                  return Text(
+                    '已达上限：已有$taken',
+                    style: const TextStyle(
+                        fontSize: 11, color: Color(0xFFE65100)),
+                  );
+                }),
               ],
               const SizedBox(height: 4),
               const Text('选择 UI 类型后进入拼装画布', style: TextStyle(fontSize: 12, color: Color(0xFF888896))),
