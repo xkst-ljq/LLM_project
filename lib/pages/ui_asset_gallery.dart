@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../services/ui_composite_asset_service.dart';
+import '../services/ui_engine/linker_service.dart';
 import '../services/ui_engine/ui_asset_service.dart';
 import '../services/ui_engine/ui_models.dart';
 import '../services/ui_engine/ui_renderer.dart';
@@ -22,8 +23,39 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
   void initState() {
     super.initState();
     _assetService.ensureLoaded().then((_) {
+      if (!mounted) return;
+      setState(_registerLinkerBus);
+    });
+  }
+
+  /// 注册 linker 事件总线。
+  ///
+  /// **不调用它，卡片里的联动永远不会发生**：LinkerService 靠这个订阅
+  /// 接收组件发出的 pulse，再按方案把值算给目标组件，最后调 onStateChanged
+  /// 触发重建。运行时视图（UIAssemblyRuntimeView）也是这么做的，
+  /// 之前这个页面漏了，所以拖滑块只有滑块自己在动（用户实测）。
+  ///
+  /// 传入全部复合件的根元素——总线内部会递归收集其中的 linker。
+  void _registerLinkerBus() {
+    final elements = _assetService.getAllComposites().map((c) {
+      return UIElement(
+        id: c.id,
+        isComposite: true,
+        composite: c,
+        size: UIRenderer.compositeNaturalSize(c),
+      );
+    }).toList();
+    LinkerService.initEventBusListener(elements, () {
       if (mounted) setState(() {});
     });
+  }
+
+  @override
+  void dispose() {
+    // 解除订阅，避免离开页面后仍持有本 State。
+    // 与运行时视图同款写法：传空表 + 空回调即可顶掉旧订阅。
+    LinkerService.initEventBusListener(const <UIElement>[], () {});
+    super.dispose();
   }
 
   @override
@@ -131,11 +163,22 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
 
   /// 单个复合组件卡片：独立边框 + 原始比例 + 可交互预览。
   Widget _buildCompositeCard(UIComposite c) {
-    final element = UIElement(id: c.id, isComposite: true, composite: c);
-
     // 设计时的自然尺寸。compositeNaturalSize 取子元素包围盒的右下边界
     // （左上留白也算布局的一部分），正是作者在工作台上看到的尺寸。
     final natural = UIRenderer.compositeNaturalSize(c);
+
+    // **size 必须显式传自然尺寸。**
+    //
+    // UIElement.size 默认是 100×100，而 _renderComposite 拿它当外框、
+    // 再按 `min(外框/自然)` 算一次内部缩放。不传就等于告诉渲染器
+    // 「请把 208×93 的内容塞进 100×100」，内容被压到 48%，
+    // 外层却仍按自然尺寸撑开，于是卡片下方留出大片空白（用户实测截图）。
+    final element = UIElement(
+      id: c.id,
+      isComposite: true,
+      composite: c,
+      size: natural,
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -158,12 +201,19 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 预览区：给足自然尺寸 × 缩放后的位置，避免相邻卡片重叠。
+              // 预览区。
+              //
+              // **这里不能再套 FittedBox**：element.size 已经是自然尺寸，
+              // _renderComposite 内部会按 `外框/自然` 再算一次缩放。
+              // 外面多包一层等于缩放两次，内容会被压得更小。
+              //
+              // 需要整体压缩时改用 Transform.scale——它只影响绘制，
+              // 不参与布局，因此内部那次缩放的分母不受影响，仍是 1:1。
               SizedBox(
                 width: natural.width * scale,
                 height: natural.height * scale,
-                child: FittedBox(
-                  fit: BoxFit.contain,
+                child: Transform.scale(
+                  scale: scale,
                   alignment: Alignment.topLeft,
                   child: SizedBox(
                     width: natural.width,
