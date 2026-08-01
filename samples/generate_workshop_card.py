@@ -80,8 +80,18 @@ def linker(name, scheme, src, dst, params=None, *, priority=5,
            gesture_kind=None):
     d = {"scheme": scheme, "sourceModuleId": src, "targetModuleId": dst,
          "enabled": True, "priority": priority}
-    if params: d["params"] = params
-    if gesture_kind: d["sourceGesture"] = gesture_kind
+    # 键名必须是 schemeParams——引擎在 linker_service 里读的是这个。
+    # 写成 params 会静默回落默认值（如 targetParam 恒为 paramA）。
+    if params: d["schemeParams"] = params
+    # button 指定触发手势时，**sourcePort 必须同步设成同一个值**。
+    # LinkerService 是按 `srcPort == event.eventType` 匹配的
+    # （见 linker_service.dart 的 isMatch），只写 sourceGesture 而不改
+    # sourcePort 的话，端口仍是默认的 'output'，只能匹配 tap——
+    # 双击与长按永远接不通（用户实测：只有单击有反应）。
+    # 编辑器保存时也是两个一起写（logic.dart:3789）。
+    if gesture_kind:
+        d["sourceGesture"] = gesture_kind
+        d["sourcePort"] = gesture_kind
     x, y = logic_pos()
     return element(uid("el"), module(uid("m"), name, "linker",
         {"linker": d}, color=0xFF00ACC1, radius=8.0), x, y, 132, 44)
@@ -181,9 +191,20 @@ def btn(text, x, y, w, h, *, parent, layer, color=SLAB2, tcolor=FOAM,
 # 复合组件：配料计量器（滑块 + 读数 + 进度条）
 # ============================================================
 def make_meter(x, y, *, parent, layer):
+    """自包含的复合件：外观 + 内部联动全在里面。
+
+    两个要点：
+    1. 底面要标 `is_container_boundary`，Studio 的 _compositeBounds 靠它
+       确定外框；没有标记会走兜底分支 **+20 内边距**，
+       拖到画布上边框就不贴边（用户实测）。
+    2. **linker 要放在 children 里**，复合件才是自包含的。
+       放在页面顶层的话，解散后内部空空如也，连线也随之失效
+       （用户实测：「解散后里面没有任何逻辑组件和连线」）。
+    """
     kids = []
     kids.append(element(uid("el"), module(uid("m"), "计量底", "surface",
-        {}, color=SLAB, material=1, radius=12.0), 0, 0, 320, 104))
+        {"is_container_boundary": True},
+        color=SLAB, material=1, radius=12.0), 0, 0, 320, 104))
     kids.append(element(uid("el"), module(uid("m"), "计量名", "text",
         {"text": "配料投放量", "fontSize": 12.0, "textAlign": "left"},
         color=MUTED), 14, 10, 180, 16, layer=1))
@@ -205,6 +226,19 @@ def make_meter(x, y, *, parent, layer):
         color=AMBER, radius=5.0), 14, 78, 292, 10, layer=1)
     kids.append(bar)
     # 暴露滑块/读数/进度条：外部的 linker 正是连到这三个子元素上。
+    # 内部联动：滑块 → 读数 / 进度条。
+    # 这两条 linker 属于复合件自身的行为，放进 children 里；
+    # 逻辑件在复合件内部同样不显形，坐标随便给一个负值即可。
+    kids.append(element(uid("el"), module(uid("m"), "量→读数", "linker",
+        {"linker": {"scheme": "slider_to_text",
+                    "sourceModuleId": sld["id"], "targetModuleId": read["id"],
+                    "enabled": True, "priority": 5}},
+        color=0xFF00ACC1, radius=8.0), -160, 0, 132, 44))
+    kids.append(element(uid("el"), module(uid("m"), "量→条", "linker",
+        {"linker": {"scheme": "slider_to_progress",
+                    "sourceModuleId": sld["id"], "targetModuleId": bar["id"],
+                    "enabled": True, "priority": 5}},
+        color=0xFF00ACC1, radius=8.0), -160, 52, 132, 44))
     comp = composite_element(uid("el"), "配料计量器", kids, x, y, 320, 104,
                              layer=layer, parent=parent, color=SLAB,
                              expose=[sld["id"], read["id"], bar["id"]])
@@ -221,9 +255,8 @@ main.append(label("交互逻辑测试：三种点击方式 / 开关 / 定时器 
 
 meter, sld_id, read_id, bar_id = make_meter(30, 70, parent=MB, layer=3)
 main.append(meter)
-# 滑块 → 读数文字、滑块 → 进度条（目标在复合件内部）
-main.append(linker("量→读数", "slider_to_text", sld_id, read_id))
-main.append(linker("量→条", "slider_to_progress", sld_id, bar_id))
+# 注意：滑块→读数 / 滑块→条 这两条连线**已经放进复合件内部**了
+# （见 make_meter），这里不要再连一遍——重复连线会让同一个值被写两次。
 
 # --- 三种点击方式打在同一个按钮上 ---
 main.append(label("① 同一个按钮，三种点击方式各接一个目标", MB, 24, 190, W - 48,
@@ -231,8 +264,17 @@ main.append(label("① 同一个按钮，三种点击方式各接一个目标", 
 b_tri, f_tri, h_tri = btn("单击亮灯 / 双击灭灯 / 长按翻转", 24, 210, 332, 44,
                           parent=MB, layer=4)
 main += b_tri
+# ⚠️ indicator 靠 **statusRules** 决定亮什么色，
+#    `isOn` / `onColor` / `offColor` 这些键**引擎根本不读**
+#    （见 LinkerService.resolveIndicatorActiveState）。
+#    只写它们的话，无论上游给什么值，灯永远是 defaultColor 灰色
+#    （用户实测：警示灯不亮）。
 lamp = element(uid("el"), module(uid("m"), "指示灯", "indicator",
-    {"isOn": False, "onColor": MOSS, "offColor": 0xFF37474F,
+    {"defaultColor": 0xFF37474F, "defaultGlow": False, "dotSize": 16.0,
+     "statusRules": [
+        {"matchType": "bool", "matchValue": "true",
+         "color": MOSS, "isGlow": True, "glowRadius": 14.0},
+     ],
      "__anim": {"type": "flash", "durationMs": 280, "color": MOSS}},
     color=MOSS, radius=999.0), 24, 264, 22, 22, layer=4, parent=MB)
 main.append(lamp)
@@ -363,8 +405,16 @@ mn_cmp = math_node("超量判定", ">", b=60.0)
 logic.append(mn_cmp)
 logic.append(linker("总量→比较A", "value_to_math_param", mn_sum["id"],
                     mn_cmp["id"], {"targetParam": "paramA"}))
+# 比较节点输出 true/false，用 bool 规则匹配。
+# 另加一条 range 规则兜底：若上游给的是数值而非布尔，>0 也算命中。
 warn = element(uid("el"), module(uid("m"), "警示灯", "indicator",
-    {"isOn": False, "onColor": CORAL, "offColor": 0xFF37474F,
+    {"defaultColor": 0xFF37474F, "defaultGlow": False, "dotSize": 18.0,
+     "statusRules": [
+        {"matchType": "bool", "matchValue": "true",
+         "color": CORAL, "isGlow": True, "glowRadius": 16.0},
+        {"matchType": "range", "matchOp": ">", "matchValNum": 0,
+         "color": CORAL, "isGlow": True, "glowRadius": 16.0},
+     ],
      "__anim": {"type": "glow_pulse", "durationMs": 800, "color": CORAL}},
     color=CORAL, radius=999.0), 24, 272, 26, 26, layer=2, parent=LB)
 logic.append(warn)

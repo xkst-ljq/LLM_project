@@ -208,6 +208,17 @@ def check(path):
                 t=m['type']
                 if t not in ATOM_TYPES: err.append(f"未知组件类型 {t}")
                 if t=='button': btn_ids.add(e['id'])
+                # indicator 靠 statusRules 决定颜色；isOn/onColor/offColor
+                # 这些键引擎完全不读（resolveIndicatorActiveState）。
+                if t=='indicator':
+                    ip=m['properties']
+                    ghost=[k for k in ('isOn','onColor','offColor') if k in ip]
+                    if ghost:
+                        err.append(f"indicator「{m['name']}」用了引擎不读的键 "
+                                   f"{ghost}，应改用 statusRules + defaultColor")
+                    elif 'defaultColor' not in ip:
+                        warn.append(f"indicator「{m['name']}」没设 defaultColor，"
+                                    f"未命中规则时会是灰色")
                 if m['properties'].get('keyAction') is True:
                     key_actions.append(m['name'])
                     page_keys.append(m['name'])
@@ -247,6 +258,24 @@ def check(path):
                                     types.get(lk['targetModuleId'],'?'))
                     if msg:
                         err.append(f"linker「{m['name']}」: {msg}")
+                # 方案参数的键名是 schemeParams，不是 params。
+                # 写错的话引擎读不到，静默回落默认值
+                # （用户实测：两条连线的 targetParam 都变成 paramA）。
+                if 'params' in lk:
+                    err.append(f"linker「{m['name']}」: 参数键名应为 "
+                               f"'schemeParams'，写成了 'params'——引擎读不到")
+                # button 的触发手势键名是 sourceGesture，且只有三种取值。
+                g = lk.get('sourceGesture')
+                if g is not None:
+                    if g not in ('tap', 'double_tap', 'long_press'):
+                        err.append(f"linker「{m['name']}」: sourceGesture "
+                                   f"'{g}' 非法（tap/double_tap/long_press）")
+                    elif lk.get('sourcePort') != g:
+                        # LinkerService 按 srcPort == event.eventType 匹配，
+                        # 两者不一致时双击/长按接不通。
+                        err.append(
+                            f"linker「{m['name']}」: sourceGesture='{g}' 但 "
+                            f"sourcePort='{lk.get('sourcePort')}'，两者必须一致")
                 if lk['scheme']=='button_to_page_route':
                     if lk['sourceModuleId'] not in btn_ids:
                         err.append(f"{m['name']}: 换页方案的源不是 button")

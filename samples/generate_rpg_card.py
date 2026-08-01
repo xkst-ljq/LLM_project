@@ -99,7 +99,9 @@ def logic_pos():
 def linker(name, scheme, src, dst, params=None, *, priority=5):
     d = {"scheme": scheme, "sourceModuleId": src, "targetModuleId": dst,
          "enabled": True, "priority": priority}
-    if params: d["params"] = params
+    # 键名必须是 schemeParams——引擎在 linker_service 里读的是这个。
+    # 写成 params 会静默回落默认值（如 targetParam 恒为 paramA）。
+    if params: d["schemeParams"] = params
     x, y = logic_pos()
     return element(uid("el"), module(uid("m"), name, "linker",
         {"linker": d}, color=0xFF00ACC1, radius=8.0), x, y, 132, 44)

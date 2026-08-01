@@ -94,9 +94,18 @@ def logic_pos():
 def linker(name, scheme, src, dst, params=None, *, priority=5, gesture_kind=None):
     d = {"scheme": scheme, "sourceModuleId": src, "targetModuleId": dst,
          "enabled": True, "priority": priority}
-    if params: d["params"] = params
-    # button 可指定用哪种手势触发（tap / double_tap / long_press）。
-    if gesture_kind: d["sourceGesture"] = gesture_kind
+    # 键名必须是 schemeParams——引擎在 linker_service 里读的是这个。
+    # 写成 params 会静默回落默认值（如 targetParam 恒为 paramA）。
+    if params: d["schemeParams"] = params
+    # button 指定触发手势时，**sourcePort 必须同步设成同一个值**。
+    # LinkerService 是按 `srcPort == event.eventType` 匹配的
+    # （见 linker_service.dart 的 isMatch），只写 sourceGesture 而不改
+    # sourcePort 的话，端口仍是默认的 'output'，只能匹配 tap——
+    # 双击与长按永远接不通（用户实测：只有单击有反应）。
+    # 编辑器保存时也是两个一起写（logic.dart:3789）。
+    if gesture_kind:
+        d["sourceGesture"] = gesture_kind
+        d["sourcePort"] = gesture_kind
     x, y = logic_pos()
     return element(uid("el"), module(uid("m"), name, "linker",
         {"linker": d}, color=0xFF00ACC1, radius=8.0), x, y, 132, 44)
@@ -174,8 +183,11 @@ def btn(text, x, y, w, h, *, parent, layer, color=PANEL2, tcolor=STAR,
 def make_dial(cx, cy, *, parent, layer):
     """一个 320×120 的复合件。子元素坐标以复合件左上角为原点。"""
     kids = []
+    # is_container_boundary：Studio 的 _compositeBounds 靠它确定外框。
+    # 不标的话走兜底分支 +20 内边距，拖到画布上边框不贴边。
     kids.append(element(uid("el"), module(uid("m"), "仪表底", "surface",
-        {}, color=PANEL, material=1, radius=14.0), 0, 0, 320, 120))
+        {"is_container_boundary": True},
+        color=PANEL, material=1, radius=14.0), 0, 0, 320, 120))
     kids.append(element(uid("el"), module(uid("m"), "标题", "text",
         {"text": "星轨稳定度", "fontSize": 12.0, "textAlign": "left"},
         color=DIM), 14, 12, 160, 18, layer=1))
@@ -190,8 +202,11 @@ def make_dial(cx, cy, *, parent, layer):
          "__anim": anim("glow_pulse", duration=900, intensity=0.7,
                         color=CYAN)},
         color=CYAN, radius=6.0), 14, 76, 292, 12, layer=1))
+    # indicator 用 statusRules 决定颜色（isOn/onColor 引擎不读）。
+    # 这里没有上游连值，直接把 defaultColor 设成亮色即可常亮。
     kids.append(element(uid("el"), module(uid("m"), "状态灯", "indicator",
-        {"isOn": True, "onColor": LIME, "offColor": 0xFF3A3F5C,
+        {"defaultColor": LIME, "defaultGlow": True, "dotSize": 14.0,
+         "statusRules": [],
          "__anim": anim("flash", duration=300, color=LIME)},
         color=LIME, radius=999.0), 286, 14, 18, 18, layer=2))
     kids.append(element(uid("el"), module(uid("m"), "灯注", "text",
@@ -200,11 +215,25 @@ def make_dial(cx, cy, *, parent, layer):
     kids.append(element(uid("el"), module(uid("m"), "刻度", "line",
         {"axis": "horizontal", "lineStyle": "dashed", "thickness": 1.0},
         color=0x33FFFFFF), 14, 96, 292, 2, layer=1))
+    # 自包含：心跳定时器与它驱动的闪灯连线都放进复合件内部，
+    # 这样解散后能看到完整构造，拖到别处也能独立工作。
+    _read, _bar, _lamp = kids[2], kids[3], kids[4]
+    tmr = element(uid("el"), module(uid("m"), "内置心跳", "timer",
+        {"interval": 2.0, "initialDelay": 1.0, "maxTicks": 0,
+         "isRunning": True, "loop": True, "pulseType": "toggle",
+         "currentVal": 0.0},
+        color=0xFFFF9100, radius=8.0), -170, 0, 140, 54)
+    kids.append(tmr)
+    kids.append(element(uid("el"), module(uid("m"), "心跳→闪灯", "linker",
+        {"linker": {"scheme": "event_to_animation",
+                    "sourceModuleId": tmr["id"],
+                    "targetModuleId": _lamp["id"],
+                    "enabled": True, "priority": 5}},
+        color=0xFF00ACC1, radius=8.0), -170, 62, 132, 44))
     # 暴露读数/进度条/状态灯三个口，外部才能连线与覆写。
     return composite_element(uid("el"), "星象仪表盘", kids, cx, cy, 320, 120,
                              layer=layer, parent=parent, color=PANEL,
-                             expose=[kids[2]["id"], kids[3]["id"],
-                                     kids[4]["id"]])
+                             expose=[_read["id"], _bar["id"], _lamp["id"]])
 
 # ============================================================
 # 页面 1：主控台（复合件 + 按钮换页）
@@ -227,13 +256,7 @@ b_inf, f_inf, h_inf = btn("说明（长按进入）", 30, 346, 320, 48,
                           parent=HB, layer=11, color=PANEL2)
 home += b_gal + b_anm + b_inf
 
-# 定时器：每 2 秒让仪表盘的指示灯闪一次，验证 timer → animation
-tmr_x, tmr_y = logic_pos()
-tmr = element(uid("el"), module(uid("m"), "心跳", "timer",
-    {"interval": 2.0, "initialDelay": 1.0, "maxTicks": 0, "isRunning": True,
-     "loop": True, "pulseType": "toggle", "currentVal": 0.0},
-    color=0xFFFF9100, radius=8.0), tmr_x, tmr_y, 140, 54)
-home.append(tmr)
+# 心跳定时器已移入复合件内部（见 make_dial），这里不再重复放置。
 
 # 路由器 + 连线
 r_gal = page_router("→图库", PG["gallery"], transition="base_slide")
@@ -245,11 +268,6 @@ home.append(linker("动画换页", "button_to_page_route", h_anm, r_anm["id"]))
 # 长按换页：验证 sourceGesture 分支
 home.append(linker("说明换页(长按)", "button_to_page_route", h_inf, r_inf["id"],
                    gesture_kind="long_press"))
-# 定时器驱动指示灯闪烁（目标是复合件内部的元素 id）
-_dial_indicator = dial["composite"]["children"][4]["id"]
-home.append(linker("心跳→闪灯", "event_to_animation", tmr["id"],
-                   _dial_indicator))
-
 # ⚠️ scene **必须**有一个标了 keyAction 的按钮（「打开聊天设置」），
 # 否则 ChatAssemblyMount.canRun 返回 false，**整层 UI 根本不渲染**。
 # 这是引擎硬约束（UISemanticRole.blocksWithoutKeyAction），

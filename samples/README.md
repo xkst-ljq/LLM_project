@@ -68,7 +68,52 @@ meta.ui_assemblies: [ JSON字符串, ... ]   ← 注意是字符串数组，不�
 | **sourceComponentId** | 数据通道里这个值必须等于所在元素的 `id` |
 | **id 唯一** | 同一张卡内所有元素 id 不得重复 |
 
-### 2.8 固定条目必须填**结构化子字段**，不是纯字符串
+### 2.7 四个「编辑器看着正常、运行时静默失效」的键名坑
+
+这四条都不会报错，编辑器甚至显示「已配置通路」，但运行时什么都不发生。
+
+### ① 方案参数的键是 `schemeParams`，不是 `params`
+
+```json
+"linker": {"scheme":"slider_commit_to_math_param",
+           "schemeParams": {"targetParam": "paramB"}}
+```
+写成 `params` 时引擎读不到，**静默回落默认值**——
+两条连线的 `targetParam` 会双双变成 `paramA`，加法节点永远只收到一个数
+（用户实测：海水和盐晶都进了参数 A）。
+
+### ② 指定触发手势时，`sourcePort` 必须与 `sourceGesture` 同值
+
+```json
+"linker": {"sourceGesture": "long_press", "sourcePort": "long_press"}
+```
+`LinkerService` 按 `srcPort == event.eventType` 匹配。
+只写 `sourceGesture` 而不改 `sourcePort`（默认 `output`）时只能匹配单击，
+**双击与长按永远接不通**。编辑器保存时是两个一起写的。
+
+### ③ indicator 用 `statusRules`，不认 `isOn`/`onColor`/`offColor`
+
+```json
+{"defaultColor": 3707764736, "defaultGlow": false, "dotSize": 16,
+ "statusRules": [
+   {"matchType":"bool","matchValue":"true","color":4283215696,"isGlow":true,"glowRadius":14}]}
+```
+`matchType` 三选一：`exact`（文本相等）/ `bool` / `range`（配
+`matchOp` + `matchValNum`）。未命中任何规则时回落 `defaultColor`。
+只写 `isOn`/`onColor` 的话灯永远是灰的。
+
+### ④ 复合件要**自包含**
+
+- 底面标 `is_container_boundary: true`——Studio 的 `_compositeBounds`
+  靠它确定外框；不标会走兜底分支 **+20px 内边距**，拖到画布上边框不贴边。
+- **内部联动的 linker 要放进 `children`**，不要放在页面顶层。
+  放外面的话复合件解散后内部空空如也，连线也一并失效
+  （用户实测：「解散后里面没有任何逻辑组件和连线」）。
+  逻辑件在复合件内部同样不显形，坐标给负值即可。
+
+以上四条 `validate_card.py` 全部会自动检查。
+
+## 2.8 固定条目必须填**结构化子字段**，不是纯字符串
 
 固定条目除了 id 要对，`content` 还必须是**带规定子字段的 JSON 对象**。
 只塞一个字符串的话，编辑页显示不出「姓」「名」这类子项目标题

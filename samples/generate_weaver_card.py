@@ -75,8 +75,18 @@ def linker(name, scheme, src, dst, params=None, *, priority=5,
            gesture_kind=None):
     d = {"scheme": scheme, "sourceModuleId": src, "targetModuleId": dst,
          "enabled": True, "priority": priority}
-    if params: d["params"] = params
-    if gesture_kind: d["sourceGesture"] = gesture_kind
+    # 键名必须是 schemeParams——引擎在 linker_service 里读的是这个。
+    # 写成 params 会静默回落默认值（如 targetParam 恒为 paramA）。
+    if params: d["schemeParams"] = params
+    # button 指定触发手势时，**sourcePort 必须同步设成同一个值**。
+    # LinkerService 是按 `srcPort == event.eventType` 匹配的
+    # （见 linker_service.dart 的 isMatch），只写 sourceGesture 而不改
+    # sourcePort 的话，端口仍是默认的 'output'，只能匹配 tap——
+    # 双击与长按永远接不通（用户实测：只有单击有反应）。
+    # 编辑器保存时也是两个一起写（logic.dart:3789）。
+    if gesture_kind:
+        d["sourceGesture"] = gesture_kind
+        d["sourcePort"] = gesture_kind
     x, y = logic_pos()
     return element(uid("el"), module(uid("m"), name, "linker",
         {"linker": d}, color=0xFF00ACC1, radius=8.0), x, y, 132, 44)
@@ -235,10 +245,14 @@ sticky_els = [s_bg]
 
 # 复合件：灯油计（图标 + 进度条 + 读数）
 lamp_kids = []
+# is_container_boundary：Studio 拖出时靠它确定外框，不标会多 20px 内边距。
 lamp_kids.append(element(uid("el"), module(uid("m"), "灯座", "surface",
-    {}, color=0xFF3A2E26, material=0, radius=10.0), 0, 0, 276, 46))
+    {"is_container_boundary": True},
+    color=0xFF3A2E26, material=0, radius=10.0), 0, 0, 276, 46))
+# indicator 用 statusRules 决定颜色（isOn/onColor 引擎不读）。
 lamp_kids.append(element(uid("el"), module(uid("m"), "灯珠", "indicator",
-    {"isOn": True, "onColor": LAMP, "offColor": 0xFF4A3A2E,
+    {"defaultColor": LAMP, "defaultGlow": True, "dotSize": 14.0,
+     "statusRules": [],
      "__anim": anim("glow_pulse", duration=1400, intensity=0.6, color=LAMP)},
     color=LAMP, radius=999.0), 10, 14, 18, 18, layer=1))
 lamp_kids.append(element(uid("el"), module(uid("m"), "灯名", "text",

@@ -140,7 +140,8 @@ def linker(name, scheme, src_id, dst_id, params=None, *, priority=5):
     data = {"scheme": scheme, "sourceModuleId": src_id,
             "targetModuleId": dst_id, "enabled": True, "priority": priority}
     if params:
-        data["params"] = params
+        # 键名必须是 schemeParams，见 linker_service._resolve...
+        data["schemeParams"] = params
     w, h = 132, 44
     x, y = logic_pos((w, h))
     return element(uid("el"), module(uid("m"), name, "linker",
@@ -200,8 +201,19 @@ e_credit_lb = element(uid("el"), module(uid("m"), "信用标签", "text",
     {"text": "信用点 ¤", "fontSize": 9.0}, color=0xFF9E9E9E),
     12, 96, 70, 12, layer=5, parent=PANEL_ID)
 
+# indicator 的颜色由 statusRules 决定；未命中任何规则时回落 defaultColor。
+# 不设 defaultColor 会得到默认灰 0xFF9E9E9E。
 m_alert = module(uid("m"), "警戒灯", "indicator",
     {"dotSize": 14.0, "defaultGlow": True, "state": "idle",
+     "defaultColor": 0xFF4CAF50,
+     "statusRules": [
+        {"matchType": "exact", "matchValue": "低",
+         "color": 0xFF4CAF50, "isGlow": True, "glowRadius": 12.0},
+        {"matchType": "exact", "matchValue": "中",
+         "color": 0xFFFFB300, "isGlow": True, "glowRadius": 14.0},
+        {"matchType": "exact", "matchValue": "高",
+         "color": 0xFFEF5350, "isGlow": True, "glowRadius": 16.0},
+     ],
      "dataChannel": channel("警戒等级", "status_field", F_ALERT,
         read="prompt", write="suggest_replace", notify="dialog",
         template="⚠ 警戒等级升至 {new}")}, color=PINK)
