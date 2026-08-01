@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:llm_project/models/character_meta.dart';
-import 'package:llm_project/models/text_highlight_rule.dart';
-import 'package:llm_project/services/text_highlight_engine.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 void main() {

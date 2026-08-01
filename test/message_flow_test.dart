@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:llm_project/services/ui_engine/message_flow_scope.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 void main() {

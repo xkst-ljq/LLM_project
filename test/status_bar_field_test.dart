@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:llm_project/models/status_bar_field.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 void main() {

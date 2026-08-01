@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:llm_project/services/ui_engine/assembly_rich_text.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 void main() {
   group('HTML 判定', () {

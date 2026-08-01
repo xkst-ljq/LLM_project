@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:llm_project/services/ui_engine/ripple_shader.dart';
+import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// A12 水波折射（方案 A：片元着色器）的数学不变量。
 ///

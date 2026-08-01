@@ -1,9 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:llm_project/models/character_meta.dart';
-import 'package:llm_project/models/ui_assembly_info.dart';
-import 'package:llm_project/widgets/chat_assembly_mount.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
+import 'package:llm_project/widgets/chat_assembly_mount.dart';
 
 /// A10-3：伴生 UI（extra_companion）。
 ///

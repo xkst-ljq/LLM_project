@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:llm_project/services/ui_engine/linker_matrix_engine.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// Assembly 侧的端口推导必须与运行端 `LinkerService` 的匹配口径一致。
