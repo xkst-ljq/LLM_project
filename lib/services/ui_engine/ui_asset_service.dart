@@ -50,6 +50,26 @@ class UIAssetService {
       _retiredFoundationModuleIds.contains(module.id) ||
       atomModuleTypes.contains(module.type);
 
+  /// 是否是「只包了一个引擎原子」的复合件。
+  ///
+  /// **这才是用户看到的那几个「原子组件」的真身。**
+  /// Studio 的「保存」只会产出 `UIComposite`（见 logic.dart 的
+  /// `_saveAsComposite`），从不写 module。所以作者在画布上拖一个原子
+  /// 就点保存时，得到的是一个仅含单个原子子元素的复合件——
+  /// 它在资产库里和真正的复合组件长得一模一样，
+  /// 但本质上就是那个原子本身，陈列出来没有意义。
+  ///
+  /// 判据刻意收紧为「**恰好一个**子元素、且该子元素是原子」：
+  ///   - 两个原子拼起来（哪怕只是文字叠在面板上）已经是作者的设计，必须保留；
+  ///   - 子元素本身是复合件的（嵌套）也保留。
+  static bool isSingleAtomComposite(UIComposite composite) {
+    if (composite.children.length != 1) return false;
+    final only = composite.children.first;
+    if (only.isComposite) return false;
+    final module = only.module;
+    return module != null && atomModuleTypes.contains(module.type);
+  }
+
   // 全局原子模组库
   Map<String, UIModule> _modules = {};
   // 全局组合块库
@@ -272,7 +292,14 @@ class UIAssetService {
         // 加载组合块 (与默认组合块合并)
         final compositesJson = decoded['composites'] as Map<String, dynamic>? ?? {};
         compositesJson.forEach((k, v) {
-          _composites[k] = UIComposite.fromJson(v);
+          final composite = UIComposite.fromJson(v);
+          // 一次性迁移：丢弃「只包了一个原子」的复合件。
+          // 它们是作者拖个原子就顺手保存留下的，等同于原子本身。
+          if (isSingleAtomComposite(composite)) {
+            purged = true;
+            return;
+          }
+          _composites[k] = composite;
         });
       }
 

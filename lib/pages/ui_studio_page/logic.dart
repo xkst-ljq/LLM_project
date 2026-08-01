@@ -1509,6 +1509,26 @@ mixin _UIStudioLogic on State<UIStudioPage> {
       );
     }).toList();
 
+    // 只有一个原子时不给存。
+    //
+    // 存下来的东西和那个原子本身完全等价，却会以「复合组件」的身份
+    // 混进完成资产库（用户反馈：资产库里躺着 6 个原子组件）。
+    // 原材料区随时能取到同样的原子，没有必要再存一份。
+    if (children.length == 1 &&
+        !children.first.isComposite &&
+        children.first.module != null &&
+        UIAssetService.atomModuleTypes.contains(children.first.module!.type)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('只有一个原子，不需要保存——左侧原材料区就能直接取用。'),
+            backgroundColor: Color(0xFFFF8F00),
+          ),
+        );
+      }
+      return;
+    }
+
     final composite = UIComposite(
       id: 'comp_${DateTime.now().millisecondsSinceEpoch}',
       name: name ?? '复合组件 ${_assetService.getAllComposites().length + 1}',
