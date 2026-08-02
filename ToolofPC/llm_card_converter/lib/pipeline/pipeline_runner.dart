@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../core/app_settings.dart';
 import '../core/card_type_detector.dart';
 import '../core/image_embed_service.dart';
@@ -43,7 +45,7 @@ class PipelineRunner {
       return false;
     }
     _log('  已完成');
-    _progress(1 / 3);
+    _progress(1 / 4);
 
     final apiCfg = await AppSettings.getApiConfig();
     final aiOn = useAi && apiCfg.isComplete;
@@ -80,6 +82,33 @@ class PipelineRunner {
     return true;
   }
 
+  /// 把 UI 生成结果说清楚。
+  ///
+  /// 「没有生成」有两种含义，必须区分：
+  ///   · 原卡本来就没界面 —— 预期行为，不是失败；
+  ///   · 依赖外部插件 —— 有界面但转不了。
+  /// 笼统写「无 UI」会让用户以为工具坏了。
+  String _describeUiResult(
+      Map<String, dynamic>? before, Map<String, dynamic>? after) {
+    final n = _countAssemblies(after);
+    if (n == 0) return '  未生成（原卡没有可识别的界面元素）';
+    return '  已生成 $n 份 UI 界面';
+  }
+
+  int _countAssemblies(Map<String, dynamic>? card) {
+    if (card == null) return 0;
+    final raw = card['meta_json'];
+    if (raw is! String || raw.isEmpty) return 0;
+    try {
+      final meta = jsonDecode(raw);
+      if (meta is! Map) return 0;
+      final list = meta['ui_assemblies'];
+      return list is List ? list.length : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Future<void> _runAiStages(
     CardWorkItem item,
     ApiConfig apiCfg, {
@@ -99,10 +128,25 @@ class PipelineRunner {
         _log('  失败，已保留规则转译结果：$e');
       }
     }
-    _progress(2 / 3);
+    _progress(2 / 4);
 
-    // 步骤三：检查精修 + 类型复核
-    _log('步骤三：检查精修');
+    // 步骤三：UI 生成（纯代码，不依赖 AI）
+    //
+    // **必须在 `if (!aiOn) return` 之前**：这一步不调模型，
+    // 没配 API 的用户同样该拿到 UI。放到后面会被那条 return 挡掉。
+    _log('步骤三：UI 生成');
+    try {
+      final before = item.current?.characterData;
+      pipeline.runBuildUiStage(item);
+      final after = item.current?.characterData;
+      _log(_describeUiResult(before, after));
+    } catch (e) {
+      _log('  跳过（UI 生成失败）：$e');
+    }
+    _progress(3 / 4);
+
+    // 步骤四：检查精修 + 类型复核
+    _log('步骤四：检查精修');
     if (!aiOn) {
       _log('  跳过');
       return;
@@ -115,7 +159,7 @@ class PipelineRunner {
         _log('  类型复核：应为${_typeLabel(rechecked)}，按新类型重跑…');
         item.cardType = rechecked;
         pipeline.runRuleStage(item);
-        _progress(1 / 3);
+        _progress(1 / 4);
         await _runAiStages(item, apiCfg, aiOn: aiOn, allowRetry: false);
         return;
       }
