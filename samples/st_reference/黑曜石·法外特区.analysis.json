@@ -1,0 +1,78 @@
+{
+  "name": "黑曜石·法外特区",
+  "spec": "chara_card_v3 3.0",
+  "fields": {
+    "name": 8,
+    "description": 186,
+    "first_mes": 651
+  },
+  "worldBookEntries": 30,
+  "regexScripts": [
+    {
+      "name": "状态栏",
+      "capturedTags": [
+        "正文",
+        "称号",
+        "编号",
+        "罪名",
+        "生命",
+        "精神",
+        "体力",
+        "饱腹",
+        "势力",
+        "关系",
+        "声望",
+        "点数",
+        "物品",
+        "位置",
+        "日期",
+        "时间",
+        "选项"
+      ],
+      "replaceLen": 5959,
+      "sections": [
+        "顶部警戒条与档案头",
+        "正文内容",
+        "监控仪表盘 (进度条版)",
+        "第一行: 生命 & 精神",
+        "第二行: 体力 & 饱腹",
+        "资产与社交数据",
+        "物品栏",
+        "决策引导模块 (新增)",
+        "底部高亮位置信息"
+      ],
+      "visuals": {
+        "progressBars": 4,
+        "flex": 11,
+        "borderRadius": 7,
+        "boxShadow": 5,
+        "gradient": 1
+      }
+    },
+    {
+      "name": "前端",
+      "capturedTags": [
+        "终端状态",
+        "当前位置",
+        "当前时间",
+        "正文",
+        "选项列表"
+      ],
+      "replaceLen": 2226,
+      "sections": [
+        "顶部状态栏",
+        "信息数据流",
+        "正文内容区：加入了white-space属性解决挤压问题",
+        "选项与交互区",
+        "装饰底纹"
+      ],
+      "visuals": {
+        "progressBars": 0,
+        "flex": 4,
+        "borderRadius": 1,
+        "boxShadow": 2,
+        "gradient": 2
+      }
+    }
+  ]
+}

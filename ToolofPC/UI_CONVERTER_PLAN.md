@@ -325,15 +325,85 @@ stage4 AI 自检（含 UI）    ← 原 refine，扩展审计范围
 UI 生成依赖 stage2 的产物（状态栏字段、条目内容）；
 且放最后会导致自检环节看不到 UI，等于新增部分无人审核。
 
-#### 3a. 识别层（AI）
+#### 3a. 识别层（AI）—— **已由真实样本修正设计**
 
-从 `description` / `first_mes` / `mes_example` 中提取 HTML/CSS 片段，
-让 AI 输出**结构化的意图描述**，而不是直接吐 JSON：
+> ⚠️ 下面的设计基于对真实卡 `samples/st_reference/黑曜石·法外特区.json`
+> 的分析，推翻了最初「HTML 直接写在 description 里」的假设。
+
+##### 真实机制：正则替换，不是内联 HTML
+
+ST 卡的「UI」几乎不写在 `description` 里，而是靠
+`extensions.regex_scripts` 实现：
+
+```
+LLM 按提示词输出自定义标签  →  正则匹配捕获  →  替换成一大段 HTML
+```
+
+以这张卡为例（`description` 只有 186 字，无任何 HTML）：
+
+| 正则脚本 | 捕获的标签 | 产出 |
+|---|---|---|
+| 「状态栏」 | 17 个：正文/称号/编号/罪名/**生命/精神/体力/饱腹**/势力/关系/声望/点数/物品/位置/日期/时间/选项 | 5959 字符 HTML |
+| 「前端」 | 5 个：终端状态/当前位置/当前时间/正文/选项列表 | 2226 字符 HTML |
+
+**这对识别层是决定性的好消息**：
+`findRegex` 里的标签名就是**作者亲手写的语义字段名**，
+不需要 AI 从散文里猜「这段文字是不是状态」——直接读标签即可。
+
+##### 视觉形态可直接映射
+
+「状态栏」那条的 `replaceString` 里：
+
+| 原卡写法 | 数量 | 映射到 |
+|---|---|---|
+| `<div style="width: $5">` 内层条 | 4 | `progress` |
+| `display: flex` 横向分栏 | 11 | 元件横向排布 |
+| `border-radius` | 7 | `surface.borderRadius` |
+| `box-shadow` 发光 | 5 | 外观 / `glowPulse` 动画 |
+| `linear-gradient` | 1 | `material: gradient` |
+
+作者还用 HTML 注释标出了 9 个功能分区
+（顶部警戒条 / 正文 / 监控仪表盘 / 资产社交 / 物品栏 / 决策引导 / 底部位置），
+**等于自带布局说明**。
+
+##### 交互：`onclick="send('...')"`
+
+`first_mes` 里的选项列表：
+
+```html
+<div onclick="send('选择开场1：新人入狱')">[01] 新人入狱 - ...</div>
+```
+
+`send()` 是 ST 的内置函数，点击即把字符串作为用户消息发出。
+这**正好对应**我们的 `button` + `sendsMessage` 标记。
+
+##### 因此识别层的输入应该是
+
+优先级从高到低：
+
+1. **`extensions.regex_scripts`** —— 最可靠。标签名 = 语义字段名，
+   `replaceString` = 视觉形态。有它就不用猜。
+2. **`first_mes` 里的 `onclick="send(...)"`** —— 明确的交互意图。
+3. **内联 HTML**（`<div style=...>`）—— 少见但要兜住。
+4. 纯文本 —— **不生成 UI**（用户明确要求）。
+
+##### 识别层输出的意图描述示例
 
 ```json
-{ "kind": "progress", "label": "好感度",
-  "current": 60, "max": 100, "hint": "粉色横向条" }
+{ "kind": "progress", "label": "生命", "sourceTag": "生命",
+  "hint": "红色发光横条，与精神并排", "max": 100 }
 ```
+
+AI 只产出这种结构化描述，**不直接吐 assembly JSON**。
+
+##### 待确认（需要更多样本）
+
+- 这张卡的 `tavern_helper` 里有个被禁用的 MVU 脚本
+  （`import 'https://.../MagVarUpdate/bundle.js'`）——
+  说明有些卡靠**外部 JS 插件**做变量系统。这类超出静态识别范围，
+  应明确**不支持**并给出提示，而不是硬转。
+- 需要 2~3 张不同风格的卡验证「正则 = 主要机制」这个结论的普适性。
+
 
 #### 3b. 构建层（纯代码，**绝不交给 AI**）
 
