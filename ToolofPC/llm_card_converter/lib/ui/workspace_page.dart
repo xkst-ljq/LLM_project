@@ -13,6 +13,7 @@ import '../pipeline/pipeline_runner.dart';
 import 'card_preview.dart';
 import 'compare_page.dart';
 import 'entry_editor_page.dart';
+import 'assembly_preview.dart';
 
 /// 待转译文件项（主页选择 → 工作区转译）。
 class PickedCard {
@@ -32,6 +33,10 @@ class _WorkItem {
   double progress = 0; // 单卡进度 0~1
   Set<String> highlightIds = {};
   String? historyId; // 对应的历史记录 id
+
+  /// 预览区当前看的是文本还是 UI。
+  /// 逐卡记忆：批量转译时挨个展开查看，不该被别的卡重置。
+  bool showUiPreview = false;
 
   _WorkItem(this.card, this.work);
 }
@@ -432,12 +437,31 @@ class _WorkspacePageState extends State<WorkspacePage> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: CardPreview(
-                            result: result,
-                            highlightEntryIds: item.highlightIds,
-                            placeholder: item.status == _WorkStatus.running
-                                ? '转译中…'
-                                : '预览',
+                          child: Column(
+                            children: [
+                              _previewTabs(item),
+                              Expanded(
+                                child: item.showUiPreview
+                                    // UI 预览用的是主 App 同一套渲染引擎
+                                    // （packages/llm_ui_engine），
+                                    // 所以这里看到的就是玩家实际看到的。
+                                    ? AssemblyPreview(
+                                        characterData: result?.characterData,
+                                        emptyHint: item.status ==
+                                                _WorkStatus.running
+                                            ? '转译中…'
+                                            : '这张卡没有 UI',
+                                      )
+                                    : CardPreview(
+                                        result: result,
+                                        highlightEntryIds: item.highlightIds,
+                                        placeholder:
+                                            item.status == _WorkStatus.running
+                                                ? '转译中…'
+                                                : '预览',
+                                      ),
+                              ),
+                            ],
                           ),
                         ),
                         // 右侧：编辑 / 比对（作用于本卡），仅完成后可用
@@ -448,6 +472,66 @@ class _WorkspacePageState extends State<WorkspacePage> {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+
+  /// 预览区的「文本 / UI」切换。
+  ///
+  /// UI 单独一栏而不是塞进文本预览里：两者信息密度差别太大，
+  /// 混在一起会让 UI 被挤成一小块，失去「看效果」的意义。
+  Widget _previewTabs(_WorkItem item) {
+    Widget tab(String label, IconData icon, bool selected, VoidCallback onTap) {
+      return InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? Theme.of(context).primaryColor
+                                : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon,
+                  size: 14,
+                  color: selected
+                      ? Theme.of(context).primaryColor
+                      : Colors.black45),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                  color: selected
+                      ? Theme.of(context).primaryColor
+                      : Colors.black54,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE0E0E6))),
+      ),
+      child: Row(
+        children: [
+          tab('文本', Icons.article_outlined, !item.showUiPreview,
+              () => setState(() => item.showUiPreview = false)),
+          tab('UI', Icons.dashboard_customize_outlined, item.showUiPreview,
+              () => setState(() => item.showUiPreview = true)),
         ],
       ),
     );

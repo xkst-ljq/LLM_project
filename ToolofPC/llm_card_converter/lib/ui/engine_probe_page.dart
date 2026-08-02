@@ -1,7 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:archive/archive.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
+
+import 'assembly_preview.dart';
 
 /// UI 引擎移植验证页（阶段 0）。
 ///
@@ -29,7 +34,12 @@ import 'package:llm_ui_engine/llm_ui_engine.dart';
 /// ## 怎么用
 ///
 /// 从主页进入本页 → 看是否渲染出一块深色面板与几个组件。
-/// 顶部三个指示灯给出引擎自检结果；底部可切换查看原始 JSON。
+/// 顶部三个指示灯给出引擎自检结果；可切换查看原始 JSON。
+///
+/// 另外提供「载入 .llmcard」：内置样例只能证明引擎能跑，
+/// 证明不了真实卡片显示正确（真实卡的元件是样例的十几倍，
+/// 还有联动器、数据通道、多页面）。转译工具在阶段 3 之前
+/// 产不出带 UI 的卡，用 `samples/` 里的现成卡即可提前验证预览面板。
 class EngineProbePage extends StatefulWidget {
   const EngineProbePage({super.key});
 
@@ -44,6 +54,16 @@ class _EngineProbePageState extends State<EngineProbePage> {
 
   /// 着色器加载结果。null 表示尚未探测。
   bool? _shaderOk;
+
+  /// 从 .llmcard 载入的真实角色卡数据。
+  ///
+  /// 内置样例只能证明「引擎能跑」，证明不了「真实卡片能正确显示」——
+  /// 真实卡的元件数是样例的十几倍，还有联动器、数据通道、多页面。
+  /// 转译工具在阶段 3 之前产不出带 UI 的卡，所以这里提供手动载入，
+  /// 让预览面板能提前用 `samples/` 里的卡验证。
+  Map<String, dynamic>? _loadedCard;
+  String? _loadedName;
+  String? _loadError;
 
   @override
   void initState() {
@@ -61,6 +81,45 @@ class _EngineProbePageState extends State<EngineProbePage> {
     await RippleShaderLoader.ensureLoaded();
     if (!mounted) return;
     setState(() => _shaderOk = RippleShaderLoader.isReady);
+  }
+
+  /// 载入一张 .llmcard 看真实效果。
+  ///
+  /// `.llmcard` 是 zip，角色数据在 `data/character.json`。
+  Future<void> _pickCard() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['llmcard'],
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final file = picked.files.first;
+    try {
+      final bytes = file.bytes ??
+          await File(file.path!).readAsBytes();
+      final zip = ZipDecoder().decodeBytes(bytes);
+      final entry = zip.files.where(
+        (f) => f.name == 'data/character.json',
+      );
+      if (entry.isEmpty) {
+        throw const FormatException('压缩包里没有 data/character.json');
+      }
+      final json = utf8.decode(entry.first.content as List<int>);
+      final map = jsonDecode(json);
+      if (map is! Map) throw const FormatException('character.json 不是对象');
+      if (!mounted) return;
+      setState(() {
+        _loadedCard = Map<String, dynamic>.from(map);
+        _loadedName = file.name;
+        _loadError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadedCard = null;
+        _loadError = '$e';
+      });
+    }
   }
 
   void _parse() {
@@ -82,8 +141,22 @@ class _EngineProbePageState extends State<EngineProbePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('UI 引擎验证'),
+        title: const Text('UI 引擎验证 / 卡片预览'),
         actions: [
+          TextButton.icon(
+            onPressed: _pickCard,
+            icon: const Icon(Icons.folder_open, size: 18),
+            label: const Text('载入 .llmcard'),
+          ),
+          if (_loadedCard != null)
+            TextButton.icon(
+              onPressed: () => setState(() {
+                _loadedCard = null;
+                _loadedName = null;
+              }),
+              icon: const Icon(Icons.close, size: 18),
+              label: const Text('回到样例'),
+            ),
           TextButton.icon(
             onPressed: () => setState(() => _showJson = !_showJson),
             icon: const Icon(Icons.data_object, size: 18),
@@ -154,6 +227,35 @@ class _EngineProbePageState extends State<EngineProbePage> {
   }
 
   Widget _buildRenderView() {
+    // 载入了真实卡 → 直接用预览组件（与工作区里那套完全一样）。
+    if (_loadedCard != null) {
+      return Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: const Color(0xFFE8F5E9),
+            child: Text(
+              '真实卡片：$_loadedName',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF1B5E20)),
+            ),
+          ),
+          Expanded(child: AssemblyPreview(characterData: _loadedCard)),
+        ],
+      );
+    }
+    if (_loadError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            '载入失败：\n$_loadError',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFFC62828), fontSize: 12),
+          ),
+        ),
+      );
+    }
     if (_parseError != null) {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
