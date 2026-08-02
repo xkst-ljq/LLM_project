@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import '../core/conversion_models.dart';
 import '../core/conversion_service.dart';
+import '../core/regex_ui_extractor.dart';
+import '../core/ui_assembly_builder.dart';
 
 /// 三步转译流水线（纯 Dart，平台无关）。
 ///
@@ -17,12 +19,13 @@ import '../core/conversion_service.dart';
 ///   - stage3 检查精修：审计（漏转/新增/重复/归类建议），产出问题清单
 
 /// 流水线阶段标识。
-enum PipelineStage { rule, aiClassify, refine }
+enum PipelineStage { rule, aiClassify, buildUi, refine }
 
 extension PipelineStageLabel on PipelineStage {
   String get label => switch (this) {
         PipelineStage.rule => '规则转译',
         PipelineStage.aiClassify => 'AI 智能归类',
+        PipelineStage.buildUi => 'UI 生成',
         PipelineStage.refine => '检查精修',
       };
 }
@@ -49,6 +52,7 @@ class CardWorkItem {
   final Map<PipelineStage, StageStatus> stageStatus = {
     PipelineStage.rule: StageStatus.pending,
     PipelineStage.aiClassify: StageStatus.pending,
+    PipelineStage.buildUi: StageStatus.pending,
     PipelineStage.refine: StageStatus.pending,
   };
 
@@ -70,6 +74,7 @@ class CardWorkItem {
   CardConversionResult? get current {
     for (final stage in const [
       PipelineStage.refine,
+      PipelineStage.buildUi,
       PipelineStage.aiClassify,
       PipelineStage.rule,
     ]) {
@@ -83,6 +88,7 @@ class CardWorkItem {
   PipelineStage? get currentStage {
     for (final stage in const [
       PipelineStage.refine,
+      PipelineStage.buildUi,
       PipelineStage.aiClassify,
       PipelineStage.rule,
     ]) {
@@ -236,7 +242,78 @@ class ConversionPipeline {
     }
   }
 
-  /// 第三步：检查精修。基于"当前最新结果"。可重跑。
+  /// 第三步：UI 生成。**纯代码，不调 AI。**
+  ///
+  /// 插在 AI 归类之后、检查精修之前，理由有二：
+  ///
+  /// 1. UI 生成要用到归类产物（状态字段、条目内容）；
+  /// 2. 放最后会让自检环节看不到 UI，等于新增部分无人审核。
+  ///
+  /// 产物写进 `meta_json` 的 `ui_assemblies` 与 `status_bar_fields`。
+  /// 原卡没有可识别界面时**不生成**（用户明确要求「原版没有的不去设计」），
+  /// 此时本阶段仍标记为 done，只是没有产出。
+  CardConversionResult runBuildUiStage(CardWorkItem item) {
+    final base = item.stageOutputs[PipelineStage.aiClassify] ??
+        item.stageOutputs[PipelineStage.rule];
+    if (base == null || !base.success) {
+      throw StateError('请先成功完成规则转译');
+    }
+    final src = item.sourceJson ?? _extractSourceJson(base) ?? const {};
+
+    item.stageStatus[PipelineStage.buildUi] = StageStatus.running;
+    try {
+      final extraction = RegexUiExtractor.extract(src);
+      final card = base.characterData == null
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(base.characterData!);
+      final built = UiAssemblyBuilder.build(
+        extraction,
+        cardName: card['name']?.toString() ?? '',
+      );
+
+      final notes = <ConversionNote>[
+        ...base.notes,
+        ...extraction.notes.map(ConversionNote.info),
+        ...built.notes.map(ConversionNote.info),
+      ];
+
+      if (built.isEmpty) {
+        // 没有 UI 也算成功——这是预期结果，不是失败。
+        final out = base.copyWith(notes: notes);
+        item.stageOutputs[PipelineStage.buildUi] = out;
+        item.stageStatus[PipelineStage.buildUi] = StageStatus.done;
+        return out;
+      }
+
+      // 写进 meta_json。它是 JSON 字符串，要先解出来再塞回去。
+      final metaRaw = card['meta_json'];
+      final meta = metaRaw is String && metaRaw.isNotEmpty
+          ? Map<String, dynamic>.from(jsonDecode(metaRaw) as Map)
+          : <String, dynamic>{};
+      meta['ui_assemblies'] = built.assemblies;
+      if (built.statusFields.isNotEmpty) {
+        meta['status_bar_fields'] = built.statusFields;
+      }
+      card['meta_json'] = jsonEncode(meta);
+
+      final out = base.copyWith(
+        characterData: card,
+        notes: notes,
+        convertedFields: [
+          ...base.convertedFields,
+          'UI 界面 ×${built.assemblies.length}',
+        ],
+      );
+      item.stageOutputs[PipelineStage.buildUi] = out;
+      item.stageStatus[PipelineStage.buildUi] = StageStatus.done;
+      return out;
+    } catch (e) {
+      item.stageStatus[PipelineStage.buildUi] = StageStatus.failed;
+      rethrow;
+    }
+  }
+
+  /// 第四步：检查精修。基于"当前最新结果"。可重跑。
   Future<List<RefineIssue>> runRefineStage(CardWorkItem item) async {
     final fn = aiRefine;
     if (fn == null) {
@@ -272,6 +349,13 @@ class ConversionPipeline {
       }
     } else {
       item.stageStatus[PipelineStage.aiClassify] = StageStatus.skipped;
+    }
+
+    // UI 生成是纯代码，无论有没有配 AI 都跑。
+    try {
+      runBuildUiStage(item);
+    } catch (_) {
+      item.stageStatus[PipelineStage.buildUi] = StageStatus.skipped;
     }
     if (aiRefine != null) {
       try {

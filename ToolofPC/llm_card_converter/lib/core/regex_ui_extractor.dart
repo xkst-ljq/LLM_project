@@ -496,6 +496,10 @@ class RegexUiExtractor {
   }
 
   /// 抽 `onclick="send('文案')"` 里的文案。
+  ///
+  /// 用三引号原始字符串是因为要同时匹配单引号和双引号两种写法，
+  /// 普通字符串会陷入转义地狱。
+  /// （附带一提：这行会让简易括号检查脚本误报不平衡，源码本身是对的。）
   static List<String> _extractSendActions(String html) {
     final re = RegExp(r"""send\(\s*['"](.+?)['"]\s*\)""");
     return re
