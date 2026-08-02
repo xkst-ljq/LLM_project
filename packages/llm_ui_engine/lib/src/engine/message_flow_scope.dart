@@ -54,10 +54,14 @@ class MessageFlowScope extends InheritedWidget {
   /// 前者该显示示例，后者该显示「暂无消息」。
   final bool isLive;
 
+  /// 选项被点选或消息发送时的回调，用于将玩家选择发送给 LLM。
+  final ValueChanged<String>? onSendMessage;
+
   const MessageFlowScope({
     super.key,
     required this.messages,
     this.isLive = false,
+    this.onSendMessage,
     required super.child,
   });
 
@@ -68,6 +72,7 @@ class MessageFlowScope extends InheritedWidget {
   @override
   bool updateShouldNotify(MessageFlowScope oldWidget) {
     if (oldWidget.isLive != isLive) return true;
+    if (oldWidget.onSendMessage != onSendMessage) return true;
     // 流式输出时最后一条的内容在持续变化，必须逐帧通知。
     if (oldWidget.messages.length != messages.length) return true;
     if (messages.isEmpty) return false;

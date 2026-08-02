@@ -1126,6 +1126,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       // 只有真实聊天页会传 liveMessages；编辑器预览不传，
       // 消息流据此显示示例对话而不是「暂无消息」。
       isLive: widget.liveMessages,
+      onSendMessage: widget.onSendMessage,
       child: AvatarScope(
       characterAvatar: widget.characterAvatar,
       userAvatar: widget.userAvatar,
