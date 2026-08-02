@@ -1057,7 +1057,7 @@ class UiAssemblyBuilder {
       final raw = entry.value[fieldName];
       if (raw == null || raw.isEmpty) continue;
       final v = numeric ? _cleanNumber(raw) : raw;
-      if (v != null && v.isNotEmpty) out['\${entry.key}'] = v;
+      if (v != null && v.isNotEmpty) out[entry.key.toString()] = v;
     }
     return out;
   }
