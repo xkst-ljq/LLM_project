@@ -272,7 +272,7 @@ class UiAssemblyBuilder {
   ) {
     final notes = <String>[];
 
-    // 「正文」这类整段叙事不适合塞进状态面板——
+    // 「正文」这类整段叙事不适合塞进状态面板──
     // 它是消息正文本身，不是状态。
     final fields = script.fields
         .where((f) => !_isNarrativeField(f.name))
@@ -283,41 +283,12 @@ class UiAssemblyBuilder {
     if (used.length > _Layout.maxFields) {
       used = used.sublist(0, _Layout.maxFields);
       notes.add('字段过多（${fields.length} 个），'
-          '取前 ${_Layout.maxFields} 个以免面板过高。');
+          '已限制前 ${_Layout.maxFields} 个以防高度溢出。');
     }
 
     final numeric = used.where((f) => f.isNumeric).toList();
     final textual = used.where((f) => !f.isNumeric).toList();
 
-    // ── 算高度 ──
-    var y = _Layout.pcbPadding;
-    final elements = <Map<String, dynamic>>[];
-    final statusFields = <Map<String, dynamic>>[];
-
-    // 伴生 UI (extra_companion) 最大宽度为 212.0
-    const pcbW = 212.0;
-    final innerW = pcbW - _Layout.pcbPadding * 2;
-
-    // 标题（伴生 UI 随气泡滚动，不需要折叠按钮）
-    elements.add(_text(
-      id: nextId('el'),
-      name: '标题',
-      text: cardName.isEmpty ? '状态' : cardName,
-      x: _Layout.pcbPadding,
-      y: y,
-      w: innerW,
-      h: _Layout.titleHeight,
-      fontSize: 13,
-      color: theme.titleColor,
-      align: 'center',
-      layer: elements.length + 1,
-    ));
-    y += _Layout.titleHeight + 6.0;
-
-    // 数值字段：标签 + 进度条
-    //
-    // 但要先筛一道：量程超出 0~100 的（如「点数 200万」）
-    // 用进度条表达会永远满格，退回文本更诚实。
     final barFields = <UiField>[];
     final overflowFields = <UiField>[];
     for (final f in numeric) {
@@ -327,27 +298,254 @@ class UiAssemblyBuilder {
         overflowFields.add(f);
       }
     }
-    if (overflowFields.isNotEmpty) {
-      notes.add('${overflowFields.map((f) => f.name).join('、')} '
-          '的取值超出 0~100，改用文本显示。');
-    }
     final textual2 = [...textual, ...overflowFields];
 
-    // 数值字段：双列并排流式网格，极其紧凑
-    for (var i = 0; i < barFields.length; i += 2) {
-      final f1 = barFields[i];
-      final hasF2 = i + 1 < barFields.length;
-      final f2 = hasF2 ? barFields[i + 1] : null;
+    // 分页切分
+    final tab1Fields = barFields;
+    final half = (textual2.length / 2).ceil();
+    final tab2Fields = textual2.sublist(0, half.clamp(0, textual2.length));
+    final tab3Fields = textual2.sublist(half.clamp(0, textual2.length));
 
-      final colW = innerW / 2 - 4;
-      final colLabelW = 38.0;
+    const pcbW = 212.0;
+    final innerW = pcbW - _Layout.pcbPadding * 2;
 
-      // 列 1
-      final fieldId1 = 'sf_${_slug(f1.name)}';
+    // 创建三个平级页面的 ID
+    final page1Id = 'page_${nextId("page")}';
+    final page2Id = 'page_${nextId("page")}';
+    final page3Id = 'page_${nextId("page")}';
+
+    final statusFields = <Map<String, dynamic>>[];
+
+    // 编译第一页 (📊 属性)
+    final elements1 = _buildPageElements(
+      pageIndex: 1,
+      fields: tab1Fields,
+      nextId: nextId,
+      branchPresets: branchPresets,
+      statusFields: statusFields,
+      theme: theme,
+      page1Id: page1Id,
+      page2Id: page2Id,
+      page3Id: page3Id,
+      pcbW: pcbW,
+      innerW: innerW,
+    );
+    final page1 = {
+      'id': page1Id,
+      'name': '属性',
+      'type': 'base',
+      'parentPageId': null,
+      'sortOrder': 0,
+      'elements': elements1,
+      'gestures': <dynamic>[],
+      'propertyOverrides': <dynamic>[],
+    };
+
+    // 编译第二页 (📁 档案)
+    final elements2 = _buildPageElements(
+      pageIndex: 2,
+      fields: tab2Fields,
+      nextId: nextId,
+      branchPresets: branchPresets,
+      statusFields: statusFields,
+      theme: theme,
+      page1Id: page1Id,
+      page2Id: page2Id,
+      page3Id: page3Id,
+      pcbW: pcbW,
+      innerW: innerW,
+    );
+    final page2 = {
+      'id': page2Id,
+      'name': '档案',
+      'type': 'base',
+      'parentPageId': null,
+      'sortOrder': 1,
+      'elements': elements2,
+      'gestures': <dynamic>[],
+      'propertyOverrides': <dynamic>[],
+    };
+
+    // 编译第三页 (🎒 装备)
+    final elements3 = _buildPageElements(
+      pageIndex: 3,
+      fields: tab3Fields,
+      nextId: nextId,
+      branchPresets: branchPresets,
+      statusFields: statusFields,
+      theme: theme,
+      page1Id: page1Id,
+      page2Id: page2Id,
+      page3Id: page3Id,
+      pcbW: pcbW,
+      innerW: innerW,
+    );
+    final page3 = {
+      'id': page3Id,
+      'name': '装备',
+      'type': 'base',
+      'parentPageId': null,
+      'sortOrder': 2,
+      'elements': elements3,
+      'gestures': <dynamic>[],
+      'propertyOverrides': <dynamic>[],
+    };
+
+    // 动态计算最大高度，使三页高度对齐统一不缩放
+    double getMaxHeight(List<Map<String, dynamic>> elList) {
+      double maxH = 0.0;
+      for (final e in elList) {
+        if (e['id'].toString().startsWith('el_')) {
+          final offset = e['offset'] as Map;
+          final size = e['size'] as Map;
+          final h = (offset['y'] as num).toDouble() + (size['height'] as num).toDouble();
+          if (h > maxH) maxH = h;
+        }
+      }
+      return (maxH + _Layout.pcbPadding).clamp(64.0, 2000.0).toDouble();
+    }
+
+    final pcbH = [getMaxHeight(elements1), getMaxHeight(elements2), getMaxHeight(elements3)]
+        .reduce((a, b) => a > b ? a : b);
+
+    // 统一将底板高度打补丁
+    void patchBackgroundHeight(List<Map<String, dynamic>> elList) {
+      for (var i = 0; i < elList.length; i++) {
+        if (elList[i]['name'] == '底板') {
+          elList[i]['size']['height'] = pcbH;
+        }
+      }
+    }
+    patchBackgroundHeight(elements1);
+    patchBackgroundHeight(elements2);
+    patchBackgroundHeight(elements3);
+
+    notes.add('通过多页面 (📊属性/📁档案/🎒装备) 与顶置 Tab 标签按钮整合复杂面板属性，防止界面拥挤。');
+
+    return _PanelResult(
+      assemblyJson: _assembly(
+        id: nextId('asm'),
+        name: '${cardName.isEmpty ? "角色" : cardName}状态栏',
+        mode: 'extra_companion',
+        pcbW: pcbW,
+        pcbH: pcbH,
+        pages: [page1, page2, page3],
+        pcbColor: theme.pcbColor,
+        pcbRadius: theme.borderRadius,
+      ),
+      statusFields: statusFields,
+      notes: notes,
+    );
+  }
+
+  static List<Map<String, dynamic>> _buildPageElements({
+    required int pageIndex,
+    required List<UiField> fields,
+    required String Function(String) nextId,
+    required Map<int, Map<String, String>> branchPresets,
+    required List<Map<String, dynamic>> statusFields,
+    required UiVisualTheme theme,
+    required String page1Id,
+    required String page2Id,
+    required String page3Id,
+    required double pcbW,
+    required double innerW,
+  }) {
+    final elements = <Map<String, dynamic>>[];
+    var y = _Layout.pcbPadding;
+
+    // ── 1. 顶部 Tab 标签切换栏 ──
+    final tabW = (innerW - 12.0) / 3;
+    final tabH = 22.0;
+
+    final tabs = [
+      (index: 1, title: '📊 属性', pageId: page1Id),
+      (index: 2, title: '📁 档案', pageId: page2Id),
+      (index: 3, title: '🎒 装备', pageId: page3Id),
+    ];
+
+    final routerIds = <int, String>{};
+    for (final tab in tabs) {
+      if (tab.index != pageIndex) {
+        final rId = nextId('el');
+        routerIds[tab.index] = rId;
+        elements.add(_pageRouter(
+          id: rId,
+          name: '路由器_${tab.title}',
+          targetPageId: tab.pageId,
+        ));
+      }
+    }
+
+    for (var i = 0; i < tabs.length; i++) {
+      final tab = tabs[i];
+      final isActive = tab.index == pageIndex;
+      final tabX = _Layout.pcbPadding + i * (tabW + 6.0);
+
+      final sId = nextId('el');
+      elements.add(_surface(
+        id: sId,
+        name: '标签底_${tab.title}',
+        x: tabX,
+        y: y,
+        w: tabW,
+        h: tabH,
+        color: isActive ? theme.accentColor : theme.buttonBgColor,
+        layer: elements.length + 1,
+        radius: 6.0,
+      ));
+
       elements.add(_text(
         id: nextId('el'),
-        name: '${f1.name}标签',
-        text: _decorateEmoji(f1.name),
+        name: '标签文_${tab.title}',
+        text: tab.title,
+        x: tabX + 2,
+        y: y + 4,
+        w: tabW - 4,
+        h: 14,
+        fontSize: 9,
+        color: isActive ? theme.titleColor : theme.labelColor,
+        align: 'center',
+        layer: elements.length + 1,
+      ));
+
+      if (!isActive) {
+        final bId = nextId('el');
+        elements.add(_button(
+          id: bId,
+          name: '标签按_${tab.title}',
+          x: tabX,
+          y: y,
+          w: tabW,
+          h: tabH,
+          layer: elements.length + 1,
+          sendsMessage: false,
+          keyAction: false,
+          color: 0x00000000, // 保持完全透明作为按钮点击热区
+        ));
+
+        elements.add(_pressLinker2(
+          id: nextId('el'),
+          name: '标签跳_${tab.title}',
+          buttonId: bId,
+          routerId: routerIds[tab.index]!,
+          scheme: 'button_to_page_route',
+          y: i * 52.0,
+          layer: elements.length + 1,
+        ));
+      }
+    }
+
+    y += tabH + 12.0;
+    const colLabelW = 50.0;
+
+    // ── 2. 渲染专页的属性列表数据（单列最松弛排布，完全不拥挤） ──
+    for (final f in fields) {
+      final fieldId = 'sf_${_slug(f.name)}';
+      elements.add(_text(
+        id: nextId('el'),
+        name: '${f.name}标签',
+        text: _decorateEmoji(f.name),
         x: _Layout.pcbPadding,
         y: y,
         w: colLabelW,
@@ -357,185 +555,58 @@ class UiAssemblyBuilder {
         align: 'left',
         layer: elements.length + 1,
       ));
-      elements.add(_progress(
-        id: nextId('el'),
-        name: f1.name,
-        x: _Layout.pcbPadding + colLabelW + 4,
-        y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-        w: colW - colLabelW - 4,
-        h: _Layout.barHeight,
-        statusFieldId: fieldId1,
-        layer: elements.length + 1,
-        barFillColor: _barColorOf(f1.name, theme.barFillColor),
-        barTrackColor: theme.barTrackColor,
-      ));
-      final numPresets1 = _presetsOf(branchPresets, f1.name, numeric: true);
-      statusFields.add({
-        'id': fieldId1,
-        'name': f1.name,
-        'type': 'number',
-        'initial_value': numPresets1['0'] ?? '0',
-        'min_value': 0.0,
-        'max_value': 100.0,
-        'pin_side': 'none',
-        'order': statusFields.length,
-        'owner': 'player',
-        if (numPresets1.length > 1) 'branch_initial_values': numPresets1,
-      });
 
-      // 列 2
-      if (f2 != null) {
-        final fieldId2 = 'sf_${_slug(f2.name)}';
-        final col2X = _Layout.pcbPadding + innerW / 2 + 4;
-        elements.add(_text(
-          id: nextId('el'),
-          name: '${f2.name}标签',
-          text: _decorateEmoji(f2.name),
-          x: col2X,
-          y: y,
-          w: colLabelW,
-          h: _Layout.rowHeight,
-          fontSize: 10,
-          color: theme.labelColor,
-          align: 'left',
-          layer: elements.length + 1,
-        ));
+      if (f.isNumeric && pageIndex == 1) {
         elements.add(_progress(
           id: nextId('el'),
-          name: f2.name,
-          x: col2X + colLabelW + 4,
+          name: f.name,
+          x: _Layout.pcbPadding + colLabelW + 6,
           y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-          w: colW - colLabelW - 4,
+          w: innerW - colLabelW - 6,
           h: _Layout.barHeight,
-          statusFieldId: fieldId2,
+          statusFieldId: fieldId,
           layer: elements.length + 1,
-          barFillColor: _barColorOf(f2.name, theme.barFillColor),
+          barFillColor: _barColorOf(f.name, theme.barFillColor),
           barTrackColor: theme.barTrackColor,
         ));
-        final numPresets2 = _presetsOf(branchPresets, f2.name, numeric: true);
+        final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
         statusFields.add({
-          'id': fieldId2,
-          'name': f2.name,
+          'id': fieldId,
+          'name': f.name,
           'type': 'number',
-          'initial_value': numPresets2['0'] ?? '0',
+          'initial_value': numPresets['0'] ?? '0',
           'min_value': 0.0,
           'max_value': 100.0,
           'pin_side': 'none',
           'order': statusFields.length,
           'owner': 'player',
-          if (numPresets2.length > 1) 'branch_initial_values': numPresets2,
+          if (numPresets.length > 1) 'branch_initial_values': numPresets,
         });
-      }
-      y += _Layout.rowHeight + _Layout.rowGap;
-    }
-
-    if (barFields.isNotEmpty && textual2.isNotEmpty) {
-      y += _Layout.rowGap;
-      elements.add(_line(
-        id: nextId('el'),
-        name: '分割线',
-        x: _Layout.pcbPadding,
-        y: y,
-        w: innerW,
-        h: 2.0,
-        color: (theme.labelColor & 0x00FFFFFF) | 0x26000000, // 15% 透明度
-        layer: elements.length + 1,
-        thickness: 1.0,
-      ));
-      y += 8.0;
-    }
-
-    // 文本字段：双列并排流动布局，完美契合伴生气泡宽度
-    for (var i = 0; i < textual2.length; i += 2) {
-      final f1 = textual2[i];
-      final hasF2 = i + 1 < textual2.length;
-      final f2 = hasF2 ? textual2[i + 1] : null;
-
-      final colW = innerW / 2 - 4;
-      final colLabelW = 38.0;
-
-      // 列 1
-      final fieldId1 = 'sf_${_slug(f1.name)}';
-      elements.add(_text(
-        id: nextId('el'),
-        name: '${f1.name}标签',
-        text: _decorateEmoji(f1.name),
-        x: _Layout.pcbPadding,
-        y: y,
-        w: colLabelW,
-        h: _Layout.rowHeight,
-        fontSize: 10,
-        color: theme.labelColor,
-        align: 'left',
-        layer: elements.length + 1,
-      ));
-      elements.add(_text(
-        id: nextId('el'),
-        name: f1.name,
-        text: '—',
-        x: _Layout.pcbPadding + colLabelW + 4,
-        y: y,
-        w: colW - colLabelW - 4,
-        h: _Layout.rowHeight,
-        fontSize: 10,
-        color: theme.valueColor,
-        align: 'left',
-        layer: elements.length + 1,
-        statusFieldId: fieldId1,
-      ));
-      final txtPresets1 = _presetsOf(branchPresets, f1.name, numeric: false);
-      statusFields.add({
-        'id': fieldId1,
-        'name': f1.name,
-        'type': 'text',
-        'initial_value': txtPresets1['0'] ?? '',
-        'pin_side': 'none',
-        'order': statusFields.length,
-        'owner': 'player',
-        if (txtPresets1.length > 1) 'branch_initial_values': txtPresets1,
-      });
-
-      // 列 2
-      if (f2 != null) {
-        final fieldId2 = 'sf_${_slug(f2.name)}';
-        final col2X = _Layout.pcbPadding + innerW / 2 + 4;
+      } else {
         elements.add(_text(
           id: nextId('el'),
-          name: '${f2.name}标签',
-          text: _decorateEmoji(f2.name),
-          x: col2X,
-          y: y,
-          w: colLabelW,
-          h: _Layout.rowHeight,
-          fontSize: 10,
-          color: theme.labelColor,
-          align: 'left',
-          layer: elements.length + 1,
-        ));
-        elements.add(_text(
-          id: nextId('el'),
-          name: f2.name,
+          name: f.name,
           text: '—',
-          x: col2X + colLabelW + 4,
+          x: _Layout.pcbPadding + colLabelW + 6,
           y: y,
-          w: colW - colLabelW - 4,
+          w: innerW - colLabelW - 6,
           h: _Layout.rowHeight,
-          fontSize: 10,
+          fontSize: 11,
           color: theme.valueColor,
           align: 'left',
           layer: elements.length + 1,
-          statusFieldId: fieldId2,
+          statusFieldId: fieldId,
         ));
-        final txtPresets2 = _presetsOf(branchPresets, f2.name, numeric: false);
+        final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
         statusFields.add({
-          'id': fieldId2,
-          'name': f2.name,
+          'id': fieldId,
+          'name': f.name,
           'type': 'text',
-          'initial_value': txtPresets2['0'] ?? '',
+          'initial_value': txtPresets['0'] ?? '',
           'pin_side': 'none',
           'order': statusFields.length,
           'owner': 'player',
-          if (txtPresets2.length > 1) 'branch_initial_values': txtPresets2,
+          if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
         });
       }
       y += _Layout.rowHeight + _Layout.rowGap;
@@ -543,7 +614,7 @@ class UiAssemblyBuilder {
 
     final pcbH = (y + _Layout.pcbPadding).clamp(64.0, 2000.0).toDouble();
 
-    // 底板放最底层（layerIndex 0），其余依次向上。
+    // ── 3. 底板放最底层 ──
     final bg = _surface(
       id: nextId('el'),
       name: '底板',
@@ -556,23 +627,69 @@ class UiAssemblyBuilder {
       radius: theme.borderRadius,
     );
 
-    // 伴生 UI (extra_companion)：跟随聊天气泡内部滚动
-    return _PanelResult(
-      assemblyJson: _assembly(
-        id: nextId('asm'),
-        name: '${cardName.isEmpty ? "角色" : cardName}状态栏',
-        mode: 'extra_companion',
-        pcbW: pcbW,
-        pcbH: pcbH,
-        pageName: '状态',
-        elements: [bg, ...elements],
-        pcbColor: theme.pcbColor,
-        pcbRadius: theme.borderRadius,
-      ),
-      statusFields: statusFields,
-      notes: notes,
-    );
+    return [bg, ...elements];
   }
+
+  static Map<String, dynamic> _pageRouter({
+    required String id,
+    required String name,
+    required String targetPageId,
+  }) =>
+      _element(
+        id: id,
+        x: -224, // 放置在PCB左侧外部逻辑区
+        y: 0,
+        w: 132,
+        h: 44,
+        layer: 0,
+        module: _module(
+          id: id,
+          name: name,
+          type: 'page_router',
+          color: 0x00000000,
+          props: {
+            'route': {
+              'targetPageId': targetPageId,
+              'action': 'switch_base_page',
+              'transition': 'base_slide',
+              'durationMs': 200,
+            },
+          },
+        ),
+      );
+
+  static Map<String, dynamic> _pressLinker2({
+    required String id,
+    required String name,
+    required String buttonId,
+    required String routerId,
+    required String scheme,
+    required double y,
+    required int layer,
+  }) =>
+      _element(
+        id: id,
+        x: -224,
+        y: y,
+        w: 132,
+        h: 44,
+        layer: layer,
+        module: _module(
+          id: id,
+          name: name,
+          type: 'linker',
+          color: 0x00000000,
+          props: {
+            'linker': {
+              'scheme': scheme,
+              'sourceModuleId': buttonId,
+              'targetModuleId': routerId,
+              'enabled': true,
+              'priority': 5,
+            },
+          },
+        ),
+      );
 
   // ─────────────────────── 开场选项页 ───────────────────────
 
