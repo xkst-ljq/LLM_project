@@ -3461,43 +3461,161 @@ class _MessageFlowListState extends State<_MessageFlowList> {
       itemCount: widget.messages.length,
       itemBuilder: (context, index) {
         final msg = widget.messages[index];
+        final parsed = _parseDynamicOptions(msg.content);
+        final isLastMessage = index == widget.messages.length - 1;
+        final showButtons = isLastMessage && !msg.isUser && parsed.options.isNotEmpty;
+
         return Align(
           alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.sizeOf(context).width * 0.66,
-            ),
-            decoration: BoxDecoration(
-              color: msg.isUser ? widget.userColor : widget.assistantColor,
-              borderRadius: BorderRadius.circular(widget.bubbleRadius),
-            ),
-            child: Builder(
-              builder: (context) {
-                final style = TextStyle(
-                  fontSize: widget.fontSize,
-                  height: 1.35,
-                  color: const Color(0xFF111116),
-                );
-                if (!widget.richText) {
-                  return Text(msg.content, style: style);
-                }
-                // 气泡内不开 selectable：长按选中会与列表滚动、
-                // 以及外层可能存在的拖动手势抢竞技场。
-                return AssemblyRichText(
-                  text: msg.content,
-                  baseStyle: style,
-                  textAlign: TextAlign.left,
-                  highlightRules: TextHighlightScope.maybeOf(context),
-                );
-              },
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: msg.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.sizeOf(context).width * 0.66,
+                ),
+                decoration: BoxDecoration(
+                  color: msg.isUser ? widget.userColor : widget.assistantColor,
+                  borderRadius: BorderRadius.circular(widget.bubbleRadius),
+                ),
+                child: Builder(
+                  builder: (context) {
+                    final style = TextStyle(
+                      fontSize: widget.fontSize,
+                      height: 1.35,
+                      color: const Color(0xFF111116),
+                    );
+                    if (!widget.richText) {
+                      return Text(parsed.cleanContent, style: style);
+                    }
+                    // 气泡内不开 selectable：长按选中会与列表滚动、
+                    // 以及外层可能存在的拖动手势抢竞技场。
+                    return AssemblyRichText(
+                      text: parsed.cleanContent,
+                      baseStyle: style,
+                      textAlign: TextAlign.left,
+                      highlightRules: TextHighlightScope.maybeOf(context),
+                    );
+                  },
+                ),
+              ),
+              if (showButtons)
+                _buildDynamicOptionButtons(context, parsed.options),
+            ],
           ),
         );
       },
     );
   }
+
+  Widget _buildDynamicOptionButtons(BuildContext context, List<_DynamicOption> options) {
+    final scope = MessageFlowScope.maybeOf(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: options.map((opt) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Material(
+              color: const Color(0xFF1E2027), // 深色实心底板
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  if (scope?.onSendMessage != null) {
+                    scope!.onSendMessage!(opt.message);
+                  }
+                },
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.sizeOf(context).width * 0.66,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: const Color(0xFF4FA3D1).withValues(alpha: 0.4),
+                      width: 1,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.play_circle_outline_rounded,
+                        size: 14,
+                        color: Color(0xFF4FA3D1),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          opt.label,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFE8EDF5),
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  _ParsedMessage _parseDynamicOptions(String rawContent) {
+    final options = <_DynamicOption>[];
+    final optionRe = RegExp(
+      r'''<[^>]*onclick\s*=\s*['"]\s*send\(\s*['"]?(.*?)['"]?\s*\)\s*['"][^>]*>(.*?)</[^>]*>''',
+      dotAll: true,
+      caseSensitive: false,
+    );
+
+    for (final m in optionRe.allMatches(rawContent)) {
+      final msg = m.group(1)?.trim() ?? '';
+      final label = m.group(2)?.trim() ?? '';
+      final cleanLabel = label.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      if (msg.isNotEmpty && cleanLabel.isNotEmpty) {
+        options.add(_DynamicOption(label: cleanLabel, message: msg));
+      }
+    }
+
+    var clean = rawContent;
+    clean = clean.replaceAll(
+      RegExp(r'<[^>]*onclick[^>]*>.*?</[^>]*>\s*', dotAll: true, caseSensitive: false),
+      '',
+    );
+    clean = clean.replaceAll(
+      RegExp(r'<([\u4e00-\u9fa5A-Za-z_]{1,12})>\s*</\1>\s*', dotAll: true, caseSensitive: false),
+      '',
+    );
+
+    return _ParsedMessage(clean.trim(), options);
+  }
+}
+
+class _DynamicOption {
+  final String label;
+  final String message;
+  const _DynamicOption({required this.label, required this.message});
+}
+
+class _ParsedMessage {
+  final String cleanContent;
+  final List<_DynamicOption> options;
+  const _ParsedMessage(this.cleanContent, this.options);
 }
 
 /// 可滚动长文本块。

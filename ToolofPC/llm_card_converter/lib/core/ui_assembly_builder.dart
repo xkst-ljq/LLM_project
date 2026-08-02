@@ -495,6 +495,7 @@ class UiAssemblyBuilder {
         sendsMessage: true,
         keyAction: true,
         message: label,
+        targetBranchIndex: i,
       ));
       pressPairs.add((surface: surfaceId, button: buttonId));
       y += _Layout.buttonHeight + 8;
@@ -717,6 +718,7 @@ class UiAssemblyBuilder {
     required bool sendsMessage,
     required bool keyAction,
     String message = '',
+    int? targetBranchIndex,
   }) =>
       _element(
         id: id,
@@ -734,6 +736,7 @@ class UiAssemblyBuilder {
             if (sendsMessage) 'sendsMessage': true,
             if (keyAction) 'keyAction': true,
             if (message.isNotEmpty) 'messageText': message,
+            if (targetBranchIndex != null) 'targetBranchIndex': targetBranchIndex,
           },
         ),
       );

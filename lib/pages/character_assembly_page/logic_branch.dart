@@ -31,6 +31,7 @@ mixin _AssemblyBranchLogic
 
   /// 分支总数。开场白 ≤1 时只有主支路。
   int get _branchCount {
+    if (_info.mode == 'opening') return 1; // openingUI 承担开场白整合切换，其本身不需要再分拆设计
     final n = widget.branchNames.length;
     return n < 1 ? 1 : n;
   }
@@ -38,10 +39,10 @@ mixin _AssemblyBranchLogic
   bool get _hasBranches => _branchCount > 1;
 
   String _branchLabel(int index) {
-    if (index < widget.branchNames.length) {
+    if (index < widget.branchNames.length && widget.branchNames[index].isNotEmpty) {
       return widget.branchNames[index];
     }
-    return index == 0 ? '主线' : '分支 $index';
+    return '开场白 ${index + 1}';
   }
 
   /// 该分支是否已有专属设计（而非照搬主支路）。
@@ -182,7 +183,7 @@ mixin _AssemblyBranchLogic
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '这个分支还没有专属界面，目前跟随主线显示。\n'
+              '这个开场白还没有专属界面，目前跟随开场白 1 显示。\n'
               '要怎么开始设计？',
               style: TextStyle(fontSize: 13, height: 1.5),
             ),
@@ -191,8 +192,8 @@ mixin _AssemblyBranchLogic
               ctx,
               mode: _BranchInitMode.inherit,
               icon: Icons.copy_all_rounded,
-              title: '继承主线',
-              detail: '复制主线的全部元件，在此基础上改。\n'
+              title: '继承开场白 1',
+              detail: '复制开场白 1 的全部元件，在此基础上改。\n'
                   '适合「界面相同、只是初始数据不同」。',
             ),
             const SizedBox(height: 8),
@@ -201,7 +202,7 @@ mixin _AssemblyBranchLogic
               mode: _BranchInitMode.blank,
               icon: Icons.crop_square_outlined,
               title: '空白画布',
-              detail: '从零开始摆。适合这个开局需要完全不同的界面。',
+              detail: '从零开始摆。适合该开场白需要完全不同的界面。',
             ),
           ],
         ),
@@ -328,7 +329,7 @@ mixin _AssemblyBranchLogic
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '选择要编辑的开场分支',
+                  '选择要编辑的开场白',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                 ),
               ),
@@ -338,8 +339,8 @@ mixin _AssemblyBranchLogic
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '各分支平级。没有专属设计的分支会照搬主线，'
-                  '主线改版式它们自动跟随。',
+                  '各开场白平级。没有专属设计的开场白会照搬开场白 1，'
+                  '开场白 1 改版式它们自动跟随。',
                   style: TextStyle(
                     fontSize: 11,
                     color: Color(0xFF777783),
@@ -381,8 +382,8 @@ mixin _AssemblyBranchLogic
                     ),
                     subtitle: Text(
                       i == 0
-                          ? '主线（其余分支的兜底）'
-                          : (custom ? '已有专属设计' : '跟随主线'),
+                          ? '开场白 1（其余开场白的兜底）'
+                          : (custom ? '已有专属设计' : '跟随开场白 1'),
                       style: const TextStyle(fontSize: 10),
                     ),
                     trailing: selected
