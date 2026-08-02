@@ -448,10 +448,14 @@ class UiAssemblyBuilder {
     ));
     y += 28 + 12;
 
+    // 记下每个选项的「底板 id ↔ 按钮 id」，稍后连按压联动器。
+    final pressPairs = <({String surface, String button})>[];
+
     for (var i = 0; i < actions.length; i++) {
       final label = actions[i];
+      final surfaceId = nextId('el');
       elements.add(_surface(
-        id: nextId('el'),
+        id: surfaceId,
         name: '选项底${i + 1}',
         x: padding,
         y: y,
@@ -476,10 +480,12 @@ class UiAssemblyBuilder {
       ));
       // button 是不显形的热区，盖在底板与文字之上。
       //
-      // 第一个按钮标 keyAction：opening 缺这个标记会
-      // **整层不渲染**（UISemanticRole.blocksWithoutKeyAction）。
+      // **每个选项都标 keyAction**：各开场之间是平级分支，
+      // 点哪个就用哪个开局，不存在「第一个特殊、其余普通」。
+      // （opening 缺 keyAction 会整层不渲染，这里天然满足。）
+      final buttonId = nextId('el');
       elements.add(_button(
-        id: nextId('el'),
+        id: buttonId,
         name: '选项${i + 1}',
         x: padding,
         y: y,
@@ -487,10 +493,25 @@ class UiAssemblyBuilder {
         h: _Layout.buttonHeight,
         layer: elements.length + 1,
         sendsMessage: true,
-        keyAction: i == 0,
+        keyAction: true,
         message: label,
       ));
+      pressPairs.add((surface: surfaceId, button: buttonId));
       y += _Layout.buttonHeight + 8;
+    }
+
+    // 按压反馈：每个选项一条联动器。
+    // 放在最后加，这样它们的 layerIndex 都在可见元件之上（不影响显示，
+    // 逻辑件本来就不渲染），也便于阅读时和上面的循环对应。
+    for (var i = 0; i < pressPairs.length; i++) {
+      elements.add(_pressLinker(
+        id: nextId('el'),
+        name: '选项${i + 1}按压',
+        buttonId: pressPairs[i].button,
+        surfaceId: pressPairs[i].surface,
+        y: i * 52.0,
+        layer: elements.length + 1,
+      ));
     }
 
     final pcbH = (y + padding).clamp(64.0, 2000.0).toDouble();
@@ -713,6 +734,52 @@ class UiAssemblyBuilder {
             if (sendsMessage) 'sendsMessage': true,
             if (keyAction) 'keyAction': true,
             if (message.isNotEmpty) 'messageText': message,
+          },
+        ),
+      );
+
+  /// 联动器：把按钮的点击连到底板的按压动画。
+  ///
+  /// ## 为什么必须有
+  ///
+  /// button 是**不显形的点击热区**，本身没有任何视觉。
+  /// 不接联动器的话，玩家点下去毫无反馈——按了跟没按一样。
+  /// 引擎给这种场景准备了现成方案 `click_to_surface_press`。
+  ///
+  /// ## 为什么放在 PCB 外
+  ///
+  /// linker 是纯逻辑件，不需要显示。放进 PCB 内会占位置、
+  /// 还可能挡住其它元件；负 x 坐标即引擎的「后台位」，
+  /// 校验器对这类逻辑件不做 PCB 包含性检查。
+  static Map<String, dynamic> _pressLinker({
+    required String id,
+    required String name,
+    required String buttonId,
+    required String surfaceId,
+    required double y,
+    required int layer,
+  }) =>
+      _element(
+        id: id,
+        // 后台位：放在 PCB 左侧外部。
+        x: -224,
+        y: y,
+        w: 132,
+        h: 44,
+        layer: layer,
+        module: _module(
+          id: id,
+          name: name,
+          type: 'linker',
+          color: _Palette.accent,
+          props: {
+            'linker': {
+              'scheme': 'click_to_surface_press',
+              'sourceModuleId': buttonId,
+              'targetModuleId': surfaceId,
+              'enabled': true,
+              'priority': 5,
+            },
           },
         ),
       );

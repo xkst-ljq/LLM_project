@@ -302,9 +302,17 @@ def check(path):
                     w,h=e['size']['width'],e['size']['height']
                     if x<-0.5 or y<-0.5 or x+w>pw+0.5 or y+h>phh+0.5:
                         err.append(f"元素 {m['name']} 超出PCB: ({x},{y},{w},{h})")
-            if len(page_keys) > 1:
+            # 多个 keyAction 在 opening 页是**合法且必要**的：
+            # 各开场分支平级，点哪个都该「选定并关闭」。
+            # 运行时用 `isKeyAction(module)` 逐个判断，不是找唯一那个
+            # （见 ui_assembly_runtime_view.dart 的 tap 分支），
+            # 所以并列多个不会冲突。
+            #
+            # 其余 mode 仍然提醒：那些页面的关键职责通常只有一个
+            # （scene 的「打开聊天设置」、sticky 的「折叠界面」）。
+            if len(page_keys) > 1 and a['mode'] != 'opening':
                 warn.append(f"页「{p['name']}」有 {len(page_keys)} 个 keyAction "
-                            f"标记 {page_keys}，同一页只该有一个")
+                            f"标记 {page_keys}，{a['mode']} 通常只需要一个")
             check_contrast(p['elements'], warn)
             print(f"     · {p['name']:10s} {p['type']:7s} {n_el:3d}个元素 {len(p['gestures'])}个手势")
         # ── 面组归属引用 ──
