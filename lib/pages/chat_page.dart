@@ -509,6 +509,56 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   /// 持久化当前角色的会话状态。
+  /// 切换开场白 = 切换开场分支。
+  ///
+  /// ## 为什么不能只改消息文本
+  ///
+  /// 此前这里只写 `msg['content']`，切完就没了下文。
+  /// 但不同开场白往往带**不同的初始状态**——
+  /// 例如「新人入狱」精神 84%、「狱警入职」精神 90%。
+  /// 运行时若不知道当前是第几条，这些差异根本无从套用。
+  ///
+  /// 各开场白之间是**平级分支**，没有父子关系；
+  /// 下标 0 即主支路，作者未单独设计的分支照搬它。
+  ///
+  /// 分支索引写进 `SessionState.branchIndex` 并落盘，
+  /// 这样重开 App、切走再回来都还认得当前分支。
+  void _switchGreeting(
+    Map<String, dynamic> msg,
+    List<OpeningGreeting> greetings,
+    int index,
+  ) {
+    if (index < 0 || index >= greetings.length) return;
+    setState(() {
+      msg['content'] = greetings[index].content;
+      _sessionState.branchIndex = index;
+    });
+    _applyBranchInitialValues(index);
+    _saveSessionState();
+  }
+
+  /// 套用该分支的初始状态值。
+  ///
+  /// 只覆盖**尚未被玩家/LLM 改动过**的字段——
+  /// 已经在对话中变化的数值不该因为翻看别的开场白就被重置。
+  /// 判据是当前值仍等于该字段的默认初值。
+  void _applyBranchInitialValues(int branch) {
+    final fields = widget.character.meta.statusBarFields;
+    if (fields.isEmpty) return;
+    var changed = false;
+    for (final f in fields) {
+      final preset = f.initialValueForBranch(branch);
+      if (preset == null) continue;
+      final cur = _sessionState.statusValues[f.id];
+      // 未设过值，或仍是别的分支的预设 → 可以覆盖。
+      if (cur == null || cur == f.initialValue || f.isBranchPreset(cur)) {
+        _sessionState.statusValues[f.id] = preset;
+        changed = true;
+      }
+    }
+    if (changed) setState(() {});
+  }
+
   Future<void> _saveSessionState() async {
     // 版本号在这里统一递增：所有会话写入最终都汇到这个函数，
     // 逐个改调用点必然会漏。运行时视图靠它识别「内容变了但对象没换」。
@@ -4220,12 +4270,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                             onPressed: () {
                                                                               if (cur >
                                                                                   0) {
-                                                                                setState(() {
-                                                                                  msg['content'] =
-                                                                                      greetings[cur -
-                                                                                          1]
-                                                                                          .content;
-                                                                                });
+                                                                                _switchGreeting(
+                                                                                  msg,
+                                                                                  greetings,
+                                                                                  cur - 1,
+                                                                                );
                                                                               }
                                                                             },
                                                                             constraints: const BoxConstraints(
@@ -4261,12 +4310,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                               if (cur <
                                                                                   greetings.length -
                                                                                       1) {
-                                                                                setState(() {
-                                                                                  msg['content'] =
-                                                                                      greetings[cur +
-                                                                                          1]
-                                                                                          .content;
-                                                                                });
+                                                                                _switchGreeting(
+                                                                                  msg,
+                                                                                  greetings,
+                                                                                  cur + 1,
+                                                                                );
                                                                               }
                                                                             },
                                                                             constraints: const BoxConstraints(

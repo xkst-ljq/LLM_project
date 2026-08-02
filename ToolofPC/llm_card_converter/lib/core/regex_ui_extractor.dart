@@ -207,6 +207,7 @@ class UiExtraction {
     required this.pluginDependent,
     required this.pluginUrls,
     required this.openingActions,
+    required this.branchPresets,
     required this.notes,
   });
 
@@ -225,6 +226,23 @@ class UiExtraction {
   /// 这是明确的交互意图，对应 button + sendsMessage。
   final List<String> openingActions;
 
+  /// 各开场分支的初始状态：分支下标 -> (字段名 -> 初值)。
+  ///
+  /// ## 数据从哪来
+  ///
+  /// `first_mes` 与 `alternate_greetings` 里就写着，例如：
+  ///
+  /// ```
+  /// <精神>84%</精神><体力>92%</体力><势力>无</势力>
+  /// ```
+  ///
+  /// 不同开场白往往给出**不同的起始值**——「新人入狱」精神 84%、
+  /// 「狱警入职」精神 90%。这是作者精心设计的开局差异，
+  /// 只取一套会把它们全抹平。
+  ///
+  /// 分支 0 = `first_mes`，之后依次是 `alternate_greetings`。
+  final Map<int, Map<String, String>> branchPresets;
+
   /// 给用户看的说明（为什么某些脚本被跳过）。
   final List<String> notes;
 
@@ -239,6 +257,8 @@ class UiExtraction {
         'pluginDependent': pluginDependent,
         'pluginUrls': pluginUrls,
         'openingActions': openingActions,
+        'branchPresets': branchPresets
+            .map((k, v) => MapEntry(k.toString(), v)),
         'scripts': scripts.map((s) => s.toJson()).toList(),
         'notes': notes,
       };
@@ -289,6 +309,20 @@ class RegexUiExtractor {
           '转成组件只会得到空壳）。');
     }
 
+    // ── 各开场分支的初始状态 ──
+    //
+    // 只在确实有多个字段时才收，避免把普通正文里的尖括号误当数据。
+    final knownFields = <String>{
+      for (final s in scripts)
+        if (s.usable)
+          for (final f in s.fields) f.name,
+    };
+    final branchPresets = _extractBranchPresets(data, knownFields);
+    if (branchPresets.length > 1) {
+      notes.add('识别到 ${branchPresets.length} 个开场分支，'
+          '各自带不同的初始状态，已分别记录。');
+    }
+
     // ── first_mes 里的可点击选项 ──
     final actions = _extractSendActions(data['first_mes']?.toString() ?? '');
     if (actions.isNotEmpty) {
@@ -305,8 +339,41 @@ class RegexUiExtractor {
       pluginDependent: pluginDependent,
       pluginUrls: pluginUrls,
       openingActions: actions,
+      branchPresets: branchPresets,
       notes: notes,
     );
+  }
+
+  /// 从开场白里抽各分支的初始状态。
+  ///
+  /// 分支 0 = `first_mes`，其后依次为 `alternate_greetings`
+  /// ——与聊天页开场白左右切换的顺序一致。
+  ///
+  /// [knownFields] 是正则里声明过的字段名。只认这些，
+  /// 否则正文里随便一个 `<某某>` 都会被当成状态数据。
+  static Map<int, Map<String, String>> _extractBranchPresets(
+    Map<String, dynamic> data,
+    Set<String> knownFields,
+  ) {
+    if (knownFields.isEmpty) return const {};
+    final texts = <String>[
+      data['first_mes']?.toString() ?? '',
+      ...?(data['alternate_greetings'] as List?)?.map((e) => e.toString()),
+    ];
+    final out = <int, Map<String, String>>{};
+    for (var i = 0; i < texts.length; i++) {
+      final found = <String, String>{};
+      for (final name in knownFields) {
+        final m = RegExp('<${RegExp.escape(name)}>(.*?)</${RegExp.escape(name)}>',
+                dotAll: true)
+            .firstMatch(texts[i]);
+        if (m == null) continue;
+        final v = m.group(1)!.trim();
+        if (v.isNotEmpty) found[name] = v;
+      }
+      if (found.isNotEmpty) out[i] = found;
+    }
+    return out;
   }
 
   // ───────────────────────── 内部实现 ─────────────────────────

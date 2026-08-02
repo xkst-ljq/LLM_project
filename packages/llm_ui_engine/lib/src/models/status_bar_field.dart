@@ -29,6 +29,30 @@ class StatusBarField {
   /// 实测「金钱数量」在商贩剧情里被理解成商贩的收入，买东西反而 +600。
   String owner;
 
+  /// 各开场分支的初始值：分支下标 -> 初值。
+  ///
+  /// ## 解决什么
+  ///
+  /// 一张卡常有多条开场白，且**各自带不同的起始状态**。
+  /// 例如黑曜石那张卡：
+  ///
+  /// | 开场 | 精神 | 体力 | 势力 |
+  /// |---|---|---|---|
+  /// | 新人入狱 | 84% | 92% | 无 |
+  /// | 狱警入职 | 90% | 90% | 管理局 |
+  ///
+  /// 只有一个 [initialValue] 表达不了这种差异，
+  /// 转译时只能把所有分支压成同一个值——作者精心设计的开局区别就没了。
+  ///
+  /// ## 与 [initialValue] 的关系
+  ///
+  /// [initialValue] 是**主支路（分支 0）**的值，也是兜底：
+  /// 某分支没登记时回落到它。因此单开场白的卡完全不受影响，
+  /// 这个 Map 留空即可。
+  ///
+  /// 键用 String 而非 int，是为了能直接进 JSON（JSON 的键必须是字符串）。
+  Map<String, String> branchInitialValues;
+
   StatusBarField({
     required this.id,
     required this.name,
@@ -39,7 +63,28 @@ class StatusBarField {
     this.pinSide = 'none',
     this.order = 0,
     this.owner = 'player',
-  });
+    Map<String, String>? branchInitialValues,
+  }) : branchInitialValues =
+            branchInitialValues ?? <String, String>{};
+
+  /// 取某分支的初值。没登记则回落主支路 [initialValue]。
+  ///
+  /// 返回 null 表示「该分支无预设且主支路也没值」，调用方应跳过。
+  String? initialValueForBranch(int branch) {
+    final v = branchInitialValues['\$branch'];
+    if (v != null && v.isNotEmpty) return v;
+    if (branch == 0) return initialValue.isEmpty ? null : initialValue;
+    // 未设计的分支照搬主支路。
+    return initialValue.isEmpty ? null : initialValue;
+  }
+
+  /// 某个值是否来自任一分支的预设。
+  ///
+  /// 用于判断「玩家翻看别的开场白时，当前值能否被覆盖」：
+  /// 若当前值仍是某分支的预设，说明玩家还没真正改动过，可以换；
+  /// 若已经是别的值（对话中变化过），就不该被重置。
+  bool isBranchPreset(String value) =>
+      value == initialValue || branchInitialValues.containsValue(value);
 
   bool get isNumber => type == 'number';
 
@@ -105,7 +150,25 @@ class StatusBarField {
       order: json['order'] as int? ?? 0,
       // 旧卡片没有该字段，默认按玩家属性处理（最常见的情况）。
       owner: _readOwner(json['owner']),
+      branchInitialValues: _readBranchValues(json['branch_initial_values']),
     );
+  }
+
+  /// 读分支初值表。
+  ///
+  /// 容错要到位：这份数据由转译工具生成，键可能是数字也可能是字符串
+  /// （JSON 里本该是字符串，但手写的卡什么情况都有）。
+  static Map<String, String> _readBranchValues(dynamic raw) {
+    if (raw is! Map) return <String, String>{};
+    final out = <String, String>{};
+    raw.forEach((key, value) {
+      final k = key.toString().trim();
+      // 只收非负整数下标，挡掉脏数据。
+      if (k.isEmpty || int.tryParse(k) == null) return;
+      final v = value?.toString() ?? '';
+      if (v.isNotEmpty) out[k] = v;
+    });
+    return out;
   }
 
   Map<String, dynamic> toJson() {
@@ -119,6 +182,9 @@ class StatusBarField {
       'pin_side': pinSide,
       'order': order,
       'owner': owner,
+      // 空表不落盘：单开场白的卡不该平白多一个空字段。
+      if (branchInitialValues.isNotEmpty)
+        'branch_initial_values': branchInitialValues,
     };
   }
 

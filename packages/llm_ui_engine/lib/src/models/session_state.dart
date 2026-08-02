@@ -12,8 +12,9 @@ import 'dart:convert';
 ///   - 清空聊天记录时，会话状态被清空 → Prompt 回到纯母版（实现「改写后可还原」）。
 ///
 /// 当前承载：
-///   - vars       界面交互 / 状态栏写入的变量。渲染时以 {{var.xxx}} 注入 Prompt。
-///   - overrides  预留：后续动态设定演化对副本的结构化覆盖（本期不填）。
+///   - vars        界面交互 / 状态栏写入的变量。渲染时以 {{var.xxx}} 注入 Prompt。
+///   - branchIndex 当前开场分支下标（见下）。
+///   - overrides   预留：后续动态设定演化对副本的结构化覆盖（本期不填）。
 class SessionState {
   /// 动态变量：键 -> 值。例如 {'主角姓名': '林', '主角技能': '剑术'}。
   /// 在 Prompt 中通过 {{var.主角姓名}} 引用。
@@ -27,16 +28,45 @@ class SessionState {
   /// 预留：后续动态设定演化对会话副本的结构化覆盖。
   Map<String, dynamic> overrides;
 
+  /// 当前开场分支下标（0 起）。
+  ///
+  /// ## 为什么必须持久化
+  ///
+  /// 玩家用开场白左右箭头切换时，此前**只改了消息文本**，
+  /// 没有任何"现在是第几条"的记录。后果是：
+  /// 不同开场白想配不同的初始数据 / 不同的 UI，运行时根本无从判断该套哪一套。
+  ///
+  /// ## 分支从哪来
+  ///
+  /// 分支**不依赖 opening UI 存在**——判据是开场白条数本身：
+  ///
+  /// | 开场白条数 | 分支 |
+  /// |---|---|
+  /// | ≤ 1 | 只有主支路（本字段恒为 0） |
+  /// | > 1 | 每条开场白 = 一个平级分支 |
+  ///
+  /// 各分支之间是**平级关系**，不存在父子。
+  /// 作者没有单独设计某分支时，照搬主支路（下标 0）。
+  int branchIndex;
+
   SessionState({
     Map<String, String>? vars,
     Map<String, String>? statusValues,
     Map<String, dynamic>? overrides,
+    this.branchIndex = 0,
   })  : vars = vars ?? <String, String>{},
         statusValues = statusValues ?? <String, String>{},
         overrides = overrides ?? <String, dynamic>{};
 
+  /// 是否为空状态。
+  ///
+  /// `branchIndex` 一并计入：清空聊天记录后应回到主支路，
+  /// 否则会出现「聊天已清空，但仍套用着上一局选的分支初值」。
   bool get isEmpty =>
-      vars.isEmpty && statusValues.isEmpty && overrides.isEmpty;
+      vars.isEmpty &&
+      statusValues.isEmpty &&
+      overrides.isEmpty &&
+      branchIndex == 0;
 
   factory SessionState.fromJson(Map<String, dynamic> json) {
     Map<String, String> readVars(dynamic v) {
@@ -61,6 +91,12 @@ class SessionState {
       vars: readVars(json['vars']),
       statusValues: readVars(json['status_values']),
       overrides: readOverrides(json['overrides']),
+      branchIndex: switch (json['branch_index']) {
+        final int v when v >= 0 => v,
+        final num v when v >= 0 => v.toInt(),
+        // 历史存档没有这个键 → 主支路。
+        _ => 0,
+      },
     );
   }
 
@@ -84,6 +120,7 @@ class SessionState {
       'vars': vars,
       'status_values': statusValues,
       'overrides': overrides,
+      'branch_index': branchIndex,
     };
   }
 
