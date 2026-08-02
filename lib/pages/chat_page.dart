@@ -3298,6 +3298,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             // 历史实例已被 IgnorePointer 挡住，不会走到这里；
             // 传进去是为了让最新一条的操作按钮可用。
             onMessageAction: _handleMessageAction,
+            onSendMessage: _sendMessageFromAssembly,
             characterAvatar: _characterAvatarPath,
             userAvatar: _userAvatarPath,
           ),
@@ -3705,6 +3706,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 enablePageGestures: true,
                 onDismissRequested: _dismissOpeningAssembly,
                 messages: _flowMessages,
+                onSendMessage: _sendMessageFromAssembly,
                 characterAvatar: _characterAvatarPath,
                 userAvatar: _userAvatarPath,
               ),
