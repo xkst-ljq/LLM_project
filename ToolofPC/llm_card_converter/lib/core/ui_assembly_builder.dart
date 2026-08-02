@@ -48,7 +48,6 @@ class _Layout {
   static const double rowHeight = 22;
   static const double rowGap = 6;
   static const double barHeight = 10;
-  static const double titleHeight = 26;
   static const double buttonHeight = 34;
 
   /// 单份 UI 最多放多少字段。
@@ -304,9 +303,7 @@ class UiAssemblyBuilder {
 
     // 分页切分
     final tab1Fields = barFields;
-    final half = (textual2.length / 2).ceil();
-    final tab2Fields = textual2.sublist(0, half.clamp(0, textual2.length));
-    final tab3Fields = textual2.sublist(half.clamp(0, textual2.length));
+    final tab2Fields = textual2;
 
     const pcbW = 212.0;
     final innerW = pcbW - _Layout.pcbPadding * 2;
@@ -1062,37 +1059,7 @@ class UiAssemblyBuilder {
         ),
       );
 
-  static Map<String, dynamic> _line({
-    required String id,
-    required String name,
-    required double x,
-    required double y,
-    required double w,
-    required double h,
-    required int color,
-    required int layer,
-    double thickness = 1.0,
-    String lineStyle = 'solid',
-  }) =>
-      _element(
-        id: id,
-        x: x,
-        y: y,
-        w: w,
-        h: h,
-        layer: layer,
-        module: _module(
-          id: id,
-          name: name,
-          type: 'line',
-          color: color,
-          props: {
-            'thickness': thickness,
-            'lineStyle': lineStyle,
-            'axis': 'horizontal',
-          },
-        ),
-      );
+
 
   static Map<String, dynamic> _text({
     required String id,
@@ -1309,27 +1276,16 @@ class UiAssemblyBuilder {
     required String mode,
     required double pcbW,
     required double pcbH,
-    required String pageName,
-    required List<Map<String, dynamic>> elements,
+    required List<Map<String, dynamic>> pages,
     required int pcbColor,
     required double pcbRadius,
   }) {
-    final page = {
-      'id': 'page_$id',
-      'name': pageName,
-      'type': 'base',
-      'parentPageId': null,
-      'sortOrder': 0,
-      'elements': elements,
-      'gestures': <dynamic>[],
-      'propertyOverrides': <dynamic>[],
-    };
     return jsonEncode({
       'id': id,
       'name': name,
       'mode': mode,
       'elements': '[]',
-      'pages': jsonEncode([page]),
+      'pages': jsonEncode(pages),
       'pcbWidth': pcbW,
       'pcbHeight': pcbH,
       'pcbColorValue': pcbColor,
