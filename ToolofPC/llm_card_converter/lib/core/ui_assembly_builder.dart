@@ -296,57 +296,26 @@ class UiAssemblyBuilder {
     final elements = <Map<String, dynamic>>[];
     final statusFields = <Map<String, dynamic>>[];
 
-    const pcbW = 300.0;
+    // 伴生 UI (extra_companion) 最大宽度为 212.0
+    const pcbW = 212.0;
     final innerW = pcbW - _Layout.pcbPadding * 2;
+    const colLabelW = 50.0;
 
-    // 标题（右侧留出折叠按钮的位置）
-    const collapseSize = 26.0;
+    // 标题（伴生 UI 随气泡滚动，不需要折叠按钮）
     elements.add(_text(
       id: nextId('el'),
       name: '标题',
       text: cardName.isEmpty ? '状态' : cardName,
       x: _Layout.pcbPadding,
       y: y,
-      w: innerW - collapseSize - 6,
+      w: innerW,
       h: _Layout.titleHeight,
-      fontSize: 15,
+      fontSize: 13,
       color: theme.titleColor,
-      align: 'left',
-      layer: elements.length + 1,
-    ));
-
-    // 折叠按钮。
-    //
-    // `extra_sticky` 缺 keyAction 标记不会导致整层不渲染
-    // （那是 opening / scene 的规则，见 UISemanticRole.blocksWithoutKeyAction），
-    // 但**玩家就没法收起这条常驻栏**——它会一直占着消息流顶部。
-    // 引擎给这个 mode 的关键职责定义就是「折叠界面」。
-    elements.add(_text(
-      id: nextId('el'),
-      name: '折叠图标',
-      text: '▾',
-      x: pcbW - _Layout.pcbPadding - collapseSize,
-      y: y,
-      w: collapseSize,
-      h: _Layout.titleHeight,
-      fontSize: 14,
-      color: theme.labelColor,
       align: 'center',
       layer: elements.length + 1,
     ));
-    elements.add(_button(
-      id: nextId('el'),
-      name: '折叠',
-      x: pcbW - _Layout.pcbPadding - collapseSize,
-      y: y,
-      w: collapseSize,
-      h: _Layout.titleHeight,
-      layer: elements.length + 1,
-      sendsMessage: false,
-      keyAction: true,
-      color: theme.accentColor,
-    ));
-    y += _Layout.titleHeight + _Layout.sectionGap;
+    y += _Layout.titleHeight + 6.0;
 
     // 数值字段：标签 + 进度条
     //
@@ -363,7 +332,7 @@ class UiAssemblyBuilder {
     }
     if (overflowFields.isNotEmpty) {
       notes.add('${overflowFields.map((f) => f.name).join('、')} '
-          '的取值超出 0~100，改用文本显示（进度条会永远满格）。');
+          '的取值超出 0~100，改用文本显示。');
     }
     final textual2 = [...textual, ...overflowFields];
 
@@ -375,9 +344,9 @@ class UiAssemblyBuilder {
         text: _decorateEmoji(f.name),
         x: _Layout.pcbPadding,
         y: y,
-        w: _Layout.labelWidth,
+        w: colLabelW,
         h: _Layout.rowHeight,
-        fontSize: 11,
+        fontSize: 10,
         color: theme.labelColor,
         align: 'left',
         layer: elements.length + 1,
@@ -385,9 +354,9 @@ class UiAssemblyBuilder {
       elements.add(_progress(
         id: nextId('el'),
         name: f.name,
-        x: _Layout.pcbPadding + _Layout.labelWidth + 6,
+        x: _Layout.pcbPadding + colLabelW + 6,
         y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-        w: innerW - _Layout.labelWidth - 6,
+        w: innerW - colLabelW - 6,
         h: _Layout.barHeight,
         statusFieldId: fieldId,
         layer: elements.length + 1,
@@ -427,21 +396,13 @@ class UiAssemblyBuilder {
       y += 8.0;
     }
 
-    // 文本字段：双列并排流式布局，使面板大幅紧凑美观
-    for (var i = 0; i < textual2.length; i += 2) {
-      final f1 = textual2[i];
-      final hasF2 = i + 1 < textual2.length;
-      final f2 = hasF2 ? textual2[i + 1] : null;
-
-      final colW = innerW / 2 - 4;
-      final colLabelW = 46.0;
-
-      // 列 1
-      final fieldId1 = 'sf_${_slug(f1.name)}';
+    // 文本字段：单列流式布局，给文本内容留出最宽敞舒适的排布空间
+    for (final f in textual2) {
+      final fieldId = 'sf_${_slug(f.name)}';
       elements.add(_text(
         id: nextId('el'),
-        name: '${f1.name}标签',
-        text: _decorateEmoji(f1.name),
+        name: '${f.name}标签',
+        text: _decorateEmoji(f.name),
         x: _Layout.pcbPadding,
         y: y,
         w: colLabelW,
@@ -453,73 +414,29 @@ class UiAssemblyBuilder {
       ));
       elements.add(_text(
         id: nextId('el'),
-        name: f1.name,
+        name: f.name,
         text: '—',
-        x: _Layout.pcbPadding + colLabelW + 4,
+        x: _Layout.pcbPadding + colLabelW + 6,
         y: y,
-        w: colW - colLabelW - 4,
+        w: innerW - colLabelW - 6,
         h: _Layout.rowHeight,
         fontSize: 11,
         color: theme.valueColor,
         align: 'left',
         layer: elements.length + 1,
-        statusFieldId: fieldId1,
+        statusFieldId: fieldId,
       ));
-      final txtPresets1 = _presetsOf(branchPresets, f1.name, numeric: false);
+      final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
       statusFields.add({
-        'id': fieldId1,
-        'name': f1.name,
+        'id': fieldId,
+        'name': f.name,
         'type': 'text',
-        'initial_value': txtPresets1['0'] ?? '',
+        'initial_value': txtPresets['0'] ?? '',
         'pin_side': 'none',
         'order': statusFields.length,
         'owner': 'player',
-        if (txtPresets1.length > 1) 'branch_initial_values': txtPresets1,
+        if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
       });
-
-      // 列 2
-      if (f2 != null) {
-        final fieldId2 = 'sf_${_slug(f2.name)}';
-        final col2X = _Layout.pcbPadding + innerW / 2 + 4;
-        elements.add(_text(
-          id: nextId('el'),
-          name: '${f2.name}标签',
-          text: _decorateEmoji(f2.name),
-          x: col2X,
-          y: y,
-          w: colLabelW,
-          h: _Layout.rowHeight,
-          fontSize: 10,
-          color: theme.labelColor,
-          align: 'left',
-          layer: elements.length + 1,
-        ));
-        elements.add(_text(
-          id: nextId('el'),
-          name: f2.name,
-          text: '—',
-          x: col2X + colLabelW + 4,
-          y: y,
-          w: colW - colLabelW - 4,
-          h: _Layout.rowHeight,
-          fontSize: 11,
-          color: theme.valueColor,
-          align: 'left',
-          layer: elements.length + 1,
-          statusFieldId: fieldId2,
-        ));
-        final txtPresets2 = _presetsOf(branchPresets, f2.name, numeric: false);
-        statusFields.add({
-          'id': fieldId2,
-          'name': f2.name,
-          'type': 'text',
-          'initial_value': txtPresets2['0'] ?? '',
-          'pin_side': 'none',
-          'order': statusFields.length,
-          'owner': 'player',
-          if (txtPresets2.length > 1) 'branch_initial_values': txtPresets2,
-        });
-      }
       y += _Layout.rowHeight + _Layout.rowGap;
     }
 
@@ -538,14 +455,12 @@ class UiAssemblyBuilder {
       radius: theme.borderRadius,
     );
 
-    // extra_sticky：常驻条，跟着消息流顶部显示。
-    // 选它而非 extra_companion 的理由：字段较多时塞进气泡会很挤，
-    // 而且状态是"持续的"，不该随某条消息滚走。
+    // 伴生 UI (extra_companion)：跟随聊天气泡内部滚动
     return _PanelResult(
       assemblyJson: _assembly(
         id: nextId('asm'),
         name: '${cardName.isEmpty ? "角色" : cardName}状态栏',
-        mode: 'extra_sticky',
+        mode: 'extra_companion',
         pcbW: pcbW,
         pcbH: pcbH,
         pageName: '状态',
