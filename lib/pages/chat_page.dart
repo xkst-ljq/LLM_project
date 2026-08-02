@@ -543,8 +543,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 已经在对话中变化的数值不该因为翻看别的开场白就被重置。
   /// 判据是当前值仍等于该字段的默认初值。
   void _applyBranchInitialValues(int branch) {
-    final fields = widget.character.meta.statusBarFields;
-    if (fields.isEmpty) return;
+    // 用 _currentCharacter 而非 widget.character：
+    // 前者是运行时真正生效的那张卡（可被切换 / 重新加载），
+    // 后者只是初始入参，且可空。
+    final fields = _currentCharacter?.meta.statusBarFields;
+    if (fields == null || fields.isEmpty) return;
     var changed = false;
     for (final f in fields) {
       final preset = f.initialValueForBranch(branch);
