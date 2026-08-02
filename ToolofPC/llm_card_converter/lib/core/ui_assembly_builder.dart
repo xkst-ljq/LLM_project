@@ -537,15 +537,21 @@ class UiAssemblyBuilder {
     // 记下每个选项的「底板 id ↔ 按钮 id」，稍后连按压联动器。
     final pressPairs = <({String surface, String button})>[];
 
-    for (var i = 0; i < actions.length; i++) {
-      final label = actions[i];
-      final surfaceId = nextId('el');
+    for (var i = 0; i < actions.length; i += 2) {
+      final label1 = actions[i];
+      final has2 = i + 1 < actions.length;
+      final label2 = has2 ? actions[i + 1] : null;
+
+      final colW = innerW / 2 - 4;
+
+      // 选项 1
+      final surfaceId1 = nextId('el');
       elements.add(_surface(
-        id: surfaceId,
+        id: surfaceId1,
         name: '选项底${i + 1}',
         x: padding,
         y: y,
-        w: innerW,
+        w: colW,
         h: _Layout.buttonHeight,
         color: theme.buttonBgColor,
         layer: elements.length + 1,
@@ -554,37 +560,79 @@ class UiAssemblyBuilder {
       elements.add(_text(
         id: nextId('el'),
         name: '选项文${i + 1}',
-        text: label,
-        x: padding + 10,
+        text: label1,
+        x: padding + 8,
         y: y + 8,
-        w: innerW - 20,
+        w: colW - 16,
         h: 18,
-        fontSize: 12,
+        fontSize: 10,
         color: theme.valueColor,
-        align: 'left',
+        align: 'center',
         layer: elements.length + 1,
       ));
-      // button 是不显形的热区，盖在底板与文字之上。
-      //
-      // **每个选项都标 keyAction**：各开场之间是平级分支，
-      // 点哪个就用哪个开局，不存在「第一个特殊、其余普通」。
-      // （opening 缺 keyAction 会整层不渲染，这里天然满足。）
-      final buttonId = nextId('el');
+      final buttonId1 = nextId('el');
       elements.add(_button(
-        id: buttonId,
+        id: buttonId1,
         name: '选项${i + 1}',
         x: padding,
         y: y,
-        w: innerW,
+        w: colW,
         h: _Layout.buttonHeight,
         layer: elements.length + 1,
         sendsMessage: true,
         keyAction: true,
-        message: label,
+        message: label1,
         targetBranchIndex: i,
         color: theme.accentColor,
       ));
-      pressPairs.add((surface: surfaceId, button: buttonId));
+      pressPairs.add((surface: surfaceId1, button: buttonId1));
+
+      // 选项 2
+      if (label2 != null) {
+        final col2X = padding + innerW / 2 + 4;
+        final surfaceId2 = nextId('el');
+        elements.add(_surface(
+          id: surfaceId2,
+          name: '选项底${i + 2}',
+          x: col2X,
+          y: y,
+          w: colW,
+          h: _Layout.buttonHeight,
+          color: theme.buttonBgColor,
+          layer: elements.length + 1,
+          radius: 8,
+        ));
+        elements.add(_text(
+          id: nextId('el'),
+          name: '选项文${i + 2}',
+          text: label2,
+          x: col2X + 8,
+          y: y + 8,
+          w: colW - 16,
+          h: 18,
+          fontSize: 10,
+          color: theme.valueColor,
+          align: 'center',
+          layer: elements.length + 1,
+        ));
+        final buttonId2 = nextId('el');
+        elements.add(_button(
+          id: buttonId2,
+          name: '选项${i + 2}',
+          x: col2X,
+          y: y,
+          w: colW,
+          h: _Layout.buttonHeight,
+          layer: elements.length + 1,
+          sendsMessage: true,
+          keyAction: true,
+          message: label2,
+          targetBranchIndex: i + 1,
+          color: theme.accentColor,
+        ));
+        pressPairs.add((surface: surfaceId2, button: buttonId2));
+      }
+
       y += _Layout.buttonHeight + 8;
     }
 
