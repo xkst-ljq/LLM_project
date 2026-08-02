@@ -209,6 +209,7 @@ class UiExtraction {
     required this.openingActions,
     required this.branchPresets,
     required this.notes,
+    required this.cleanFirstMes,
   });
 
   final List<UiRegexScript> scripts;
@@ -218,6 +219,33 @@ class UiExtraction {
   /// 为真时**不要生成 UI**：那些界面由 JS 在运行时拼出来，
   /// 静态分析看到的只是模板骨架。
   final bool pluginDependent;
+
+  final List<String> pluginUrls;
+
+  /// `first_mes` 里 `onclick="send('...')"` 的文案。
+  ///
+  /// 这是明确的交互意图，对应 button + sendsMessage。
+  final List<String> openingActions;
+
+  /// 各开场分支的初始状态：分支下标 -> (字段名 -> 初值)。
+  ///
+  /// ## 数据从哪来
+  ///
+  /// `first_mes` 与 `alternate_greetings` 里就写着，例如：
+  ///
+  /// ```
+  /// <精神>84%</精神><体力>92%</体力><势力>无</势力>
+  /// ```
+  ///
+  /// 不同开场白往往给出**不同的起始值**——「新人入狱」精神 84%、
+  /// 「狱警入职」精神 90%。这是作者精心设计的开局差异，
+  /// 只取一套会把它们全抹平。
+  ///
+  /// 分支 0 = `first_mes`，之后依次是 `alternate_greetings`。
+  final Map<int, Map<String, String>> branchPresets;
+
+  /// 净化的第一条消息文本，供 openingUI 整合卡内气泡显示。
+  final String cleanFirstMes;
 
   final List<String> pluginUrls;
 
@@ -334,6 +362,9 @@ class RegexUiExtractor {
       notes.add('没有找到可转译的 UI —— 原卡本来就没有界面，不生成。');
     }
 
+    final rawFirstMes = data['first_mes']?.toString() ?? '';
+    final cleanFirstMes = GreetingSanitizer.sanitize(rawFirstMes, knownTags: knownFields);
+
     return UiExtraction(
       scripts: scripts,
       pluginDependent: pluginDependent,
@@ -341,6 +372,7 @@ class RegexUiExtractor {
       openingActions: actions,
       branchPresets: branchPresets,
       notes: notes,
+      cleanFirstMes: cleanFirstMes,
     );
   }
 
