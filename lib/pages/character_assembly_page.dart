@@ -639,9 +639,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                             ),
                           ),
                         ),
-                        // 多分支时常驻显示「当前编辑哪个分支」。
-                        // 改错分支是很难自查的错误，必须一眼可见。
-                        buildBranchIndicator(),
                         const Spacer(),
                         _buildTopIconBtn(
                           Icons.visibility_rounded,
@@ -1190,6 +1187,13 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_hasBranches)
+            _buildRailButton(
+              icon: Icons.call_split_rounded,
+              label: '开场白',
+              color: _editingBranch == 0 ? const Color(0xFF5C6BC0) : const Color(0xFFE65100),
+              onTap: _showBranchPicker,
+            ),
           _buildRailButton(
             icon: Icons.undo_rounded,
             label: '撤销',

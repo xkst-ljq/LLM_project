@@ -535,6 +535,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     });
     _applyBranchInitialValues(index);
     _saveSessionState();
+
+    final id = int.tryParse(msg['id']?.toString() ?? '');
+    if (id != null) {
+      DatabaseService.updateMessageContent(id, greetings[index].content);
+    }
   }
 
   /// 套用该分支的初始状态值。
@@ -3726,6 +3731,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 置位快速标记：之后 _shouldShowOpeningAssembly 第一行就返回 false，
     // 不再走 JSON 解析那条路（用户建议）。
     _openingDismissed = true;
+
+    // 如果开场白有多个选项（对应分支数 > 1）并且玩家点击了其中一个（更新了 branchIndex），
+    // 那么我们在关闭开场白时，执行切换至对应的开场白和初始值！
+    final greetings = _getCurrentGreetings();
+    if (greetings.length > 1 && _messages.isNotEmpty) {
+      final index = _sessionState.branchIndex;
+      if (index >= 0 && index < greetings.length) {
+        _switchGreeting(_messages.first, greetings, index);
+      }
+    }
+
     if (mounted) setState(() {});
     await _saveSessionState();
   }

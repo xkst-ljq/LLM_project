@@ -324,6 +324,15 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         // 之后再提交就没有组件可读了。
         _commitPendingInputs(activePage.elements);
         _syncDataChannels();
+        
+        // 如果是 opening 模式的按钮，并且配置了关联的开场白索引，则更新 sessionState 里的 branchIndex！
+        if (widget.assemblyInfo.mode == 'opening') {
+          final targetBranch = module.properties['targetBranchIndex'] as int?;
+          if (targetBranch != null) {
+            _session.branchIndex = targetBranch;
+          }
+        }
+
         widget.onDismissRequested?.call();
       }
 
