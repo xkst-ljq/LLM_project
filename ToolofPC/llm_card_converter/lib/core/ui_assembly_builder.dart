@@ -412,50 +412,114 @@ class UiAssemblyBuilder {
     }
 
     if (barFields.isNotEmpty && textual2.isNotEmpty) {
-      y += _Layout.sectionGap - _Layout.rowGap;
-    }
-
-    // 文本字段：标签 + 值
-    for (final f in textual2) {
-      final fieldId = 'sf_${_slug(f.name)}';
-      elements.add(_text(
+      y += _Layout.rowGap;
+      elements.add(_line(
         id: nextId('el'),
-        name: '${f.name}标签',
-        text: f.name,
+        name: '分割线',
         x: _Layout.pcbPadding,
         y: y,
-        w: _Layout.labelWidth,
+        w: innerW,
+        h: 2.0,
+        color: (theme.labelColor & 0x00FFFFFF) | 0x26000000, // 15% 透明度
+        layer: elements.length + 1,
+        thickness: 1.0,
+      ));
+      y += 8.0;
+    }
+
+    // 文本字段：双列并排流式布局，使面板大幅紧凑美观
+    for (var i = 0; i < textual2.length; i += 2) {
+      final f1 = textual2[i];
+      final hasF2 = i + 1 < textual2.length;
+      final f2 = hasF2 ? textual2[i + 1] : null;
+
+      final colW = innerW / 2 - 4;
+      final colLabelW = 46.0;
+
+      // 列 1
+      final fieldId1 = 'sf_${_slug(f1.name)}';
+      elements.add(_text(
+        id: nextId('el'),
+        name: '${f1.name}标签',
+        text: f1.name,
+        x: _Layout.pcbPadding,
+        y: y,
+        w: colLabelW,
         h: _Layout.rowHeight,
-        fontSize: 11,
+        fontSize: 10,
         color: theme.labelColor,
         align: 'left',
         layer: elements.length + 1,
       ));
       elements.add(_text(
         id: nextId('el'),
-        name: f.name,
+        name: f1.name,
         text: '—',
-        x: _Layout.pcbPadding + _Layout.labelWidth + 6,
+        x: _Layout.pcbPadding + colLabelW + 4,
         y: y,
-        w: innerW - _Layout.labelWidth - 6,
+        w: colW - colLabelW - 4,
         h: _Layout.rowHeight,
-        fontSize: 12,
+        fontSize: 11,
         color: theme.valueColor,
         align: 'left',
         layer: elements.length + 1,
-        statusFieldId: fieldId,
+        statusFieldId: fieldId1,
       ));
-      final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
+      final txtPresets1 = _presetsOf(branchPresets, f1.name, numeric: false);
       statusFields.add({
-        'id': fieldId,
-        'name': f.name,
+        'id': fieldId1,
+        'name': f1.name,
         'type': 'text',
-        'initial_value': txtPresets['0'] ?? '',
+        'initial_value': txtPresets1['0'] ?? '',
         'pin_side': 'none',
         'order': statusFields.length,
         'owner': 'player',
-        if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
+        if (txtPresets1.length > 1) 'branch_initial_values': txtPresets1,
       });
+
+      // 列 2
+      if (f2 != null) {
+        final fieldId2 = 'sf_${_slug(f2.name)}';
+        final col2X = _Layout.pcbPadding + innerW / 2 + 4;
+        elements.add(_text(
+          id: nextId('el'),
+          name: '${f2.name}标签',
+          text: f2.name,
+          x: col2X,
+          y: y,
+          w: colLabelW,
+          h: _Layout.rowHeight,
+          fontSize: 10,
+          color: theme.labelColor,
+          align: 'left',
+          layer: elements.length + 1,
+        ));
+        elements.add(_text(
+          id: nextId('el'),
+          name: f2.name,
+          text: '—',
+          x: col2X + colLabelW + 4,
+          y: y,
+          w: colW - colLabelW - 4,
+          h: _Layout.rowHeight,
+          fontSize: 11,
+          color: theme.valueColor,
+          align: 'left',
+          layer: elements.length + 1,
+          statusFieldId: fieldId2,
+        ));
+        final txtPresets2 = _presetsOf(branchPresets, f2.name, numeric: false);
+        statusFields.add({
+          'id': fieldId2,
+          'name': f2.name,
+          'type': 'text',
+          'initial_value': txtPresets2['0'] ?? '',
+          'pin_side': 'none',
+          'order': statusFields.length,
+          'owner': 'player',
+          if (txtPresets2.length > 1) 'branch_initial_values': txtPresets2,
+        });
+      }
       y += _Layout.rowHeight + _Layout.rowGap;
     }
 
@@ -699,6 +763,38 @@ class UiAssemblyBuilder {
           type: 'surface',
           color: color,
           radius: radius,
+        ),
+      );
+
+  static Map<String, dynamic> _line({
+    required String id,
+    required String name,
+    required double x,
+    required double y,
+    required double w,
+    required double h,
+    required int color,
+    required int layer,
+    double thickness = 1.0,
+    String lineStyle = 'solid',
+  }) =>
+      _element(
+        id: id,
+        x: x,
+        y: y,
+        w: w,
+        h: h,
+        layer: layer,
+        module: _module(
+          id: id,
+          name: name,
+          type: 'line',
+          color: color,
+          props: {
+            'thickness': thickness,
+            'lineStyle': lineStyle,
+            'axis': 'horizontal',
+          },
         ),
       );
 
