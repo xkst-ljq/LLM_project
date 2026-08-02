@@ -150,6 +150,7 @@ class CharacterAssemblyPage extends StatefulWidget {
     this.statusFields = const <StatusBarField>[],
     this.cardEntries = const <CharacterEntry>[],
     this.cardType = 'character',
+    this.branchNames = const <String>[],
   });
   @override
   State<CharacterAssemblyPage> createState() => _CharacterAssemblyPageState();

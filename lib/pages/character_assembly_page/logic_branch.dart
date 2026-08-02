@@ -28,8 +28,6 @@ part of '../character_assembly_page.dart';
 
 mixin _AssemblyBranchLogic
     on State<CharacterAssemblyPage>, _AssemblyLogic, _AssemblyPageLogic {
-  /// 当前正在编辑哪个分支。0 = 主支路。
-  int _editingBranch = 0;
 
   /// 分支总数。开场白 ≤1 时只有主支路。
   int get _branchCount {

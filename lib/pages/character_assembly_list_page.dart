@@ -28,6 +28,7 @@ class UIAssemblyListPage extends StatefulWidget {
     required this.onMetaChanged,
     this.cardEntries = const <CharacterEntry>[],
     this.cardType = 'character',
+    this.branchNames = const <String>[],
   });
 
   @override

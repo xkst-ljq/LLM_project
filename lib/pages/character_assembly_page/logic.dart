@@ -29,6 +29,14 @@ const double _dragThreshold = 24.0;
 const String _pageRouterType = 'page_router';
 
 mixin _AssemblyLogic on State<CharacterAssemblyPage> {
+  /// 当前正在编辑哪个开场分支（0 = 主支路）。
+  ///
+  /// 放在依赖链根部而非 `_AssemblyBranchLogic`：
+  /// `_persistAssemblyElements`（本文件）要靠它决定把画布内容
+  /// 写进 `pagesJson` 还是 `branchVariants`，
+  /// 而那个 mixin 在依赖链下游，上游看不到它的成员。
+  int _editingBranch = 0;
+
   final UIAssetService _assetService = UIAssetService();
   late UIAssemblyInfo _info;
   late TextEditingController _nameCtrl;
