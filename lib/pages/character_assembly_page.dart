@@ -556,61 +556,79 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                           _handleBackNavigation,
                         ),
                         const SizedBox(width: 2),
-                        GestureDetector(
-                          onTap: _editName,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _modeColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(7),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _info.name,
-                                  style: TextStyle(
-                                    color: _modeColor,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
+                        // 名称胶囊必须可收缩。
+                        //
+                        // 右侧那排图标按钮宽度固定，名称一长就会把整行撑爆
+                        // （用户实测：转译进来的卡名较长时溢出 17px）。
+                        // `overflow: ellipsis` 单独不够用——它只在文本
+                        // **被给定有限宽度**时才生效，而 MainAxisSize.min
+                        // 的 Row 会一直向外要空间。
+                        Flexible(
+                          child: GestureDetector(
+                            onTap: _editName,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _modeColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      _info.name,
+                                      style: TextStyle(
+                                        color: _modeColor,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                      softWrap: false,
+                                    ),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(width: 5),
-                                Icon(
-                                  Icons.edit_rounded,
-                                  size: 13,
-                                  color: _modeColor.withValues(alpha: 0.7),
-                                ),
-                              ],
+                                  const SizedBox(width: 5),
+                                  Icon(
+                                    Icons.edit_rounded,
+                                    size: 13,
+                                    color: _modeColor.withValues(alpha: 0.7),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _activePage.isOverlay
-                                ? const Color(0xFF37474F).withValues(alpha: 0.12)
-                                : const Color(0xFF651FFF).withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                          child: Text(
-                            _displayPageName(_activePage),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
+                        // 页名同理：叠加页名称也可能很长。
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
                               color: _activePage.isOverlay
                                   ? const Color(0xFF37474F)
-                                  : const Color(0xFF651FFF),
+                                      .withValues(alpha: 0.12)
+                                  : const Color(0xFF651FFF)
+                                      .withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(7),
                             ),
-                            overflow: TextOverflow.ellipsis,
+                            child: Text(
+                              _displayPageName(_activePage),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _activePage.isOverlay
+                                    ? const Color(0xFF37474F)
+                                    : const Color(0xFF651FFF),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
+                            ),
                           ),
                         ),
                         const Spacer(),
