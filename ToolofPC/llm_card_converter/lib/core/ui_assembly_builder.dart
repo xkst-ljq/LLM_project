@@ -336,12 +336,21 @@ class UiAssemblyBuilder {
     }
     final textual2 = [...textual, ...overflowFields];
 
-    for (final f in barFields) {
-      final fieldId = 'sf_${_slug(f.name)}';
+    // 数值字段：双列并排流式网格，极其紧凑
+    for (var i = 0; i < barFields.length; i += 2) {
+      final f1 = barFields[i];
+      final hasF2 = i + 1 < barFields.length;
+      final f2 = hasF2 ? barFields[i + 1] : null;
+
+      final colW = innerW / 2 - 4;
+      final colLabelW = 38.0;
+
+      // 列 1
+      final fieldId1 = 'sf_${_slug(f1.name)}';
       elements.add(_text(
         id: nextId('el'),
-        name: '${f.name}标签',
-        text: _decorateEmoji(f.name),
+        name: '${f1.name}标签',
+        text: _decorateEmoji(f1.name),
         x: _Layout.pcbPadding,
         y: y,
         w: colLabelW,
@@ -353,30 +362,73 @@ class UiAssemblyBuilder {
       ));
       elements.add(_progress(
         id: nextId('el'),
-        name: f.name,
-        x: _Layout.pcbPadding + colLabelW + 6,
+        name: f1.name,
+        x: _Layout.pcbPadding + colLabelW + 4,
         y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-        w: innerW - colLabelW - 6,
+        w: colW - colLabelW - 4,
         h: _Layout.barHeight,
-        statusFieldId: fieldId,
+        statusFieldId: fieldId1,
         layer: elements.length + 1,
-        barFillColor: _barColorOf(f.name, theme.barFillColor),
+        barFillColor: _barColorOf(f1.name, theme.barFillColor),
         barTrackColor: theme.barTrackColor,
       ));
-      final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
+      final numPresets1 = _presetsOf(branchPresets, f1.name, numeric: true);
       statusFields.add({
-        'id': fieldId,
-        'name': f.name,
+        'id': fieldId1,
+        'name': f1.name,
         'type': 'number',
-        // 主支路（分支 0）的值就是这个字段的默认初值。
-        'initial_value': numPresets['0'] ?? '0',
+        'initial_value': numPresets1['0'] ?? '0',
         'min_value': 0.0,
         'max_value': 100.0,
         'pin_side': 'none',
         'order': statusFields.length,
         'owner': 'player',
-        if (numPresets.length > 1) 'branch_initial_values': numPresets,
+        if (numPresets1.length > 1) 'branch_initial_values': numPresets1,
       });
+
+      // 列 2
+      if (f2 != null) {
+        final fieldId2 = 'sf_${_slug(f2.name)}';
+        final col2X = _Layout.pcbPadding + innerW / 2 + 4;
+        elements.add(_text(
+          id: nextId('el'),
+          name: '${f2.name}标签',
+          text: _decorateEmoji(f2.name),
+          x: col2X,
+          y: y,
+          w: colLabelW,
+          h: _Layout.rowHeight,
+          fontSize: 10,
+          color: theme.labelColor,
+          align: 'left',
+          layer: elements.length + 1,
+        ));
+        elements.add(_progress(
+          id: nextId('el'),
+          name: f2.name,
+          x: col2X + colLabelW + 4,
+          y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
+          w: colW - colLabelW - 4,
+          h: _Layout.barHeight,
+          statusFieldId: fieldId2,
+          layer: elements.length + 1,
+          barFillColor: _barColorOf(f2.name, theme.barFillColor),
+          barTrackColor: theme.barTrackColor,
+        ));
+        final numPresets2 = _presetsOf(branchPresets, f2.name, numeric: true);
+        statusFields.add({
+          'id': fieldId2,
+          'name': f2.name,
+          'type': 'number',
+          'initial_value': numPresets2['0'] ?? '0',
+          'min_value': 0.0,
+          'max_value': 100.0,
+          'pin_side': 'none',
+          'order': statusFields.length,
+          'owner': 'player',
+          if (numPresets2.length > 1) 'branch_initial_values': numPresets2,
+        });
+      }
       y += _Layout.rowHeight + _Layout.rowGap;
     }
 
@@ -396,13 +448,21 @@ class UiAssemblyBuilder {
       y += 8.0;
     }
 
-    // 文本字段：单列流式布局，给文本内容留出最宽敞舒适的排布空间
-    for (final f in textual2) {
-      final fieldId = 'sf_${_slug(f.name)}';
+    // 文本字段：双列并排流动布局，完美契合伴生气泡宽度
+    for (var i = 0; i < textual2.length; i += 2) {
+      final f1 = textual2[i];
+      final hasF2 = i + 1 < textual2.length;
+      final f2 = hasF2 ? textual2[i + 1] : null;
+
+      final colW = innerW / 2 - 4;
+      final colLabelW = 38.0;
+
+      // 列 1
+      final fieldId1 = 'sf_${_slug(f1.name)}';
       elements.add(_text(
         id: nextId('el'),
-        name: '${f.name}标签',
-        text: _decorateEmoji(f.name),
+        name: '${f1.name}标签',
+        text: _decorateEmoji(f1.name),
         x: _Layout.pcbPadding,
         y: y,
         w: colLabelW,
@@ -414,29 +474,73 @@ class UiAssemblyBuilder {
       ));
       elements.add(_text(
         id: nextId('el'),
-        name: f.name,
+        name: f1.name,
         text: '—',
-        x: _Layout.pcbPadding + colLabelW + 6,
+        x: _Layout.pcbPadding + colLabelW + 4,
         y: y,
-        w: innerW - colLabelW - 6,
+        w: colW - colLabelW - 4,
         h: _Layout.rowHeight,
-        fontSize: 11,
+        fontSize: 10,
         color: theme.valueColor,
         align: 'left',
         layer: elements.length + 1,
-        statusFieldId: fieldId,
+        statusFieldId: fieldId1,
       ));
-      final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
+      final txtPresets1 = _presetsOf(branchPresets, f1.name, numeric: false);
       statusFields.add({
-        'id': fieldId,
-        'name': f.name,
+        'id': fieldId1,
+        'name': f1.name,
         'type': 'text',
-        'initial_value': txtPresets['0'] ?? '',
+        'initial_value': txtPresets1['0'] ?? '',
         'pin_side': 'none',
         'order': statusFields.length,
         'owner': 'player',
-        if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
+        if (txtPresets1.length > 1) 'branch_initial_values': txtPresets1,
       });
+
+      // 列 2
+      if (f2 != null) {
+        final fieldId2 = 'sf_${_slug(f2.name)}';
+        final col2X = _Layout.pcbPadding + innerW / 2 + 4;
+        elements.add(_text(
+          id: nextId('el'),
+          name: '${f2.name}标签',
+          text: _decorateEmoji(f2.name),
+          x: col2X,
+          y: y,
+          w: colLabelW,
+          h: _Layout.rowHeight,
+          fontSize: 10,
+          color: theme.labelColor,
+          align: 'left',
+          layer: elements.length + 1,
+        ));
+        elements.add(_text(
+          id: nextId('el'),
+          name: f2.name,
+          text: '—',
+          x: col2X + colLabelW + 4,
+          y: y,
+          w: colW - colLabelW - 4,
+          h: _Layout.rowHeight,
+          fontSize: 10,
+          color: theme.valueColor,
+          align: 'left',
+          layer: elements.length + 1,
+          statusFieldId: fieldId2,
+        ));
+        final txtPresets2 = _presetsOf(branchPresets, f2.name, numeric: false);
+        statusFields.add({
+          'id': fieldId2,
+          'name': f2.name,
+          'type': 'text',
+          'initial_value': txtPresets2['0'] ?? '',
+          'pin_side': 'none',
+          'order': statusFields.length,
+          'owner': 'player',
+          if (txtPresets2.length > 1) 'branch_initial_values': txtPresets2,
+        });
+      }
       y += _Layout.rowHeight + _Layout.rowGap;
     }
 
