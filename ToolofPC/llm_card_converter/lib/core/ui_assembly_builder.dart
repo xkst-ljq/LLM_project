@@ -223,7 +223,7 @@ class UiAssemblyBuilder {
     // `onclick="send('...')"` 是明确的交互意图，
     // 对应 button + sendsMessage，做成 opening 开场页。
     if (ex.openingActions.isNotEmpty) {
-      final json = _buildOpeningPage(ex.openingActions, nextId, cardName, visualTheme);
+      final json = _buildOpeningPage(ex.openingActions, nextId, cardName, visualTheme, ex.cleanFirstMes);
       assemblies.add(json);
       notes.add('开场消息里的 ${ex.openingActions.length} 个选项'
           '已转为可点击按钮（opening 开场页）。');
@@ -372,7 +372,7 @@ class UiAssemblyBuilder {
       elements.add(_text(
         id: nextId('el'),
         name: '${f.name}标签',
-        text: f.name,
+        text: _decorateEmoji(f.name),
         x: _Layout.pcbPadding,
         y: y,
         w: _Layout.labelWidth,
@@ -391,7 +391,7 @@ class UiAssemblyBuilder {
         h: _Layout.barHeight,
         statusFieldId: fieldId,
         layer: elements.length + 1,
-        barFillColor: theme.barFillColor,
+        barFillColor: _barColorOf(f.name, theme.barFillColor),
         barTrackColor: theme.barTrackColor,
       ));
       final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
@@ -441,7 +441,7 @@ class UiAssemblyBuilder {
       elements.add(_text(
         id: nextId('el'),
         name: '${f1.name}标签',
-        text: f1.name,
+        text: _decorateEmoji(f1.name),
         x: _Layout.pcbPadding,
         y: y,
         w: colLabelW,
@@ -484,7 +484,7 @@ class UiAssemblyBuilder {
         elements.add(_text(
           id: nextId('el'),
           name: '${f2.name}标签',
-          text: f2.name,
+          text: _decorateEmoji(f2.name),
           x: col2X,
           y: y,
           w: colLabelW,
@@ -565,6 +565,7 @@ class UiAssemblyBuilder {
     String Function(String) nextId,
     String cardName,
     UiVisualTheme theme,
+    String welcomeText,
   ) {
     const pcbW = 320.0;
     const padding = 16.0;
@@ -587,6 +588,36 @@ class UiAssemblyBuilder {
       layer: 1,
     ));
     y += 28 + 12;
+
+    // ── 增加开场白对白/叙述文本整合 ──
+    if (welcomeText.isNotEmpty) {
+      final textPanelId = nextId('el');
+      elements.add(_surface(
+        id: textPanelId,
+        name: '开场叙述底板',
+        x: padding,
+        y: y,
+        w: innerW,
+        h: 110.0,
+        color: (theme.panelColor & 0x00FFFFFF) | 0x26000000, // 15% 透明度底色
+        layer: elements.length + 1,
+        radius: 8.0,
+      ));
+      elements.add(_text(
+        id: nextId('el'),
+        name: '开场叙述',
+        text: welcomeText,
+        x: padding + 10,
+        y: y + 8,
+        w: innerW - 20,
+        h: 94.0,
+        fontSize: 11,
+        color: theme.valueColor,
+        align: 'left',
+        layer: elements.length + 1,
+      ));
+      y += 110.0 + 12.0;
+    }
 
     // 记下每个选项的「底板 id ↔ 按钮 id」，稍后连按压联动器。
     final pressPairs = <({String surface, String button})>[];
@@ -1107,6 +1138,34 @@ class UiAssemblyBuilder {
   /// 只把可能破坏 JSON 或路径的字符换掉。
   static String _slug(String name) =>
       name.replaceAll(RegExp(r'[^\w\u4e00-\u9fa5]'), '_');
+
+  static String _decorateEmoji(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('生命') || lower.contains('血') || lower.contains('hp') || lower.contains('health')) return '❤️ $name';
+    if (lower.contains('精神') || lower.contains('理智') || lower.contains('san') || lower.contains('mp') || lower.contains('mental')) return '🧠 $name';
+    if (lower.contains('体力') || lower.contains('体能') || lower.contains('stamina') || lower.contains('energy') || lower.contains('ap')) return '⚡ $name';
+    if (lower.contains('饱腹') || lower.contains('饥饿') || lower.contains('food') || lower.contains('hunger') || lower.contains('饱')) return '🍔 $name';
+    if (lower.contains('称号') || lower.contains('职业') || lower.contains('身份') || lower.contains('title') || lower.contains('job')) return '👑 $name';
+    if (lower.contains('编号') || lower.contains('id') || lower.contains('number')) return '🆔 $name';
+    if (lower.contains('罪名') || lower.contains('罪行') || lower.contains('crime')) return '⚖️ $name';
+    if (lower.contains('势力') || lower.contains('阵营') || lower.contains('faction') || lower.contains('alliance')) return '👥 $name';
+    if (lower.contains('关系') || lower.contains('好感') || lower.contains('love') || lower.contains('relationship')) return '💖 $name';
+    if (lower.contains('声望') || lower.contains('名气') || lower.contains('reputation')) return '🎖️ $name';
+    if (lower.contains('点数') || lower.contains(' points') || lower.contains('pts') || lower.contains('money') || lower.contains('coin')) return '🪙 $name';
+    if (lower.contains('物品') || lower.contains('行囊') || lower.contains('背包') || lower.contains('items') || lower.contains('bag')) return '🎒 $name';
+    if (lower.contains('位置') || lower.contains('地点') || lower.contains('location') || lower.contains('place')) return '📍 $name';
+    if (lower.contains('日期') || lower.contains('时间') || lower.contains('date') || lower.contains('time')) return '📅 $name';
+    return name;
+  }
+
+  static int _barColorOf(String name, int fallback) {
+    final lower = name.toLowerCase();
+    if (lower.contains('生命') || lower.contains('血') || lower.contains('hp') || lower.contains('health')) return 0xFFE53935; // 红色
+    if (lower.contains('精神') || lower.contains('理智') || lower.contains('san') || lower.contains('mental')) return 0xFF8E24AA; // 紫色
+    if (lower.contains('体力') || lower.contains('精力') || lower.contains('stamina') || lower.contains('energy') || lower.contains('ap')) return 0xFF4CAF50; // 绿色
+    if (lower.contains('饱腹') || lower.contains('饥饿') || lower.contains('food') || lower.contains('hunger')) return 0xFFFF9800; // 橙色
+    return fallback;
+  }
 }
 
 class _PanelResult {
