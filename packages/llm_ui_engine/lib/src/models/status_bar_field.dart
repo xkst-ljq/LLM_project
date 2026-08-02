@@ -71,7 +71,7 @@ class StatusBarField {
   ///
   /// 返回 null 表示「该分支无预设且主支路也没值」，调用方应跳过。
   String? initialValueForBranch(int branch) {
-    final v = branchInitialValues['\$branch'];
+    final v = branchInitialValues['$branch'];
     if (v != null && v.isNotEmpty) return v;
     if (branch == 0) return initialValue.isEmpty ? null : initialValue;
     // 未设计的分支照搬主支路。

@@ -185,14 +185,14 @@ class UIAssemblyInfo {
   /// 没有专属变体时回落主支路——即用户说的
   /// 「如果没有设计分支方案，所有的分支方案就照搬主方案」。
   String pagesJsonForBranch(int branch) =>
-      branchVariants['\$branch'] ?? pagesJson;
+      branchVariants['$branch'] ?? pagesJson;
 
   /// 该分支是否有专属设计（而非照搬主支路）。
   ///
   /// 编辑器用它给分支切换器加标记，让作者一眼看出
   /// 哪些分支自己改过、哪些还在跟随主支路。
   bool hasBranchVariant(int branch) =>
-      branch != 0 && branchVariants.containsKey('\$branch');
+      branch != 0 && branchVariants.containsKey('$branch');
 
   String toJsonString() => jsonEncode(toJson());
 
