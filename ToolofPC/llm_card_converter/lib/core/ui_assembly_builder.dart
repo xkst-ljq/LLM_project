@@ -439,6 +439,11 @@ class UiAssemblyBuilder {
     final pagesLabel = hasActions ? '📊属性/📁档案/🎯选项' : '📊属性/📁档案';
     notes.add('通过多页面 ($pagesLabel) 与顶置 Tab 标签切换按钮整合面板属性与预设选项，使信息流与操作深度聚合。');
 
+    final pList = <Map<String, dynamic>>[page1, page2];
+    if (page3 != null) {
+      pList.add(page3);
+    }
+
     return _PanelResult(
       assemblyJson: _assembly(
         id: nextId('asm'),
@@ -446,7 +451,7 @@ class UiAssemblyBuilder {
         mode: 'extra_companion',
         pcbW: pcbW,
         pcbH: pcbH,
-        pages: [page1, page2, if (page3 != null) page3],
+        pages: pList,
         pcbColor: theme.pcbColor,
         pcbRadius: theme.borderRadius,
       ),
@@ -963,14 +968,24 @@ class UiAssemblyBuilder {
       radius: theme.borderRadius,
     );
 
+    final page = {
+      'id': 'page_${nextId("page")}',
+      'name': '开场',
+      'type': 'base',
+      'parentPageId': null,
+      'sortOrder': 0,
+      'elements': [bg, ...elements],
+      'gestures': <dynamic>[],
+      'propertyOverrides': <dynamic>[],
+    };
+
     return _assembly(
       id: nextId('asm'),
       name: '开场选择',
       mode: 'opening',
       pcbW: pcbW,
       pcbH: pcbH,
-      pageName: '开场',
-      elements: [bg, ...elements],
+      pages: [page],
       pcbColor: theme.pcbColor,
       pcbRadius: theme.borderRadius,
     );
