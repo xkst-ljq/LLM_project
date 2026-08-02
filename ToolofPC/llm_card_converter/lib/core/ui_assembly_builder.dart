@@ -224,19 +224,51 @@ class UiAssemblyBuilder {
     const pcbW = 300.0;
     final innerW = pcbW - _Layout.pcbPadding * 2;
 
-    // 标题
+    // 标题（右侧留出折叠按钮的位置）
+    const collapseSize = 26.0;
     elements.add(_text(
       id: nextId('el'),
       name: '标题',
       text: cardName.isEmpty ? '状态' : cardName,
       x: _Layout.pcbPadding,
       y: y,
-      w: innerW,
+      w: innerW - collapseSize - 6,
       h: _Layout.titleHeight,
       fontSize: 15,
       color: _Palette.title,
       align: 'left',
       layer: elements.length + 1,
+    ));
+
+    // 折叠按钮。
+    //
+    // `extra_sticky` 缺 keyAction 标记不会导致整层不渲染
+    // （那是 opening / scene 的规则，见 UISemanticRole.blocksWithoutKeyAction），
+    // 但**玩家就没法收起这条常驻栏**——它会一直占着消息流顶部。
+    // 引擎给这个 mode 的关键职责定义就是「折叠界面」。
+    elements.add(_text(
+      id: nextId('el'),
+      name: '折叠图标',
+      text: '▾',
+      x: pcbW - _Layout.pcbPadding - collapseSize,
+      y: y,
+      w: collapseSize,
+      h: _Layout.titleHeight,
+      fontSize: 14,
+      color: _Palette.label,
+      align: 'center',
+      layer: elements.length + 1,
+    ));
+    elements.add(_button(
+      id: nextId('el'),
+      name: '折叠',
+      x: pcbW - _Layout.pcbPadding - collapseSize,
+      y: y,
+      w: collapseSize,
+      h: _Layout.titleHeight,
+      layer: elements.length + 1,
+      sendsMessage: false,
+      keyAction: true,
     ));
     y += _Layout.titleHeight + _Layout.sectionGap;
 
