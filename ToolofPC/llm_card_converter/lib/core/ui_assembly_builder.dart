@@ -47,10 +47,8 @@ class _Layout {
   static const double pcbPadding = 12;
   static const double rowHeight = 22;
   static const double rowGap = 6;
-  static const double labelWidth = 72;
   static const double barHeight = 10;
   static const double titleHeight = 26;
-  static const double sectionGap = 10;
   static const double buttonHeight = 34;
 
   /// 单份 UI 最多放多少字段。
@@ -299,7 +297,6 @@ class UiAssemblyBuilder {
     // 伴生 UI (extra_companion) 最大宽度为 212.0
     const pcbW = 212.0;
     final innerW = pcbW - _Layout.pcbPadding * 2;
-    const colLabelW = 50.0;
 
     // 标题（伴生 UI 随气泡滚动，不需要折叠按钮）
     elements.add(_text(
