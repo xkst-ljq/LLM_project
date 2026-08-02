@@ -171,7 +171,7 @@ class CardPreview extends StatelessWidget {
         height: 144,
         fit: BoxFit.cover,
         gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => Container(
+        errorBuilder: (_, _, _) => Container(
           width: 96,
           height: 144,
           color: Colors.grey[300],

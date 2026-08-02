@@ -224,8 +224,8 @@ class _WorkspacePageState extends State<WorkspacePage> {
       barrierLabel: '编辑条目',
       barrierColor: Colors.black54,
       transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (_, __, ___) => EntryEditorPage(entriesJson: entriesJson),
-      transitionBuilder: (_, anim, __, child) => SlideTransition(
+      pageBuilder: (_, _, _) => EntryEditorPage(entriesJson: entriesJson),
+      transitionBuilder: (_, anim, _, child) => SlideTransition(
         position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
             .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
         child: child,

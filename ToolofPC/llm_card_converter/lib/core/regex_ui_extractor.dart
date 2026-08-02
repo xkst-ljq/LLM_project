@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 /// 从 SillyTavern 卡的 `extensions.regex_scripts` 里提取 UI 意图。
 ///
 /// ## 为什么是纯代码，不用 AI
@@ -35,9 +33,10 @@ import 'dart:convert';
 /// `tavern_helper` 里 `import 'https://...'` 的卡（如 MVU），
 /// UI 由外部 JS 运行时生成，**静态分析拿不到最终形态**。
 /// 硬转会产出半残界面，比不转更糟——识别出来后明确告知用户。
-library;
 
 /// 正则脚本的用途分类。
+library;
+
 enum UiRegexKind {
   /// `<字段>(.*?)</字段>` —— 自定义 XML 标签。
   tagCapture,

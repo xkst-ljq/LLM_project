@@ -204,7 +204,7 @@ class _EntryEditorPageState extends State<EntryEditorPage> {
                   child: ListView.separated(
                     padding: const EdgeInsets.all(16),
                     itemCount: _entries.length,
-                    separatorBuilder: (_, __) => const Divider(height: 24),
+                    separatorBuilder: (_, _) => const Divider(height: 24),
                     itemBuilder: (context, i) => _entryCard(_entries[i]),
                   ),
                 ),

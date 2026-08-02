@@ -333,7 +333,7 @@ class _HomePageState extends State<HomePage> {
           height: 48,
           fit: BoxFit.cover,
           gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _thumbFallback(true),
+          errorBuilder: (_, _, _) => _thumbFallback(true),
         ),
       );
     }
@@ -394,7 +394,7 @@ class _HomePageState extends State<HomePage> {
               : ListView.separated(
             padding: const EdgeInsets.all(8),
             itemCount: _history.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, i) => _historyTile(_history[i]),
           ),
         ),

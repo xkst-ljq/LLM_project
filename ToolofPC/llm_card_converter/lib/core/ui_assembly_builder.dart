@@ -1,7 +1,3 @@
-import 'dart:convert';
-
-import 'regex_ui_extractor.dart';
-
 /// 把 [UiExtraction] 的提取结果，构建成合法的 LLM Project assembly JSON。
 ///
 /// ## 为什么这一步绝不能交给 AI
@@ -40,6 +36,9 @@ import 'regex_ui_extractor.dart';
 /// └─────────────────────┘
 /// ```
 library;
+
+import 'dart:convert';
+import 'regex_ui_extractor.dart';
 
 /// 构建时的布局常量。
 ///
