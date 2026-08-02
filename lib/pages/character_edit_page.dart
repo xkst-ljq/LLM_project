@@ -1629,9 +1629,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
         .replaceAll(RegExp(r'<[^>]{1,20}>'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-    if (text.isEmpty) return index == 0 ? '主线' : '分支 $index';
+    if (text.isEmpty) return '开场白 ${index + 1}';
     if (text.length > 12) text = '${text.substring(0, 12)}…';
-    return index == 0 ? '主线 · $text' : text;
+    return '开场白 ${index + 1} · $text';
   }
 
   Future<void> _editUIAssemblyList() async {

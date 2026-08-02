@@ -843,20 +843,52 @@ mixin _AssemblyEditorsLogic
                       decoration: const InputDecoration(labelText: '实例名称'),
                     ),
                     if (_info.mode == 'opening' && type == 'button' && isKeyAction && widget.branchNames.length > 1) ...[
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<int>(
-                        value: targetBranchIndex ?? 0,
-                        decoration: const InputDecoration(labelText: '通往开场白'),
-                        items: List.generate(widget.branchNames.length, (i) {
-                          final label = widget.branchNames[i].isNotEmpty ? widget.branchNames[i] : '开场白 ${i + 1}';
-                          return DropdownMenuItem<int>(
-                            value: i,
-                            child: Text(label),
-                          );
-                        }),
-                        onChanged: (val) {
-                          setDialogState(() => targetBranchIndex = val);
-                        },
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEBF5FB), // 柔和的浅蓝背景
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF4FA3D1).withValues(alpha: 0.2)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.link_rounded, size: 16, color: Color(0xFF2980B9)),
+                                SizedBox(width: 6),
+                                Text(
+                                  '选项点击行为配置',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF1B4F72),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            DropdownButtonFormField<int>(
+                              value: targetBranchIndex ?? 0,
+                              decoration: const InputDecoration(
+                                labelText: '点击后通往的开场白',
+                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: List.generate(widget.branchNames.length, (i) {
+                                final label = widget.branchNames[i].isNotEmpty ? widget.branchNames[i] : '开场白 ${i + 1}';
+                                return DropdownMenuItem<int>(
+                                  value: i,
+                                  child: Text(label, style: const TextStyle(fontSize: 12)),
+                                );
+                              }),
+                              onChanged: (val) {
+                                setDialogState(() => targetBranchIndex = val);
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                     // A14-3：宽 / 高移交「精确几何」。
