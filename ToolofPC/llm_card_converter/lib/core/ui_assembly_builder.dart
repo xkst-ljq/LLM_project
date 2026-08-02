@@ -137,7 +137,12 @@ class UiAssemblyBuilder {
             '取字段最多的「${primary.scriptName}」生成主面板'
             '（其余多为同内容的换肤版本）。');
       }
-      final r = _buildStatusPanel(primary, nextId, cardName);
+      final r = _buildStatusPanel(
+        primary,
+        nextId,
+        cardName,
+        ex.branchPresets,
+      );
       if (r != null) {
         assemblies.add(r.assemblyJson);
         statusFields.addAll(r.statusFields);
@@ -196,6 +201,7 @@ class UiAssemblyBuilder {
     UiRegexScript script,
     String Function(String) nextId,
     String cardName,
+    Map<int, Map<String, String>> branchPresets,
   ) {
     final notes = <String>[];
 
@@ -273,7 +279,25 @@ class UiAssemblyBuilder {
     y += _Layout.titleHeight + _Layout.sectionGap;
 
     // 数值字段：标签 + 进度条
+    //
+    // 但要先筛一道：量程超出 0~100 的（如「点数 200万」）
+    // 用进度条表达会永远满格，退回文本更诚实。
+    final barFields = <UiField>[];
+    final overflowFields = <UiField>[];
     for (final f in numeric) {
+      if (_fitsPercentBar(_presetsOf(branchPresets, f.name, numeric: true))) {
+        barFields.add(f);
+      } else {
+        overflowFields.add(f);
+      }
+    }
+    if (overflowFields.isNotEmpty) {
+      notes.add('${overflowFields.map((f) => f.name).join('、')} '
+          '的取值超出 0~100，改用文本显示（进度条会永远满格）。');
+    }
+    final textual2 = [...textual, ...overflowFields];
+
+    for (final f in barFields) {
       final fieldId = 'sf_${_slug(f.name)}';
       elements.add(_text(
         id: nextId('el'),
@@ -298,26 +322,29 @@ class UiAssemblyBuilder {
         statusFieldId: fieldId,
         layer: elements.length + 1,
       ));
+      final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
       statusFields.add({
         'id': fieldId,
         'name': f.name,
         'type': 'number',
-        'initial_value': '0',
+        // 主支路（分支 0）的值就是这个字段的默认初值。
+        'initial_value': numPresets['0'] ?? '0',
         'min_value': 0.0,
         'max_value': 100.0,
         'pin_side': 'none',
         'order': statusFields.length,
         'owner': 'player',
+        if (numPresets.length > 1) 'branch_initial_values': numPresets,
       });
       y += _Layout.rowHeight + _Layout.rowGap;
     }
 
-    if (numeric.isNotEmpty && textual.isNotEmpty) {
+    if (barFields.isNotEmpty && textual2.isNotEmpty) {
       y += _Layout.sectionGap - _Layout.rowGap;
     }
 
     // 文本字段：标签 + 值
-    for (final f in textual) {
+    for (final f in textual2) {
       final fieldId = 'sf_${_slug(f.name)}';
       elements.add(_text(
         id: nextId('el'),
@@ -346,14 +373,16 @@ class UiAssemblyBuilder {
         layer: elements.length + 1,
         statusFieldId: fieldId,
       ));
+      final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
       statusFields.add({
         'id': fieldId,
         'name': f.name,
         'type': 'text',
-        'initial_value': '',
+        'initial_value': txtPresets['0'] ?? '',
         'pin_side': 'none',
         'order': statusFields.length,
         'owner': 'player',
+        if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
       });
       y += _Layout.rowHeight + _Layout.rowGap;
     }
@@ -758,6 +787,54 @@ class UiAssemblyBuilder {
   }
 
   // ─────────────────────── 工具 ───────────────────────
+
+  /// 取某字段在各分支的初值。
+  ///
+  /// 数值字段要清洗：原卡写的是 `84%`、`1000 pts`、`200万+ pts` 这类
+  /// 带单位的字符串，而引擎按 number 处理时需要纯数字。
+  /// 洗不出数字的（如「200万+」）**保留原文**——
+  /// 宁可显示成文本，也不要凭空编一个数。
+  static Map<String, String> _presetsOf(
+    Map<int, Map<String, String>> branchPresets,
+    String fieldName, {
+    required bool numeric,
+  }) {
+    final out = <String, String>{};
+    for (final entry in branchPresets.entries) {
+      final raw = entry.value[fieldName];
+      if (raw == null || raw.isEmpty) continue;
+      final v = numeric ? _cleanNumber(raw) : raw;
+      if (v != null && v.isNotEmpty) out['\${entry.key}'] = v;
+    }
+    return out;
+  }
+
+  /// 从 `84%` / `1000 pts` 里洗出 `84` / `1000`。
+  ///
+  /// **带中文数量词的一律不洗**：`200万+ pts` 取第一段数字会得到 `200`，
+  /// 与原意差一万倍。这类值宁可保留原文当文本显示，
+  /// 也不要凭空造一个错误的数——错误的数比缺失的数更难发现。
+  static String? _cleanNumber(String raw) {
+    if (RegExp(r'[万亿千百]').hasMatch(raw)) return null;
+    final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(raw);
+    return m?.group(0);
+  }
+
+  /// 该字段是否适合用 0~100 的进度条表达。
+  ///
+  /// 判据是**各分支预设是否都落在 0~100**。
+  /// 「精神 84%」适合；「点数 1000 / 200万」不适合——
+  /// 硬塞进 0~100 的条里会永远满格，反而失真。
+  ///
+  /// 不适合的字段退回文本显示，信息不丢。
+  static bool _fitsPercentBar(Map<String, String> presets) {
+    if (presets.isEmpty) return true; // 没数据就按默认量程走
+    for (final v in presets.values) {
+      final n = double.tryParse(v);
+      if (n == null || n < 0 || n > 100) return false;
+    }
+    return true;
+  }
 
   /// 「正文」这类字段是消息正文本身，不是状态，不该进状态面板。
   static bool _isNarrativeField(String name) => const {
