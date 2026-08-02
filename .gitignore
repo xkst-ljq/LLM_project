@@ -81,3 +81,9 @@ api_keys.json
 *.apk
 *.aab
 *.llmbak
+# ST 参考卡的原始 JSON 体积较大（最大 3.4MB），
+# 且内容可能含 NSFW 设定，不入库；分析结论见
+# samples/st_reference/ANALYSIS.md 与 mechanisms.json。
+文件传输toARENA/
+samples/st_reference/*.json
+!samples/st_reference/mechanisms.json

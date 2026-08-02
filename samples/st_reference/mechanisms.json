@@ -1,0 +1,45 @@
+{
+  "WuWa Solaris-3 MVU Edition 0608.json": {
+    "regexScripts": 14,
+    "kinds": {
+      "cleanup": 10,
+      "placeholder": 2,
+      "other": 2
+    },
+    "worldBook": 426,
+    "usesPlugin": true
+  },
+  "丧尸末日系统.json": {
+    "regexScripts": 0,
+    "kinds": {},
+    "worldBook": 8,
+    "usesPlugin": false
+  },
+  "异世界公会.json": {
+    "regexScripts": 13,
+    "kinds": {
+      "placeholder": 5,
+      "bar_capture": 7,
+      "other": 1
+    },
+    "worldBook": 22,
+    "usesPlugin": false
+  },
+  "玲茹.json": {
+    "regexScripts": 3,
+    "kinds": {
+      "cleanup": 2,
+      "bar_capture": 1
+    },
+    "worldBook": 14,
+    "usesPlugin": false
+  },
+  "黑曜石·法外特区.json": {
+    "regexScripts": 2,
+    "kinds": {
+      "tag_capture": 2
+    },
+    "worldBook": 30,
+    "usesPlugin": true
+  }
+}
