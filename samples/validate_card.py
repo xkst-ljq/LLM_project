@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """校验 .llmcard 是否符合引擎硬约束。"""
-import json, zipfile, sys, collections, os
+import json
+import os, zipfile, sys, collections
 
 ATOM_TYPES={'surface','text','image','line','progress','indicator','input',
             'select','slider','switch','button','linker','math_node','timer','page_router','message_flow'}
@@ -162,6 +163,36 @@ def walk(els):
         if e.get('isComposite') and e.get('composite'):
             yield from walk(e['composite']['children'])
 
+# ── 契约常量 ──
+#
+# 优先读 `ui_contract.json`（由 tools/export_ui_contract.py 从引擎源码导出）。
+# **不要在这里手抄**：枚举下标顺序、PCB 上下限这些一旦与引擎漂移，
+# 校验器就会放过真错误、或误报合法卡——比没有校验更糟。
+#
+# 契约文件不存在时回落到内置默认值，保证脚本单独拷出去也能跑。
+_CONTRACT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              'ui_contract.json')
+try:
+    with open(_CONTRACT_PATH, encoding='utf-8') as _f:
+        _C = json.load(_f)
+except Exception:
+    _C = {}
+
+MATERIALS = _C.get('materials') or ['glass','solid','gradient','outline']
+SHAPES = _C.get('shapes') or ['rectangle','rounded','capsule','circle',
+                              'heart','star5','star4']
+# 'extra' 是历史遗留值，引擎仍能读，故一并放行。
+MODES = set(_C.get('modes') or ['opening','scene','extra_sticky',
+                                'extra_companion']) | {'extra'}
+_PCB = _C.get('pcb') or {}
+PCB_MIN_W = _PCB.get('minWidth', 120.0)
+PCB_MAX_W = _PCB.get('maxWidth', 600.0)
+PCB_MAX_W_COMPANION = _PCB.get('maxWidthCompanion', 212.0)
+PCB_MIN_H = _PCB.get('minHeight', 64.0)
+PCB_MAX_H = _PCB.get('maxHeight', 2000.0)
+_OVR = _C.get('overrideKeys') or {}
+
+
 def check(path):
     err=[];warn=[]
     ch=load(path)
@@ -174,10 +205,36 @@ def check(path):
     for raw in meta['ui_assemblies']:
         a=json.loads(raw)
         modes[a['mode']]+=1
+        # ── 顶层字段类型 ──
+        #
+        # `UIAssemblyInfo.fromJson` 里 10 个字段有 9 个带 `?? 默认值` 兜底，
+        # 类型写错**只会静默回落**（比如 pcbWidth 写成字符串 → 变默认宽度，
+        # 不报错、只是尺寸不对）。唯独 createdAt 是硬转，会直接抛
+        # `type 'String' is not a subtype of type 'num?'`。
+        # 两种都要拦：静默的那些更难查。
+        if a['mode'] not in MODES:
+            err.append(f"mode '{a['mode']}' 非法（应为 {'/'.join(sorted(MODES))}）")
+        for k in ('pcbWidth','pcbHeight','pcbColorValue','pcbRadius','createdAt'):
+            if k not in a: continue
+            v=a[k]
+            if isinstance(v,bool) or not isinstance(v,(int,float)):
+                extra=("——createdAt 要毫秒时间戳，不是 ISO 字符串"
+                       if k=='createdAt' else "——引擎按 num 读，写错会静默回落默认值")
+                err.append(f"{a['mode']}: {k} 类型应为数字，实为 "
+                           f"{type(v).__name__} {v!r}{extra}")
+        for k in ('elements','pages'):
+            if k in a and not isinstance(a[k],str):
+                err.append(f"{a['mode']}: {k} 应为 JSON **字符串**，"
+                           f"实为 {type(a[k]).__name__}——三层嵌套少了一层 encode")
+
         pw,phh=a['pcbWidth'],a['pcbHeight']
-        maxw = 212.0 if a['mode']=='extra_companion' else 600.0
-        if not (120<=pw<=maxw): err.append(f"{a['mode']}: PCB宽 {pw} 越界(120~{maxw})")
-        if not (64<=phh<=2000): err.append(f"{a['mode']}: PCB高 {phh} 越界")
+        maxw = (PCB_MAX_W_COMPANION if a['mode']=='extra_companion'
+                else PCB_MAX_W)
+        if not (PCB_MIN_W<=pw<=maxw):
+            err.append(f"{a['mode']}: PCB宽 {pw} 越界({PCB_MIN_W:.0f}~{maxw:.0f})")
+        if not (PCB_MIN_H<=phh<=PCB_MAX_H):
+            err.append(f"{a['mode']}: PCB高 {phh} 越界"
+                       f"({PCB_MIN_H:.0f}~{PCB_MAX_H:.0f})")
         pages=json.loads(a['pages'])
         pids={p['id'] for p in pages}
         allids=set(); btn_ids=set(); router={}; key_actions=[]; sends=[]; 
@@ -207,6 +264,20 @@ def check(path):
                 if not m: err.append(f"元素 {e['id']} 既非复合件也无 module"); continue
                 t=m['type']
                 if t not in ATOM_TYPES: err.append(f"未知组件类型 {t}")
+                # material / shape 是**枚举下标整数**，不是字符串。
+                # 写 'solid' / 'rounded' 这类名字，引擎 as int? 读不到，
+                # 静默回落成 0（glass / rectangle）——外观整个不对但不报错。
+                for k,names in (('material',MATERIALS),('shape',SHAPES)):
+                    if k not in m: continue
+                    v=m[k]
+                    if isinstance(v,bool) or not isinstance(v,int):
+                        hint=(f"（想要 '{v}' 应写 {names.index(v)}）"
+                              if isinstance(v,str) and v in names else "")
+                        err.append(f"{m['name']}: {k} 应为枚举下标整数，"
+                                   f"实为 {type(v).__name__} {v!r}{hint}")
+                    elif not (0<=v<len(names)):
+                        err.append(f"{m['name']}: {k} 下标 {v} 越界"
+                                   f"（0~{len(names)-1}）")
                 if t=='button': btn_ids.add(e['id'])
                 # indicator 靠 statusRules 决定颜色；isOn/onColor/offColor
                 # 这些键引擎完全不读（resolveIndicatorActiveState）。
@@ -236,6 +307,30 @@ def check(path):
                             f"标记 {page_keys}，同一页只该有一个")
             check_contrast(p['elements'], warn)
             print(f"     · {p['name']:10s} {p['type']:7s} {n_el:3d}个元素 {len(p['gestures'])}个手势")
+        # ── 面组归属引用 ──
+        # parentSurfaceId 指向不存在的元素时，元件会脱离面组、
+        # 按顶层坐标渲染——位置整个跑偏但不报错。
+        for p in pages:
+            for e in walk(p['elements']):
+                psid=e.get('parentSurfaceId')
+                if psid and psid not in allids:
+                    nm=(e.get('module') or {}).get('name', e['id'])
+                    err.append(f"元素「{nm}」的 parentSurfaceId 指向不存在的元素 {psid}")
+
+        # ── 复合件子件覆写 ──
+        # 外观五项（color/material/shape/borderRadius/opacity）是 UIModule
+        # 的独立字段，不在 properties 里。直接写裸键不报错也存得下，
+        # 但渲染读的是 module.color——改了等于没改（HANDOFF 3.5j）。
+        # 必须用 AppearanceOverrideKeys 的 __ovr_ 前缀。
+        for p in pages:
+            for ov in p.get('propertyOverrides', []):
+                bad=[k for k in ('color','material','shape',
+                                 'borderRadius','opacity','name')
+                     if k in ov.get('overrides',{})]
+                if bad:
+                    err.append(f"复合件覆写 {ov.get('componentId')} 用了裸键 {bad}"
+                               f"——外观/名称覆写必须加 __ovr_ 前缀，否则静默失效")
+
         # linker 校验
         types = {}
         for p in pages:

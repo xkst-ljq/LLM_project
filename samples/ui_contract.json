@@ -1,0 +1,81 @@
+{
+  "_generated_by": "tools/export_ui_contract.py",
+  "_note": "机器生成，请勿手改。引擎改动后重跑本脚本。",
+  "atomTypes": [
+    "button",
+    "image",
+    "indicator",
+    "input",
+    "line",
+    "linker",
+    "math_node",
+    "progress",
+    "select",
+    "slider",
+    "surface",
+    "switch",
+    "text",
+    "timer"
+  ],
+  "materials": [
+    "glass",
+    "solid",
+    "gradient",
+    "outline"
+  ],
+  "shapes": [
+    "rectangle",
+    "rounded",
+    "capsule",
+    "circle",
+    "heart",
+    "star5",
+    "star4"
+  ],
+  "pcb": {
+    "minWidth": 120.0,
+    "maxWidth": 600.0,
+    "minHeight": 64.0,
+    "maxHeight": 2000.0,
+    "defaultWidth": 360.0,
+    "maxWidthCompanion": 212.0
+  },
+  "modes": [
+    "opening",
+    "scene",
+    "extra_sticky",
+    "extra_companion"
+  ],
+  "semanticKeys": {
+    "keyAction": "keyAction",
+    "sendsMessage": "sendsMessage",
+    "blocksWithoutKeyAction": []
+  },
+  "overrideKeys": {
+    "color": "__ovr_color",
+    "material": "__ovr_material",
+    "shape": "__ovr_shape",
+    "borderRadius": "__ovr_borderRadius",
+    "opacity": "__ovr_opacity",
+    "name": "__ovr_name"
+  },
+  "animation": {
+    "types": [
+      "press",
+      "ripple",
+      "flash",
+      "numberPop",
+      "glowPulse",
+      "particleBurst"
+    ],
+    "curves": [
+      "easeInOut",
+      "easeOut",
+      "easeIn",
+      "linear",
+      "bounceOut",
+      "elasticOut"
+    ],
+    "propsKey": "__anim"
+  }
+}
