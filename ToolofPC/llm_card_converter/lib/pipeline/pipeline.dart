@@ -5,6 +5,7 @@ import '../core/conversion_service.dart';
 import '../core/regex_ui_extractor.dart';
 import '../core/ui_assembly_builder.dart';
 import '../core/greeting_sanitizer.dart';
+import '../core/ai_visual_extractor.dart';
 
 /// 三步转译流水线（纯 Dart，平台无关）。
 ///
@@ -243,7 +244,7 @@ class ConversionPipeline {
     }
   }
 
-  /// 第三步：UI 生成。**纯代码，不调 AI。**
+  /// 第三步：UI 生成。
   ///
   /// 插在 AI 归类之后、检查精修之前，理由有二：
   ///
@@ -253,7 +254,7 @@ class ConversionPipeline {
   /// 产物写进 `meta_json` 的 `ui_assemblies` 与 `status_bar_fields`。
   /// 原卡没有可识别界面时**不生成**（用户明确要求「原版没有的不去设计」），
   /// 此时本阶段仍标记为 done，只是没有产出。
-  CardConversionResult runBuildUiStage(CardWorkItem item) {
+  Future<CardConversionResult> runBuildUiStage(CardWorkItem item) async {
     final base = item.stageOutputs[PipelineStage.aiClassify] ??
         item.stageOutputs[PipelineStage.rule];
     if (base == null || !base.success) {
@@ -267,9 +268,24 @@ class ConversionPipeline {
       final card = base.characterData == null
           ? <String, dynamic>{}
           : Map<String, dynamic>.from(base.characterData!);
+
+      UiVisualTheme? visualTheme;
+      final primary = UiAssemblyBuilder.pickPrimary(extraction.usableScripts);
+      if (primary != null && primary.rawReplace.isNotEmpty) {
+        try {
+          final extractedJson = await AiVisualThemeExtractor.extractTheme(primary.rawReplace);
+          if (extractedJson != null) {
+            visualTheme = UiVisualTheme.fromJson(extractedJson);
+          }
+        } catch (_) {
+          // AI 视觉提取失败则静默回落到方案 A 的默认主题
+        }
+      }
+
       final built = UiAssemblyBuilder.build(
         extraction,
         cardName: card['name']?.toString() ?? '',
+        theme: visualTheme,
       );
 
       // ── 剥离开场白里的渲染标记 ──
@@ -402,7 +418,7 @@ class ConversionPipeline {
 
     // UI 生成是纯代码，无论有没有配 AI 都跑。
     try {
-      runBuildUiStage(item);
+      await runBuildUiStage(item);
     } catch (_) {
       item.stageStatus[PipelineStage.buildUi] = StageStatus.skipped;
     }

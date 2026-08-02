@@ -130,14 +130,14 @@ class PipelineRunner {
     }
     _progress(2 / 4);
 
-    // 步骤三：UI 生成（纯代码，不依赖 AI）
+    // 步骤三：UI 生成（根据 API 状态支持 AI 视觉美化）
     //
     // **必须在 `if (!aiOn) return` 之前**：这一步不调模型，
     // 没配 API 的用户同样该拿到 UI。放到后面会被那条 return 挡掉。
     _log('步骤三：UI 生成');
     try {
       final before = item.current?.characterData;
-      pipeline.runBuildUiStage(item);
+      await pipeline.runBuildUiStage(item);
       final after = item.current?.characterData;
       _log(_describeUiResult(before, after));
     } catch (e) {

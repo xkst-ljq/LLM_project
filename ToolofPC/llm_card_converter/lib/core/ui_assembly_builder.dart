@@ -65,16 +65,82 @@ class _Layout {
 ///
 /// 小字（<14px）按 WCAG **AAA 7:1** 要求，不是 4.5:1
 /// ——状态栏的标签基本都是 11~12px。
-class _Palette {
-  static const int pcb = 0xFF15161A;
-  static const int panel = 0xFF1E2027;
-  static const int title = 0xFFFFFFFF;
-  static const int label = 0xFFAAB0BC; // 对 panel 约 7.4:1
-  static const int value = 0xFFE8EDF5;
-  static const int barTrack = 0xFF2A2D36;
-  static const int barFill = 0xFF4FA3D1;
-  static const int accent = 0xFF4FA3D1;
-  static const int buttonBg = 0xFF2A3340;
+class UiVisualTheme {
+  final int pcbColor;
+  final int panelColor;
+  final int titleColor;
+  final int labelColor;
+  final int valueColor;
+  final int barFillColor;
+  final int barTrackColor;
+  final int accentColor;
+  final int buttonBgColor;
+  final double borderRadius;
+  final bool glow;
+
+  const UiVisualTheme({
+    required this.pcbColor,
+    required this.panelColor,
+    required this.titleColor,
+    required this.labelColor,
+    required this.valueColor,
+    required this.barFillColor,
+    required this.barTrackColor,
+    required this.accentColor,
+    required this.buttonBgColor,
+    required this.borderRadius,
+    required this.glow,
+  });
+
+  factory UiVisualTheme.defaultTheme() => const UiVisualTheme(
+        pcbColor: 0xFF15161A,
+        panelColor: 0xFF1E2027,
+        titleColor: 0xFFFFFFFF,
+        labelColor: 0xFFAAB0BC,
+        valueColor: 0xFFE8EDF5,
+        barFillColor: 0xFF4FA3D1,
+        barTrackColor: 0xFF2A2D36,
+        accentColor: 0xFF4FA3D1,
+        buttonBgColor: 0xFF2A3340,
+        borderRadius: 14.0,
+        glow: false,
+      );
+
+  factory UiVisualTheme.fromJson(Map<String, dynamic> json) {
+    int parseColor(dynamic v, int fallback) {
+      if (v is int) return v;
+      if (v is String) {
+        final s = v.trim().replaceAll('#', '');
+        if (s.length == 6) {
+          return int.tryParse('FF$s', radix: 16) ?? fallback;
+        } else if (s.length == 8) {
+          return int.tryParse(s, radix: 16) ?? fallback;
+        }
+      }
+      return fallback;
+    }
+
+    double parseDouble(dynamic v, double fallback) {
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v) ?? fallback;
+      return fallback;
+    }
+
+    final d = UiVisualTheme.defaultTheme();
+    return UiVisualTheme(
+      pcbColor: parseColor(json['pcbColor'], d.pcbColor),
+      panelColor: parseColor(json['panelColor'], d.panelColor),
+      titleColor: parseColor(json['titleColor'], d.titleColor),
+      labelColor: parseColor(json['labelColor'], d.labelColor),
+      valueColor: parseColor(json['valueColor'], d.valueColor),
+      barFillColor: parseColor(json['barFillColor'], d.barFillColor),
+      barTrackColor: parseColor(json['barTrackColor'], d.barTrackColor),
+      accentColor: parseColor(json['accentColor'], d.accentColor),
+      buttonBgColor: parseColor(json['buttonBgColor'], d.buttonBgColor),
+      borderRadius: parseDouble(json['borderRadius'], d.borderRadius).clamp(0.0, 32.0),
+      glow: json['glow'] == true,
+    );
+  }
 }
 
 /// 构建结果。
@@ -103,8 +169,9 @@ class BuiltAssembly {
 class UiAssemblyBuilder {
   const UiAssemblyBuilder._();
 
-  static BuiltAssembly build(UiExtraction ex, {String cardName = ''}) {
+  static BuiltAssembly build(UiExtraction ex, {String cardName = '', UiVisualTheme? theme}) {
     final notes = <String>[];
+    final visualTheme = theme ?? UiVisualTheme.defaultTheme();
 
     if (ex.pluginDependent) {
       notes.add('依赖外部插件，跳过 UI 生成。');
@@ -129,7 +196,7 @@ class UiAssemblyBuilder {
     // 挑字段最多的那条脚本。一张卡常有多个"皮肤"版本
     // （异世界公会有「玩家状态栏」和「玩家状态栏（古早游戏版）」），
     // 内容相同只是外观不同，全转会得到几份重复 UI。
-    final primary = _pickPrimary(usable);
+    final primary = pickPrimary(usable);
     if (primary != null) {
       final skipped = usable.length - 1;
       if (skipped > 0) {
@@ -142,6 +209,7 @@ class UiAssemblyBuilder {
         nextId,
         cardName,
         ex.branchPresets,
+        visualTheme,
       );
       if (r != null) {
         assemblies.add(r.assemblyJson);
@@ -155,7 +223,7 @@ class UiAssemblyBuilder {
     // `onclick="send('...')"` 是明确的交互意图，
     // 对应 button + sendsMessage，做成 opening 开场页。
     if (ex.openingActions.isNotEmpty) {
-      final json = _buildOpeningPage(ex.openingActions, nextId, cardName);
+      final json = _buildOpeningPage(ex.openingActions, nextId, cardName, visualTheme);
       assemblies.add(json);
       notes.add('开场消息里的 ${ex.openingActions.length} 个选项'
           '已转为可点击按钮（opening 开场页）。');
@@ -185,7 +253,7 @@ class UiAssemblyBuilder {
   ///
   /// 排序依据：**数值字段数优先**（状态面板的本质是数值），
   /// 数值相同再比总字段数。
-  static UiRegexScript? _pickPrimary(List<UiRegexScript> scripts) {
+  static UiRegexScript? pickPrimary(List<UiRegexScript> scripts) {
     if (scripts.isEmpty) return null;
     final sorted = [...scripts]
       ..sort((a, b) {
@@ -202,6 +270,7 @@ class UiAssemblyBuilder {
     String Function(String) nextId,
     String cardName,
     Map<int, Map<String, String>> branchPresets,
+    UiVisualTheme theme,
   ) {
     final notes = <String>[];
 
@@ -241,7 +310,7 @@ class UiAssemblyBuilder {
       w: innerW - collapseSize - 6,
       h: _Layout.titleHeight,
       fontSize: 15,
-      color: _Palette.title,
+      color: theme.titleColor,
       align: 'left',
       layer: elements.length + 1,
     ));
@@ -261,7 +330,7 @@ class UiAssemblyBuilder {
       w: collapseSize,
       h: _Layout.titleHeight,
       fontSize: 14,
-      color: _Palette.label,
+      color: theme.labelColor,
       align: 'center',
       layer: elements.length + 1,
     ));
@@ -275,6 +344,7 @@ class UiAssemblyBuilder {
       layer: elements.length + 1,
       sendsMessage: false,
       keyAction: true,
+      color: theme.accentColor,
     ));
     y += _Layout.titleHeight + _Layout.sectionGap;
 
@@ -308,7 +378,7 @@ class UiAssemblyBuilder {
         w: _Layout.labelWidth,
         h: _Layout.rowHeight,
         fontSize: 11,
-        color: _Palette.label,
+        color: theme.labelColor,
         align: 'left',
         layer: elements.length + 1,
       ));
@@ -321,6 +391,8 @@ class UiAssemblyBuilder {
         h: _Layout.barHeight,
         statusFieldId: fieldId,
         layer: elements.length + 1,
+        barFillColor: theme.barFillColor,
+        barTrackColor: theme.barTrackColor,
       ));
       final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
       statusFields.add({
@@ -355,7 +427,7 @@ class UiAssemblyBuilder {
         w: _Layout.labelWidth,
         h: _Layout.rowHeight,
         fontSize: 11,
-        color: _Palette.label,
+        color: theme.labelColor,
         align: 'left',
         layer: elements.length + 1,
       ));
@@ -368,7 +440,7 @@ class UiAssemblyBuilder {
         w: innerW - _Layout.labelWidth - 6,
         h: _Layout.rowHeight,
         fontSize: 12,
-        color: _Palette.value,
+        color: theme.valueColor,
         align: 'left',
         layer: elements.length + 1,
         statusFieldId: fieldId,
@@ -397,8 +469,9 @@ class UiAssemblyBuilder {
       y: 0,
       w: pcbW,
       h: pcbH,
-      color: _Palette.panel,
+      color: theme.panelColor,
       layer: 0,
+      radius: theme.borderRadius,
     );
 
     // extra_sticky：常驻条，跟着消息流顶部显示。
@@ -413,6 +486,8 @@ class UiAssemblyBuilder {
         pcbH: pcbH,
         pageName: '状态',
         elements: [bg, ...elements],
+        pcbColor: theme.pcbColor,
+        pcbRadius: theme.borderRadius,
       ),
       statusFields: statusFields,
       notes: notes,
@@ -425,6 +500,7 @@ class UiAssemblyBuilder {
     List<String> actions,
     String Function(String) nextId,
     String cardName,
+    UiVisualTheme theme,
   ) {
     const pcbW = 320.0;
     const padding = 16.0;
@@ -442,7 +518,7 @@ class UiAssemblyBuilder {
       w: innerW,
       h: 28,
       fontSize: 16,
-      color: _Palette.title,
+      color: theme.titleColor,
       align: 'center',
       layer: 1,
     ));
@@ -461,7 +537,7 @@ class UiAssemblyBuilder {
         y: y,
         w: innerW,
         h: _Layout.buttonHeight,
-        color: _Palette.buttonBg,
+        color: theme.buttonBgColor,
         layer: elements.length + 1,
         radius: 8,
       ));
@@ -474,7 +550,7 @@ class UiAssemblyBuilder {
         w: innerW - 20,
         h: 18,
         fontSize: 12,
-        color: _Palette.value,
+        color: theme.valueColor,
         align: 'left',
         layer: elements.length + 1,
       ));
@@ -496,6 +572,7 @@ class UiAssemblyBuilder {
         keyAction: true,
         message: label,
         targetBranchIndex: i,
+        color: theme.accentColor,
       ));
       pressPairs.add((surface: surfaceId, button: buttonId));
       y += _Layout.buttonHeight + 8;
@@ -512,6 +589,7 @@ class UiAssemblyBuilder {
         surfaceId: pressPairs[i].surface,
         y: i * 52.0,
         layer: elements.length + 1,
+        color: theme.accentColor,
       ));
     }
 
@@ -523,8 +601,9 @@ class UiAssemblyBuilder {
       y: 0,
       w: pcbW,
       h: pcbH,
-      color: _Palette.pcb,
+      color: theme.pcbColor,
       layer: 0,
+      radius: theme.borderRadius,
     );
 
     return _assembly(
@@ -535,6 +614,8 @@ class UiAssemblyBuilder {
       pcbH: pcbH,
       pageName: '开场',
       elements: [bg, ...elements],
+      pcbColor: theme.pcbColor,
+      pcbRadius: theme.borderRadius,
     );
   }
 
@@ -675,6 +756,8 @@ class UiAssemblyBuilder {
     required double h,
     required int layer,
     required String statusFieldId,
+    required int barFillColor,
+    required int barTrackColor,
   }) =>
       _element(
         id: id,
@@ -687,7 +770,7 @@ class UiAssemblyBuilder {
           id: id,
           name: name,
           type: 'progress',
-          color: _Palette.barFill,
+          color: barFillColor,
           shape: 2, // capsule
           radius: h / 2,
           props: {
@@ -695,7 +778,7 @@ class UiAssemblyBuilder {
             'max': 100.0,
             'current': 0.0,
             'progressShape': 'capsule',
-            'trackColor': _Palette.barTrack,
+            'trackColor': barTrackColor,
             'dataChannel': _channel(
               label: name,
               elementId: id,
@@ -717,6 +800,7 @@ class UiAssemblyBuilder {
     required int layer,
     required bool sendsMessage,
     required bool keyAction,
+    required int color,
     String message = '',
     int? targetBranchIndex,
   }) =>
@@ -731,7 +815,7 @@ class UiAssemblyBuilder {
           id: id,
           name: name,
           type: 'button',
-          color: _Palette.accent,
+          color: color,
           props: {
             if (sendsMessage) 'sendsMessage': true,
             if (keyAction) 'keyAction': true,
@@ -761,6 +845,7 @@ class UiAssemblyBuilder {
     required String surfaceId,
     required double y,
     required int layer,
+    required int color,
   }) =>
       _element(
         id: id,
@@ -774,7 +859,7 @@ class UiAssemblyBuilder {
           id: id,
           name: name,
           type: 'linker',
-          color: _Palette.accent,
+          color: color,
           props: {
             'linker': {
               'scheme': 'click_to_surface_press',
@@ -820,7 +905,7 @@ class UiAssemblyBuilder {
 
   /// 组装成顶层 assembly。
   ///
-  /// **三层嵌套在这里收口**：`elements` 与 `pages` 必须是 JSON 字符串。
+  /// **三层嵌套在这里收口**：`elements` 与 `pages` 必须 be JSON 字符串。
   /// `createdAt` 必须是毫秒时间戳（写 ISO 字符串会直接抛异常）。
   static String _assembly({
     required String id,
@@ -830,6 +915,8 @@ class UiAssemblyBuilder {
     required double pcbH,
     required String pageName,
     required List<Map<String, dynamic>> elements,
+    required int pcbColor,
+    required double pcbRadius,
   }) {
     final page = {
       'id': 'page_$id',
@@ -849,8 +936,8 @@ class UiAssemblyBuilder {
       'pages': jsonEncode([page]),
       'pcbWidth': pcbW,
       'pcbHeight': pcbH,
-      'pcbColorValue': _Palette.pcb,
-      'pcbRadius': 14.0,
+      'pcbColorValue': pcbColor,
+      'pcbRadius': pcbRadius,
       'pcbRounded': true,
       'createdAt': DateTime.now().millisecondsSinceEpoch,
     });
