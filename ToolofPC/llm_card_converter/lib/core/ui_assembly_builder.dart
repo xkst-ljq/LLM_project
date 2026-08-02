@@ -208,6 +208,7 @@ class UiAssemblyBuilder {
         cardName,
         ex.branchPresets,
         visualTheme,
+        ex.openingActions,
       );
       if (r != null) {
         assemblies.add(r.assemblyJson);
@@ -269,6 +270,7 @@ class UiAssemblyBuilder {
     String cardName,
     Map<int, Map<String, String>> branchPresets,
     UiVisualTheme theme,
+    List<String> openingActions,
   ) {
     final notes = <String>[];
 
@@ -309,10 +311,13 @@ class UiAssemblyBuilder {
     const pcbW = 212.0;
     final innerW = pcbW - _Layout.pcbPadding * 2;
 
-    // 创建三个平级页面的 ID
+    final hasActions = openingActions.isNotEmpty;
+    final tabCount = hasActions ? 3 : 2;
+
+    // 创建平级页面的 ID
     final page1Id = 'page_${nextId("page")}';
     final page2Id = 'page_${nextId("page")}';
-    final page3Id = 'page_${nextId("page")}';
+    final page3Id = hasActions ? 'page_${nextId("page")}' : '';
 
     final statusFields = <Map<String, dynamic>>[];
 
@@ -320,6 +325,7 @@ class UiAssemblyBuilder {
     final elements1 = _buildPageElements(
       pageIndex: 1,
       fields: tab1Fields,
+      actions: const [],
       nextId: nextId,
       branchPresets: branchPresets,
       statusFields: statusFields,
@@ -329,6 +335,7 @@ class UiAssemblyBuilder {
       page3Id: page3Id,
       pcbW: pcbW,
       innerW: innerW,
+      tabCount: tabCount,
     );
     final page1 = {
       'id': page1Id,
@@ -345,6 +352,7 @@ class UiAssemblyBuilder {
     final elements2 = _buildPageElements(
       pageIndex: 2,
       fields: tab2Fields,
+      actions: const [],
       nextId: nextId,
       branchPresets: branchPresets,
       statusFields: statusFields,
@@ -354,6 +362,7 @@ class UiAssemblyBuilder {
       page3Id: page3Id,
       pcbW: pcbW,
       innerW: innerW,
+      tabCount: tabCount,
     );
     final page2 = {
       'id': page2Id,
@@ -366,32 +375,38 @@ class UiAssemblyBuilder {
       'propertyOverrides': <dynamic>[],
     };
 
-    // 编译第三页 (🎒 装备)
-    final elements3 = _buildPageElements(
-      pageIndex: 3,
-      fields: tab3Fields,
-      nextId: nextId,
-      branchPresets: branchPresets,
-      statusFields: statusFields,
-      theme: theme,
-      page1Id: page1Id,
-      page2Id: page2Id,
-      page3Id: page3Id,
-      pcbW: pcbW,
-      innerW: innerW,
-    );
-    final page3 = {
-      'id': page3Id,
-      'name': '装备',
-      'type': 'base',
-      'parentPageId': null,
-      'sortOrder': 2,
-      'elements': elements3,
-      'gestures': <dynamic>[],
-      'propertyOverrides': <dynamic>[],
-    };
+    // 编译第三页 (🎯 选项)
+    final elements3 = hasActions
+        ? _buildPageElements(
+            pageIndex: 3,
+            fields: const [],
+            actions: openingActions,
+            nextId: nextId,
+            branchPresets: branchPresets,
+            statusFields: statusFields,
+            theme: theme,
+            page1Id: page1Id,
+            page2Id: page2Id,
+            page3Id: page3Id,
+            pcbW: pcbW,
+            innerW: innerW,
+            tabCount: tabCount,
+          )
+        : const <Map<String, dynamic>>[];
+    final page3 = hasActions
+        ? {
+            'id': page3Id,
+            'name': '选项',
+            'type': 'base',
+            'parentPageId': null,
+            'sortOrder': 2,
+            'elements': elements3,
+            'gestures': <dynamic>[],
+            'propertyOverrides': <dynamic>[],
+          }
+        : null;
 
-    // 动态计算最大高度，使三页高度对齐统一不缩放
+    // 动态计算最大高度，使页面高度对齐统一不缩放
     double getMaxHeight(List<Map<String, dynamic>> elList) {
       double maxH = 0.0;
       for (final e in elList) {
@@ -405,8 +420,12 @@ class UiAssemblyBuilder {
       return (maxH + _Layout.pcbPadding).clamp(64.0, 2000.0).toDouble();
     }
 
-    final pcbH = [getMaxHeight(elements1), getMaxHeight(elements2), getMaxHeight(elements3)]
-        .reduce((a, b) => a > b ? a : b);
+    final heights = [
+      getMaxHeight(elements1),
+      getMaxHeight(elements2),
+      if (hasActions) getMaxHeight(elements3),
+    ];
+    final pcbH = heights.reduce((a, b) => a > b ? a : b);
 
     // 统一将底板高度打补丁
     void patchBackgroundHeight(List<Map<String, dynamic>> elList) {
@@ -418,9 +437,10 @@ class UiAssemblyBuilder {
     }
     patchBackgroundHeight(elements1);
     patchBackgroundHeight(elements2);
-    patchBackgroundHeight(elements3);
+    if (hasActions) patchBackgroundHeight(elements3);
 
-    notes.add('通过多页面 (📊属性/📁档案/🎒装备) 与顶置 Tab 标签按钮整合复杂面板属性，防止界面拥挤。');
+    final pagesLabel = hasActions ? '📊属性/📁档案/🎯选项' : '📊属性/📁档案';
+    notes.add('通过多页面 ($pagesLabel) 与顶置 Tab 标签切换按钮整合面板属性与预设选项，使信息流与操作深度聚合。');
 
     return _PanelResult(
       assemblyJson: _assembly(
@@ -429,7 +449,7 @@ class UiAssemblyBuilder {
         mode: 'extra_companion',
         pcbW: pcbW,
         pcbH: pcbH,
-        pages: [page1, page2, page3],
+        pages: [page1, page2, if (page3 != null) page3],
         pcbColor: theme.pcbColor,
         pcbRadius: theme.borderRadius,
       ),
@@ -441,6 +461,7 @@ class UiAssemblyBuilder {
   static List<Map<String, dynamic>> _buildPageElements({
     required int pageIndex,
     required List<UiField> fields,
+    required List<String> actions,
     required String Function(String) nextId,
     required Map<int, Map<String, String>> branchPresets,
     required List<Map<String, dynamic>> statusFields,
@@ -450,18 +471,19 @@ class UiAssemblyBuilder {
     required String page3Id,
     required double pcbW,
     required double innerW,
+    required int tabCount,
   }) {
     final elements = <Map<String, dynamic>>[];
     var y = _Layout.pcbPadding;
 
     // ── 1. 顶部 Tab 标签切换栏 ──
-    final tabW = (innerW - 12.0) / 3;
+    final tabW = (innerW - (tabCount - 1) * 6.0) / tabCount;
     final tabH = 22.0;
 
     final tabs = [
       (index: 1, title: '📊 属性', pageId: page1Id),
       (index: 2, title: '📁 档案', pageId: page2Id),
-      (index: 3, title: '🎒 装备', pageId: page3Id),
+      if (tabCount > 2) (index: 3, title: '🎯 选项', pageId: page3Id),
     ];
 
     final routerIds = <int, String>{};
@@ -540,76 +562,138 @@ class UiAssemblyBuilder {
     const colLabelW = 50.0;
 
     // ── 2. 渲染专页的属性列表数据（单列最松弛排布，完全不拥挤） ──
-    for (final f in fields) {
-      final fieldId = 'sf_${_slug(f.name)}';
-      elements.add(_text(
-        id: nextId('el'),
-        name: '${f.name}标签',
-        text: _decorateEmoji(f.name),
-        x: _Layout.pcbPadding,
-        y: y,
-        w: colLabelW,
-        h: _Layout.rowHeight,
-        fontSize: 10,
-        color: theme.labelColor,
-        align: 'left',
-        layer: elements.length + 1,
-      ));
-
-      if (f.isNumeric && pageIndex == 1) {
-        elements.add(_progress(
-          id: nextId('el'),
-          name: f.name,
-          x: _Layout.pcbPadding + colLabelW + 6,
-          y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-          w: innerW - colLabelW - 6,
-          h: _Layout.barHeight,
-          statusFieldId: fieldId,
+    if (pageIndex == 3 && tabCount > 2) {
+      final pressPairs = <({String surface, String button})>[];
+      for (var i = 0; i < actions.length; i++) {
+        final label = actions[i];
+        final surfaceId = nextId('el');
+        elements.add(_surface(
+          id: surfaceId,
+          name: '选项底_${i + 1}',
+          x: _Layout.pcbPadding,
+          y: y,
+          w: innerW,
+          h: _Layout.buttonHeight,
+          color: theme.buttonBgColor,
           layer: elements.length + 1,
-          barFillColor: _barColorOf(f.name, theme.barFillColor),
-          barTrackColor: theme.barTrackColor,
+          radius: 8,
         ));
-        final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
-        statusFields.add({
-          'id': fieldId,
-          'name': f.name,
-          'type': 'number',
-          'initial_value': numPresets['0'] ?? '0',
-          'min_value': 0.0,
-          'max_value': 100.0,
-          'pin_side': 'none',
-          'order': statusFields.length,
-          'owner': 'player',
-          if (numPresets.length > 1) 'branch_initial_values': numPresets,
-        });
-      } else {
         elements.add(_text(
           id: nextId('el'),
-          name: f.name,
-          text: '—',
-          x: _Layout.pcbPadding + colLabelW + 6,
-          y: y,
-          w: innerW - colLabelW - 6,
-          h: _Layout.rowHeight,
-          fontSize: 11,
+          name: '选项文_${i + 1}',
+          text: label,
+          x: _Layout.pcbPadding + 10,
+          y: y + 8,
+          w: innerW - 20,
+          h: 18,
+          fontSize: 10,
           color: theme.valueColor,
           align: 'left',
           layer: elements.length + 1,
-          statusFieldId: fieldId,
         ));
-        final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
-        statusFields.add({
-          'id': fieldId,
-          'name': f.name,
-          'type': 'text',
-          'initial_value': txtPresets['0'] ?? '',
-          'pin_side': 'none',
-          'order': statusFields.length,
-          'owner': 'player',
-          if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
-        });
+        final buttonId = nextId('el');
+        elements.add(_button(
+          id: buttonId,
+          name: '选项_${i + 1}',
+          x: _Layout.pcbPadding,
+          y: y,
+          w: innerW,
+          h: _Layout.buttonHeight,
+          layer: elements.length + 1,
+          sendsMessage: true,
+          keyAction: true,
+          message: label,
+          targetBranchIndex: i,
+          color: theme.accentColor,
+        ));
+        pressPairs.add((surface: surfaceId, button: buttonId));
+        y += _Layout.buttonHeight + 6.0;
       }
-      y += _Layout.rowHeight + _Layout.rowGap;
+
+      // 按压反馈
+      for (var i = 0; i < pressPairs.length; i++) {
+        elements.add(_pressLinker(
+          id: nextId('el'),
+          name: '选项_${i + 1}按压',
+          buttonId: pressPairs[i].button,
+          surfaceId: pressPairs[i].surface,
+          y: i * 52.0,
+          layer: elements.length + 1,
+          color: theme.accentColor,
+        ));
+      }
+    } else {
+      for (final f in fields) {
+        final fieldId = 'sf_${_slug(f.name)}';
+        elements.add(_text(
+          id: nextId('el'),
+          name: '${f.name}标签',
+          text: _decorateEmoji(f.name),
+          x: _Layout.pcbPadding,
+          y: y,
+          w: colLabelW,
+          h: _Layout.rowHeight,
+          fontSize: 10,
+          color: theme.labelColor,
+          align: 'left',
+          layer: elements.length + 1,
+        ));
+
+        if (f.isNumeric && pageIndex == 1) {
+          elements.add(_progress(
+            id: nextId('el'),
+            name: f.name,
+            x: _Layout.pcbPadding + colLabelW + 6,
+            y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
+            w: innerW - colLabelW - 6,
+            h: _Layout.barHeight,
+            statusFieldId: fieldId,
+            layer: elements.length + 1,
+            barFillColor: _barColorOf(f.name, theme.barFillColor),
+            barTrackColor: theme.barTrackColor,
+          ));
+          final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
+          statusFields.add({
+            'id': fieldId,
+            'name': f.name,
+            'type': 'number',
+            'initial_value': numPresets['0'] ?? '0',
+            'min_value': 0.0,
+            'max_value': 100.0,
+            'pin_side': 'none',
+            'order': statusFields.length,
+            'owner': 'player',
+            if (numPresets.length > 1) 'branch_initial_values': numPresets,
+          });
+        } else {
+          elements.add(_text(
+            id: nextId('el'),
+            name: f.name,
+            text: '—',
+            x: _Layout.pcbPadding + colLabelW + 6,
+            y: y,
+            w: innerW - colLabelW - 6,
+            h: _Layout.rowHeight,
+            fontSize: 11,
+            color: theme.valueColor,
+            align: 'left',
+            layer: elements.length + 1,
+            statusFieldId: fieldId,
+          ));
+          final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
+          statusFields.add({
+            'id': fieldId,
+            'name': f.name,
+            'type': 'text',
+            'initial_value': txtPresets['0'] ?? '',
+            'pin_side': 'none',
+            'order': statusFields.length,
+            'owner': 'player',
+            if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
+          });
+        }
+        y += _Layout.rowHeight + _Layout.rowGap;
+      }
     }
 
     final pcbH = (y + _Layout.pcbPadding).clamp(64.0, 2000.0).toDouble();
