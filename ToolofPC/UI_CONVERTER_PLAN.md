@@ -405,6 +405,54 @@ AI 只产出这种结构化描述，**不直接吐 assembly JSON**。
 - 需要 2~3 张不同风格的卡验证「正则 = 主要机制」这个结论的普适性。
 
 
+##### 已实现：`lib/core/regex_ui_extractor.dart`（纯代码，不调 AI）
+
+五张真实卡实测通过：
+
+| 卡 | 判定 | 结果 |
+|---|---|---|
+| 黑曜石·法外特区 | ✅ 可转译 | 状态栏 17 字段（4 进度条）+ 前端 5 字段 + 开场按钮 5 个 |
+| 玲茹 | ✅ 可转译 | 12 字段（4 数值） |
+| 异世界公会 | ✅ 可转译 | 8 条脚本，玩家状态栏 15 字段（10 数值） |
+| 丧尸末日系统 | ○ 无 UI | 0 条正则，不生成 |
+| WuWa Solaris-3 | ⛔ 插件依赖 | 3 个外部 JS，只转文本 |
+
+##### 三个实测才发现的坑
+
+**1. `enabled:false` 的插件不算依赖。**
+黑曜石带了个关闭的 MVU 残留，它的 UI 完全靠正则、可以正常转。
+只要见 `import` 就拒绝会**误杀好卡**。必须递归找 `type:script` 且
+`enabled:true` 的条目。
+
+**2. URL 正则不能用非贪婪。**
+`[^\s]+?\.js` 会在域名 `testingcf.jsdelivr.net` 的 `.js` 处截断，
+得到 `https://testingcf.js` 这种假地址。
+
+**3. 字段类型必须结合 CSS 回填。**
+黑曜石的「生命/精神/体力/饱腹」在 `findRegex` 里写的是 `(.*?)`（文本），
+但 `replaceString` 里有 `width: $5`~`width: $8`
+——**它们其实是百分比进度条**。
+
+只看 `findRegex` 会把 4 个进度条全判成文本。
+回填后 4/4 精确命中，故新增 [UiFieldType.percent]。
+
+##### 输出的数据结构
+
+```
+UiExtraction
+  ├─ pluginDependent / pluginUrls   ← 为真时不生成 UI
+  ├─ openingActions[]               ← onclick="send('...')" 的文案
+  └─ scripts[]
+       ├─ kind        tagCapture / barCapture / decoration / cleanup
+       ├─ fields[]    { name, type, captureIndex, maxCaptureIndex }
+       ├─ visuals     { progressBars, flexRows, gradient, ... }
+       ├─ sections[]  作者写的 HTML 注释（自带布局说明）
+       └─ rawReplace  原始 CSS，交给 AI 判断视觉形态
+```
+
+`fields` 的 `captureIndex` 与 `replaceString` 里的 `$N` 一一对应，
+这是把「字段」和「HTML 里的位置」对上的关键。
+
 #### 3b. 构建层（纯代码，**绝不交给 AI**）
 
 把意图描述翻译成合法 assembly JSON。
