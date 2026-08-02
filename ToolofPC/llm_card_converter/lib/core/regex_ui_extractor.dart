@@ -37,6 +37,8 @@
 /// 正则脚本的用途分类。
 library;
 
+import 'greeting_sanitizer.dart';
+
 enum UiRegexKind {
   /// `<字段>(.*?)</字段>` —— 自定义 XML 标签。
   tagCapture,
@@ -246,30 +248,6 @@ class UiExtraction {
 
   /// 净化的第一条消息文本，供 openingUI 整合卡内气泡显示。
   final String cleanFirstMes;
-
-  final List<String> pluginUrls;
-
-  /// `first_mes` 里 `onclick="send('...')"` 的文案。
-  ///
-  /// 这是明确的交互意图，对应 button + sendsMessage。
-  final List<String> openingActions;
-
-  /// 各开场分支的初始状态：分支下标 -> (字段名 -> 初值)。
-  ///
-  /// ## 数据从哪来
-  ///
-  /// `first_mes` 与 `alternate_greetings` 里就写着，例如：
-  ///
-  /// ```
-  /// <精神>84%</精神><体力>92%</体力><势力>无</势力>
-  /// ```
-  ///
-  /// 不同开场白往往给出**不同的起始值**——「新人入狱」精神 84%、
-  /// 「狱警入职」精神 90%。这是作者精心设计的开局差异，
-  /// 只取一套会把它们全抹平。
-  ///
-  /// 分支 0 = `first_mes`，之后依次是 `alternate_greetings`。
-  final Map<int, Map<String, String>> branchPresets;
 
   /// 给用户看的说明（为什么某些脚本被跳过）。
   final List<String> notes;

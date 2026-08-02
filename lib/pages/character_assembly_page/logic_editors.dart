@@ -870,7 +870,7 @@ mixin _AssemblyEditorsLogic
                             ),
                             const SizedBox(height: 10),
                             DropdownButtonFormField<int>(
-                              value: targetBranchIndex ?? 0,
+                              initialValue: targetBranchIndex ?? 0,
                               decoration: const InputDecoration(
                                 labelText: '点击后通往的开场白',
                                 contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),

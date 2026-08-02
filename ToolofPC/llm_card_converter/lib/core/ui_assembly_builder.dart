@@ -930,27 +930,31 @@ class UiAssemblyBuilder {
     required int color,
     String message = '',
     int? targetBranchIndex,
-  }) =>
-      _element(
+  }) {
+    final props = <String, dynamic>{
+      if (sendsMessage) 'sendsMessage': true,
+      if (keyAction) 'keyAction': true,
+      if (message.isNotEmpty) 'messageText': message,
+    };
+    if (targetBranchIndex != null) {
+      props['targetBranchIndex'] = targetBranchIndex;
+    }
+    return _element(
+      id: id,
+      x: x,
+      y: y,
+      w: w,
+      h: h,
+      layer: layer,
+      module: _module(
         id: id,
-        x: x,
-        y: y,
-        w: w,
-        h: h,
-        layer: layer,
-        module: _module(
-          id: id,
-          name: name,
-          type: 'button',
-          color: color,
-          props: {
-            if (sendsMessage) 'sendsMessage': true,
-            if (keyAction) 'keyAction': true,
-            if (message.isNotEmpty) 'messageText': message,
-            if (targetBranchIndex != null) 'targetBranchIndex': targetBranchIndex,
-          },
-        ),
-      );
+        name: name,
+        type: 'button',
+        color: color,
+        props: props,
+      ),
+    );
+  }
 
   /// 联动器：把按钮的点击连到底板的按压动画。
   ///
