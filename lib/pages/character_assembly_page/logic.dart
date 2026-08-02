@@ -1627,9 +1627,19 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _info.elementsJson = jsonEncode(
       _elements.map((element) => element.toJson()).toList(),
     );
-    _info.pagesJson = jsonEncode(
+    // 页面数据要落到**当前正在编辑的分支**上。
+    //
+    // 无条件写 `pagesJson` 会把分支 2 的内容盖到主支路——
+    // 作者在分支里改了半天，回主线一看全变了，而且主线原样已丢失。
+    // 见 logic_branch.dart 的分支体系。
+    final pagesEncoded = jsonEncode(
       _orderedPages().map((page) => page.toJson()).toList(),
     );
+    if (_editingBranch == 0) {
+      _info.pagesJson = pagesEncoded;
+    } else {
+      _info.branchVariants['$_editingBranch'] = pagesEncoded;
+    }
     _info.pcbWidth = _pcbSize.width;
     _info.pcbHeight = _pcbSize.height;
     _info.pcbColorValue = _pcbColor.toARGB32();

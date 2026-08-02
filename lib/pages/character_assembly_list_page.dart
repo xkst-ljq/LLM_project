@@ -16,6 +16,12 @@ class UIAssemblyListPage extends StatefulWidget {
   /// 卡类型（`character` / `system`），决定可选条目集合。
   final String cardType;
 
+  /// 各开场分支的名称（按开场白顺序）。
+  ///
+  /// 长度 ≤1 表示只有主支路；>1 则每条开场白对应一个平级分支，
+  /// 作者可在编辑器里为不同分支设计不同界面 / 不同初始数据。
+  final List<String> branchNames;
+
   const UIAssemblyListPage({
     super.key,
     required this.meta,
@@ -203,6 +209,7 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
           statusFields: widget.meta.statusBarFields,
           cardEntries: widget.cardEntries,
           cardType: widget.cardType,
+          branchNames: widget.branchNames,
         ),
       ),
     );

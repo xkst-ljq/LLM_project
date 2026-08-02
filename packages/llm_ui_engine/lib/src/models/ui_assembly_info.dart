@@ -72,18 +72,42 @@ class UIAssemblyInfo {
   double pcbRadius;
   DateTime createdAt;
 
+  /// 各开场分支的页面变体：分支下标 -> 该分支专属的 `pagesJson`。
+  ///
+  /// ## 解决什么
+  ///
+  /// 一张卡有多条开场白时，各条是**平级分支**
+  /// （「新人入狱」「狱警入职」…），作者可能希望不同开局
+  /// 看到不同的界面——或者界面相同但初始数据不同。
+  ///
+  /// ## 与 [pagesJson] 的关系
+  ///
+  /// [pagesJson] 是**主支路（分支 0）**，同时充当兜底：
+  /// 某分支没有变体时用它渲染。因此：
+  ///
+  /// - 单开场白的卡：这个 Map 恒为空，零影响；
+  /// - 作者只改了分支 2：Map 里只有 `{'2': ...}`，其余照搬主支路。
+  ///
+  /// **不为每个分支都存一份**是刻意的：全量复制会让存档膨胀数倍，
+  /// 而且主支路改版式后，未改动的分支应当自动跟随。
+  ///
+  /// 键用 String 是为了直接进 JSON。
+  Map<String, String> branchVariants;
+
   UIAssemblyInfo({
     required this.id,
     this.name = '未命名 UI',
     this.mode = 'extra',
     this.elementsJson = '[]',
     this.pagesJson = '[]',
+    Map<String, String>? branchVariants,
     this.pcbWidth = defaultPcbWidth,
     this.pcbHeight = 800,
     this.pcbColorValue = 0xFFFFFFFF,
     this.pcbRadius = defaultPcbRadius,
     DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+  })  : branchVariants = branchVariants ?? <String, String>{},
+        createdAt = createdAt ?? DateTime.now();
 
   String get modeLabel {
     switch (mode) {
@@ -117,6 +141,8 @@ class UIAssemblyInfo {
     // 继续写出布尔字段：老版本读到新卡时仍能得到一个合理的圆角形态。
     'pcbRounded': pcbRadius > 0,
     'createdAt': createdAt.millisecondsSinceEpoch,
+    // 空表不落盘：单开场白的卡不该平白多一个空字段。
+    if (branchVariants.isNotEmpty) 'branchVariants': branchVariants,
   };
 
   factory UIAssemblyInfo.fromJson(Map<String, dynamic> json) => UIAssemblyInfo(
@@ -137,7 +163,36 @@ class UIAssemblyInfo {
     createdAt: DateTime.fromMillisecondsSinceEpoch(
       (json['createdAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
     ),
+    branchVariants: _readBranchVariants(json['branchVariants']),
   );
+
+  /// 读分支变体表。键必须是非负整数下标，脏数据一律丢弃。
+  static Map<String, String> _readBranchVariants(dynamic raw) {
+    if (raw is! Map) return <String, String>{};
+    final out = <String, String>{};
+    raw.forEach((key, value) {
+      final k = key.toString().trim();
+      final idx = int.tryParse(k);
+      if (idx == null || idx < 0) return;
+      final v = value?.toString() ?? '';
+      if (v.isNotEmpty && v != '[]') out[k] = v;
+    });
+    return out;
+  }
+
+  /// 取某分支实际生效的 `pagesJson`。
+  ///
+  /// 没有专属变体时回落主支路——即用户说的
+  /// 「如果没有设计分支方案，所有的分支方案就照搬主方案」。
+  String pagesJsonForBranch(int branch) =>
+      branchVariants['\$branch'] ?? pagesJson;
+
+  /// 该分支是否有专属设计（而非照搬主支路）。
+  ///
+  /// 编辑器用它给分支切换器加标记，让作者一眼看出
+  /// 哪些分支自己改过、哪些还在跟随主支路。
+  bool hasBranchVariant(int branch) =>
+      branch != 0 && branchVariants.containsKey('\$branch');
 
   String toJsonString() => jsonEncode(toJson());
 

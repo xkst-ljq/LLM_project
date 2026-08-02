@@ -636,9 +636,28 @@ UI 生成是**纯代码**，必须放在这条 return **之前**，
 2. **量程超 0~100 的字段退回文本**。「点数」在 0~100 的条里会永远满格，
    反而失真。
 
-待办：
-- [ ] 编辑器的分支切换器（含清空/继承主支路）
-- [ ] 找个空位常驻显示「当前编辑哪个分支」（用户提出，防止改错地方）
+编辑器侧（已完成）：
+
+| 改动 | 说明 |
+|---|---|
+| `UIAssemblyInfo.branchVariants` | 分支下标 → 该分支专属 pagesJson，空表不落盘 |
+| `pagesJsonForBranch()` | 没有变体就回落主支路 |
+| `logic_branch.dart` | 分支切换、继承/清空、指示器 |
+| 顶栏常驻指示 | 多分支时显示当前分支，一眼可见 |
+| 运行时按分支渲染 | `_restorePages(branch: sessionState.branchIndex)` |
+
+**三个避坑点：**
+
+1. **切分支前必须先存**。画布元件在 `_elements`，不调
+   `_syncCanvasStateIntoActivePage` 就不会回写 `_pages`——
+   切走再回来会发现白改了。
+2. **`_persistAssemblyElements` 要按分支落盘**。它原本无条件写
+   `pagesJson`，在分支 2 编辑时会**把分支内容盖到主支路**，
+   而且主支路原样就此丢失。
+3. **继承主支路时必须换 id**。页面与元件 id 若与主支路重复，
+   引擎按 id 索引会张冠李戴。用两遍替换：先换结构里的
+   `id`/`parentPageId`/`parentSurfaceId`，再全文替换
+   linker 等深层引用。
 
 #### P0-2 转译后的开场白仍带渲染标记 ✅
 

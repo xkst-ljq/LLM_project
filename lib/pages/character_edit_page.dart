@@ -1620,6 +1620,20 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     );
   }
 
+  /// 用开场白正文生成一个短分支名。
+  ///
+  /// 取首个非空行的前 12 个字。开场白常以 `<终端状态>` 这类
+  /// 渲染标记开头，先剥掉再取，否则每个分支名都长一个样。
+  String _branchNameOf(String content, int index) {
+    var text = content
+        .replaceAll(RegExp(r'<[^>]{1,20}>'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (text.isEmpty) return index == 0 ? '主线' : '分支 $index';
+    if (text.length > 12) text = '${text.substring(0, 12)}…';
+    return index == 0 ? '主线 · $text' : text;
+  }
+
   Future<void> _editUIAssemblyList() async {
     await Navigator.push(
       context,
@@ -1629,6 +1643,15 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
           onMetaChanged: (m) => setState(() => _meta = m),
           cardEntries: _entries,
           cardType: _cardType,
+          // 开场白条数 = 分支数（用户设计：不依赖 opening UI，
+          // ≤1 只有主支路，>1 每条开场白即一个平级分支）。
+          //
+          // OpeningGreeting 没有标题字段，用正文首行当分支名——
+          // 作者一眼能认出是哪个开局，比「分支 1/2/3」直观。
+          branchNames: [
+            for (var i = 0; i < _greetings.length; i++)
+              _branchNameOf(_greetings[i].content, i),
+          ],
         ),
       ),
     );

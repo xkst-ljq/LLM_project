@@ -19,6 +19,7 @@ part 'character_assembly_page/logic_page.dart';
 part 'character_assembly_page/logic_canvas.dart';
 part 'character_assembly_page/logic_editors.dart';
 part 'character_assembly_page/logic_elements.dart';
+part 'character_assembly_page/logic_branch.dart';
 part 'character_assembly_page/logic_linker.dart';
 part 'character_assembly_page/composite_child_editor.dart';
 part 'character_assembly_page/logic_composite.dart';
@@ -138,6 +139,11 @@ class CharacterAssemblyPage extends StatefulWidget {
   /// 卡类型（`character` / `system`）。人物卡与系统卡的条目集合不同。
   final String cardType;
 
+  /// 各开场分支的名称。空或单条表示只有主支路。
+  ///
+  /// 分支之间是**平级关系**，没有父子；下标 0 即主支路。
+  final List<String> branchNames;
+
   const CharacterAssemblyPage({
     super.key,
     required this.assemblyInfo,
@@ -155,6 +161,7 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
         _AssemblyCanvasLogic,
         _AssemblyEditorsLogic,
         _AssemblyElementsLogic,
+        _AssemblyBranchLogic,
         _AssemblyLinkerLogic,
         _CompositeChildEditor,
         _AssemblyCompositeLogic {
@@ -631,6 +638,9 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                             ),
                           ),
                         ),
+                        // 多分支时常驻显示「当前编辑哪个分支」。
+                        // 改错分支是很难自查的错误，必须一眼可见。
+                        buildBranchIndicator(),
                         const Spacer(),
                         _buildTopIconBtn(
                           Icons.visibility_rounded,

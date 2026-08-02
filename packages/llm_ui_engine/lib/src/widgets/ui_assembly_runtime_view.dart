@@ -264,7 +264,10 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   }
 
   void _restoreRuntimeState() {
-    _pages = _clonePages(_restorePages(widget.assemblyInfo));
+    _pages = _clonePages(_restorePages(
+      widget.assemblyInfo,
+      branch: widget.sessionState?.branchIndex ?? 0,
+    ));
     _activePageId = _resolveActivePage(_pages, widget.activePageId).id;
     // 未接入外部会话时使用本地临时副本，保证预览里通道逻辑同样可验证，
     // 但不会污染真实角色卡会话状态。
@@ -1279,9 +1282,15 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     );
   }
 
-  static List<AssemblyPage> _restorePages(UIAssemblyInfo info) {
+  /// 还原页面。
+  ///
+  /// [branch] 是当前开场分支下标。作者可能给不同开场白设计了
+  /// 不同界面（见 `UIAssemblyInfo.branchVariants`）；
+  /// 没有专属变体的分支自动回落主支路。
+  static List<AssemblyPage> _restorePages(UIAssemblyInfo info,
+      {int branch = 0}) {
     final pages = <AssemblyPage>[];
-    final rawPages = info.pagesJson.trim();
+    final rawPages = info.pagesJsonForBranch(branch).trim();
     if (rawPages.isNotEmpty && rawPages != '[]') {
       try {
         final decoded = jsonDecode(rawPages);
