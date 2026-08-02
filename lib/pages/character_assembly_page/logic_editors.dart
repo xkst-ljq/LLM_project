@@ -744,6 +744,7 @@ mixin _AssemblyEditorsLogic
                 group: CardEntryTarget.groupIntro, entryId: '', fieldKey: '');
     var isKeyAction = UISemanticRole.isKeyAction(module);
     var sendsMessage = UISemanticRole.sendsMessage(module);
+    var targetBranchIndex = module.properties['targetBranchIndex'] as int?;
     // 13 种组件类型的专属状态已全部迁入 atom_field_groups.dart，
     // 这里只剩跨类型共用的语义标记（上面的 isKeyAction / sendsMessage）。
 
@@ -841,6 +842,23 @@ mixin _AssemblyEditorsLogic
                       controller: nameController,
                       decoration: const InputDecoration(labelText: '实例名称'),
                     ),
+                    if (_info.mode == 'opening' && type == 'button' && isKeyAction && widget.branchNames.length > 1) ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<int>(
+                        value: targetBranchIndex ?? 0,
+                        decoration: const InputDecoration(labelText: '通往开场白'),
+                        items: List.generate(widget.branchNames.length, (i) {
+                          final label = widget.branchNames[i].isNotEmpty ? widget.branchNames[i] : '开场白 ${i + 1}';
+                          return DropdownMenuItem<int>(
+                            value: i,
+                            child: Text(label),
+                          );
+                        }),
+                        onChanged: (val) {
+                          setDialogState(() => targetBranchIndex = val);
+                        },
+                      ),
+                    ],
                     // A14-3：宽 / 高移交「精确几何」。
                     //
                     // 那里还能改 X / Y / 旋转，且带按类型的取值范围与
@@ -1076,8 +1094,16 @@ mixin _AssemblyEditorsLogic
           }
           if (isKeyAction) {
             props[UISemanticRole.propKey] = true;
+            if (_info.mode == 'opening' && currentModule.type == 'button') {
+              if (targetBranchIndex != null) {
+                props['targetBranchIndex'] = targetBranchIndex;
+              } else {
+                props.remove('targetBranchIndex');
+              }
+            }
           } else {
             props.remove(UISemanticRole.propKey);
+            props.remove('targetBranchIndex');
           }
           if (sendsMessage) {
             props[UISemanticRole.sendKey] = true;
