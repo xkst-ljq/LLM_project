@@ -977,9 +977,8 @@ mixin _AssemblyCanvasLogic
   /// 也不在后台化白名单里，拖出去等于**静默丢失**——
   /// 编辑器里看得见，一进运行时就没了，作者根本不知道发生了什么。
   bool _requiresPcbContainment(UIElement element) {
-    // 叠加层页不设 PCB 硬性边界：创作者可以把组件摆出 PCB，
-    // 叠加层往往覆盖更大区域，需要超出 base 画布来布局。
-    if (_activePage.isOverlay) return false;
+    // 容器面本身定义叠加层的边界，可自由摆放（不被夹取）。
+    if (element.module?.properties['is_overlay_container'] == true) return false;
     if (element.isComposite) return true;
     final type = element.module?.type;
     // 原生后台节点：运行时本就 `SizedBox.shrink`，摆哪都行。
@@ -987,6 +986,7 @@ mixin _AssemblyCanvasLogic
     if (_isNativeBackendNodeType(type)) return false;
     // 可后台化白名单：由 4.1 的双阈值滞回接管，不走硬夹取。
     if (_canUseBackgroundRuntimePlacement(element)) return false;
+    // 其余渲染组件需要有界约束：base 页以 PCB 为界，叠加层以容器面为界。
     return true;
   }
 
@@ -1069,10 +1069,12 @@ mixin _AssemblyCanvasLogic
   double _pcbOverflowDepth(Offset offset, Size size, {double rotation = 0.0}) {
     final bounds = _rotatedBounds(size, rotation);
     final origin = offset + bounds.delta;
-    final double left = -origin.dx;
-    final double top = -origin.dy;
-    final double right = origin.dx + bounds.size.width - _pcbSize.width;
-    final double bottom = origin.dy + bounds.size.height - _pcbSize.height;
+    // 当前页边界（叠加层以容器面为界，base 页为 PCB）。
+    final boundsRect = _activeBoundsLocalRect;
+    final double left = boundsRect.left - origin.dx;
+    final double top = boundsRect.top - origin.dy;
+    final double right = origin.dx + bounds.size.width - boundsRect.right;
+    final double bottom = origin.dy + bounds.size.height - boundsRect.bottom;
     final double depth = math.max(
       math.max(left, top),
       math.max(right, bottom),
@@ -1454,7 +1456,8 @@ mixin _AssemblyCanvasLogic
 
   bool _isElementInsidePcb(UIElement element) {
     if (!_requiresPcbContainment(element)) return true;
-    final pcbRect = _pcbLocalRect;
+    // 叠加层页以容器面矩形为边界（虚拟 PCB），否则用 PCB 矩形。
+    final pcbRect = _activeBoundsGlobalRect;
     bool containsInclusive(Offset point) {
       const epsilon = 0.001;
       return point.dx >= pcbRect.left - epsilon &&
@@ -1523,12 +1526,15 @@ mixin _AssemblyCanvasLogic
     final bounds = _rotatedBounds(size, rotation);
     // 包围盒左上角 = desired + delta，先把 desired 换算到包围盒坐标系。
     final boxOrigin = desired + bounds.delta;
-    // PCB 比元件还小时 max 会变负，clamp 会抛异常，所以先兜底。
-    final maxX = math.max(0.0, _pcbSize.width - bounds.size.width);
-    final maxY = math.max(0.0, _pcbSize.height - bounds.size.height);
+    // 当前页边界（叠加层以容器面为界，base 页为 PCB）。
+    final boundsRect = _activeBoundsLocalRect;
+    final maxX = math.max(
+        boundsRect.left, boundsRect.right - bounds.size.width);
+    final maxY = math.max(
+        boundsRect.top, boundsRect.bottom - bounds.size.height);
     final clamped = Offset(
-      boxOrigin.dx.clamp(0.0, maxX).toDouble(),
-      boxOrigin.dy.clamp(0.0, maxY).toDouble(),
+      boxOrigin.dx.clamp(boundsRect.left, maxX).toDouble(),
+      boxOrigin.dy.clamp(boundsRect.top, maxY).toDouble(),
     );
     // 再换算回元件左上角。
     return clamped - bounds.delta;
@@ -1676,6 +1682,55 @@ mixin _AssemblyCanvasLogic
     );
   }
 
+  /// 返回叠加层页的第一个容器面元素（`is_overlay_container` 的 surface）。
+  ///
+  /// 容器面作为叠加层的「虚拟 PCB」：组件以它为边界判断前台/后台。
+  UIElement? _activeOverlayContainer() {
+    if (!_activePage.isOverlay) return null;
+    for (final element in _elements) {
+      if (element.isComposite) continue;
+      if (element.module?.properties['is_overlay_container'] == true) return element;
+    }
+    return null;
+  }
+
+  /// 当前页的「边界矩形」（全局坐标，含 `_pcbOffset`）。
+  ///
+  /// base 页 = PCB 矩形；叠加层页 = 第一个容器面矩形（若无容器面则回退 PCB）。
+  /// 叠加层以此作为该层的 PCB：组件在容器面内为前台渲染，超出为后台。
+  Rect get _activeBoundsGlobalRect {
+    if (_activePage.isOverlay) {
+      final container = _activeOverlayContainer();
+      if (container != null) {
+        return Rect.fromLTWH(
+          _pcbOffset.dx + container.offset.dx,
+          _pcbOffset.dy + container.offset.dy,
+          container.size.width,
+          container.size.height,
+        );
+      }
+    }
+    return _pcbLocalRect;
+  }
+
+  /// 当前页的「边界矩形」（PCB 局部坐标，不含 `_pcbOffset`）。
+  ///
+  /// base 页 = (0,0,pcbW,pcbH)；叠加层页 = 容器面局部矩形。
+  Rect get _activeBoundsLocalRect {
+    if (_activePage.isOverlay) {
+      final container = _activeOverlayContainer();
+      if (container != null) {
+        return Rect.fromLTWH(
+          container.offset.dx,
+          container.offset.dy,
+          container.size.width,
+          container.size.height,
+        );
+      }
+    }
+    return Rect.fromLTWH(0, 0, _pcbSize.width, _pcbSize.height);
+  }
+
   UIModule _prepareModuleForAssemblyPlacement(UIModule template, String id) {
     final module = _instantiateModule(template, id);
     if (_activePage.isOverlay &&
@@ -1720,6 +1775,22 @@ mixin _AssemblyCanvasLogic
             size: size,
             layerIndex: 0,
           );
+    // 叠加层页：有界渲染组件必须先放置容器面（容器面作为该层边界）。
+    // 逻辑组件（linker/math_node/timer/page_router）无容器面也可放置。
+    if (_activePage.isOverlay &&
+        _requiresPcbContainment(prototype) &&
+        _activeOverlayContainer() == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('叠加页请先放置容器面，再放置组件。'),
+            backgroundColor: Color(0xFF8B4B4B),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _elements.add(
         prototype.copyWith(
