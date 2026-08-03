@@ -175,6 +175,9 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   late String _activePageId;
   late SessionState _session;
 
+  /// 上次通知上层的叠加页 id（用于避免重复触发）。
+  String? _lastNotifiedOverlayPageId;
+
   /// 抑制下一轮数据通道回写。
   ///
   /// 外部写入 session 后置位——见 didUpdateWidget 里的说明。
@@ -303,11 +306,22 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   }
 
   /// 通知上层当前活动的叠加页 id（无叠加页时为 null）。
+  ///
+  /// 不能在 initState / didUpdateWidget 等 build 相关时机**同步**回调上层：
+  /// chat_page 的 onOverlayStateChanged 里会 setState，构建期间调用会抛
+  /// 「setState() or markNeedsBuild() called during build」。因此延迟到
+  /// 本帧结束再回调，且只在页 id 实际变化时触发。
   void _notifyOverlayState() {
     final cb = widget.onOverlayStateChanged;
     if (cb == null) return;
     final activePage = _resolveActivePage(_pages, _activePageId);
-    cb(activePage.isOverlay ? activePage.id : null);
+    final pageId = activePage.isOverlay ? activePage.id : null;
+    if (pageId == _lastNotifiedOverlayPageId) return;
+    _lastNotifiedOverlayPageId = pageId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      cb(pageId);
+    });
   }
 
   void _setupRuntimeLinkers() {
