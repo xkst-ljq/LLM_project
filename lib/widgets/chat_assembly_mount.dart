@@ -53,9 +53,9 @@ class ChatAssemblyMount extends StatelessWidget {
 
   /// 当前活动页是否为叠加层发生变化时回调。
   ///
-  /// 透传给 UIAssemblyRuntimeView。chat_page 据此在叠加层打开时
-  /// 切换到全屏浮层渲染（独立悬浮窗）。
-  final ValueChanged<bool>? onOverlayStateChanged;
+  /// 透传给 UIAssemblyRuntimeView。参数为当前打开的叠加页 id（无则为 null），
+  /// chat_page 据此在叠加层打开时切换到全屏浮层渲染（独立悬浮窗）。
+  final ValueChanged<String?>? onOverlayStateChanged;
 
   /// 供消息流组件显示的对话历史。
   final List<FlowMessage> messages;

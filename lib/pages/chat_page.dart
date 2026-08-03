@@ -313,6 +313,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// A10-2：常驻 UI 是否已折叠为悬浮球。
   bool _stickyCollapsed = false;
 
+  /// 伴生 UI 当前打开的叠加页 id（无叠加页时为 null）。
+  ///
+  /// 叠加层打开时 chat_page 切换成全屏浮层（独立悬浮窗）渲染，
+  /// 让叠加层「浮出」气泡、覆盖更大区域。
+  String? _companionOverlayPageId;
+
   /// 常驻 UI 相对默认位置的拖动偏移。
   /// 仅存在于本次会话，不持久化——位置属于临时观感，不值得写进角色卡。
   Offset _stickyOffset = Offset.zero;
@@ -3268,7 +3274,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       return const SizedBox.shrink();
     }
 
-    final interactive = _isLatestAiMessage(index);
+    // 叠加层打开时由全屏浮层接管，气泡里的伴生实例不可交互，
+    // 避免双实例冲突（用户只能操作浮层的叠加层）。
+    final interactive =
+        _isLatestAiMessage(index) && _companionOverlayPageId == null;
 
     // 宽度上限跟随气泡：气泡本身是 `屏宽 * 0.7 - 20` 再减去 10 的内边距 ×2。
     // 超出部分由 ChatAssemblyMount 等比缩小，不会撑破气泡。
@@ -3299,10 +3308,81 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             // 传进去是为了让最新一条的操作按钮可用。
             onMessageAction: _handleMessageAction,
             onSendMessage: _sendMessageFromAssembly,
+            onOverlayStateChanged: (pageId) {
+              if (_companionOverlayPageId == pageId) return;
+              setState(() => _companionOverlayPageId = pageId);
+            },
             characterAvatar: _characterAvatarPath,
             userAvatar: _userAvatarPath,
           ),
         ),
+      ),
+    );
+  }
+
+  /// 伴生叠加层「独立悬浮窗」层。
+  ///
+  /// 当伴生 UI 打开叠加层时，把它从气泡里「浮出」，用全屏浮层覆盖
+  /// 更大区域渲染（独立画布由引擎按叠加页的 pcbWidth/pcbHeight 决定），
+  /// 像 scene 一样居中、遮罩清晰，点击背景关闭。
+  Widget _buildCompanionOverlayFloatLayer(Size screen) {
+    final pageId = _companionOverlayPageId;
+    final character = _currentCharacter;
+    // 必须始终返回 Positioned：返回裸 widget 会让主 Stack 塌缩成 0×0。
+    if (pageId == null || character == null) {
+      return const Positioned.fill(child: IgnorePointer(child: SizedBox()));
+    }
+    final info = ChatAssemblyMount.resolveAssembly(character.meta, 'extra_companion');
+    if (info == null) {
+      return const Positioned.fill(child: IgnorePointer(child: SizedBox()));
+    }
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          // 背景蒙版：压暗聊天背景，让叠加层浮出更清晰。
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _companionOverlayPageId = null),
+              child: Container(
+                color: const Color(0xFF000000).withValues(alpha: 0.45),
+              ),
+            ),
+          ),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380, maxHeight: 560),
+              child: UIAssemblyRuntimeView(
+                assemblyInfo: info,
+                // 直接指定叠加页，全屏浮层只渲染叠加层。
+                activePageId: pageId,
+                showBlurredBackdrop: false,
+                enablePageGestures: false,
+                onDismissRequested: () =>
+                    setState(() => _companionOverlayPageId = null),
+                messages: _flowMessages,
+                liveMessages: true,
+                onSendMessage: _sendMessageFromAssembly,
+                onMessageAction: _handleMessageAction,
+                onOverlayStateChanged: (p) {
+                  // 叠加层内再切换页时同步（如叠加层关闭回到 base）。
+                  if (_companionOverlayPageId != p) {
+                    setState(() => _companionOverlayPageId = p);
+                  }
+                },
+                characterAvatar: _characterAvatarPath,
+                userAvatar: _userAvatarPath,
+                highlightRules: character.meta.effectiveHighlightRules,
+                sessionState: _sessionState,
+                sessionVersion: _sessionVersion,
+                statusFields: character.meta.statusBarFields,
+                onSessionStateChanged: _onAssemblySessionChanged,
+                onUserProfileChanged: _onAssemblyUserProfileChanged,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -5186,6 +5266,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   // 场景再全屏也不该把它埋掉（用户反馈）。
                   // 仍排在开场白之前——开场白要求玩家先确认再进场景。
                   _buildStickyAssemblyLayer(screenWidth),
+                  // ===== 伴生叠加层「独立悬浮窗」=====
+                  // 排在常驻挂件之后、开场白之前：叠加层要盖住聊天/常驻，
+                  // 但开场白仍需优先。
+                  _buildCompanionOverlayFloatLayer(
+                      MediaQuery.of(context).size),
                   // ===== 开场白 UI（需覆盖输入栏）=====
                   // 必须排在输入栏之后：它要接管整个界面直到玩家确认。
                   _buildOpeningAssembly(MediaQuery.of(context).size),

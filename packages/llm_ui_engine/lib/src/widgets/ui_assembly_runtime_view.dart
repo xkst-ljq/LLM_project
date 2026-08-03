@@ -102,9 +102,9 @@ class UIAssemblyRuntimeView extends StatefulWidget {
 
   /// 当前活动页是否为叠加层(overlay)发生变化时回调。
   ///
-  /// 伴生 UI 的叠加层想「浮出」气泡覆盖更大区域时，挂载方（chat_page）
-  /// 需要知道叠加层是否打开，以便切换到全屏浮层渲染。
-  final ValueChanged<bool>? onOverlayStateChanged;
+  /// 参数为当前打开的叠加页 id（无叠加页时为 null）。伴生 UI 想「浮出」
+  /// 气泡覆盖更大区域时，挂载方（chat_page）据此切换到全屏浮层渲染叠加层。
+  final ValueChanged<String?>? onOverlayStateChanged;
 
   /// 玩家档案通道（`targetKind: user_profile`）产生写入时回调。
   ///
@@ -282,12 +282,12 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     _session = widget.sessionState ?? SessionState();
   }
 
-  /// 通知上层当前活动页是否为叠加层。
+  /// 通知上层当前活动的叠加页 id（无叠加页时为 null）。
   void _notifyOverlayState() {
     final cb = widget.onOverlayStateChanged;
     if (cb == null) return;
     final activePage = _resolveActivePage(_pages, _activePageId);
-    cb(activePage.isOverlay);
+    cb(activePage.isOverlay ? activePage.id : null);
   }
 
   void _setupRuntimeLinkers() {
