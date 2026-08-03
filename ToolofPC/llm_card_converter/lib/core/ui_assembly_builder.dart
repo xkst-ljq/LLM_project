@@ -775,10 +775,14 @@ class UiAssemblyBuilder {
     required String detail,
     required String Function(String) nextId,
     required UiVisualTheme theme,
-    required double pcbW,
+    double? pcbW,
   }) {
+    // 叠加层「独立悬浮窗」画布：脱离伴生 PCB 限制，用更大的居中画布。
+    // 引擎按页的 pcbWidth/pcbHeight 用独立画布渲染并等比缩放，避免溢出。
+    const overlayW = 320.0;
+    const overlayH = 520.0;
     const padding = 16.0;
-    const innerW = 300.0;
+    const innerW = overlayW - padding * 2;
     final elements = <Map<String, dynamic>>[];
     var y = padding;
 
@@ -788,8 +792,8 @@ class UiAssemblyBuilder {
       name: '叠加遮罩',
       x: 0,
       y: 0,
-      w: pcbW,
-      h: 460,
+      w: overlayW,
+      h: overlayH,
       color: 0x99000000,
       layer: 0,
       radius: 0,
@@ -797,20 +801,20 @@ class UiAssemblyBuilder {
     ));
 
     // 中央卡片
-    final cardX = (pcbW - innerW) / 2;
+    final cardX = padding;
     elements.add(_surface(
       id: nextId('el'),
       name: '叠加卡片',
       x: cardX,
       y: padding,
       w: innerW,
-      h: 428,
+      h: overlayH - padding * 2,
       color: theme.panelColor,
       layer: 1,
       radius: 12,
     ));
 
-    y = padding + 16;
+    y = padding + 18;
 
     elements.add(_text(
       id: nextId('el'),
@@ -819,13 +823,13 @@ class UiAssemblyBuilder {
       x: cardX + 14,
       y: y,
       w: innerW - 28,
-      h: 22,
-      fontSize: 14,
+      h: 24,
+      fontSize: 15,
       color: theme.titleColor,
       align: 'left',
       layer: 2,
     ));
-    y += 22 + 10;
+    y += 24 + 12;
 
     elements.add(_text(
       id: nextId('el'),
@@ -834,13 +838,13 @@ class UiAssemblyBuilder {
       x: cardX + 14,
       y: y,
       w: innerW - 28,
-      h: 220,
-      fontSize: 12,
+      h: 300,
+      fontSize: 13,
       color: theme.valueColor,
       align: 'left',
       layer: 2,
     ));
-    y += 220 + 16;
+    y += 300 + 20;
 
     // 确认按钮：把该动作发给 AI
     final confirmSurfaceId = nextId('el');
@@ -850,7 +854,7 @@ class UiAssemblyBuilder {
       x: cardX + 14,
       y: y,
       w: innerW - 28,
-      h: 40,
+      h: 44,
       color: theme.accentColor,
       layer: 2,
       radius: 8,
@@ -860,7 +864,7 @@ class UiAssemblyBuilder {
       name: '确认字',
       text: '确认选择此方案',
       x: cardX + 14,
-      y: y + 11,
+      y: y + 13,
       w: innerW - 28,
       h: 18,
       fontSize: 13,
@@ -875,7 +879,7 @@ class UiAssemblyBuilder {
       x: cardX + 14,
       y: y,
       w: innerW - 28,
-      h: 40,
+      h: 44,
       layer: 3,
       sendsMessage: true,
       keyAction: false,
@@ -898,6 +902,8 @@ class UiAssemblyBuilder {
       'type': 'overlay',
       'parentPageId': parentPageId,
       'sortOrder': 100,
+      'pcbWidth': overlayW,
+      'pcbHeight': overlayH,
       'elements': elements,
       'gestures': <dynamic>[],
       'propertyOverrides': <dynamic>[],

@@ -937,24 +937,33 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         .toDouble();
     final designSize = Size(designWidth, designHeight);
 
+    // 叠加层「独立悬浮窗」：当当前页是带独立画布的 overlay 时，
+    // 用 overlay 自己的设计尺寸渲染（可突破 PCB 限制，居中并等比缩放）。
+    // base 页或未指定独立尺寸的 overlay 行为不变。
+    final isFloatingOverlay =
+        activePage.isOverlay && activePage.pcbWidth != null;
+    final activeDesignSize = isFloatingOverlay
+        ? Size(activePage.pcbWidth!, activePage.pcbHeight ?? designHeight)
+        : designSize;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
-            : designSize.width;
+            : activeDesignSize.width;
         final availableHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
-            : designSize.height;
+            : activeDesignSize.height;
 
         final rawContainScale = math.min(
-          availableWidth / designSize.width,
-          availableHeight / designSize.height,
+          availableWidth / activeDesignSize.width,
+          availableHeight / activeDesignSize.height,
         );
         final safeContainScale = rawContainScale.isFinite && rawContainScale > 0
             ? math.min(1.0, rawContainScale)
             : 1.0;
-        final renderedWidth = designSize.width * safeContainScale;
-        final renderedHeight = designSize.height * safeContainScale;
+        final renderedWidth = activeDesignSize.width * safeContainScale;
+        final renderedHeight = activeDesignSize.height * safeContainScale;
         final pcbRect = Rect.fromLTWH(
           (availableWidth - renderedWidth) / 2,
           (availableHeight - renderedHeight) / 2,
@@ -1030,7 +1039,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
                         pages: _pages,
                         activePage: activePage,
                         ancestors: ancestors,
-                        designSize: designSize,
+                        designSize: activeDesignSize,
                         fit: BoxFit.scaleDown,
                         blur: false,
                       ),

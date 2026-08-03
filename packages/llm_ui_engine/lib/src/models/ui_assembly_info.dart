@@ -216,12 +216,22 @@ class AssemblyPage {
   List<AssemblyPageGesture> gestures;
   List<PropertyOverride> propertyOverrides;
 
+  /// 叠加页专属画布尺寸（可选）。
+  ///
+  /// 叠加层（overlay）默认与 base 页共用 PCB 画布；当作者想让叠加层
+  /// 「浮出」并覆盖更大区域（独立悬浮窗）时，可在此指定独立的设计画布，
+  /// 引擎渲染时用该尺寸居中并等比缩放，突破 PCB 限制。
+  double? pcbWidth;
+  double? pcbHeight;
+
   AssemblyPage({
     required this.id,
     required this.name,
     required this.type,
     this.parentPageId,
     this.sortOrder = 0,
+    this.pcbWidth,
+    this.pcbHeight,
     List<UIElement>? elements,
     List<AssemblyPageGesture>? gestures,
     List<PropertyOverride>? propertyOverrides,
@@ -238,6 +248,8 @@ class AssemblyPage {
     'type': type,
     'parentPageId': parentPageId,
     'sortOrder': sortOrder,
+    if (pcbWidth != null) 'pcbWidth': pcbWidth,
+    if (pcbHeight != null) 'pcbHeight': pcbHeight,
     'elements': elements.map((element) => element.toJson()).toList(),
     'gestures': gestures.map((gesture) => gesture.toJson()).toList(),
     'propertyOverrides':
@@ -250,6 +262,8 @@ class AssemblyPage {
     type: json['type']?.toString() == 'overlay' ? 'overlay' : 'base',
     parentPageId: json['parentPageId']?.toString(),
     sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+    pcbWidth: (json['pcbWidth'] as num?)?.toDouble(),
+    pcbHeight: (json['pcbHeight'] as num?)?.toDouble(),
     elements: (json['elements'] as List?)
             ?.whereType<Map>()
             .map((item) => UIElement.fromJson(Map<String, dynamic>.from(item)))
