@@ -1558,8 +1558,8 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             children: [
               const Row(
                 children: [
-                  Icon(Icons.alt_route_rounded, size: 15, color: Color(0xFF00897B)),
-                  SizedBox(width: 4),
+                  Icon(Icons.alt_route_rounded, size: 14, color: Color(0xFF00897B)),
+                  SizedBox(width: 3),
                   Expanded(
                     child: Text(
                       '页面路由器',
@@ -1567,22 +1567,22 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: Color(0xFF00695C),
-                        fontSize: 11,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 _pageRouterSubtitle(el.module!),
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Color(0xFF33695F),
-                  fontSize: 9,
-                  height: 1.2,
+                  fontSize: 8.5,
+                  height: 1.1,
                 ),
               ),
             ],
