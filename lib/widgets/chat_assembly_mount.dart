@@ -57,6 +57,13 @@ class ChatAssemblyMount extends StatelessWidget {
   /// chat_page 据此在叠加层打开时切换到全屏浮层渲染（独立悬浮窗）。
   final ValueChanged<String?>? onOverlayStateChanged;
 
+  /// 外部指定的活动页 id（可选）。
+  ///
+  /// 透传给 UIAssemblyRuntimeView。chat_page 可在叠加层打开时用它
+  /// 强制气泡里的伴生实例停在 base 页（叠加层由全屏浮层展示），
+  /// 避免关闭后残留叠加页。
+  final String? activePageId;
+
   /// 供消息流组件显示的对话历史。
   final List<FlowMessage> messages;
 
@@ -87,6 +94,7 @@ class ChatAssemblyMount extends StatelessWidget {
     this.enablePageGestures = false,
     this.onDismissRequested,
     this.onOverlayStateChanged,
+    this.activePageId,
     this.messages = const <FlowMessage>[],
     this.onSendMessage,
     this.onMessageAction,
@@ -139,6 +147,19 @@ class ChatAssemblyMount extends StatelessWidget {
   }
 
   /// 解析方案里的页面，供角色查找使用。
+  /// 返回该 mode 方案的第一个 base 页 id。
+  ///
+  /// 叠加层打开时，气泡里的伴生实例用它强制停在 base 页
+  /// （叠加层由全屏浮层展示），避免关闭后残留叠加页。
+  static String? resolveFirstBasePageId(CharacterMeta meta, String mode) {
+    final info = resolveAssembly(meta, mode);
+    if (info == null) return null;
+    for (final page in _restorePages(info)) {
+      if (page.isBase) return page.id;
+    }
+    return null;
+  }
+
   static List<AssemblyPage> _restorePages(UIAssemblyInfo info) {
     final pages = <AssemblyPage>[];
     final raw = info.pagesJson.trim();
@@ -190,6 +211,7 @@ class ChatAssemblyMount extends StatelessWidget {
         enablePageGestures: enablePageGestures,
         onDismissRequested: onDismissRequested,
         onOverlayStateChanged: onOverlayStateChanged,
+        activePageId: activePageId,
         messages: messages,
         // 挂载点一律是真实聊天页，与编辑器预览区分开。
         liveMessages: true,

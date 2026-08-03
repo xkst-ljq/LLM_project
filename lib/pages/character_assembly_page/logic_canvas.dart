@@ -977,6 +977,9 @@ mixin _AssemblyCanvasLogic
   /// 也不在后台化白名单里，拖出去等于**静默丢失**——
   /// 编辑器里看得见，一进运行时就没了，作者根本不知道发生了什么。
   bool _requiresPcbContainment(UIElement element) {
+    // 叠加层页不设 PCB 硬性边界：创作者可以把组件摆出 PCB，
+    // 叠加层往往覆盖更大区域，需要超出 base 画布来布局。
+    if (_activePage.isOverlay) return false;
     if (element.isComposite) return true;
     final type = element.module?.type;
     // 原生后台节点：运行时本就 `SizedBox.shrink`，摆哪都行。
@@ -1482,11 +1485,14 @@ mixin _AssemblyCanvasLogic
     return corners.every(containsInclusive);
   }
 
-  bool get _hasIllegalPcbElements =>
+  bool get _hasIllegalPcbElements => !_activePage.isOverlay &&
       _elements.any((element) => !_isElementInsidePcb(element));
 
+  // 叠加层不设 PCB 硬性边界，越界警告对叠加层无意义。
   int get _illegalPcbElementCount =>
-      _elements.where((element) => !_isElementInsidePcb(element)).length;
+      _activePage.isOverlay
+          ? 0
+          : _elements.where((element) => !_isElementInsidePcb(element)).length;
 
   int get _totalIllegalPcbElementCount {
     _syncCanvasStateIntoActivePage();

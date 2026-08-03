@@ -282,6 +282,26 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     _session = widget.sessionState ?? SessionState();
   }
 
+  /// 按叠加层页全部元素的边界计算画布尺寸。
+  ///
+  /// 叠加层允许组件摆出 PCB，故画布要能容纳所有正坐标元素。
+  /// 从 (0,0) 起算右下角；负坐标（PCB 左侧后台逻辑件）不纳入——
+  /// 它们运行时本就不可见。返回尺寸至少不小于 [fallback]。
+  Size _overlayBoundsSize(AssemblyPage page, Size fallback) {
+    var maxX = 0.0, maxY = 0.0;
+    var has = false;
+    for (final e in page.elements) {
+      final r = e.offset & e.size;
+      if (r.right > maxX) maxX = r.right;
+      if (r.bottom > maxY) maxY = r.bottom;
+      has = true;
+    }
+    if (!has) return fallback;
+    final w = maxX.clamp(fallback.width, 1200.0).toDouble();
+    final h = maxY.clamp(fallback.height, 2000.0).toDouble();
+    return Size(w, h);
+  }
+
   /// 通知上层当前活动的叠加页 id（无叠加页时为 null）。
   void _notifyOverlayState() {
     final cb = widget.onOverlayStateChanged;
@@ -956,14 +976,24 @@ _setupRuntimeLinkers();
         .toDouble();
     final designSize = Size(designWidth, designHeight);
 
-    // 叠加层「独立悬浮窗」：当当前页是带独立画布的 overlay 时，
-    // 用 overlay 自己的设计尺寸渲染（可突破 PCB 限制，居中并等比缩放）。
-    // base 页或未指定独立尺寸的 overlay 行为不变。
-    final isFloatingOverlay =
-        activePage.isOverlay && activePage.pcbWidth != null;
-    final activeDesignSize = isFloatingOverlay
-        ? Size(activePage.pcbWidth!, activePage.pcbHeight ?? designHeight)
-        : designSize;
+    // 叠加层「独立悬浮窗」：叠加层页用能容纳其全部元素的画布渲染，
+    // 可突破 PCB 限制、容纳作者摆在 PCB 外的组件，居中并等比缩放。
+    // 显式指定了独立画布（pcbWidth/pcbHeight）时优先用它。
+    final Size activeDesignSize;
+    if (activePage.isOverlay) {
+      if (activePage.pcbWidth != null) {
+        activeDesignSize = Size(
+          activePage.pcbWidth!,
+          activePage.pcbHeight ?? designHeight,
+        );
+      } else {
+        // 未指定独立画布时，按叠加层元素边界自动计算，保证超出 PCB
+        // 的组件也能显示；至少不小于 PCB，避免空叠加层塌缩。
+        activeDesignSize = _overlayBoundsSize(activePage, designSize);
+      }
+    } else {
+      activeDesignSize = designSize;
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {

@@ -3312,6 +3312,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               if (_companionOverlayPageId == pageId) return;
               setState(() => _companionOverlayPageId = pageId);
             },
+            // 叠加层打开时，气泡里的伴生实例强制停在 base 页
+            // （叠加层由全屏浮层展示），关闭后不会残留叠加页。
+            activePageId: _companionOverlayPageId != null
+                ? ChatAssemblyMount.resolveFirstBasePageId(
+                    character.meta, 'extra_companion')
+                : null,
             characterAvatar: _characterAvatarPath,
             userAvatar: _userAvatarPath,
           ),

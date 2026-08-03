@@ -843,6 +843,8 @@ class UiAssemblyBuilder {
       color: theme.valueColor,
       align: 'left',
       layer: 2,
+      // 长文滚动显示，避免放不下时省略号截断。
+      overflow: 'scroll',
     ));
     y += 300 + 20;
 
@@ -1292,6 +1294,7 @@ class UiAssemblyBuilder {
     required String align,
     required int layer,
     String? statusFieldId,
+    String overflow = 'ellipsis',
   }) =>
       _element(
         id: id,
@@ -1310,7 +1313,7 @@ class UiAssemblyBuilder {
             'text': text,
             'fontSize': fontSize,
             'textAlign': align,
-            'overflow': 'ellipsis',
+            'overflow': overflow,
             'richText': false,
             if (statusFieldId != null)
               'dataChannel': _channel(
