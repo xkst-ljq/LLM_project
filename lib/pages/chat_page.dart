@@ -319,6 +319,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 让叠加层「浮出」气泡、覆盖更大区域。
   String? _companionOverlayPageId;
 
+  /// 伴生方案解析缓存（避免叠加层打开时每帧重复解析 UI 方案 JSON）。
+  ///
+  /// resolveAssembly / resolveFirstBasePageId 要解析整份 uiAssemblies 的
+  /// JSON 与全部页面元素，开销大；按角色 id 缓存后，叠加层浮层的构建
+  /// 不再每帧重复解析，消除打开叠加层时的卡顿。
+  UIAssemblyInfo? _companionAssemblyCache;
+  String? _companionBasePageIdCache;
+  String? _companionCacheCharacterId;
+
   /// 常驻 UI 相对默认位置的拖动偏移。
   /// 仅存在于本次会话，不持久化——位置属于临时观感，不值得写进角色卡。
   Offset _stickyOffset = Offset.zero;
@@ -3266,11 +3275,27 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 互斥在新建 UI 方案时就已拦截（`character_assembly_list_page`），
   /// 这里再判一次是防御旧数据——先做了伴生、后加 scene 的卡片
   /// 在补上双向拦截之前可能同时存在两者。
+  /// 按当前角色缓存伴生 UI 方案，避免叠加层浮层构建时每帧解析 JSON。
+  UIAssemblyInfo? _companionAssemblyCached() {
+    final character = _currentCharacter;
+    if (character == null) return null;
+    if (_companionCacheCharacterId != character.id) {
+      _companionCacheCharacterId = character.id;
+      _companionAssemblyCache =
+          ChatAssemblyMount.resolveAssembly(character.meta, 'extra_companion');
+      _companionBasePageIdCache = _companionAssemblyCache == null
+          ? null
+          : ChatAssemblyMount.resolveFirstBasePageId(
+              character.meta, 'extra_companion');
+    }
+    return _companionAssemblyCache;
+  }
+
   Widget _buildCompanionAssembly(int index) {
     final character = _currentCharacter;
     if (character == null) return const SizedBox.shrink();
     if (_sceneTakesOver) return const SizedBox.shrink();
-    if (!ChatAssemblyMount.hasAssembly(character.meta, 'extra_companion')) {
+    if (_companionAssemblyCached() == null) {
       return const SizedBox.shrink();
     }
 
@@ -3315,8 +3340,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             // 叠加层打开时，气泡里的伴生实例强制停在 base 页
             // （叠加层由全屏浮层展示），关闭后不会残留叠加页。
             activePageId: _companionOverlayPageId != null
-                ? ChatAssemblyMount.resolveFirstBasePageId(
-                    character.meta, 'extra_companion')
+                ? (_companionBasePageIdCache ??=
+                    ChatAssemblyMount.resolveFirstBasePageId(
+                        character.meta, 'extra_companion'))
                 : null,
             characterAvatar: _characterAvatarPath,
             userAvatar: _userAvatarPath,
@@ -3338,7 +3364,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     if (pageId == null || character == null) {
       return const Positioned.fill(child: IgnorePointer(child: SizedBox()));
     }
-    final info = ChatAssemblyMount.resolveAssembly(character.meta, 'extra_companion');
+    final info = _companionAssemblyCached();
     if (info == null) {
       return const Positioned.fill(child: IgnorePointer(child: SizedBox()));
     }
