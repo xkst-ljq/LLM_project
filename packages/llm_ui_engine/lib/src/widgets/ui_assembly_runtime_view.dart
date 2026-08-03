@@ -100,6 +100,12 @@ class UIAssemblyRuntimeView extends StatefulWidget {
   /// 未提供时该标记不产生行为，作者的按钮仍可正常参与 linker 等其他配置。
   final VoidCallback? onDismissRequested;
 
+  /// 当前活动页是否为叠加层(overlay)发生变化时回调。
+  ///
+  /// 伴生 UI 的叠加层想「浮出」气泡覆盖更大区域时，挂载方（chat_page）
+  /// 需要知道叠加层是否打开，以便切换到全屏浮层渲染。
+  final ValueChanged<bool>? onOverlayStateChanged;
+
   /// 玩家档案通道（`targetKind: user_profile`）产生写入时回调。
   ///
   /// 参数为空表示该项无变化。由挂载方决定怎么落库——
@@ -143,6 +149,7 @@ class UIAssemblyRuntimeView extends StatefulWidget {
     this.showDataChannelDebug = false,
     this.enablePageGestures = true,
     this.onDismissRequested,
+    this.onOverlayStateChanged,
     this.onUserProfileChanged,
     this.onLongPressDragStart,
     this.onLongPressDragUpdate,
@@ -269,9 +276,18 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       branch: widget.sessionState?.branchIndex ?? 0,
     ));
     _activePageId = _resolveActivePage(_pages, widget.activePageId).id;
+    _notifyOverlayState();
     // 未接入外部会话时使用本地临时副本，保证预览里通道逻辑同样可验证，
     // 但不会污染真实角色卡会话状态。
     _session = widget.sessionState ?? SessionState();
+  }
+
+  /// 通知上层当前活动页是否为叠加层。
+  void _notifyOverlayState() {
+    final cb = widget.onOverlayStateChanged;
+    if (cb == null) return;
+    final activePage = _resolveActivePage(_pages, _activePageId);
+    cb(activePage.isOverlay);
   }
 
   void _setupRuntimeLinkers() {
@@ -759,7 +775,8 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
           : _defaultDurationForAction(gesture.action);
       _activePageId = target.id;
     });
-    _setupRuntimeLinkers();
+_setupRuntimeLinkers();
+    _notifyOverlayState();
   }
 
   /// 处理 button → page_router 的点击换页。返回是否消费了本次事件。
@@ -811,7 +828,8 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
             durationMs > 0 ? durationMs : _defaultDurationForAction(action);
         _activePageId = target.id;
       });
-      _setupRuntimeLinkers();
+_setupRuntimeLinkers();
+    _notifyOverlayState();
       return true;
     }
     return false;
@@ -857,7 +875,8 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       _lastDurationMs = _defaultDurationForAction('open_overlay');
       _activePageId = parent.id;
     });
-    _setupRuntimeLinkers();
+_setupRuntimeLinkers();
+    _notifyOverlayState();
   }
 
   UIElement? _overlayContainerOf(AssemblyPage page) {

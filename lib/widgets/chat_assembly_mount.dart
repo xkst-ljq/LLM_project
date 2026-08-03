@@ -51,6 +51,12 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 作者标记为「关闭 / 确认」的组件被点击时回调。
   final VoidCallback? onDismissRequested;
 
+  /// 当前活动页是否为叠加层发生变化时回调。
+  ///
+  /// 透传给 UIAssemblyRuntimeView。chat_page 据此在叠加层打开时
+  /// 切换到全屏浮层渲染（独立悬浮窗）。
+  final ValueChanged<bool>? onOverlayStateChanged;
+
   /// 供消息流组件显示的对话历史。
   final List<FlowMessage> messages;
 
@@ -80,6 +86,7 @@ class ChatAssemblyMount extends StatelessWidget {
     this.maxWidth,
     this.enablePageGestures = false,
     this.onDismissRequested,
+    this.onOverlayStateChanged,
     this.messages = const <FlowMessage>[],
     this.onSendMessage,
     this.onMessageAction,
@@ -182,6 +189,7 @@ class ChatAssemblyMount extends StatelessWidget {
         showBlurredBackdrop: false,
         enablePageGestures: enablePageGestures,
         onDismissRequested: onDismissRequested,
+        onOverlayStateChanged: onOverlayStateChanged,
         messages: messages,
         // 挂载点一律是真实聊天页，与编辑器预览区分开。
         liveMessages: true,
