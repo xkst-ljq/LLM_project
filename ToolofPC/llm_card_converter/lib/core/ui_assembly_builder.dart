@@ -325,6 +325,8 @@ class UiAssemblyBuilder {
       branchPresets: branchPresets,
       statusFields: statusFields,
       theme: theme,
+      page1Id: page1Id,
+      page2Id: page2Id,
       pcbW: pcbW,
       innerW: innerW,
       branchActions: branchActions,
@@ -348,6 +350,8 @@ class UiAssemblyBuilder {
       branchPresets: branchPresets,
       statusFields: statusFields,
       theme: theme,
+      page1Id: page1Id,
+      page2Id: page2Id,
       pcbW: pcbW,
       innerW: innerW,
     );
