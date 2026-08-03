@@ -207,7 +207,6 @@ class UiAssemblyBuilder {
         cardName,
         ex.branchPresets,
         visualTheme,
-        ex.openingActions,
         ex.branchActions,
       );
       if (r != null) {
@@ -270,7 +269,6 @@ class UiAssemblyBuilder {
     String cardName,
     Map<int, Map<String, String>> branchPresets,
     UiVisualTheme theme,
-    List<String> openingActions,
     Map<int, List<ActionOption>> branchActions,
   ) {
     final notes = <String>[];
@@ -310,14 +308,12 @@ class UiAssemblyBuilder {
     const pcbW = 212.0;
     final innerW = pcbW - _Layout.pcbPadding * 2;
 
-    final hasActions = openingActions.isNotEmpty;
-    final hasBranchActions = branchActions.isNotEmpty;
-    final tabCount = (hasActions || hasBranchActions) ? 3 : 2;
+    // extra_companion 只有属性 + 档案两页；选开场白由 opening UI 承担，
+    // 不在常驻面板里重复放「选项」页。
 
     // 创建平级页面的 ID
     final page1Id = 'page_${nextId("page")}';
     final page2Id = 'page_${nextId("page")}';
-    final page3Id = (hasActions || hasBranchActions) ? 'page_${nextId("page")}' : '';
 
     final statusFields = <Map<String, dynamic>>[];
 
@@ -325,17 +321,12 @@ class UiAssemblyBuilder {
     final elements1 = _buildPageElements(
       pageIndex: 1,
       fields: tab1Fields,
-      actions: const [],
       nextId: nextId,
       branchPresets: branchPresets,
       statusFields: statusFields,
       theme: theme,
-      page1Id: page1Id,
-      page2Id: page2Id,
-      page3Id: page3Id,
       pcbW: pcbW,
       innerW: innerW,
-      tabCount: tabCount,
       branchActions: branchActions,
     );
     final page1 = {
@@ -353,17 +344,12 @@ class UiAssemblyBuilder {
     final elements2 = _buildPageElements(
       pageIndex: 2,
       fields: tab2Fields,
-      actions: const [],
       nextId: nextId,
       branchPresets: branchPresets,
       statusFields: statusFields,
       theme: theme,
-      page1Id: page1Id,
-      page2Id: page2Id,
-      page3Id: page3Id,
       pcbW: pcbW,
       innerW: innerW,
-      tabCount: tabCount,
     );
     final page2 = {
       'id': page2Id,
@@ -376,36 +362,6 @@ class UiAssemblyBuilder {
       'propertyOverrides': <dynamic>[],
     };
 
-    // 编译第三页 (🎯 选项)
-    final elements3 = (hasActions || hasBranchActions)
-        ? _buildPageElements(
-            pageIndex: 3,
-            fields: const [],
-            actions: openingActions,
-            nextId: nextId,
-            branchPresets: branchPresets,
-            statusFields: statusFields,
-            theme: theme,
-            page1Id: page1Id,
-            page2Id: page2Id,
-            page3Id: page3Id,
-            pcbW: pcbW,
-            innerW: innerW,
-            tabCount: tabCount,
-                      )
-        : const <Map<String, dynamic>>[];
-    final page3 = (hasActions || hasBranchActions)
-        ? {
-            'id': page3Id,
-            'name': '选项',
-            'type': 'base',
-            'parentPageId': null,
-            'sortOrder': 2,
-            'elements': elements3,
-            'gestures': <dynamic>[],
-            'propertyOverrides': <dynamic>[],
-          }
-        : null;
 
     // 动态计算最大高度，使页面高度对齐统一不缩放
     double getMaxHeight(List<Map<String, dynamic>> elList) {
@@ -424,7 +380,6 @@ class UiAssemblyBuilder {
     final heights = [
       getMaxHeight(elements1),
       getMaxHeight(elements2),
-      if (hasActions || hasBranchActions) getMaxHeight(elements3),
     ];
     final pcbH = heights.reduce((a, b) => a > b ? a : b);
 
@@ -438,17 +393,11 @@ class UiAssemblyBuilder {
     }
     patchBackgroundHeight(elements1);
     patchBackgroundHeight(elements2);
-    if (hasActions || hasBranchActions) patchBackgroundHeight(elements3);
 
-    final pagesLabel = (hasActions || hasBranchActions)
-        ? '📊属性/📁档案/🎯选项'
-        : '📊属性/📁档案';
-    notes.add('通过多页面 ($pagesLabel) 与顶置 Tab 标签切换按钮整合面板属性与预设选项，使信息流与操作深度聚合。');
+    notes.add('通过多页面 (📊属性/📁档案) 与顶置 Tab 标签切换按钮'
+        '整合面板属性与预设选项，使信息流与操作深度聚合。');
 
     final pList = <Map<String, dynamic>>[page1, page2];
-    if (page3 != null) {
-      pList.add(page3);
-    }
 
     return _PanelResult(
       assemblyJson: _assembly(
@@ -469,30 +418,26 @@ class UiAssemblyBuilder {
   static List<Map<String, dynamic>> _buildPageElements({
     required int pageIndex,
     required List<UiField> fields,
-    required List<String> actions,
     required String Function(String) nextId,
     required Map<int, Map<String, String>> branchPresets,
     required List<Map<String, dynamic>> statusFields,
     required UiVisualTheme theme,
     required String page1Id,
     required String page2Id,
-    required String page3Id,
     required double pcbW,
     required double innerW,
-    required int tabCount,
     Map<int, List<ActionOption>> branchActions = const {},
   }) {
     final elements = <Map<String, dynamic>>[];
     var y = _Layout.pcbPadding;
 
     // ── 1. 顶部 Tab 标签切换栏 ──
-    final tabW = (innerW - (tabCount - 1) * 6.0) / tabCount;
+    final tabW = (innerW - 6.0) / 2;
     final tabH = 22.0;
 
     final tabs = [
       (index: 1, title: '📊 属性', pageId: page1Id),
       (index: 2, title: '📁 档案', pageId: page2Id),
-      if (tabCount > 2) (index: 3, title: '🎯 选项', pageId: page3Id),
     ];
 
     final routerIds = <int, String>{};
@@ -571,144 +516,77 @@ class UiAssemblyBuilder {
     const colLabelW = 50.0;
 
     // ── 2. 渲染专页的属性列表数据（单列最松弛排布，完全不拥挤） ──
-    if (pageIndex == 3 && tabCount > 2) {
-      final pressPairs = <({String surface, String button})>[];
-      for (var i = 0; i < actions.length; i++) {
-        final label = actions[i];
-        final surfaceId = nextId('el');
-        elements.add(_surface(
-          id: surfaceId,
-          name: '选项底_${i + 1}',
-          x: _Layout.pcbPadding,
-          y: y,
-          w: innerW,
-          h: _Layout.buttonHeight,
-          color: theme.buttonBgColor,
+    for (final f in fields) {
+      final fieldId = 'sf_${_slug(f.name)}';
+      elements.add(_text(
+        id: nextId('el'),
+        name: '${f.name}标签',
+        text: _decorateEmoji(f.name),
+        x: _Layout.pcbPadding,
+        y: y,
+        w: colLabelW,
+        h: _Layout.rowHeight,
+        fontSize: 10,
+        color: theme.labelColor,
+        align: 'left',
+        layer: elements.length + 1,
+      ));
+
+      if (f.isNumeric && pageIndex == 1) {
+        elements.add(_progress(
+          id: nextId('el'),
+          name: f.name,
+          x: _Layout.pcbPadding + colLabelW + 6,
+          y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
+          w: innerW - colLabelW - 6,
+          h: _Layout.barHeight,
+          statusFieldId: fieldId,
           layer: elements.length + 1,
-          radius: 8,
+          barFillColor: _barColorOf(f.name, theme.barFillColor),
+          barTrackColor: theme.barTrackColor,
         ));
+        final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
+        statusFields.add({
+          'id': fieldId,
+          'name': f.name,
+          'type': 'number',
+          'initial_value': numPresets['0'] ?? '0',
+          'min_value': 0.0,
+          'max_value': 100.0,
+          'pin_side': 'none',
+          'order': statusFields.length,
+          'owner': 'player',
+          if (numPresets.length > 1) 'branch_initial_values': numPresets,
+        });
+      } else {
         elements.add(_text(
           id: nextId('el'),
-          name: '选项文_${i + 1}',
-          text: label,
-          x: _Layout.pcbPadding + 10,
-          y: y + 8,
-          w: innerW - 20,
-          h: 18,
-          fontSize: 10,
+          name: f.name,
+          text: '—',
+          x: _Layout.pcbPadding + colLabelW + 6,
+          y: y,
+          w: innerW - colLabelW - 6,
+          h: _Layout.rowHeight,
+          fontSize: 11,
           color: theme.valueColor,
           align: 'left',
           layer: elements.length + 1,
+          statusFieldId: fieldId,
         ));
-        final buttonId = nextId('el');
-        elements.add(_button(
-          id: buttonId,
-          name: '选项_${i + 1}',
-          x: _Layout.pcbPadding,
-          y: y,
-          w: innerW,
-          h: _Layout.buttonHeight,
-          layer: elements.length + 1,
-          sendsMessage: true,
-          keyAction: true,
-          message: label,
-          // 分支索引 = 选项下标 + 1：index 0 是 first_mes 引导页本身，
-          // 选项要切到其后的 alternate_greetings（1..N）。
-          // 用 i 会错位：选项1 切回引导页、最后一个选项越界丢失。
-          targetBranchIndex: i + 1,
-          color: theme.accentColor,
-        ));
-        pressPairs.add((surface: surfaceId, button: buttonId));
-        y += _Layout.buttonHeight + 6.0;
+        final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
+        statusFields.add({
+          'id': fieldId,
+          'name': f.name,
+          'type': 'text',
+          'initial_value': txtPresets['0'] ?? '',
+          'pin_side': 'none',
+          'order': statusFields.length,
+          'owner': 'player',
+          if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
+        });
       }
-
-      // 按压反馈
-      for (var i = 0; i < pressPairs.length; i++) {
-        elements.add(_pressLinker(
-          id: nextId('el'),
-          name: '选项_${i + 1}按压',
-          buttonId: pressPairs[i].button,
-          surfaceId: pressPairs[i].surface,
-          y: i * 52.0,
-          layer: elements.length + 1,
-          color: theme.accentColor,
-        ));
-      }
-
-
-    } else {
-      for (final f in fields) {
-        final fieldId = 'sf_${_slug(f.name)}';
-        elements.add(_text(
-          id: nextId('el'),
-          name: '${f.name}标签',
-          text: _decorateEmoji(f.name),
-          x: _Layout.pcbPadding,
-          y: y,
-          w: colLabelW,
-          h: _Layout.rowHeight,
-          fontSize: 10,
-          color: theme.labelColor,
-          align: 'left',
-          layer: elements.length + 1,
-        ));
-
-        if (f.isNumeric && pageIndex == 1) {
-          elements.add(_progress(
-            id: nextId('el'),
-            name: f.name,
-            x: _Layout.pcbPadding + colLabelW + 6,
-            y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-            w: innerW - colLabelW - 6,
-            h: _Layout.barHeight,
-            statusFieldId: fieldId,
-            layer: elements.length + 1,
-            barFillColor: _barColorOf(f.name, theme.barFillColor),
-            barTrackColor: theme.barTrackColor,
-          ));
-          final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
-          statusFields.add({
-            'id': fieldId,
-            'name': f.name,
-            'type': 'number',
-            'initial_value': numPresets['0'] ?? '0',
-            'min_value': 0.0,
-            'max_value': 100.0,
-            'pin_side': 'none',
-            'order': statusFields.length,
-            'owner': 'player',
-            if (numPresets.length > 1) 'branch_initial_values': numPresets,
-          });
-        } else {
-          elements.add(_text(
-            id: nextId('el'),
-            name: f.name,
-            text: '—',
-            x: _Layout.pcbPadding + colLabelW + 6,
-            y: y,
-            w: innerW - colLabelW - 6,
-            h: _Layout.rowHeight,
-            fontSize: 11,
-            color: theme.valueColor,
-            align: 'left',
-            layer: elements.length + 1,
-            statusFieldId: fieldId,
-          ));
-          final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
-          statusFields.add({
-            'id': fieldId,
-            'name': f.name,
-            'type': 'text',
-            'initial_value': txtPresets['0'] ?? '',
-            'pin_side': 'none',
-            'order': statusFields.length,
-            'owner': 'player',
-            if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
-          });
-        }
         y += _Layout.rowHeight + _Layout.rowGap;
       }
-    }
 
     // ── 分支动作区：只放在「属性」主页，贴近原版 AVAILABLE ACTIONS ──
     if (pageIndex == 1 && branchActions.isNotEmpty) {
