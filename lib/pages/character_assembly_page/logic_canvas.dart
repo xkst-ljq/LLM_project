@@ -1498,8 +1498,14 @@ mixin _AssemblyCanvasLogic
     _syncCanvasStateIntoActivePage();
     return _pages.fold<int>(
       0,
-      (sum, page) =>
-          sum + page.elements.where((element) => !_isElementInsidePcb(element)).length,
+      (sum, page) {
+        // 叠加层不设 PCB 硬性边界，组件可摆出 PCB，不计入越界。
+        if (page.isOverlay) return sum;
+        return sum +
+            page.elements
+                .where((element) => !_isElementInsidePcb(element))
+                .length;
+      },
     );
   }
 
