@@ -605,7 +605,10 @@ class UiAssemblyBuilder {
           sendsMessage: true,
           keyAction: true,
           message: label,
-          targetBranchIndex: i,
+          // 分支索引 = 选项下标 + 1：index 0 是 first_mes 引导页本身，
+          // 选项要切到其后的 alternate_greetings（1..N）。
+          // 用 i 会错位：选项1 切回引导页、最后一个选项越界丢失。
+          targetBranchIndex: i + 1,
           color: theme.accentColor,
         ));
         pressPairs.add((surface: surfaceId, button: buttonId));
@@ -886,7 +889,9 @@ class UiAssemblyBuilder {
         sendsMessage: true,
         keyAction: true,
         message: label1,
-        targetBranchIndex: i,
+        // 分支索引 = 选项下标 + 1：index 0 是 first_mes 引导页本身，
+        // 选项要切到其后的 alternate_greetings（1..N）。
+        targetBranchIndex: i + 1,
         color: theme.accentColor,
       ));
       pressPairs.add((surface: surfaceId1, button: buttonId1));
@@ -931,7 +936,8 @@ class UiAssemblyBuilder {
           sendsMessage: true,
           keyAction: true,
           message: label2,
-          targetBranchIndex: i + 1,
+          // 与选项1同理：分支索引 = 选项下标 + 1（跳过 first_mes 引导页本身）。
+          targetBranchIndex: i + 2,
           color: theme.accentColor,
         ));
         pressPairs.add((surface: surfaceId2, button: buttonId2));
