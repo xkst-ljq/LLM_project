@@ -17,8 +17,6 @@ Map<String, dynamic> _branchCard() => {
             '<div onclick="send(\'选择2：开局B\')">[02] 开局B</div>'
             '</选项列表>',
         'alternate_greetings': [
-          '<正文>这是开局A的正文。</正文>',
-          '<正文>这是开局B的正文。</正文>',
         ],
       },
     };
