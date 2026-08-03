@@ -336,6 +336,7 @@ class UiAssemblyBuilder {
       pcbW: pcbW,
       innerW: innerW,
       tabCount: tabCount,
+      branchActions: branchActions,
     );
     final page1 = {
       'id': page1Id,
@@ -391,8 +392,7 @@ class UiAssemblyBuilder {
             pcbW: pcbW,
             innerW: innerW,
             tabCount: tabCount,
-            branchActions: branchActions,
-          )
+                      )
         : const <Map<String, dynamic>>[];
     final page3 = (hasActions || hasBranchActions)
         ? {
@@ -635,6 +635,83 @@ class UiAssemblyBuilder {
         ));
       }
 
+
+    } else {
+      for (final f in fields) {
+        final fieldId = 'sf_${_slug(f.name)}';
+        elements.add(_text(
+          id: nextId('el'),
+          name: '${f.name}标签',
+          text: _decorateEmoji(f.name),
+          x: _Layout.pcbPadding,
+          y: y,
+          w: colLabelW,
+          h: _Layout.rowHeight,
+          fontSize: 10,
+          color: theme.labelColor,
+          align: 'left',
+          layer: elements.length + 1,
+        ));
+
+        if (f.isNumeric && pageIndex == 1) {
+          elements.add(_progress(
+            id: nextId('el'),
+            name: f.name,
+            x: _Layout.pcbPadding + colLabelW + 6,
+            y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
+            w: innerW - colLabelW - 6,
+            h: _Layout.barHeight,
+            statusFieldId: fieldId,
+            layer: elements.length + 1,
+            barFillColor: _barColorOf(f.name, theme.barFillColor),
+            barTrackColor: theme.barTrackColor,
+          ));
+          final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
+          statusFields.add({
+            'id': fieldId,
+            'name': f.name,
+            'type': 'number',
+            'initial_value': numPresets['0'] ?? '0',
+            'min_value': 0.0,
+            'max_value': 100.0,
+            'pin_side': 'none',
+            'order': statusFields.length,
+            'owner': 'player',
+            if (numPresets.length > 1) 'branch_initial_values': numPresets,
+          });
+        } else {
+          elements.add(_text(
+            id: nextId('el'),
+            name: f.name,
+            text: '—',
+            x: _Layout.pcbPadding + colLabelW + 6,
+            y: y,
+            w: innerW - colLabelW - 6,
+            h: _Layout.rowHeight,
+            fontSize: 11,
+            color: theme.valueColor,
+            align: 'left',
+            layer: elements.length + 1,
+            statusFieldId: fieldId,
+          ));
+          final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
+          statusFields.add({
+            'id': fieldId,
+            'name': f.name,
+            'type': 'text',
+            'initial_value': txtPresets['0'] ?? '',
+            'pin_side': 'none',
+            'order': statusFields.length,
+            'owner': 'player',
+            if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
+          });
+        }
+        y += _Layout.rowHeight + _Layout.rowGap;
+      }
+    }
+
+    // ── 分支动作区：只放在「属性」主页，贴近原版 AVAILABLE ACTIONS ──
+    if (pageIndex == 1 && branchActions.isNotEmpty) {
       // ── 分支动作区：每个开场分支的「接下来做什么」 ──
       //
       // 每个动作一行 = text(绑 status field，显示当前分支动作文本，
@@ -739,79 +816,6 @@ class UiAssemblyBuilder {
             y += _Layout.buttonHeight + 6.0;
           }
         }
-      }
-
-    } else {
-      for (final f in fields) {
-        final fieldId = 'sf_${_slug(f.name)}';
-        elements.add(_text(
-          id: nextId('el'),
-          name: '${f.name}标签',
-          text: _decorateEmoji(f.name),
-          x: _Layout.pcbPadding,
-          y: y,
-          w: colLabelW,
-          h: _Layout.rowHeight,
-          fontSize: 10,
-          color: theme.labelColor,
-          align: 'left',
-          layer: elements.length + 1,
-        ));
-
-        if (f.isNumeric && pageIndex == 1) {
-          elements.add(_progress(
-            id: nextId('el'),
-            name: f.name,
-            x: _Layout.pcbPadding + colLabelW + 6,
-            y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-            w: innerW - colLabelW - 6,
-            h: _Layout.barHeight,
-            statusFieldId: fieldId,
-            layer: elements.length + 1,
-            barFillColor: _barColorOf(f.name, theme.barFillColor),
-            barTrackColor: theme.barTrackColor,
-          ));
-          final numPresets = _presetsOf(branchPresets, f.name, numeric: true);
-          statusFields.add({
-            'id': fieldId,
-            'name': f.name,
-            'type': 'number',
-            'initial_value': numPresets['0'] ?? '0',
-            'min_value': 0.0,
-            'max_value': 100.0,
-            'pin_side': 'none',
-            'order': statusFields.length,
-            'owner': 'player',
-            if (numPresets.length > 1) 'branch_initial_values': numPresets,
-          });
-        } else {
-          elements.add(_text(
-            id: nextId('el'),
-            name: f.name,
-            text: '—',
-            x: _Layout.pcbPadding + colLabelW + 6,
-            y: y,
-            w: innerW - colLabelW - 6,
-            h: _Layout.rowHeight,
-            fontSize: 11,
-            color: theme.valueColor,
-            align: 'left',
-            layer: elements.length + 1,
-            statusFieldId: fieldId,
-          ));
-          final txtPresets = _presetsOf(branchPresets, f.name, numeric: false);
-          statusFields.add({
-            'id': fieldId,
-            'name': f.name,
-            'type': 'text',
-            'initial_value': txtPresets['0'] ?? '',
-            'pin_side': 'none',
-            'order': statusFields.length,
-            'owner': 'player',
-            if (txtPresets.length > 1) 'branch_initial_values': txtPresets,
-          });
-        }
-        y += _Layout.rowHeight + _Layout.rowGap;
       }
     }
 
