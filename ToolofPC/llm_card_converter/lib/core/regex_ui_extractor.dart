@@ -202,6 +202,49 @@ class UiVisualHints {
       };
 }
 
+/// 开场白分支里的一个「接下来做什么」动作选项。
+///
+/// 原版卡（如黑曜石·法外特区）会在每个开场白正文末尾写一段 `<选项>`：
+///
+/// ```text
+/// <选项>
+/// 1.🤐【保持沉默】默不作声地按照指示上前，配合登记流程。
+/// 2.🤝【尝试交涉】趁上前扫过登记台与周围狱警的配置...
+/// 3.👊【确立威慑】故意拖慢了脚步...
+/// 4.🏃【突然暴起】假装顺从地靠近登记台...
+/// </选项>
+/// ```
+///
+/// 每个动作由「序号 + emoji + 【标题】 + 描述」组成。
+/// 点击后发送**整行原文**作为用户消息（原版在 ST 里通过
+/// 状态栏的「💊 AVAILABLE ACTIONS」区展示，且 AI 可在对话中更新选项）。
+class ActionOption {
+  const ActionOption({
+    required this.raw,
+    required this.label,
+    this.message,
+  });
+
+  /// 整行原文（`1.🤐【保持沉默】默不作声地按照指示上前，配合登记流程。`）。
+  ///
+  /// 点击动作按钮时发送的就是它。
+  final String raw;
+
+  /// 展示用标题（`【保持沉默】` / `保持沉默`）。
+  final String label;
+
+  /// 发送给 LLM 的动作文本。缺省时用 [raw]。
+  final String? message;
+
+  String get sendText => (message == null || message!.isEmpty) ? raw : message!;
+
+  Map<String, dynamic> toJson() => {
+        'raw': raw,
+        'label': label,
+        if (message != null && message!.isNotEmpty) 'message': message,
+      };
+}
+
 /// 整张卡的 UI 提取结果。
 class UiExtraction {
   const UiExtraction({
@@ -210,6 +253,7 @@ class UiExtraction {
     required this.pluginUrls,
     required this.openingActions,
     required this.branchPresets,
+    required this.branchActions,
     required this.notes,
     required this.cleanFirstMes,
   });
@@ -246,6 +290,15 @@ class UiExtraction {
   /// 分支 0 = `first_mes`，之后依次是 `alternate_greetings`。
   final Map<int, Map<String, String>> branchPresets;
 
+  /// 各开场分支的「接下来做什么」动作列表：分支下标 -> [ActionOption]。
+  ///
+  /// 原版每个开场白分支末尾各有一段 `<选项>`，动作互不相同
+  /// （「新人入狱」和「狱警入职」的可选动作就完全不一样）。
+  /// 转译时把这些动作作为该分支首条 AI 消息的一部分，
+  /// 由引擎运行期的 message_flow 动态选项解析渲染成按钮，
+  /// AI 也能在对话中更新选项。
+  final Map<int, List<ActionOption>> branchActions;
+
   /// 净化的第一条消息文本，供 openingUI 整合卡内气泡显示。
   final String cleanFirstMes;
 
@@ -265,6 +318,8 @@ class UiExtraction {
         'openingActions': openingActions,
         'branchPresets': branchPresets
             .map((k, v) => MapEntry(k.toString(), v)),
+        'branchActions': branchActions.map(
+            (k, v) => MapEntry(k.toString(), v.map((a) => a.toJson()).toList())),
         'scripts': scripts.map((s) => s.toJson()).toList(),
         'notes': notes,
       };
@@ -336,6 +391,20 @@ class RegexUiExtractor {
           '可转为按钮（button + sendsMessage）。');
     }
 
+    // ── 各开场分支的「接下来做什么」动作列表 ──
+    //
+    // 原版在每个开场白正文末尾写一段 `<选项>`（如
+    // `1.🤐【保持沉默】...`），不同分支动作各不相同。
+    // 这些动作转成该分支首条 AI 消息里的 onclick 结构，
+    // 由引擎运行期 message_flow 动态选项解析渲染成按钮，AI 可更新。
+    final branchActions = _extractBranchActions(data);
+    if (branchActions.isNotEmpty) {
+      final total = branchActions.values.fold<int>(
+          0, (acc, list) => acc + list.length);
+      notes.add('识别到 ${branchActions.length} 个开场分支的动作选项'
+          '（共 $total 个），已转为动态按钮。');
+    }
+
     if (!pluginDependent && scripts.every((s) => !s.usable)) {
       notes.add('没有找到可转译的 UI —— 原卡本来就没有界面，不生成。');
     }
@@ -349,6 +418,7 @@ class RegexUiExtractor {
       pluginUrls: pluginUrls,
       openingActions: actions,
       branchPresets: branchPresets,
+      branchActions: branchActions,
       notes: notes,
       cleanFirstMes: cleanFirstMes,
     );
@@ -384,6 +454,66 @@ class RegexUiExtractor {
       if (found.isNotEmpty) out[i] = found;
     }
     return out;
+  }
+
+  /// 从各开场分支的正文里抽「接下来做什么」动作列表。
+  ///
+  /// 分支 0 = `first_mes`，其后依次为 `alternate_greetings`
+  /// ——与聊天页开场白左右切换的顺序一致。
+  ///
+  /// 每个分支正文末尾常有一段 `<选项>`，内容是该分支专属的
+  /// 可选动作（如黑曜石「新人入狱」的 4 个动作与「狱警入职」不同）。
+  static Map<int, List<ActionOption>> _extractBranchActions(
+    Map<String, dynamic> data,
+  ) {
+    final texts = <String>[
+      data['first_mes']?.toString() ?? '',
+      ...?(data['alternate_greetings'] as List?)?.map((e) => e.toString()),
+    ];
+    final out = <int, List<ActionOption>>{};
+    for (var i = 0; i < texts.length; i++) {
+      final opts = _parseActionOptions(texts[i]);
+      if (opts.isNotEmpty) out[i] = opts;
+    }
+    return out;
+  }
+
+  /// 解析一条开场白正文里的 `<选项>...</选项>` 动作块。
+  ///
+  /// 每行动作的常见形态：
+  ///
+  /// ```text
+  /// 1.🤐【保持沉默】默不作声地按照指示上前，配合登记流程。
+  /// 2.🤝【尝试交涉】趁上前扫过登记台...
+  /// ```
+  ///
+  /// 动作行匹配 `序号. emoji【标题】描述`。点击发送整行原文；
+  /// 展示标题优先取 `【标题】`，取不到就回退整行。
+  static List<ActionOption> _parseActionOptions(String raw) {
+    final block = RegExp(
+      r'<选项>(.*?)</选项>',
+      dotAll: true,
+      caseSensitive: false,
+    ).firstMatch(raw);
+    if (block == null) return const [];
+    final body = block.group(1)!.trim();
+    if (body.isEmpty) return const [];
+
+    final options = <ActionOption>[];
+    for (final line in body.split(RegExp(r'\r?\n'))) {
+      final t = line.trim();
+      if (t.isEmpty) continue;
+      // 1.🤐【保持沉默】默不作声地...  →  分组：序号. | 内容
+      final m = RegExp(r'^\s*\d+[.、]\s*(.*)$', dotAll: true).firstMatch(t);
+      final content = m?.group(1) ?? t;
+      // 标题：取 【...】 里的内容
+      final titleM = RegExp(r'【([^】]+)】').firstMatch(content);
+      final label = titleM != null
+          ? titleM.group(1)!
+          : (content.length > 12 ? content.substring(0, 12) : content);
+      options.add(ActionOption(raw: t, label: label));
+    }
+    return options;
   }
 
   // ───────────────────────── 内部实现 ─────────────────────────

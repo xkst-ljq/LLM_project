@@ -208,6 +208,7 @@ class UiAssemblyBuilder {
         ex.branchPresets,
         visualTheme,
         ex.openingActions,
+        ex.branchActions,
       );
       if (r != null) {
         assemblies.add(r.assemblyJson);
@@ -270,6 +271,7 @@ class UiAssemblyBuilder {
     Map<int, Map<String, String>> branchPresets,
     UiVisualTheme theme,
     List<String> openingActions,
+    Map<int, List<ActionOption>> branchActions,
   ) {
     final notes = <String>[];
 
@@ -309,12 +311,13 @@ class UiAssemblyBuilder {
     final innerW = pcbW - _Layout.pcbPadding * 2;
 
     final hasActions = openingActions.isNotEmpty;
-    final tabCount = hasActions ? 3 : 2;
+    final hasBranchActions = branchActions.isNotEmpty;
+    final tabCount = (hasActions || hasBranchActions) ? 3 : 2;
 
     // 创建平级页面的 ID
     final page1Id = 'page_${nextId("page")}';
     final page2Id = 'page_${nextId("page")}';
-    final page3Id = hasActions ? 'page_${nextId("page")}' : '';
+    final page3Id = (hasActions || hasBranchActions) ? 'page_${nextId("page")}' : '';
 
     final statusFields = <Map<String, dynamic>>[];
 
@@ -373,7 +376,7 @@ class UiAssemblyBuilder {
     };
 
     // 编译第三页 (🎯 选项)
-    final elements3 = hasActions
+    final elements3 = (hasActions || hasBranchActions)
         ? _buildPageElements(
             pageIndex: 3,
             fields: const [],
@@ -388,9 +391,10 @@ class UiAssemblyBuilder {
             pcbW: pcbW,
             innerW: innerW,
             tabCount: tabCount,
+            branchActions: branchActions,
           )
         : const <Map<String, dynamic>>[];
-    final page3 = hasActions
+    final page3 = (hasActions || hasBranchActions)
         ? {
             'id': page3Id,
             'name': '选项',
@@ -420,7 +424,7 @@ class UiAssemblyBuilder {
     final heights = [
       getMaxHeight(elements1),
       getMaxHeight(elements2),
-      if (hasActions) getMaxHeight(elements3),
+      if (hasActions || hasBranchActions) getMaxHeight(elements3),
     ];
     final pcbH = heights.reduce((a, b) => a > b ? a : b);
 
@@ -434,9 +438,11 @@ class UiAssemblyBuilder {
     }
     patchBackgroundHeight(elements1);
     patchBackgroundHeight(elements2);
-    if (hasActions) patchBackgroundHeight(elements3);
+    if (hasActions || hasBranchActions) patchBackgroundHeight(elements3);
 
-    final pagesLabel = hasActions ? '📊属性/📁档案/🎯选项' : '📊属性/📁档案';
+    final pagesLabel = (hasActions || hasBranchActions)
+        ? '📊属性/📁档案/🎯选项'
+        : '📊属性/📁档案';
     notes.add('通过多页面 ($pagesLabel) 与顶置 Tab 标签切换按钮整合面板属性与预设选项，使信息流与操作深度聚合。');
 
     final pList = <Map<String, dynamic>>[page1, page2];
@@ -474,6 +480,7 @@ class UiAssemblyBuilder {
     required double pcbW,
     required double innerW,
     required int tabCount,
+    Map<int, List<ActionOption>> branchActions = const {},
   }) {
     final elements = <Map<String, dynamic>>[];
     var y = _Layout.pcbPadding;
@@ -605,7 +612,10 @@ class UiAssemblyBuilder {
           sendsMessage: true,
           keyAction: true,
           message: label,
-          targetBranchIndex: i,
+          // 分支索引 = 选项下标 + 1：index 0 是 first_mes 引导页本身，
+          // 选项要切到其后的 alternate_greetings（1..N）。
+          // 用 i 会错位：选项1 切回引导页、最后一个选项越界丢失。
+          targetBranchIndex: i + 1,
           color: theme.accentColor,
         ));
         pressPairs.add((surface: surfaceId, button: buttonId));
@@ -624,6 +634,113 @@ class UiAssemblyBuilder {
           color: theme.accentColor,
         ));
       }
+
+      // ── 分支动作区：每个开场分支的「接下来做什么」 ──
+      //
+      // 每个动作一行 = text(绑 status field，显示当前分支动作文本，
+      // 由 AI 通过数据通道可改写) + button(sendsMessage，发送该动作)。
+      //
+      // 动作文本按分支登记进 status field 的 branch_initial_values，
+      // 玩家切到某分支时 text 显示对应分支的动作；AI 改写字段后
+      // text 实时刷新，按钮发送的也是最新值（经 linker 联动取动态值）。
+      if (branchActions.isNotEmpty) {
+        // 收集所有分支里出现过的动作（按序号对齐，最多取首个分支的个数，
+        // 因为各分支动作数量通常一致）。
+        final slotCount = branchActions.values
+            .map((l) => l.length)
+            .fold<int>(0, (a, b) => a > b ? a : b);
+        if (slotCount > 0) {
+          y += 6.0;
+          elements.add(_text(
+            id: nextId('el'),
+            name: '动作区标题',
+            text: '🎯 接下来做什么',
+            x: _Layout.pcbPadding,
+            y: y,
+            w: innerW,
+            h: 16,
+            fontSize: 10,
+            color: theme.labelColor,
+            align: 'left',
+            layer: elements.length + 1,
+          ));
+          y += 16 + 4;
+
+          for (var sIdx = 0; sIdx < slotCount; sIdx++) {
+            final actionFieldId = 'sf_act_${sIdx + 1}';
+            final branchValues = <String, String>{};
+            for (final entry in branchActions.entries) {
+              final list = entry.value;
+              if (sIdx < list.length) {
+                branchValues[entry.key.toString()] = list[sIdx].raw;
+              }
+            }
+            final firstRaw = branchValues['0'] ??
+                (branchValues.values.isNotEmpty
+                    ? branchValues.values.first
+                    : '');
+
+            // 动作文本（可被 AI 通过数据通道更新）
+            final textId = nextId('el');
+            elements.add(_surface(
+              id: nextId('el'),
+              name: '动作底_${sIdx + 1}',
+              x: _Layout.pcbPadding,
+              y: y,
+              w: innerW,
+              h: _Layout.buttonHeight,
+              color: theme.buttonBgColor,
+              layer: elements.length + 1,
+              radius: 8,
+            ));
+            elements.add(_text(
+              id: textId,
+              name: '动作文_${sIdx + 1}',
+              text: firstRaw,
+              x: _Layout.pcbPadding + 8,
+              y: y + 8,
+              w: innerW - 44,
+              h: 18,
+              fontSize: 10,
+              color: theme.valueColor,
+              align: 'left',
+              layer: elements.length + 1,
+              statusFieldId: actionFieldId,
+            ));
+
+            // 发送按钮：点击发送该动作文本。
+            // 按钮自身 text 存动作原文；`_resolveSendText` 会优先取它。
+            elements.add(_button(
+              id: nextId('el'),
+              name: '动作发_${sIdx + 1}',
+              x: _Layout.pcbPadding + innerW - 36,
+              y: y,
+              w: 36,
+              h: _Layout.buttonHeight,
+              layer: elements.length + 1,
+              sendsMessage: true,
+              keyAction: false,
+              message: firstRaw,
+              color: theme.accentColor,
+            ));
+
+            // 动作 status field：text 类型，branch_initial_values 存各分支动作
+            statusFields.add({
+              'id': actionFieldId,
+              'name': '动作${sIdx + 1}',
+              'type': 'text',
+              'initial_value': firstRaw,
+              'pin_side': 'none',
+              'order': statusFields.length,
+              'owner': 'player',
+              if (branchValues.length > 1) 'branch_initial_values': branchValues,
+            });
+
+            y += _Layout.buttonHeight + 6.0;
+          }
+        }
+      }
+
     } else {
       for (final f in fields) {
         final fieldId = 'sf_${_slug(f.name)}';
@@ -886,7 +1003,9 @@ class UiAssemblyBuilder {
         sendsMessage: true,
         keyAction: true,
         message: label1,
-        targetBranchIndex: i,
+        // 分支索引 = 选项下标 + 1：index 0 是 first_mes 引导页本身，
+        // 选项要切到其后的 alternate_greetings（1..N）。
+        targetBranchIndex: i + 1,
         color: theme.accentColor,
       ));
       pressPairs.add((surface: surfaceId1, button: buttonId1));
@@ -931,7 +1050,8 @@ class UiAssemblyBuilder {
           sendsMessage: true,
           keyAction: true,
           message: label2,
-          targetBranchIndex: i + 1,
+          // 与选项1同理：分支索引 = 选项下标 + 1（跳过 first_mes 引导页本身）。
+          targetBranchIndex: i + 2,
           color: theme.accentColor,
         ));
         pressPairs.add((surface: surfaceId2, button: buttonId2));
