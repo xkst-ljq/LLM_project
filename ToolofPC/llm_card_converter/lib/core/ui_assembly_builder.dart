@@ -317,6 +317,39 @@ class UiAssemblyBuilder {
 
     final statusFields = <Map<String, dynamic>>[];
 
+    // ── 动作叠加层页：每个动作一个 overlay 页（详情 + 确认按钮） ──
+    final actionOverlayIds = <int, String>{};
+    final actionOverlayPages = <Map<String, dynamic>>[];
+    if (branchActions.isNotEmpty) {
+      final slotCount = branchActions.values
+          .map((l) => l.length)
+          .fold<int>(0, (a, b) => a > b ? a : b);
+      for (var sIdx = 0; sIdx < slotCount; sIdx++) {
+        final branchValues = <String, String>{};
+        for (final entry in branchActions.entries) {
+          if (sIdx < entry.value.length) {
+            branchValues[entry.key.toString()] = entry.value[sIdx].raw;
+          }
+        }
+        final detail = branchValues['0'] ??
+            (branchValues.values.isNotEmpty
+                ? branchValues.values.first
+                : '');
+        if (detail.isEmpty) continue;
+        final overlayId = 'page_${nextId("page")}';
+        actionOverlayIds[sIdx] = overlayId;
+        actionOverlayPages.add(_buildActionOverlayPage(
+          id: overlayId,
+          parentPageId: page1Id,
+          actionTitle: _actionTitleOf(detail),
+          detail: detail,
+          nextId: nextId,
+          theme: theme,
+          pcbW: pcbW,
+        ));
+      }
+    }
+
     // 编译第一页 (📊 属性)
     final elements1 = _buildPageElements(
       pageIndex: 1,
@@ -330,6 +363,7 @@ class UiAssemblyBuilder {
       pcbW: pcbW,
       innerW: innerW,
       branchActions: branchActions,
+      actionOverlayIds: actionOverlayIds,
     );
     final page1 = {
       'id': page1Id,
@@ -401,7 +435,7 @@ class UiAssemblyBuilder {
     notes.add('通过多页面 (📊属性/📁档案) 与顶置 Tab 标签切换按钮'
         '整合面板属性与预设选项，使信息流与操作深度聚合。');
 
-    final pList = <Map<String, dynamic>>[page1, page2];
+    final pList = <Map<String, dynamic>>[page1, page2, ...actionOverlayPages];
 
     return _PanelResult(
       assemblyJson: _assembly(
@@ -431,6 +465,7 @@ class UiAssemblyBuilder {
     required double pcbW,
     required double innerW,
     Map<int, List<ActionOption>> branchActions = const {},
+    Map<int, String> actionOverlayIds = const {},
   }) {
     final elements = <Map<String, dynamic>>[];
     var y = _Layout.pcbPadding;
@@ -593,110 +628,119 @@ class UiAssemblyBuilder {
       }
 
     // ── 分支动作区：只放在「属性」主页，贴近原版 AVAILABLE ACTIONS ──
+    // 每个动作做成「覆盖整个选项的可点击按钮」，点击打开该动作的叠加层，
+    // 叠加层里展示完整描述并放「确认选择此方案」按钮，点确认才发送给 AI。
     if (pageIndex == 1 && branchActions.isNotEmpty) {
-      // ── 分支动作区：每个开场分支的「接下来做什么」 ──
-      //
-      // 每个动作一行 = text(绑 status field，显示当前分支动作文本，
-      // 由 AI 通过数据通道可改写) + button(sendsMessage，发送该动作)。
-      //
-      // 动作文本按分支登记进 status field 的 branch_initial_values，
-      // 玩家切到某分支时 text 显示对应分支的动作；AI 改写字段后
-      // text 实时刷新，按钮发送的也是最新值（经 linker 联动取动态值）。
-      if (branchActions.isNotEmpty) {
-        // 收集所有分支里出现过的动作（按序号对齐，最多取首个分支的个数，
-        // 因为各分支动作数量通常一致）。
-        final slotCount = branchActions.values
-            .map((l) => l.length)
-            .fold<int>(0, (a, b) => a > b ? a : b);
-        if (slotCount > 0) {
-          y += 6.0;
-          elements.add(_text(
-            id: nextId('el'),
-            name: '动作区标题',
-            text: '🎯 接下来做什么',
+      final slotCount = branchActions.values
+          .map((l) => l.length)
+          .fold<int>(0, (a, b) => a > b ? a : b);
+      if (slotCount > 0) {
+        y += 6.0;
+        elements.add(_text(
+          id: nextId('el'),
+          name: '动作区标题',
+          text: '🎯 接下来做什么',
+          x: _Layout.pcbPadding,
+          y: y,
+          w: innerW,
+          h: 16,
+          fontSize: 10,
+          color: theme.labelColor,
+          align: 'left',
+          layer: elements.length + 1,
+        ));
+        y += 16 + 4;
+
+        for (var sIdx = 0; sIdx < slotCount; sIdx++) {
+          final actionFieldId = 'sf_act_${sIdx + 1}';
+          final branchValues = <String, String>{};
+          for (final entry in branchActions.entries) {
+            final list = entry.value;
+            if (sIdx < list.length) {
+              branchValues[entry.key.toString()] = list[sIdx].raw;
+            }
+          }
+          final firstRaw = branchValues['0'] ??
+              (branchValues.values.isNotEmpty
+                  ? branchValues.values.first
+                  : '');
+          final title = _actionTitleOf(firstRaw);
+
+          // 选项底（视觉背景）
+          final surfaceId = nextId('el');
+          elements.add(_surface(
+            id: surfaceId,
+            name: '动作底_${sIdx + 1}',
             x: _Layout.pcbPadding,
             y: y,
             w: innerW,
-            h: 16,
+            h: _Layout.buttonHeight,
+            color: theme.buttonBgColor,
+            layer: elements.length + 1,
+            radius: 8,
+          ));
+          elements.add(_text(
+            id: nextId('el'),
+            name: '动作文_${sIdx + 1}',
+            text: title,
+            x: _Layout.pcbPadding + 10,
+            y: y + 8,
+            w: innerW - 20,
+            h: 18,
             fontSize: 10,
-            color: theme.labelColor,
+            color: theme.valueColor,
             align: 'left',
             layer: elements.length + 1,
+            statusFieldId: actionFieldId,
           ));
-          y += 16 + 4;
 
-          for (var sIdx = 0; sIdx < slotCount; sIdx++) {
-            final actionFieldId = 'sf_act_${sIdx + 1}';
-            final branchValues = <String, String>{};
-            for (final entry in branchActions.entries) {
-              final list = entry.value;
-              if (sIdx < list.length) {
-                branchValues[entry.key.toString()] = list[sIdx].raw;
-              }
-            }
-            final firstRaw = branchValues['0'] ??
-                (branchValues.values.isNotEmpty
-                    ? branchValues.values.first
-                    : '');
-
-            // 动作文本（可被 AI 通过数据通道更新）
-            final textId = nextId('el');
-            elements.add(_surface(
+          // 覆盖整个选项的点击热区：点击打开该动作的叠加层
+          final overlayId = actionOverlayIds[sIdx];
+          final btnId = nextId('el');
+          elements.add(_button(
+            id: btnId,
+            name: '动作_${sIdx + 1}',
+            x: _Layout.pcbPadding,
+            y: y,
+            w: innerW,
+            h: _Layout.buttonHeight,
+            layer: elements.length + 1,
+            sendsMessage: false,
+            keyAction: false,
+            color: 0x00000000,
+          ));
+          if (overlayId != null && overlayId.isNotEmpty) {
+            final routerId = nextId('el');
+            elements.add(_pageRouter(
+              id: routerId,
+              name: '动作路由_${sIdx + 1}',
+              targetPageId: overlayId,
+              action: 'open_overlay',
+            ));
+            elements.add(_pressLinker2(
               id: nextId('el'),
-              name: '动作底_${sIdx + 1}',
-              x: _Layout.pcbPadding,
-              y: y,
-              w: innerW,
-              h: _Layout.buttonHeight,
-              color: theme.buttonBgColor,
+              name: '动作跳_${sIdx + 1}',
+              buttonId: btnId,
+              routerId: routerId,
+              scheme: 'button_to_page_route',
+              y: sIdx * 52.0,
               layer: elements.length + 1,
-              radius: 8,
             ));
-            elements.add(_text(
-              id: textId,
-              name: '动作文_${sIdx + 1}',
-              text: firstRaw,
-              x: _Layout.pcbPadding + 8,
-              y: y + 8,
-              w: innerW - 44,
-              h: 18,
-              fontSize: 10,
-              color: theme.valueColor,
-              align: 'left',
-              layer: elements.length + 1,
-              statusFieldId: actionFieldId,
-            ));
-
-            // 发送按钮：点击发送该动作文本。
-            // 按钮自身 text 存动作原文；`_resolveSendText` 会优先取它。
-            elements.add(_button(
-              id: nextId('el'),
-              name: '动作发_${sIdx + 1}',
-              x: _Layout.pcbPadding + innerW - 36,
-              y: y,
-              w: 36,
-              h: _Layout.buttonHeight,
-              layer: elements.length + 1,
-              sendsMessage: true,
-              keyAction: false,
-              message: firstRaw,
-              color: theme.accentColor,
-            ));
-
-            // 动作 status field：text 类型，branch_initial_values 存各分支动作
-            statusFields.add({
-              'id': actionFieldId,
-              'name': '动作${sIdx + 1}',
-              'type': 'text',
-              'initial_value': firstRaw,
-              'pin_side': 'none',
-              'order': statusFields.length,
-              'owner': 'player',
-              if (branchValues.length > 1) 'branch_initial_values': branchValues,
-            });
-
-            y += _Layout.buttonHeight + 6.0;
           }
+
+          // 动作 status field：text 类型，branch_initial_values 存各分支动作
+          statusFields.add({
+            'id': actionFieldId,
+            'name': '动作${sIdx + 1}',
+            'type': 'text',
+            'initial_value': firstRaw,
+            'pin_side': 'none',
+            'order': statusFields.length,
+            'owner': 'player',
+            if (branchValues.length > 1) 'branch_initial_values': branchValues,
+          });
+
+          y += _Layout.buttonHeight + 6.0;
         }
       }
     }
@@ -719,10 +763,152 @@ class UiAssemblyBuilder {
     return [bg, ...elements];
   }
 
+  /// 生成单个动作的叠加层（overlay）页。
+  ///
+  /// 原版「AVAILABLE ACTIONS」的动作选项做成可点击 → 打开叠加层展示
+  /// 该动作的完整描述，叠加层里放一个「确认选择此方案」按钮，点确认才
+  /// 把该动作发给 AI。这样既能看到更多信息，又避免误触直接发送。
+  static Map<String, dynamic> _buildActionOverlayPage({
+    required String id,
+    required String parentPageId,
+    required String actionTitle,
+    required String detail,
+    required String Function(String) nextId,
+    required UiVisualTheme theme,
+    required double pcbW,
+  }) {
+    const padding = 16.0;
+    const innerW = 300.0;
+    final elements = <Map<String, dynamic>>[];
+    var y = padding;
+
+    // 全屏遮罩（is_overlay_container → 点遮罩空白处关闭叠加层）
+    elements.add(_surface(
+      id: nextId('el'),
+      name: '叠加遮罩',
+      x: 0,
+      y: 0,
+      w: pcbW,
+      h: 460,
+      color: 0x99000000,
+      layer: 0,
+      radius: 0,
+      overlayContainer: true,
+    ));
+
+    // 中央卡片
+    final cardX = (pcbW - innerW) / 2;
+    elements.add(_surface(
+      id: nextId('el'),
+      name: '叠加卡片',
+      x: cardX,
+      y: padding,
+      w: innerW,
+      h: 428,
+      color: theme.panelColor,
+      layer: 1,
+      radius: 12,
+    ));
+
+    y = padding + 16;
+
+    elements.add(_text(
+      id: nextId('el'),
+      name: '叠加标题',
+      text: '🎯 $actionTitle',
+      x: cardX + 14,
+      y: y,
+      w: innerW - 28,
+      h: 22,
+      fontSize: 14,
+      color: theme.titleColor,
+      align: 'left',
+      layer: 2,
+    ));
+    y += 22 + 10;
+
+    elements.add(_text(
+      id: nextId('el'),
+      name: '叠加详情',
+      text: detail,
+      x: cardX + 14,
+      y: y,
+      w: innerW - 28,
+      h: 220,
+      fontSize: 12,
+      color: theme.valueColor,
+      align: 'left',
+      layer: 2,
+    ));
+    y += 220 + 16;
+
+    // 确认按钮：把该动作发给 AI
+    final confirmSurfaceId = nextId('el');
+    elements.add(_surface(
+      id: confirmSurfaceId,
+      name: '确认底',
+      x: cardX + 14,
+      y: y,
+      w: innerW - 28,
+      h: 40,
+      color: theme.accentColor,
+      layer: 2,
+      radius: 8,
+    ));
+    elements.add(_text(
+      id: nextId('el'),
+      name: '确认字',
+      text: '确认选择此方案',
+      x: cardX + 14,
+      y: y + 11,
+      w: innerW - 28,
+      h: 18,
+      fontSize: 13,
+      color: theme.titleColor,
+      align: 'center',
+      layer: 3,
+    ));
+    final confirmId = nextId('el');
+    elements.add(_button(
+      id: confirmId,
+      name: '确认按钮',
+      x: cardX + 14,
+      y: y,
+      w: innerW - 28,
+      h: 40,
+      layer: 3,
+      sendsMessage: true,
+      keyAction: false,
+      message: detail,
+      color: theme.accentColor,
+    ));
+    elements.add(_pressLinker(
+      id: nextId('el'),
+      name: '确认按压',
+      buttonId: confirmId,
+      surfaceId: confirmSurfaceId,
+      y: 0,
+      layer: 4,
+      color: theme.accentColor,
+    ));
+
+    return {
+      'id': id,
+      'name': '确认·$actionTitle',
+      'type': 'overlay',
+      'parentPageId': parentPageId,
+      'sortOrder': 100,
+      'elements': elements,
+      'gestures': <dynamic>[],
+      'propertyOverrides': <dynamic>[],
+    };
+  }
+
   static Map<String, dynamic> _pageRouter({
     required String id,
     required String name,
     required String targetPageId,
+    String action = 'switch_base_page',
   }) =>
       _element(
         id: id,
@@ -739,9 +925,10 @@ class UiAssemblyBuilder {
           props: {
             'route': {
               'targetPageId': targetPageId,
-              'action': 'switch_base_page',
-              'transition': 'base_slide',
-              'durationMs': 200,
+              'action': action,
+              'transition':
+                  action == 'open_overlay' ? 'overlay_fade' : 'base_slide',
+              'durationMs': action == 'open_overlay' ? 180 : 200,
             },
           },
         ),
@@ -886,9 +1073,9 @@ class UiAssemblyBuilder {
         w: colW,
         h: _Layout.buttonHeight,
         layer: elements.length + 1,
-        sendsMessage: true,
+        // 选开场白：只切换分支 + 关闭弹窗，不发送任何文本给 AI。
+        sendsMessage: false,
         keyAction: true,
-        message: label1,
         // 分支索引 = 选项下标 + 1：index 0 是 first_mes 引导页本身，
         // 选项要切到其后的 alternate_greetings（1..N）。
         targetBranchIndex: i + 1,
@@ -933,9 +1120,9 @@ class UiAssemblyBuilder {
           w: colW,
           h: _Layout.buttonHeight,
           layer: elements.length + 1,
-          sendsMessage: true,
+          // 选开场白：只切换分支 + 关闭弹窗，不发送任何文本给 AI。
+          sendsMessage: false,
           keyAction: true,
-          message: label2,
           // 与选项1同理：分支索引 = 选项下标 + 1（跳过 first_mes 引导页本身）。
           targetBranchIndex: i + 2,
           color: theme.accentColor,
@@ -1063,6 +1250,7 @@ class UiAssemblyBuilder {
     required int color,
     required int layer,
     double radius = 12,
+    bool overlayContainer = false,
   }) =>
       _element(
         id: id,
@@ -1077,6 +1265,9 @@ class UiAssemblyBuilder {
           type: 'surface',
           color: color,
           radius: radius,
+          props: overlayContainer
+              ? {'is_overlay_container': true}
+              : null,
         ),
       );
 
@@ -1382,6 +1573,19 @@ class UiAssemblyBuilder {
   ///
   /// 中文直接保留（引擎按字符串匹配，不限 ASCII），
   /// 只把可能破坏 JSON 或路径的字符换掉。
+  /// 从完整动作文本提取展示标题。
+  ///
+  /// 完整动作形如 `1.🤐【保持沉默】默不作声地按照指示上前...`，
+  /// 标题取 `【保持沉默】`（带书名号便于识别为选项）；没有【】时
+  /// 截取前若干字符。
+  static String _actionTitleOf(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return '';
+    final titleM = RegExp(r'【([^】]+)】').firstMatch(t);
+    if (titleM != null) return '【${titleM.group(1)}】';
+    return t.length > 14 ? t.substring(0, 14) : t;
+  }
+
   static String _slug(String name) =>
       name.replaceAll(RegExp(r'[^\w\u4e00-\u9fa5]'), '_');
 

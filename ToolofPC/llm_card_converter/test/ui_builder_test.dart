@@ -110,7 +110,7 @@ void main() {
       expect(branchVals['2'].toString(), contains('职业化应对'));
     });
 
-    test('动作按钮带 sendsMessage（点击发送动作）', () {
+    test('动作生成叠加层 overlay 页，确认按钮 sendsMessage', () {
       final ex = RegexUiExtractor.extract(_branchCard());
       final built = UiAssemblyBuilder.build(ex, cardName: '测试');
 
@@ -119,19 +119,49 @@ void main() {
           .firstWhere((a) => a['mode'] == 'extra_companion');
       final pages = (jsonDecode(companion['pages'] as String) as List)
           .cast<Map<String, dynamic>>();
-      var found = 0;
-      for (final p in pages) {
-        for (final e in (p['elements'] as List).cast<Map<String, dynamic>>()) {
+
+      // 应为：属性页 + 档案页 + 2 个动作叠加层页
+      final overlays =
+          pages.where((p) => p['type'] == 'overlay').toList();
+      expect(overlays.length, 2);
+
+      // 每个叠加层有 parentPageId，且含 sendsMessage 的确认按钮
+      for (final ov in overlays) {
+        expect(ov['parentPageId'], isNotNull);
+        var confirmFound = false;
+        for (final e in (ov['elements'] as List).cast<Map<String, dynamic>>()) {
           final m = Map<String, dynamic>.from(e['module'] as Map);
-          if (m['type'] == 'button' &&
-              (m['name'] ?? '').toString().contains('动作发')) {
+          if (m['type'] == 'button') {
             final props = Map<String, dynamic>.from(m['properties'] as Map);
-            expect(props['sendsMessage'], isTrue);
-            found++;
+            if (props['sendsMessage'] == true) confirmFound = true;
           }
         }
+        expect(confirmFound, isTrue, reason: '叠加层应有确认发送按钮');
       }
-      expect(found, 2);
+    });
+
+    test('属性页动作按钮不直接发送，而是打开叠加层', () {
+      final ex = RegexUiExtractor.extract(_branchCard());
+      final built = UiAssemblyBuilder.build(ex, cardName: '测试');
+
+      final companion = built.assemblies
+          .map((s) => Map<String, dynamic>.from(jsonDecode(s) as Map))
+          .firstWhere((a) => a['mode'] == 'extra_companion');
+      final pages = (jsonDecode(companion['pages'] as String) as List)
+          .cast<Map<String, dynamic>>();
+
+      // 属性页（第一个 base 页）里的动作按钮（动作_1/动作_2）
+      // 不应带 sendsMessage（点击只打开叠加层，不直接发送）
+      final basePages = pages.where((p) => p['type'] == 'base').toList();
+      final attrPage = basePages.firstWhere((p) => p['name'] == '属性');
+      for (final e in (attrPage['elements'] as List).cast<Map<String, dynamic>>()) {
+        final m = Map<String, dynamic>.from(e['module'] as Map);
+        if (m['type'] == 'button' &&
+            (m['name'] ?? '').toString().startsWith('动作_')) {
+          final props = Map<String, dynamic>.from(m['properties'] as Map);
+          expect(props['sendsMessage'] ?? false, isFalse);
+        }
+      }
     });
   });
 }
