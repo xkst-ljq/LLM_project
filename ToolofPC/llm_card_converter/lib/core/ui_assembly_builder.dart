@@ -1181,7 +1181,7 @@ class UiAssemblyBuilder {
     final props = <String, dynamic>{
       if (sendsMessage) 'sendsMessage': true,
       if (keyAction) 'keyAction': true,
-      if (message.isNotEmpty) 'messageText': message,
+      if (message.isNotEmpty) 'text': message,
     };
     if (targetBranchIndex != null) {
       props['targetBranchIndex'] = targetBranchIndex;
