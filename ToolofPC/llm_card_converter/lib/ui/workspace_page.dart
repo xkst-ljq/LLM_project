@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/ai_classifier.dart';
 import '../core/ai_refiner.dart';
@@ -37,6 +38,9 @@ class _WorkItem {
   /// 预览区当前看的是文本还是 UI。
   /// 逐卡记忆：批量转译时挨个展开查看，不该被别的卡重置。
   bool showUiPreview = false;
+
+  /// 展开卡片的预览区高度（可拖拽底部把手调节）。
+  double previewHeight = 480;
 
   _WorkItem(this.card, this.work);
 }
@@ -328,8 +332,33 @@ class _WorkspacePageState extends State<WorkspacePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('简短日志：',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('简短日志：',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: '复制全部日志',
+                          iconSize: 16,
+                          icon: const Icon(Icons.copy_all_outlined),
+                          onPressed: () async {
+                            final text = _log.join('\n');
+                            if (text.isEmpty) return;
+                            await Clipboard.setData(
+                              ClipboardData(text: text),
+                            );
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('日志已复制到剪贴板'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     for (final line in _log)
                       Padding(
@@ -428,49 +457,56 @@ class _WorkspacePageState extends State<WorkspacePage> {
           ),
           // 展开内容：预览 + 编辑/比对
           if (expanded)
-            SizedBox(
-              height: 420,
-              child: Column(
-                children: [
-                  const Divider(height: 1),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _previewTabs(item),
-                              Expanded(
-                                child: item.showUiPreview
-                                    // UI 预览用的是主 App 同一套渲染引擎
-                                    // （packages/llm_ui_engine），
-                                    // 所以这里看到的就是玩家实际看到的。
-                                    ? AssemblyPreview(
-                                        characterData: result?.characterData,
-                                        emptyHint: item.status ==
-                                                _WorkStatus.running
-                                            ? '转译中…'
-                                            : '这张卡没有 UI',
-                                      )
-                                    : CardPreview(
-                                        result: result,
-                                        highlightEntryIds: item.highlightIds,
-                                        placeholder:
-                                            item.status == _WorkStatus.running
+            Column(
+              children: [
+                const Divider(height: 1),
+                SizedBox(
+                  height: item.previewHeight,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  _previewTabs(item),
+                                  Expanded(
+                                    child: item.showUiPreview
+                                        // UI 预览用的是主 App 同一套渲染引擎
+                                        // （packages/llm_ui_engine），
+                                        // 所以这里看到的就是玩家实际看到的。
+                                        ? AssemblyPreview(
+                                            characterData: result?.characterData,
+                                            emptyHint: item.status ==
+                                                    _WorkStatus.running
+                                                ? '转译中…'
+                                                : '这张卡没有 UI',
+                                          )
+                                        : CardPreview(
+                                            result: result,
+                                            highlightEntryIds: item.highlightIds,
+                                            placeholder: item.status ==
+                                                    _WorkStatus.running
                                                 ? '转译中…'
                                                 : '预览',
-                                      ),
+                                          ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                            // 右侧：编辑 / 比对（作用于本卡），仅完成后可用
+                            if (item.status == _WorkStatus.done)
+                              _sideButtons(item),
+                          ],
                         ),
-                        // 右侧：编辑 / 比对（作用于本卡），仅完成后可用
-                        if (item.status == _WorkStatus.done) _sideButtons(item),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                // 底部把手：上下拖动调整预览区高度
+                _resizeHandle(item),
+              ],
             ),
         ],
       ),
@@ -533,6 +569,39 @@ class _WorkspacePageState extends State<WorkspacePage> {
           tab('UI', Icons.dashboard_customize_outlined, item.showUiPreview,
               () => setState(() => item.showUiPreview = true)),
         ],
+      ),
+    );
+  }
+
+  /// 预览区底部的拖拽把手，上下拖动改变预览区高度。
+  Widget _resizeHandle(_WorkItem item) {
+    return Tooltip(
+      message: '拖动调整预览区高度',
+      waitDuration: const Duration(milliseconds: 400),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragUpdate: (d) {
+          setState(() {
+            item.previewHeight =
+                (item.previewHeight + d.delta.dy).clamp(280, 1000);
+          });
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeRow,
+          child: Container(
+            height: 20,
+            alignment: Alignment.center,
+            color: Colors.transparent,
+            child: Container(
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

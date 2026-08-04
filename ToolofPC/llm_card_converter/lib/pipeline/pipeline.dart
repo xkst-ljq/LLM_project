@@ -388,6 +388,21 @@ class ConversionPipeline {
         }
       }
 
+      // ── 选择开场白 opening 页：2 条以上开场白时生成 ──
+      // 让玩家在 opening 弹窗里选开局（按钮 → targetBranchIndex，不发送给 AI）。
+      final opening = UiAssemblyBuilder.buildOpeningFromGreetings(
+        _parseGreetings(card['opening_greetings']),
+        cardName: card['name']?.toString() ?? '',
+        theme: visualTheme,
+      );
+      if (opening != null && built.assemblies.isNotEmpty) {
+        built = BuiltAssembly(
+          assemblies: [...built.assemblies, ...opening.assemblies],
+          statusFields: built.statusFields,
+          notes: [...built.notes, ...opening.notes],
+        );
+      }
+
       final notes = <ConversionNote>[
         ...base.notes,
         if (aiAttempted)
@@ -495,6 +510,28 @@ class ConversionPipeline {
     } else {
       item.stageStatus[PipelineStage.refine] = StageStatus.skipped;
     }
+  }
+
+  /// 解析 `opening_greetings`（可能是 JSON 字符串或已经是 List）。
+  List<Map<String, dynamic>> _parseGreetings(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    }
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final v = jsonDecode(raw);
+        if (v is List) {
+          return v
+              .whereType<Map>()
+              .map((m) => Map<String, dynamic>.from(m))
+              .toList();
+        }
+      } catch (_) {}
+    }
+    return const [];
   }
 
   /// 从规则转译结果里取回原始第三方 JSON（mapper 会把它存进禁用条目 tp_raw）。

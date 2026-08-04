@@ -4806,6 +4806,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                   AppBar(
                                     title: const Text('聊天设置'),
                                     automaticallyImplyLeading: false,
+                                    // scene 接管时左右滑动被场景吞掉，
+                                    // 没有显式关闭按钮的话，设置页一旦打开
+                                    // 就退不出去，scene+蒙版会一直停留在
+                                    // 左移状态。给一个明确的「关闭」入口，
+                                    // 回到 _closePanel()（把 _animController
+                                    // 归零，场景与蒙版随之归位）。
+                                    leading: IconButton(
+                                      icon: const Icon(Icons.close),
+                                      tooltip: '关闭设置',
+                                      onPressed: _closePanel,
+                                    ),
                                   ),
                                   Expanded(
                                     child: ListView(

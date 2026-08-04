@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
@@ -56,11 +57,47 @@ class AssemblyPreview extends StatefulWidget {
 class _AssemblyPreviewState extends State<AssemblyPreview> {
   int _index = 0;
 
+  /// 手动缩放倍率；`null` 表示「适配窗口」——自动等比缩放到刚好放进预览区。
+  ///
+  /// **默认是 1.0（1:1 实际尺寸）**：预览区宽高和 UI（PCB）宽高往往
+  /// 不是同一个比例，1:1 才能看到真实字号/间距。UI 比预览区大时用滚动条
+  /// 平移查看；想一眼看全貌就切「适配窗口」。
+  double? _manualScale = 1.0;
+
+  final ScrollController _hCtrl = ScrollController();
+  final ScrollController _vCtrl = ScrollController();
+
   @override
   void didUpdateWidget(covariant AssemblyPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 换了一张卡就回到第一份 UI，否则可能停在不存在的下标上。
-    if (oldWidget.characterData != widget.characterData) _index = 0;
+    if (oldWidget.characterData != widget.characterData) {
+      _index = 0;
+      _setManual(1.0, jump: false); // 换卡回到 1:1
+    }
+  }
+
+  @override
+  void dispose() {
+    _hCtrl.dispose();
+    _vCtrl.dispose();
+    super.dispose();
+  }
+
+  /// 步进缩放（每步 10%）。
+  void _stepZoom(double delta) {
+    final base = _manualScale ?? 1.0;
+    _setManual((base + delta).clamp(0.1, 8.0));
+  }
+
+  /// 设置手动缩放倍率；`jump:false` 时保留当前滚动位置（换卡重置用）。
+  void _setManual(double? v, {bool jump = true}) {
+    setState(() => _manualScale = v);
+    if (jump) {
+      // 切换基准倍率后回到左上角，避免停在空白滚动区域让人以为卡住了。
+      if (_hCtrl.hasClients) _hCtrl.jumpTo(0);
+      if (_vCtrl.hasClients) _vCtrl.jumpTo(0);
+    }
   }
 
   @override
@@ -145,45 +182,162 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
 
   /// 渲染舞台。
   ///
-  /// PCB 高度最大可到 2000，直接放会超出面板，因此按可用空间等比缩小；
-  /// **只缩小不放大**——放大会让 1px 的线变糊，反而看不清真实效果。
+  /// 两份职责分开：
+  ///  - 顶部的缩放条负责「倍率调节」（适配窗口 / 100% / 步进 +/-）；
+  ///  - 下方的预览区**按 UI 的真实比例等比缩放**渲染，绝不拉伸变形。
+  ///
+  /// 当 UI 按当前倍率渲染出来比预览区还大时，用双轴滚动条平移查看，
+  /// 而不是把整个 UI 硬塞进一个小框——后者正是「UI 被压得很扁」的根源。
   Widget _buildStage(UIAssemblyInfo info) {
     return LayoutBuilder(
       builder: (context, box) {
-        final scale = _fitScale(
+        final viewport = Size(box.maxWidth, box.maxHeight);
+        final fitScale = _fitScale(
           content: Size(info.pcbWidth, info.pcbHeight),
-          box: Size(box.maxWidth - 32, box.maxHeight - 32),
+          box: viewport,
         );
-        return Container(
-          color: const Color(0xFFEDEDF2),
-          alignment: Alignment.center,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: Transform.scale(
-                scale: scale,
-                alignment: Alignment.topCenter,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.16),
-                        blurRadius: 16,
-                      ),
-                    ],
-                  ),
-                  child: SizedBox(
-                    width: info.pcbWidth,
-                    height: info.pcbHeight,
-                    // 与主 App 聊天页用的是同一个组件、同一份源码。
-                    child: UIAssemblyRuntimeView(assemblyInfo: info),
-                  ),
-                ),
+        final scale = _manualScale ?? fitScale;
+        final w = info.pcbWidth * scale;
+        final h = info.pcbHeight * scale;
+
+        return Column(
+          children: [
+            _buildZoomBar(info, fitScale),
+            Expanded(
+              child: Container(
+                color: const Color(0xFFEDEDF2),
+                child: ClipRect(child: _scrollableStage(
+                  viewport: viewport,
+                  contentWidth: w,
+                  contentHeight: h,
+                  child: _scaledUi(info, scale),
+                )),
               ),
             ),
-          ),
+          ],
         );
       },
+    );
+  }
+
+  /// 顶部的缩放控制条。
+  Widget _buildZoomBar(UIAssemblyInfo info, double fitScale) {
+    final current = _manualScale ?? fitScale;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE0E0E6))),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.remove, size: 18),
+            tooltip: '缩小',
+            onPressed: () => _stepZoom(-0.1),
+          ),
+          SizedBox(
+            width: 52,
+            child: Text(
+              '${(current * 100).round()}%',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add, size: 18),
+            tooltip: '放大',
+            onPressed: () => _stepZoom(0.1),
+          ),
+          const SizedBox(width: 4),
+          _zoomChip('适配', _manualScale == null, () => _setManual(null)),
+          const SizedBox(width: 4),
+          _zoomChip('100%', _manualScale == 1.0, () => _setManual(1.0)),
+          const Spacer(),
+          const Icon(Icons.aspect_ratio, size: 14, color: Color(0xFF666672)),
+          const SizedBox(width: 4),
+          Text(
+            '${info.pcbWidth.toStringAsFixed(0)}×${info.pcbHeight.toStringAsFixed(0)}',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF666672)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _zoomChip(String label, bool selected, VoidCallback onTap) {
+    return ChoiceChip(
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      selected: selected,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+      selectedColor: Theme.of(context).colorScheme.primaryContainer,
+      onSelected: (_) => onTap(),
+    );
+  }
+
+  /// 按 `scale` 等比缩放出的 UI。外层 SizedBox 占住缩放后的真实尺寸，
+  /// 内部用 Transform.scale 从左上角缩放，比例完全不变。
+  Widget _scaledUi(UIAssemblyInfo info, double scale) {
+    return SizedBox(
+      width: info.pcbWidth * scale,
+      height: info.pcbHeight * scale,
+      child: Transform.scale(
+        scale: scale,
+        alignment: Alignment.topLeft,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.16),
+                blurRadius: 16,
+              ),
+            ],
+          ),
+          child: SizedBox(
+            width: info.pcbWidth,
+            height: info.pcbHeight,
+            // 与主 App 聊天页用的是同一个组件、同一份源码。
+            child: UIAssemblyRuntimeView(assemblyInfo: info),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 双轴滚动舞台。
+  ///
+  /// 预览区至少要装下整个 viewport（UI 比 viewport 小时居中、不滚动）；
+  /// UI 比 viewport 大时，容器取 UI 的实际尺寸，两个滚动条分别控横向/纵向。
+  Widget _scrollableStage({
+    required Size viewport,
+    required double contentWidth,
+    required double contentHeight,
+    required Widget child,
+  }) {
+    final w = math.max(viewport.width, contentWidth) + 16;
+    final h = math.max(viewport.height, contentHeight) + 16;
+    return Scrollbar(
+      controller: _hCtrl,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _hCtrl,
+        scrollDirection: Axis.horizontal,
+        child: Scrollbar(
+          controller: _vCtrl,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _vCtrl,
+            child: SizedBox(
+              width: w,
+              height: h,
+              child: Center(child: child),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -193,7 +347,8 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
     final s = (box.width / content.width) < (box.height / content.height)
         ? box.width / content.width
         : box.height / content.height;
-    return s > 1 ? 1 : s; // 只缩不放
+    // 「适配」允许放大：这样 UI 总能铺满预览区，不再被压成一小块。
+    return s < 0.01 ? 0.01 : s;
   }
 
   /// 解析页面列表。

@@ -1267,6 +1267,177 @@ class UiAssemblyBuilder {
     );
   }
 
+  /// 生成「选择开场白」opening 页。
+  ///
+  /// 一张卡有 2 条以上开场白时，玩家的开局不该由程序硬定，
+  /// 而应由玩家在 opening 弹窗里选。每个开场白一个按钮：
+  /// 点击 → 切到对应分支（`targetBranchIndex`）并关闭弹窗，
+  /// **不发送任何文本给 AI**（选开场白不是一次对话）。
+  static BuiltAssembly? buildOpeningFromGreetings(
+    List<Map<String, dynamic>> greetings, {
+    String cardName = '',
+    UiVisualTheme? theme,
+  }) {
+    if (greetings.length < 2) return null; // 只有一条开场白，无需选择
+    final visualTheme = theme ?? UiVisualTheme.defaultTheme();
+
+    const pcbW = 320.0;
+    const padding = 16.0;
+    final innerW = pcbW - padding * 2;
+    final elements = <Map<String, dynamic>>[];
+    final logicSlots = _LogicSlots();
+    final pressPairs = <({String surface, String button})>[];
+    var seed = DateTime.now().millisecondsSinceEpoch;
+    String nextId(String prefix) => '${prefix}_${seed++}';
+    var y = padding;
+
+    // 标题
+    elements.add(_text(
+      id: nextId('op'),
+      name: '标题',
+      text: cardName.isEmpty ? '选择你的开局' : cardName,
+      x: padding,
+      y: y,
+      w: innerW,
+      h: 28,
+      fontSize: 16,
+      color: visualTheme.titleColor,
+      align: 'center',
+      layer: 1,
+    ));
+    y += 28 + 14;
+
+    elements.add(_text(
+      id: nextId('op'),
+      name: '副标题',
+      text: '请选择你的开局',
+      x: padding,
+      y: y,
+      w: innerW,
+      h: 18,
+      fontSize: 12,
+      color: visualTheme.labelColor,
+      align: 'center',
+      layer: 1,
+    ));
+    y += 18 + 16;
+
+    // 每个开场白一个按钮
+    for (var i = 0; i < greetings.length; i++) {
+      final title = _greetingTitle(greetings[i]);
+      final surfaceId = nextId('op');
+      elements.add(_surface(
+        id: surfaceId,
+        name: '开局底${i + 1}',
+        x: padding,
+        y: y,
+        w: innerW,
+        h: _Layout.buttonHeight + 6,
+        color: visualTheme.buttonBgColor,
+        layer: elements.length + 1,
+        radius: 8,
+      ));
+      elements.add(_text(
+        id: nextId('op'),
+        name: '开局文${i + 1}',
+        text: title,
+        x: padding + 12,
+        y: y + 10,
+        w: innerW - 24,
+        h: 20,
+        fontSize: 12,
+        color: visualTheme.valueColor,
+        align: 'left',
+        layer: elements.length + 1,
+      ));
+      final buttonId = nextId('op');
+      elements.add(_button(
+        id: buttonId,
+        name: '开局${i + 1}',
+        x: padding,
+        y: y,
+        w: innerW,
+        h: _Layout.buttonHeight + 6,
+        layer: elements.length + 1,
+        // 选开场白：只切换分支 + 关闭弹窗，不发送任何文本给 AI。
+        sendsMessage: false,
+        keyAction: true,
+        // 分支索引 = 开场白下标（0 是 first_mes，其后为 alternate_greetings）。
+        targetBranchIndex: i,
+        color: visualTheme.accentColor,
+      ));
+      pressPairs.add((surface: surfaceId, button: buttonId));
+      y += _Layout.buttonHeight + 6 + 10;
+    }
+
+    // 按压反馈联动器（放在后台逻辑区）
+    for (var i = 0; i < pressPairs.length; i++) {
+      final pressPos = logicSlots.slot(0);
+      elements.add(_pressLinker(
+        id: nextId('op'),
+        name: '开局${i + 1}按压',
+        buttonId: pressPairs[i].button,
+        surfaceId: pressPairs[i].surface,
+        x: pressPos.$1,
+        y: pressPos.$2,
+        layer: elements.length + 1,
+        color: visualTheme.accentColor,
+      ));
+    }
+
+    final pcbH = (y + padding).clamp(64.0, 2000.0).toDouble();
+    final bg = _surface(
+      id: nextId('op'),
+      name: '底板',
+      x: 0,
+      y: 0,
+      w: pcbW,
+      h: pcbH,
+      color: visualTheme.pcbColor,
+      layer: 0,
+      radius: visualTheme.borderRadius,
+    );
+
+    final page = {
+      'id': 'page_${nextId('op')}',
+      'name': '选择开局',
+      'type': 'base',
+      'parentPageId': null,
+      'sortOrder': 0,
+      'elements': [bg, ...elements],
+      'gestures': <dynamic>[],
+      'propertyOverrides': <dynamic>[],
+    };
+
+    final json = _assembly(
+      id: nextId('op'),
+      name: '选择开局',
+      mode: 'opening',
+      pcbW: pcbW,
+      pcbH: pcbH,
+      pages: [page],
+      pcbColor: visualTheme.pcbColor,
+      pcbRadius: visualTheme.borderRadius,
+    );
+    return BuiltAssembly(
+      assemblies: [json],
+      statusFields: const [],
+      notes: const ['识别到 ${greetings.length} 条开场白，已生成「选择开局」opening 页。'],
+    );
+  }
+
+  /// 从开场白内容里抽一个短标题当按钮文案。
+  static String _greetingTitle(Map<String, dynamic> greeting) {
+    final content = greeting['content']?.toString() ?? '';
+    final cleaned = content
+        .replaceAll(RegExp(r'<[^>]*>'), ' ') // 去标签
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final t = cleaned.isEmpty ? '' : cleaned;
+    if (t.isEmpty) return '开局';
+    return t.length > 16 ? '${t.substring(0, 16)}…' : t;
+  }
+
   // ─────────────────────── 元件工厂 ───────────────────────
   //
   // 所有类型陷阱集中在这几个函数里：
@@ -1696,6 +1867,37 @@ class UiAssemblyBuilder {
     return name;
   }
 
+  /// 把 AI 常用的英文缩写字段名翻译成玩家看得懂的中文标签。
+  ///
+  /// AI（Step A）给 scene 的字段名往往是英文缩写（HP/STR/AGI…），
+  /// 直接当标签显示，玩家根本不知道是啥。这里统一映射成中文，
+  /// 并保留原缩写便于对照。没匹配到的按原名显示（不丢信息）。
+  static String _sceneLabelOf(String name) {
+    final n = name.trim();
+    if (n.isEmpty) return n;
+    final key = n.toLowerCase().replaceAll(' ', '');
+    const map = <String, String>{
+      'hp': '❤️ 生命', 'mp': '🧠 魔力', 'xp': '⭐ 经验', 'sp': '⚡ 体力',
+      'level': '🏅 等级', 'lvl': '🏅 等级', 'exp': '⭐ 经验',
+      'str': '💪 力量', 'agi': '🏃 敏捷', 'dex': '🏃 敏捷',
+      'int': '🧠 智力', 'con': '🛡️ 体质', 'vit': '🛡️ 体质',
+      'per': '👁️ 感知', 'cha': '💬 魅力', 'luck': '🍀 幸运',
+      'gold': '🪙 金币', 'money': '🪙 金币', 'coins': '🪙 金币',
+      'name': '👤 名字', 'class': '👑 职业', 'job': '💼 职业',
+      'weapon': '⚔️ 武器', 'armor': '🛡️ 防具', 'shield': '🛡️ 盾牌',
+      'status': '📌 状态', 'title': '👑 称号', 'age': '🎂 年龄',
+      'race': '🧬 种族', 'gender': '🚻 性别', 'height': '📏 身高',
+      'weight': '⚖️ 体重', 'alive': '💗 存活', 'hunger': '🍔 饱腹',
+      'thirst': '💧 口渴', 'energy': '⚡ 精力', 'stamina': '⚡ 体力',
+      'fame': '🎖️ 声望', 'reputation': '🎖️ 声望', 'relationship': '💖 好感',
+      'affection': '💖 好感', 'inventory': '🎒 背包', 'items': '🎒 背包',
+    };
+    final zh = map[key];
+    if (zh == null) return n;
+    // 中文标签 + 保留原缩写，方便玩家对照原卡。
+    return '$zh(${n.toUpperCase()})';
+  }
+
   static int _barColorOf(String name, int fallback) {
     final lower = name.toLowerCase();
     if (lower.contains('生命') || lower.contains('血') || lower.contains('hp') || lower.contains('health')) return 0xFFE53935; // 红色
@@ -1781,6 +1983,8 @@ class UiAssemblyBuilder {
 
       for (final field in panel.fields) {
         final fid = 'sf_${_slug(field.name)}';
+        // 标签显示中文（AI 常用英文缩写，玩家看不懂）。
+        final label = _sceneLabelOf(field.name);
         if (field.display == 'progress' && field.type == 'number') {
           // 初始值：从原卡提取的数值（如 HP 100/100 的当前值）
           final iv = initOf(field.name, field.initialValue);
@@ -1804,7 +2008,7 @@ class UiAssemblyBuilder {
           elements.add(_text(
             id: nextId('el'),
             name: '${field.name}标签',
-            text: field.name,
+            text: label,
             x: pad,
             y: y - 16,
             w: innerW,
@@ -1858,13 +2062,20 @@ class UiAssemblyBuilder {
     }
 
     // 组装 pages：加底部底板 + scene 必需组件（消息流/输入框/设置按钮）
+    // + 多页面切换（手势 + 底部页签按钮 + page_router/linker）
     final pagesJson = <Map<String, dynamic>>[];
     var sort = 0;
-    for (final p in intent.pages) {
+    final pageCount = intent.pages.length;
+    const bottomY = 850.0; // 输入框/设置按钮这一行
+    const navY = 790.0; // 页签栏
+    for (var pIdx = 0; pIdx < pageCount; pIdx++) {
+      final p = intent.pages[pIdx];
       final elements = pageElements[p.id] ?? <Map<String, dynamic>>[];
       final extras = <Map<String, dynamic>>[];
 
-      // 消息流：显示对话（scene 接管后玩家靠它看消息）
+      // 消息流：显示对话（scene 接管后玩家靠它看消息）。
+      // 气泡用浅色：引擎的正文颜色是固定的深色(0xFF111116)，
+      // 若按深色主题把气泡也设成深色，字就看不见了。
       extras.add(_element(
         id: nextId('el'),
         x: pad,
@@ -1884,18 +2095,93 @@ class UiAssemblyBuilder {
             'showUser': true,
             'showAssistant': true,
             'richText': true,
-            'userBubbleColor': 0xFF1E2027,
-            'assistantBubbleColor': 0xFF2A2D36,
+            'userBubbleColor': 0xFFDCF8C6,
+            'assistantBubbleColor': 0xFFF1F1F4,
             'bubbleRadius': 10.0,
           },
         ),
       ));
 
+      // ── 多页面页签栏：让平级页能互相切换 ──
+      if (pageCount > 1) {
+        final tabW = (innerW - (pageCount - 1) * 6.0) / pageCount;
+        final routerIds = <String, String>{}; // pageId -> router elementId
+        for (var i = 0; i < pageCount; i++) {
+          final target = intent.pages[i];
+          if (i == pIdx) continue;
+          final rId = nextId('el');
+          routerIds[target.id] = rId;
+          extras.add(_pageRouter(
+            id: rId,
+            name: '页签路由_${target.name}',
+            targetPageId: target.id,
+            pos: (-224.0 - 160.0, i * 52.0),
+          ));
+        }
+        for (var i = 0; i < pageCount; i++) {
+          final target = intent.pages[i];
+          final isActive = i == pIdx;
+          final tabX = pad + i * (tabW + 6.0);
+          final sId = nextId('el');
+          extras.add(_surface(
+            id: sId,
+            name: '页签底_${target.name}',
+            x: tabX,
+            y: navY,
+            w: tabW,
+            h: 40,
+            color: isActive ? visualTheme.accentColor : visualTheme.buttonBgColor,
+            layer: 3,
+            radius: 8.0,
+          ));
+          extras.add(_text(
+            id: nextId('el'),
+            name: '页签文_${target.name}',
+            text: target.name,
+            x: tabX + 2,
+            y: navY + 11,
+            w: tabW - 4,
+            h: 18,
+            fontSize: 11,
+            color: isActive ? 0xFFFFFFFF : visualTheme.labelColor,
+            align: 'center',
+            layer: 4,
+          ));
+          if (!isActive) {
+            final bId = nextId('el');
+            extras.add(_button(
+              id: bId,
+              name: '页签按_${target.name}',
+              x: tabX,
+              y: navY,
+              w: tabW,
+              h: 40,
+              layer: 4,
+              sendsMessage: false,
+              keyAction: false,
+              color: 0x00000000,
+            ));
+            final routerId = routerIds[target.id]!;
+            final lId = nextId('el');
+            extras.add(_pressLinker2(
+              id: lId,
+              name: '页签跳_${target.name}',
+              buttonId: bId,
+              routerId: routerId,
+              scheme: 'button_to_page_route',
+              x: -224.0,
+              y: 300.0 + i * 52.0,
+              layer: 5,
+            ));
+          }
+        }
+      }
+
       // 输入框：玩家输入行动（sendsMessage，scene 靠它对话）
       extras.add(_element(
         id: nextId('el'),
         x: pad,
-        y: 850,
+        y: bottomY,
         w: innerW - 48,
         h: 40,
         layer: 2,
@@ -1920,7 +2206,7 @@ class UiAssemblyBuilder {
         id: nextId('el'),
         name: '设置',
         x: pad + innerW - 40,
-        y: 850,
+        y: bottomY,
         w: 40,
         h: 40,
         layer: 2,
@@ -1941,6 +2227,27 @@ class UiAssemblyBuilder {
         layer: 0,
         radius: visualTheme.borderRadius,
       );
+
+      // 手势：左右滑切换平级页（引擎原生支持 AssemblyPageGesture）。
+      final gestures = <Map<String, dynamic>>[
+        if (pIdx > 0)
+          {
+            'direction': 'swipe_right',
+            'action': 'switch_base_page',
+            'targetPageId': intent.pages[pIdx - 1].id,
+            'transition': 'base_slide',
+            'durationMs': 200,
+          },
+        if (pIdx < pageCount - 1)
+          {
+            'direction': 'swipe_left',
+            'action': 'switch_base_page',
+            'targetPageId': intent.pages[pIdx + 1].id,
+            'transition': 'base_slide',
+            'durationMs': 200,
+          },
+      ];
+
       pagesJson.add({
         'id': p.id,
         'name': p.name,
@@ -1948,7 +2255,7 @@ class UiAssemblyBuilder {
         'parentPageId': null,
         'sortOrder': sort++,
         'elements': [bg, ...elements, ...extras],
-        'gestures': <dynamic>[],
+        'gestures': gestures,
         'propertyOverrides': <dynamic>[],
       });
     }
