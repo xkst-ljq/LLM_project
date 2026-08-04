@@ -141,11 +141,13 @@ class PipelineRunner {
       final after = item.current?.characterData;
       _log(_describeUiResult(before, after));
       // 上报 AI 深度创作的思考过程（如果有）
-      final thinking = item.current?.notes
-              ?.where((n) => n.message.contains('【AI 思考】'))
+      final notes = item.current?.notes;
+      final thinking = notes == null
+          ? const <String>[]
+          : notes
+              .where((n) => n.message.contains('【AI 思考】'))
               .map((n) => n.message)
-              .toList() ??
-          const <String>[];
+              .toList();
       for (final t in thinking) {
         _log('  $t');
       }
