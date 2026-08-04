@@ -21,11 +21,16 @@ class PipelineRunner {
   /// 进度回调（0~1）。
   final void Function(double progress)? onProgress;
 
+  /// AI 生成中增量回调（流式）。每次给当前已累计的 token 文本，
+  /// UI 据此实时展示「AI 正在思考…」。可为空（关闭流式）。
+  final void Function(String partial)? onThinking;
+
   PipelineRunner({
     required this.pipeline,
     this.useAi = true,
     this.onLog,
     this.onProgress,
+    this.onThinking,
   });
 
   void _log(String s) => onLog?.call(s);
@@ -137,7 +142,13 @@ class PipelineRunner {
     _log('步骤三：UI 生成');
     try {
       final before = item.current?.characterData;
-      await pipeline.runBuildUiStage(item);
+      // 流式：边生成边把 token 喂给 UI，让用户实时看到 AI 在思考。
+      await pipeline.runBuildUiStage(
+        item,
+        onToken: onThinking == null
+            ? null
+            : (tok) => onThinking!(tok),
+      );
       final after = item.current?.characterData;
       _log(_describeUiResult(before, after));
       // 上报 AI 深度创作的思考过程（如果有）

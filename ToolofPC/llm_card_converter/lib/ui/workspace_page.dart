@@ -64,6 +64,10 @@ class _WorkspacePageState extends State<WorkspacePage> {
   int _runningIndex = 0;
   int? _expanded; // 当前展开的卡片索引
 
+  /// AI 生成中实时累计的 token 文本（流式）。空串表示未在生成。
+  String _thinkingText = '';
+  int _thinkingFrame = 0;
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +86,8 @@ class _WorkspacePageState extends State<WorkspacePage> {
       _running = true;
       _doneCount = 0;
       _log.clear();
+      _thinkingText = '';
+      _thinkingFrame = 0;
     });
 
     for (var i = 0; i < _items.length; i++) {
@@ -101,6 +107,17 @@ class _WorkspacePageState extends State<WorkspacePage> {
         onProgress: (p) {
           if (!mounted) return;
           setState(() => item.progress = p);
+        },
+        // 流式：实时展示 AI 生成进度（节流避免每 token 都 setState）。
+        onThinking: (partial) {
+          if (!mounted) return;
+          // 只保留尾部约 120 字，避免字符串无限增长。
+          final tail = partial.length > 120
+              ? partial.substring(partial.length - 120)
+              : partial;
+          _thinkingText = tail;
+          _thinkingFrame++;
+          if (_thinkingFrame % 4 == 0) setState(() {});
         },
       );
 
@@ -135,7 +152,12 @@ class _WorkspacePageState extends State<WorkspacePage> {
       });
     }
 
-    if (mounted) setState(() => _running = false);
+    if (mounted) {
+      setState(() {
+        _running = false;
+        _thinkingText = '';
+      });
+    }
   }
 
   void _addLog(String line) {
@@ -335,8 +357,26 @@ class _WorkspacePageState extends State<WorkspacePage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('简短日志：',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('简短日志：',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    if (_thinkingText.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text('AI 思考中…',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.teal)),
+                          ],
+                        ),
+                      ),
                         IconButton(
                           visualDensity: VisualDensity.compact,
                           tooltip: '复制全部日志',
@@ -365,6 +405,15 @@ class _WorkspacePageState extends State<WorkspacePage> {
                         padding: const EdgeInsets.only(bottom: 2),
                         child: Text(line,
                             style: const TextStyle(fontSize: 12, height: 1.4)),
+                      ),
+                    if (_thinkingText.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(
+                          '  …$_thinkingText',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.teal, height: 1.4),
+                        ),
                       ),
                   ],
                 ),

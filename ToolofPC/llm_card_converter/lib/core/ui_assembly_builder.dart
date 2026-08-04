@@ -1898,6 +1898,33 @@ class UiAssemblyBuilder {
     return '$zh(${n.toUpperCase()})';
   }
 
+  /// 决定 scene 文本字段的高度与滚动方式。
+  ///
+  /// 返回 (height, overflowMode)。
+  ///
+  /// 「内容型」字段（描述/备注/任务/正文…）可能很长、且常是构建时为空、
+  /// 运行时才由 LLM 填入——一律给滚动 + 足够高度，保证不溢出。
+  /// 短值字段（名字/职业/状态/装备…）按当前值单行；引擎已对非滚动
+  /// 文本做硬裁剪，即便运行时变长也不会画到相邻元件上。
+  static (double, String) _sceneTextSizing(String name, String text) {
+    final lower = name.toLowerCase();
+    const contentKeys = {
+      'desc', 'description', 'note', 'notes', 'risk', 'quest', 'content',
+      'summary', 'intro', 'story', 'detail', 'details', 'reward', 'location',
+      '背景', '描述', '详情', '备注', '正文', '内容', '介绍', '说明', '任务',
+      '装备', '奖励', '风险', '地点', '道具', '物品', 'buff', 'skill', '技能',
+    };
+    final isContent =
+        contentKeys.contains(lower) || contentKeys.contains(name) || text.length > 16;
+    if (isContent) {
+      // 估算行数：12px 中文约 20 字/行（内宽 332 - 滚动内边距）。
+      final estLines = (text.length / 20).ceil().clamp(2, 12);
+      final h = (estLines * 20.0 + 6.0).clamp(46.0, 240.0).toDouble();
+      return (h, 'scroll');
+    }
+    return (22.0, 'ellipsis');
+  }
+
   static int _barColorOf(String name, int fallback) {
     final lower = name.toLowerCase();
     if (lower.contains('生命') || lower.contains('血') || lower.contains('hp') || lower.contains('health')) return 0xFFE53935; // 红色
@@ -2039,14 +2066,14 @@ class UiAssemblyBuilder {
           y += 34;
         } else {
           // 文本字段：Step B 按真实文本长度自动决定高度与滚动方式，
-          // 不依赖 AI（AI 意图里没有渲染长度）。短文本单行省略；
-          // 长文本按字数估行数给足高度 + overflow:scroll，保证内容不丢。
+          // 不依赖 AI（AI 意图里没有渲染长度）。
+          // 关键：很多文本字段构建时是空的（运行时由 LLM 填入），
+          // 若按空值估成一行，运行时填长文本就会溢出。所以「内容型」
+          // 字段一律给滚动 + 足够高度，保证运行时不外溢。
           final text = initOf(field.name, field.initialValue).isEmpty
               ? '—'
               : initOf(field.name, field.initialValue);
-          final estLines = (text.length / 16).ceil().clamp(1, 12);
-          final multiLine = estLines > 1;
-          final textH = (estLines * 18.0).clamp(22.0, 220.0).toDouble();
+          final (textH, overflowMode) = _sceneTextSizing(field.name, text);
           elements.add(_text(
             id: nextId('el'),
             name: field.name,
@@ -2060,8 +2087,7 @@ class UiAssemblyBuilder {
             align: 'left',
             layer: 1,
             statusFieldId: fid,
-            // 长文本滚动显示，避免省略号截断正文。
-            overflow: multiLine ? 'scroll' : 'ellipsis',
+            overflow: overflowMode,
           ));
           statusFields.add({
             'id': fid,

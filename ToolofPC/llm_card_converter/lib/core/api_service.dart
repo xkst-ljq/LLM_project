@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 /// OpenAI 兼容 API 调用（获取模型列表 / 后续聊天补全）。
@@ -83,6 +85,63 @@ class ApiService {
       throw Exception('模型返回为空');
     }
     return content;
+  }
+
+  /// 聊天补全（流式 / SSE）。返回完整文本，边生成边通过 [onToken] 回调。
+  ///
+  /// 与 [chatComplete] 语义一致，只是走 `stream: true` + SSE 解析，
+  /// 让调用方能实时拿到增量 token（展示「AI 正在思考」的进度）。
+  /// [onToken] 按解码后的文本块回调（可能含半句/半个 JSON，不必逐字拆分）。
+  static Future<String> chatCompleteStream({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.2,
+    Duration timeout = const Duration(seconds: 180),
+    void Function(String token)? onToken,
+  }) async {
+    final base = normalizeBase(baseUrl);
+    final dio = Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: timeout,
+    ));
+    final response = await dio.post<ResponseBody>(
+      '$base/v1/chat/completions',
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+        responseType: ResponseType.stream,
+      ),
+      data: {
+        'model': model,
+        'temperature': temperature,
+        'stream': true,
+        'messages': [
+          {'role': 'system', 'content': systemPrompt},
+          {'role': 'user', 'content': userPrompt},
+        ],
+      },
+    );
+
+    final body = response.data;
+    if (body == null) {
+      throw Exception('请求失败：无响应体');
+    }
+    final buffer = StringBuffer();
+    // utf8.decoder 能正确处理跨 chunk 的 UTF-8 序列（多字节字符被切开）。
+    await for (final decoded in utf8.decoder.bind(body.stream)) {
+      buffer.write(decoded);
+      onToken?.call(decoded);
+    }
+    if (buffer.isEmpty) {
+      throw Exception('模型未返回内容');
+    }
+    return buffer.toString();
   }
 
   /// 粗略判断模型返回是否为"拒绝/审核拦截"（常见于 NSFW 内容触发内容政策）。

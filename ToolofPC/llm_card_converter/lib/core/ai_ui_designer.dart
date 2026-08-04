@@ -37,25 +37,56 @@ class AiUiDesigner {
   /// **完整原文**。让 AI 直接读连贯的原始结构化标记（`{PlayerStatus|HP:100|...}`），
   /// 而非只读被提取/截断后的摘要——避免自动化正则把连贯信息拆散或删掉，
   /// 导致 AI 读不到本应存在的内容。
+  ///
+  /// [onToken] 若提供，则走**流式**生成：边生成边回调增量文本，让 UI 能
+  /// 实时展示「AI 正在思考」。流式端点不可用时自动回退到非流式（不中断）。
   static Future<UiCreationIntent> design(
     UiExtraction extraction, {
     Map<String, String> barInitialValues = const {},
     List<String> greetingsText = const [],
+    void Function(String token)? onToken,
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
       throw StateError('未配置 AI（请先在设置中填写 API）');
     }
 
-    final raw = await ApiService.chatComplete(
-      baseUrl: cfg.baseUrl,
-      apiKey: cfg.apiKey,
-      model: cfg.model,
-      systemPrompt: _systemPrompt,
-      userPrompt:
-          _buildUserPrompt(extraction, barInitialValues, greetingsText),
-      temperature: 0.4, // 创作可稍高，但仍是结构化输出
-    );
+    final system = _systemPrompt;
+    final user = _buildUserPrompt(extraction, barInitialValues, greetingsText);
+
+    String raw;
+    if (onToken != null) {
+      try {
+        raw = await ApiService.chatCompleteStream(
+          baseUrl: cfg.baseUrl,
+          apiKey: cfg.apiKey,
+          model: cfg.model,
+          systemPrompt: system,
+          userPrompt: user,
+          temperature: 0.4,
+          onToken: onToken,
+        );
+      } catch (_) {
+        // 端点不支持流式 → 回退非流式，保证不中断。
+        raw = await ApiService.chatComplete(
+          baseUrl: cfg.baseUrl,
+          apiKey: cfg.apiKey,
+          model: cfg.model,
+          systemPrompt: system,
+          userPrompt: user,
+          temperature: 0.4,
+        );
+      }
+    } else {
+      raw = await ApiService.chatComplete(
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        model: cfg.model,
+        systemPrompt: system,
+        userPrompt: user,
+        temperature: 0.4, // 创作可稍高，但仍是结构化输出
+      );
+    }
 
     final parsed = _parseJson(raw);
     if (parsed == null) {
