@@ -2038,21 +2038,30 @@ class UiAssemblyBuilder {
           });
           y += 34;
         } else {
+          // 文本字段：Step B 按真实文本长度自动决定高度与滚动方式，
+          // 不依赖 AI（AI 意图里没有渲染长度）。短文本单行省略；
+          // 长文本按字数估行数给足高度 + overflow:scroll，保证内容不丢。
+          final text = initOf(field.name, field.initialValue).isEmpty
+              ? '—'
+              : initOf(field.name, field.initialValue);
+          final estLines = (text.length / 16).ceil().clamp(1, 12);
+          final multiLine = estLines > 1;
+          final textH = (estLines * 18.0).clamp(22.0, 220.0).toDouble();
           elements.add(_text(
             id: nextId('el'),
             name: field.name,
-            text: initOf(field.name, field.initialValue).isEmpty
-                ? '—'
-                : initOf(field.name, field.initialValue),
+            text: text,
             x: pad,
             y: y,
             w: innerW,
-            h: 22,
+            h: textH,
             fontSize: 12,
             color: 0xFFE8EDF5,
             align: 'left',
             layer: 1,
             statusFieldId: fid,
+            // 长文本滚动显示，避免省略号截断正文。
+            overflow: multiLine ? 'scroll' : 'ellipsis',
           ));
           statusFields.add({
             'id': fid,
@@ -2063,7 +2072,7 @@ class UiAssemblyBuilder {
             'order': statusFields.length,
             'owner': 'player',
           });
-          y += 28;
+          y += textH + 6;
         }
       }
 
