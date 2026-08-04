@@ -275,6 +275,7 @@ class ConversionPipeline {
       UiVisualTheme? visualTheme;
       BuiltAssembly? built;
       var aiAttempted = false;
+      String? aiFailReason;
       if (extraction.usableScripts.isNotEmpty) {
         try {
           aiAttempted = true;
@@ -299,10 +300,15 @@ class ConversionPipeline {
               cardName: card['name']?.toString() ?? '',
               initialValues: initValues,
             );
+          } else {
+            aiFailReason = 'AI 未识别出可转译面板';
           }
-        } catch (_) {
+        } catch (e) {
           // AI 设计失败（未配置 / 解析失败 / 网络）→ 回退确定性模板
+          aiFailReason = '$e';
         }
+      } else {
+        aiFailReason = '无可识别脚本';
       }
 
       // ── 确定性模板（回退路径 / 无 AI 时）──
@@ -372,7 +378,11 @@ class ConversionPipeline {
         ...base.notes,
         if (aiAttempted)
           ConversionNote.info(
-              built.assemblies.isNotEmpty ? 'UI 由 AI 深度创作生成（scene）。' : '已尝试 AI 创作，回退到确定性模板。'),
+              built.assemblies.isNotEmpty
+                  ? 'UI 由 AI 深度创作生成（scene）。'
+                  : '已尝试 AI 创作，回退到确定性模板。'),
+        if (aiFailReason != null && built.assemblies.isEmpty)
+          ConversionNote.info('AI 创作失败原因：$aiFailReason'),
         ...extraction.notes.map(ConversionNote.info),
         ...built.notes.map(ConversionNote.info),
         ...sanitizeNotes.map(ConversionNote.info),
