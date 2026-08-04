@@ -1052,18 +1052,12 @@ mixin _AssemblyCanvasLogic
       'indicator',
       'input',
     };
-    if (element.isComposite) return false;
-    if (backgroundCapableTypes.contains(element.module?.type)) return true;
-    // 叠加页内：有界渲染组件也可后台化——超出容器面即后台（前台/后台由
-    // 是否在容器面内决定）。容器面本身定义边界，不后台化；原生逻辑节点
-    // 天生后台，无需标记。
-    if (_activePage.isOverlay) {
-      final type = element.module?.type;
-      final isContainer =
-          element.module?.properties['is_overlay_container'] == true;
-      if (!isContainer && !_isNativeBackendNodeType(type)) return true;
-    }
-    return false;
+    // 只允许白名单类型后台化（base 页与叠加页一致）。
+    // 其余渲染组件（button / slider / select / surface / image ...）是
+    // 硬性前台：叠加页内它们由 _requiresPcbContainment 以容器面为界
+    // 夹取回容器面，不后台化。
+    return !element.isComposite &&
+        backgroundCapableTypes.contains(element.module?.type);
   }
 
   bool _isBackstageElement(UIElement element) =>
@@ -1785,28 +1779,45 @@ mixin _AssemblyCanvasLogic
             size: size,
             layerIndex: 0,
           );
-    // 叠加页内放置有界渲染组件：生成时**立即**按「是否在容器面内」判断
-    // 前台/后台，无需再拖一下：
-    // - 有容器面且放置点在容器面内 → 前台渲染（夹取进容器面）
-    // - 无容器面，或放置点在容器面外 → 后台节点（不夹取，保持外部位置）
-    // 逻辑组件（linker/math_node/timer/page_router）无容器面也可直接放置。
+    // 叠加页内放置渲染组件，生成时立即按组件类别 + 位置判断前台/后台：
+    // - 可后台化白名单（text/switch/progress/indicator/input）：
+    //   无容器面或放置点在容器面外 → 后台节点；在容器面内 → 前台
+    // - 硬性前台组件（button/slider/select/surface/image 等）：
+    //   必须存在容器面，夹取回容器面前台渲染；无容器面 → 提示先放容器面
+    // - 逻辑组件（linker/math_node/timer/page_router）无容器面也可直接放置
     UIElement? placed;
-    if (_activePage.isOverlay && _requiresPcbContainment(prototype)) {
+    if (_activePage.isOverlay) {
       final container = _activeOverlayContainer();
-      final probe = prototype.copyWith(offset: local);
-      final inContainer =
-          container != null && _isElementInsidePcb(probe);
-      if (container == null || !inContainer) {
-        final mod = prototype.module;
-        if (mod != null) {
-          final props =
-              Map<String, dynamic>.from(_deepCloneValue(mod.properties) as Map);
-          props['runtimePlacement'] = 'background';
-          placed = prototype.copyWith(
-            module: mod.copyWith(properties: props),
-            offset: local,
-          );
+      if (_canUseBackgroundRuntimePlacement(prototype)) {
+        final probe = prototype.copyWith(offset: local);
+        final inContainer =
+            container != null && _isElementInsidePcb(probe);
+        if (container == null || !inContainer) {
+          final mod = prototype.module;
+          if (mod != null) {
+            final props =
+                Map<String, dynamic>.from(_deepCloneValue(mod.properties) as Map);
+            props['runtimePlacement'] = 'background';
+            placed = prototype.copyWith(
+              module: mod.copyWith(properties: props),
+              offset: local,
+            );
+          }
         }
+      } else if (_requiresPcbContainment(prototype)) {
+        // 硬性前台组件：无容器面时无处安放，阻止并提示先放容器面。
+        if (container == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('叠加页请先放置容器面，再放置组件。'),
+                backgroundColor: Color(0xFF8B4B4B),
+              ),
+            );
+          }
+          return;
+        }
+        // 有容器面：走 _applyPlacementConstraints 夹取进容器面（前台）。
       }
     }
     final elementToAdd = placed ??
