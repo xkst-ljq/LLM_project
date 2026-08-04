@@ -1701,8 +1701,9 @@ class UiAssemblyBuilder {
   static BuiltAssembly buildSceneFromIntent(
     UiCreationIntent intent, {
     String cardName = '',
-    UiVisualTheme theme = const UiVisualTheme(),
+    UiVisualTheme? theme,
   }) {
+    final visualTheme = theme ?? UiVisualTheme.defaultTheme();
     final assemblies = <String>[];
     final statusFields = <Map<String, dynamic>>[];
     var seed = DateTime.now().millisecondsSinceEpoch;
@@ -1832,9 +1833,9 @@ class UiAssemblyBuilder {
         y: 0,
         w: pcbW,
         h: 600,
-        color: theme.pcbColor,
+        color: visualTheme.pcbColor,
         layer: 0,
-        radius: theme.borderRadius,
+        radius: visualTheme.borderRadius,
       );
       pagesJson.add({
         'id': p.id,
@@ -1855,8 +1856,8 @@ class UiAssemblyBuilder {
       pcbW: pcbW,
       pcbH: 600,
       pages: pagesJson,
-      pcbColor: theme.pcbColor,
-      pcbRadius: theme.borderRadius,
+      pcbColor: visualTheme.pcbColor,
+      pcbRadius: visualTheme.borderRadius,
     );
     assemblies.add(json);
 
