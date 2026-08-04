@@ -169,7 +169,6 @@ void main() {
       expect(v['reward'], '10');
     });
   });
-}
 
   group('buildSceneFromIntent - 同页多面板不重叠', () {
     test('两个面板放同一页时纵向接续排布', () {
@@ -225,3 +224,5 @@ void main() {
           reason: '同一页两个面板应接续排布，option 面板应在 quest 面板之下');
     });
   });
+
+}
