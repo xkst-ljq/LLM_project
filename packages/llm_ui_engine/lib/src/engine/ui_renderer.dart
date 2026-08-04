@@ -1469,27 +1469,27 @@ class UIRenderer {
           : Image.memory(
               bytes,
               fit: fit,
-              errorBuilder: (_, __, ___) =>
+              errorBuilder: (_, _, _) =>
                   _buildImagePlaceholder(module, '内联图片解码失败'),
             );
     } else if (url.isNotEmpty) {
       imgContent = Image.network(
         url,
         fit: fit,
-        errorBuilder: (_, __, ___) => _buildImagePlaceholder(module, '加载网络图片失败'),
+        errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '加载网络图片失败'),
       );
     } else if (assetPath.isNotEmpty) {
       if (assetPath.startsWith('/') || assetPath.contains('\\')) {
         imgContent = Image.file(
           File(assetPath),
           fit: fit,
-          errorBuilder: (_, __, ___) => _buildImagePlaceholder(module, '读取本地文件失败'),
+          errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '读取本地文件失败'),
         );
       } else {
         imgContent = Image.asset(
           assetPath,
           fit: fit,
-          errorBuilder: (_, __, ___) => _buildImagePlaceholder(module, '未找到内部资产图片'),
+          errorBuilder: (_, _, _) => _buildImagePlaceholder(module, '未找到内部资产图片'),
         );
       }
     } else {

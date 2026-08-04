@@ -83,7 +83,9 @@ class _LogicSlots {
   static const double _rowGap = 52.0;
 
   /// 各层级的当前行号（默认最右列从 PCB 左侧开始）。
-  final Map<int, double> _rows = {};
+  final Map<int, double> _rows;
+
+  const _LogicSlots() : _rows = const {};
 
   /// 分配该层级下一个逻辑组件的位置（x, y）。
   ///
@@ -508,7 +510,7 @@ class UiAssemblyBuilder {
     required double innerW,
     Map<int, List<ActionOption>> branchActions = const {},
     Map<int, String> actionOverlayIds = const {},
-    _LogicSlots logicSlots,
+    _LogicSlots logicSlots = const _LogicSlots(),
   }) {
     final elements = <Map<String, dynamic>>[];
     var y = _Layout.pcbPadding;
