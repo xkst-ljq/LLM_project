@@ -1,12 +1,12 @@
 import 'dart:convert';
 
+import '../core/ai_ui_designer.dart';
+import '../core/ai_visual_extractor.dart';
 import '../core/conversion_models.dart';
 import '../core/conversion_service.dart';
+import '../core/greeting_sanitizer.dart';
 import '../core/regex_ui_extractor.dart';
 import '../core/ui_assembly_builder.dart';
-import '../core/ai_ui_designer.dart';
-import '../core/greeting_sanitizer.dart';
-import '../core/ai_visual_extractor.dart';
 
 /// 三步转译流水线（纯 Dart，平台无关）。
 ///
@@ -281,8 +281,10 @@ class ConversionPipeline {
           aiAttempted = true;
           final intent = await AiUiDesigner.design(extraction);
           if (intent.hasUi) {
-            // 从原卡开场白解析字段初始值（{PlayerStatus|Name:...|HP:100/100|...}），
-            // 供 AI 没给 initialValue 的字段兜底填充。
+            // 从原卡开场白解析字段初始值，供 AI 没给 initialValue 的字段兜底填充。
+            // 两种格式都要收：
+            //   1. {PlayerStatus|Name:...|HP:100/100|...}  → extractBarFieldValues
+            //   2. <生命>84%</生命>  → extraction.branchPresets（已按分支提取）
             final srcData = src['data'] is Map
                 ? Map<String, dynamic>.from(src['data'] as Map)
                 : src;
@@ -294,6 +296,18 @@ class ConversionPipeline {
             final initValues = <String, String>{};
             for (final t in [fm, ...alts]) {
               initValues.addAll(RegexUiExtractor.extractBarFieldValues(t));
+            }
+            // 合并 <字段>值</字段> 格式（branchPresets 已按分支提取）。
+            // 分支 0 是 first_mes（默认开场白），它的值应优先。
+            // 先收其它分支的值兜底，再让分支 0 覆盖回去，避免后面的分支
+            // 把默认开场白的初值顶掉。
+            for (final entry in extraction.branchPresets.entries) {
+              if (entry.key == 0) continue;
+              initValues.addAll(entry.value);
+            }
+            final firstMesPresets = extraction.branchPresets[0];
+            if (firstMesPresets != null) {
+              initValues.addAll(firstMesPresets);
             }
             built = UiAssemblyBuilder.buildSceneFromIntent(
               intent,

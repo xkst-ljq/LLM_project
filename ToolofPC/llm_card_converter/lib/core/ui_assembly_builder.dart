@@ -38,6 +38,7 @@
 library;
 
 import 'dart:convert';
+
 import 'ai_ui_designer.dart';
 import 'regex_ui_extractor.dart';
 
@@ -1071,15 +1072,21 @@ class UiAssemblyBuilder {
     y += 28 + 12;
 
     // ── 增加开场白对白/叙述文本整合 ──
+    // 高度按文本长度自适应：每行约 16px（11px 字号 + 行距），
+    // 避免长开场白被固定高度截断。上限 320，超出用滚动显示。
     if (welcomeText.isNotEmpty) {
       final textPanelId = nextId('el');
+      final lineH = 16.0;
+      final estLines = (welcomeText.length / 22).ceil().clamp(1, 20);
+      final textH = (estLines * lineH).clamp(40.0, 320.0).toDouble();
+      final panelH = textH + 16.0;
       elements.add(_surface(
         id: textPanelId,
         name: '开场叙述底板',
         x: padding,
         y: y,
         w: innerW,
-        h: 110.0,
+        h: panelH,
         color: (theme.panelColor & 0x00FFFFFF) | 0x26000000, // 15% 透明度底色
         layer: elements.length + 1,
         radius: 8.0,
@@ -1091,13 +1098,15 @@ class UiAssemblyBuilder {
         x: padding + 10,
         y: y + 8,
         w: innerW - 20,
-        h: 94.0,
+        h: textH,
         fontSize: 11,
         color: theme.valueColor,
         align: 'left',
         layer: elements.length + 1,
+        // 长开场白滚动显示，避免省略号截断正文。
+        overflow: 'scroll',
       ));
-      y += 110.0 + 12.0;
+      y += panelH + 12.0;
     }
 
     // 记下每个选项的「底板 id ↔ 按钮 id」，稍后连按压联动器。
@@ -1145,9 +1154,10 @@ class UiAssemblyBuilder {
         w: colW,
         h: _Layout.buttonHeight,
         layer: elements.length + 1,
-        // 选开场白：只切换分支 + 关闭弹窗，不发送任何文本给 AI。
-        sendsMessage: false,
+        // 选开场白：点击即发送该选项文本给 AI，同时切换分支 + 关闭弹窗。
+        sendsMessage: true,
         keyAction: true,
+        message: label1,
         // 分支索引 = 选项下标 + 1：index 0 是 first_mes 引导页本身，
         // 选项要切到其后的 alternate_greetings（1..N）。
         targetBranchIndex: i + 1,
@@ -1192,9 +1202,10 @@ class UiAssemblyBuilder {
           w: colW,
           h: _Layout.buttonHeight,
           layer: elements.length + 1,
-          // 选开场白：只切换分支 + 关闭弹窗，不发送任何文本给 AI。
-          sendsMessage: false,
+          // 选开场白：点击即发送该选项文本给 AI，同时切换分支 + 关闭弹窗。
+          sendsMessage: true,
           keyAction: true,
+          message: label2,
           // 与选项1同理：分支索引 = 选项下标 + 1（跳过 first_mes 引导页本身）。
           targetBranchIndex: i + 2,
           color: theme.accentColor,
@@ -1709,8 +1720,21 @@ class UiAssemblyBuilder {
   }) {
     final visualTheme = theme ?? UiVisualTheme.defaultTheme();
     // 字段初始值：AI 给的优先，空则回落到从原卡解析的覆盖表。
-    String initOf(String name, String aiValue) =>
-        aiValue.isNotEmpty ? aiValue : (initialValues[name] ?? '');
+    // 兜底时做大小写不敏感 + 去空格匹配，避免 AI 改了字段名（如"生命"→"HP"）就匹配不上。
+    String initOf(String name, String aiValue) {
+      if (aiValue.isNotEmpty) return aiValue;
+      // 精确匹配
+      final exact = initialValues[name];
+      if (exact != null && exact.isNotEmpty) return exact;
+      // 大小写不敏感 + 去空格匹配
+      final norm = name.toLowerCase().replaceAll(' ', '');
+      for (final entry in initialValues.entries) {
+        if (entry.key.toLowerCase().replaceAll(' ', '') == norm) {
+          return entry.value;
+        }
+      }
+      return '';
+    }
     final assemblies = <String>[];
     final statusFields = <Map<String, dynamic>>[];
     var seed = DateTime.now().millisecondsSinceEpoch;
