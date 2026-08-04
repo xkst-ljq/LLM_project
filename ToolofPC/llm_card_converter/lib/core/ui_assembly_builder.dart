@@ -1738,7 +1738,7 @@ class UiAssemblyBuilder {
         page,
         () => <Map<String, dynamic>>[],
       );
-      var y = pad + 30.0; // 顶部留 Tab 栏空间
+      var y = 250.0; // 消息流下方
 
       if (panel.title.isNotEmpty) {
         elements.add(_text(
@@ -1835,11 +1835,78 @@ class UiAssemblyBuilder {
       }
     }
 
-    // 组装 pages：加底部底板 + 页面元数据
+    // 组装 pages：加底部底板 + scene 必需组件（消息流/输入框/设置按钮）
     final pagesJson = <Map<String, dynamic>>[];
     var sort = 0;
     for (final p in intent.pages) {
       final elements = pageElements[p.id] ?? <Map<String, dynamic>>[];
+      final extras = <Map<String, dynamic>>[];
+
+      // 消息流：显示对话（scene 接管后玩家靠它看消息）
+      extras.add(_element(
+        id: nextId('el'),
+        x: pad,
+        y: 30,
+        w: innerW,
+        h: 200,
+        layer: 1,
+        module: _module(
+          id: nextId('m'),
+          name: '消息流',
+          type: 'message_flow',
+          color: 0x00000000,
+          radius: 10,
+          props: {
+            'historyLimit': 0,
+            'fontSize': 12.5,
+            'showUser': true,
+            'showAssistant': true,
+            'richText': true,
+            'userBubbleColor': 0xFF1E2027,
+            'assistantBubbleColor': 0xFF2A2D36,
+            'bubbleRadius': 10.0,
+          },
+        ),
+      ));
+
+      // 输入框：玩家输入行动（sendsMessage，scene 靠它对话）
+      extras.add(_element(
+        id: nextId('el'),
+        x: pad,
+        y: 850,
+        w: innerW - 48,
+        h: 40,
+        layer: 2,
+        module: _module(
+          id: nextId('m'),
+          name: '行动输入',
+          type: 'input',
+          color: 0xFF000000,
+          radius: 8,
+          props: {
+            'placeholder': '写下你的行动，回车发送',
+            'text': '',
+            'committedValue': '',
+            'maxLength': 300,
+            'sendsMessage': true,
+          },
+        ),
+      ));
+
+      // 打开聊天设置按钮（scene 的关键职责出口，缺少会被引擎拦截）
+      extras.add(_button(
+        id: nextId('el'),
+        name: '设置',
+        x: pad + innerW - 40,
+        y: 850,
+        w: 40,
+        h: 40,
+        layer: 2,
+        sendsMessage: false,
+        keyAction: true,
+        color: visualTheme.accentColor,
+      ));
+
       // 底板放最底层
       final bg = _surface(
         id: nextId('el'),
@@ -1847,7 +1914,7 @@ class UiAssemblyBuilder {
         x: 0,
         y: 0,
         w: pcbW,
-        h: 600,
+        h: 900,
         color: visualTheme.pcbColor,
         layer: 0,
         radius: visualTheme.borderRadius,
@@ -1858,7 +1925,7 @@ class UiAssemblyBuilder {
         'type': 'base',
         'parentPageId': null,
         'sortOrder': sort++,
-        'elements': [bg, ...elements],
+        'elements': [bg, ...elements, ...extras],
         'gestures': <dynamic>[],
         'propertyOverrides': <dynamic>[],
       });
@@ -1869,7 +1936,7 @@ class UiAssemblyBuilder {
       name: '${cardName.isEmpty ? "角色" : cardName}·场景',
       mode: 'scene',
       pcbW: pcbW,
-      pcbH: 600,
+      pcbH: 900,
       pages: pagesJson,
       pcbColor: visualTheme.pcbColor,
       pcbRadius: visualTheme.borderRadius,
