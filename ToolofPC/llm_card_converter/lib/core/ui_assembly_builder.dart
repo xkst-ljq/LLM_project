@@ -58,6 +58,43 @@ class _Layout {
   static const int maxFields = 14;
 }
 
+/// 后台逻辑区坐标分配器。
+///
+/// 逻辑组件（linker / page_router / math_node / timer）运行时不可见，
+/// 统一摆放在 PCB 左侧的后台区。为避免它们**重叠**、并让玩家研究布局时
+/// 能看出层级，这里按「层级」排布：
+///
+/// ```text
+///         后台区                     PCB
+///   ┌───────────┬───────────┐ ┌──────────────┐
+///   │ level 2   │ level 1   │ │  可见组件     │
+///   │ (更深入)  │ page_router│ │  (button等)  │
+///   │           │  ┌─────┐  │ │              │
+///   │           │  │ 路由器 │  │              │
+///   └───────────┴─┬─────┬──┘ └──────────────┘
+///                 │ linker(level 0, 最右)  │
+///                 └──────┴─────────────────
+/// ```
+///
+/// 最右列（level 0）是第一层 linker（直接连接可见组件的接线），
+/// 向左（level 递增）是更深层的逻辑节点。同一列内纵向依次排开。
+class _LogicSlots {
+  static const double _colGap = 160.0;
+  static const double _rowGap = 52.0;
+
+  /// 各层级的当前行号（默认最右列从 PCB 左侧开始）。
+  final Map<int, double> _rows = {};
+
+  /// 分配该层级下一个逻辑组件的位置（x, y）。
+  ///
+  /// [level] 0 = 最右列（第一层 linker），越大越靠左（越深层）。
+  (double, double) slot(int level) {
+    final row = _rows[level] ?? 0.0;
+    _rows[level] = row + _rowGap;
+    return (-224.0 - level * _colGap, row);
+  }
+}
+
 /// 配色。取自引擎示例卡的深色系，保证文字对比度达标。
 ///
 /// 小字（<14px）按 WCAG **AAA 7:1** 要求，不是 4.5:1
@@ -317,6 +354,9 @@ class UiAssemblyBuilder {
 
     final statusFields = <Map<String, dynamic>>[];
 
+    // 后台逻辑区坐标分配器：整个状态栏 assembly 的逻辑组件统一排布。
+    final logicSlots = _LogicSlots();
+
     // ── 动作叠加层页：每个动作一个 overlay 页（详情 + 确认按钮） ──
     final actionOverlayIds = <int, String>{};
     final actionOverlayPages = <Map<String, dynamic>>[];
@@ -364,6 +404,7 @@ class UiAssemblyBuilder {
       innerW: innerW,
       branchActions: branchActions,
       actionOverlayIds: actionOverlayIds,
+      logicSlots: logicSlots,
     );
     final page1 = {
       'id': page1Id,
@@ -388,6 +429,7 @@ class UiAssemblyBuilder {
       page2Id: page2Id,
       pcbW: pcbW,
       innerW: innerW,
+      logicSlots: logicSlots,
     );
     final page2 = {
       'id': page2Id,
@@ -466,6 +508,7 @@ class UiAssemblyBuilder {
     required double innerW,
     Map<int, List<ActionOption>> branchActions = const {},
     Map<int, String> actionOverlayIds = const {},
+    _LogicSlots logicSlots,
   }) {
     final elements = <Map<String, dynamic>>[];
     var y = _Layout.pcbPadding;
@@ -488,6 +531,8 @@ class UiAssemblyBuilder {
           id: rId,
           name: '路由器_${tab.title}',
           targetPageId: tab.pageId,
+          // page_router 是被 linker 指向的更深层逻辑（level 1，左一列）。
+          pos: logicSlots.slot(1),
         ));
       }
     }
@@ -539,13 +584,15 @@ class UiAssemblyBuilder {
           color: 0x00000000, // 保持完全透明作为按钮点击热区
         ));
 
+        final pos = logicSlots.slot(0);
         elements.add(_pressLinker2(
           id: nextId('el'),
           name: '标签跳_${tab.title}',
           buttonId: bId,
           routerId: routerIds[tab.index]!,
           scheme: 'button_to_page_route',
-          y: i * 52.0,
+          x: pos.$1,
+          y: pos.$2,
           layer: elements.length + 1,
         ));
       }
@@ -716,14 +763,18 @@ class UiAssemblyBuilder {
               name: '动作路由_${sIdx + 1}',
               targetPageId: overlayId,
               action: 'open_overlay',
+              // page_router 是更深层逻辑（level 1，左一列）。
+              pos: logicSlots.slot(1),
             ));
+            final pos = logicSlots.slot(0);
             elements.add(_pressLinker2(
               id: nextId('el'),
               name: '动作跳_${sIdx + 1}',
               buttonId: btnId,
               routerId: routerId,
               scheme: 'button_to_page_route',
-              y: sIdx * 52.0,
+              x: pos.$1,
+              y: pos.$2,
               layer: elements.length + 1,
             ));
           }
@@ -785,6 +836,9 @@ class UiAssemblyBuilder {
     const innerW = overlayW - padding * 2;
     final elements = <Map<String, dynamic>>[];
     var y = padding;
+
+    // 后台逻辑区坐标分配器（叠加层内的按压联动器排布）。
+    final logicSlots = _LogicSlots();
 
     // 全屏遮罩（is_overlay_container → 点遮罩空白处关闭叠加层）
     elements.add(_surface(
@@ -888,12 +942,14 @@ class UiAssemblyBuilder {
       message: detail,
       color: theme.accentColor,
     ));
+    final pressPos = logicSlots.slot(0);
     elements.add(_pressLinker(
       id: nextId('el'),
       name: '确认按压',
       buttonId: confirmId,
       surfaceId: confirmSurfaceId,
-      y: 0,
+      x: pressPos.$1,
+      y: pressPos.$2,
       layer: 4,
       color: theme.accentColor,
     ));
@@ -917,11 +973,13 @@ class UiAssemblyBuilder {
     required String name,
     required String targetPageId,
     String action = 'switch_base_page',
+    (double, double)? pos,
   }) =>
       _element(
         id: id,
-        x: -224, // 放置在PCB左侧外部逻辑区
-        y: 0,
+        // 默认放在 PCB 左侧外部逻辑区；可经 _LogicSlots 分配坐标。
+        x: pos?.$1 ?? -224,
+        y: pos?.$2 ?? 0,
         w: 132,
         h: 44,
         layer: 0,
@@ -950,10 +1008,11 @@ class UiAssemblyBuilder {
     required String scheme,
     required double y,
     required int layer,
+    double x = -224,
   }) =>
       _element(
         id: id,
-        x: -224,
+        x: x,
         y: y,
         w: 132,
         h: 44,
@@ -990,6 +1049,9 @@ class UiAssemblyBuilder {
     var y = padding;
 
     final elements = <Map<String, dynamic>>[];
+
+    // 后台逻辑区坐标分配器（开场页的按压联动器排布）。
+    final logicSlots = _LogicSlots();
 
     elements.add(_text(
       id: nextId('el'),
@@ -1145,12 +1207,14 @@ class UiAssemblyBuilder {
     // 放在最后加，这样它们的 layerIndex 都在可见元件之上（不影响显示，
     // 逻辑件本来就不渲染），也便于阅读时和上面的循环对应。
     for (var i = 0; i < pressPairs.length; i++) {
+      final pressPos = logicSlots.slot(0);
       elements.add(_pressLinker(
         id: nextId('el'),
         name: '选项${i + 1}按压',
         buttonId: pressPairs[i].button,
         surfaceId: pressPairs[i].surface,
-        y: i * 52.0,
+        x: pressPos.$1,
+        y: pressPos.$2,
         layer: elements.length + 1,
         color: theme.accentColor,
       ));
@@ -1430,11 +1494,12 @@ class UiAssemblyBuilder {
     required double y,
     required int layer,
     required int color,
+    double x = -224,
   }) =>
       _element(
         id: id,
         // 后台位：放在 PCB 左侧外部。
-        x: -224,
+        x: x,
         y: y,
         w: 132,
         h: 44,
