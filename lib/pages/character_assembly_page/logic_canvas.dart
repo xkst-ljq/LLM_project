@@ -1785,24 +1785,28 @@ mixin _AssemblyCanvasLogic
             size: size,
             layerIndex: 0,
           );
-    // 叠加页内放置有界渲染组件：
-    // - 有容器面：夹取进容器面（前台渲染）
-    // - 无容器面：自动作为后台节点放置（超出容器面即后台，容器面未就位时
-    //   先以后台形态存在，作者放入容器面后它进入前台）
+    // 叠加页内放置有界渲染组件：生成时**立即**按「是否在容器面内」判断
+    // 前台/后台，无需再拖一下：
+    // - 有容器面且放置点在容器面内 → 前台渲染（夹取进容器面）
+    // - 无容器面，或放置点在容器面外 → 后台节点（不夹取，保持外部位置）
     // 逻辑组件（linker/math_node/timer/page_router）无容器面也可直接放置。
     UIElement? placed;
-    if (_activePage.isOverlay &&
-        _requiresPcbContainment(prototype) &&
-        _activeOverlayContainer() == null) {
-      final mod = prototype.module;
-      if (mod != null) {
-        final props =
-            Map<String, dynamic>.from(_deepCloneValue(mod.properties) as Map);
-        props['runtimePlacement'] = 'background';
-        placed = prototype.copyWith(
-          module: mod.copyWith(properties: props),
-          offset: _applyPlacementConstraints(prototype, local),
-        );
+    if (_activePage.isOverlay && _requiresPcbContainment(prototype)) {
+      final container = _activeOverlayContainer();
+      final probe = prototype.copyWith(offset: local);
+      final inContainer =
+          container != null && _isElementInsidePcb(probe);
+      if (container == null || !inContainer) {
+        final mod = prototype.module;
+        if (mod != null) {
+          final props =
+              Map<String, dynamic>.from(_deepCloneValue(mod.properties) as Map);
+          props['runtimePlacement'] = 'background';
+          placed = prototype.copyWith(
+            module: mod.copyWith(properties: props),
+            offset: local,
+          );
+        }
       }
     }
     final elementToAdd = placed ??
