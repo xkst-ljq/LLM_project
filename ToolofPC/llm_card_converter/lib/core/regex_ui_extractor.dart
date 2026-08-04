@@ -710,24 +710,77 @@ class RegexUiExtractor {
   /// 返回 字段名 -> 值（去掉 `:cur/max` 的量程尾巴，只留当前值）。
   static Map<String, String> extractBarFieldValues(String text) {
     final out = <String, String>{};
-    // 匹配 {Xxx|key:value|...}，key 允许中英、value 到下一个 | 或 }
-    final re = RegExp(r'\{([A-Za-z_]+)\|([^}]*)\}', dotAll: true);
-    for (final m in re.allMatches(text)) {
-      final body = m.group(2) ?? '';
-      for (final part in body.split('|')) {
+    // 先把 `{{...}}` 模板占位符（如 {{user}}）替换成无花括号的哨兵，
+    // 否则内层的 `}` 会把 `[^}]*` 截断，导致整块后半段（Level/HP/...）
+    // 全部丢失——这正是异世界公会状态栏字段全空的根因。
+    final sentinel = <String, String>{};
+    var counter = 0;
+    final cleaned = text.replaceAllMapped(
+      RegExp(r'\{\{[^}]*\}\}'),
+      (m) {
+        final key = '__TPL${counter++}__';
+        sentinel[key] = m.group(0)!;
+        return key;
+      },
+    );
+
+    // 匹配 `{...}` 块（内部不再含花括号）。
+    final re = RegExp(r'\{([^}]*)\}', dotAll: true);
+    for (final m in re.allMatches(cleaned)) {
+      final body = (m.group(1) ?? '').trim();
+      if (body.isEmpty) continue;
+
+      String rest = body;
+      final ci = body.indexOf(':');
+      final pi = body.indexOf('|');
+      if (pi >= 0 && (ci < 0 || pi < ci)) {
+        // `{Block|key:val|...}`：块名后直接是 `|`，其余都是 key:value
+        rest = body.substring(pi + 1);
+      } else if (ci > 0) {
+        // `{key:val|key2:val|...}`：第一个 `:` 前是块名（即字段名），
+        // 其后到下一个 `|` 是它的值。
+        final leadingKey = body.substring(0, ci).trim();
+        final pipe = body.indexOf('|', ci);
+        final firstVal =
+            pipe < 0 ? body.substring(ci + 1) : body.substring(ci + 1, pipe);
+        _putBarValue(out, leadingKey, firstVal, sentinel);
+        rest = pipe < 0 ? '' : body.substring(pipe + 1);
+      } else {
+        continue;
+      }
+
+      for (final part in rest.split('|')) {
         final idx = part.indexOf(':');
         if (idx <= 0) continue;
         final key = part.substring(0, idx).trim();
-        var value = part.substring(idx + 1).trim();
-        // 去掉 "cur/max" 的量程尾巴：HP:100/100 -> 100
-        final slash = value.indexOf('/');
-        if (slash > 0 && RegExp(r'^\d+$').hasMatch(value.substring(0, slash))) {
-          value = value.substring(0, slash);
-        }
-        if (key.isNotEmpty && value.isNotEmpty) out[key] = value;
+        final value = part.substring(idx + 1).trim();
+        _putBarValue(out, key, value, sentinel);
       }
     }
     return out;
+  }
+
+  /// 写入一条 bar 值：还原哨兵、去掉 `cur/max` 量程尾巴。
+  ///
+  /// 同名键**保留第一次出现的值**（同一段正文里有 5 个 quest 块、
+  /// 2 个选项块，后写的会覆盖前面的——取第一个更贴近开场引导）。
+  static void _putBarValue(
+    Map<String, String> out,
+    String key,
+    String value,
+    Map<String, String> sentinel,
+  ) {
+    if (key.isEmpty || value.isEmpty) return;
+    for (final e in sentinel.entries) {
+      value = value.replaceAll(e.key, e.value);
+    }
+    // 去掉 "cur/max" 的量程尾巴：HP:100/100 -> 100
+    final slash = value.indexOf('/');
+    if (slash > 0 &&
+        RegExp(r'^\d+$').hasMatch(value.substring(0, slash))) {
+      value = value.substring(0, slash);
+    }
+    if (value.isNotEmpty) out.putIfAbsent(key, () => value);
   }
 
   /// 抽 `onclick="send('文案')"` 里的文案。

@@ -270,6 +270,29 @@ class ConversionPipeline {
           ? <String, dynamic>{}
           : Map<String, dynamic>.from(base.characterData!);
 
+      // ── 从原卡开场白解析字段初始值 ──
+      // 两种格式都要收：
+      //   1. {PlayerStatus|Name:...|HP:100/100|...} / {quest:...|...}
+      //      → extractBarFieldValues
+      //   2. <生命>84%</生命>  → extraction.branchPresets（已按分支提取）
+      // 这些值先喂给 Step A（AI），再给 Step B 兜底填充。
+      final srcData = src['data'] is Map
+          ? Map<String, dynamic>.from(src['data'] as Map)
+          : src;
+      final fm = srcData['first_mes']?.toString() ?? '';
+      final alts = (srcData['alternate_greetings'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const <String>[];
+      final initValues = <String, String>{};
+      for (final t in [fm, ...alts]) {
+        final vals = RegexUiExtractor.extractBarFieldValues(t);
+        // 同名键保留第一次出现的值（多个 quest 块/选项块时取首个）
+        for (final e in vals.entries) {
+          initValues.putIfAbsent(e.key, () => e.value);
+        }
+      }
+
       // ── AI 深度创作（Step A+B）优先 ──
       // 让 AI 识别多面板并设计 scene；失败或未配置 AI 时回退到确定性模板。
       UiVisualTheme? visualTheme;
@@ -279,24 +302,11 @@ class ConversionPipeline {
       if (extraction.usableScripts.isNotEmpty) {
         try {
           aiAttempted = true;
-          final intent = await AiUiDesigner.design(extraction);
+          final intent = await AiUiDesigner.design(
+            extraction,
+            barInitialValues: initValues,
+          );
           if (intent.hasUi) {
-            // 从原卡开场白解析字段初始值，供 AI 没给 initialValue 的字段兜底填充。
-            // 两种格式都要收：
-            //   1. {PlayerStatus|Name:...|HP:100/100|...}  → extractBarFieldValues
-            //   2. <生命>84%</生命>  → extraction.branchPresets（已按分支提取）
-            final srcData = src['data'] is Map
-                ? Map<String, dynamic>.from(src['data'] as Map)
-                : src;
-            final fm = srcData['first_mes']?.toString() ?? '';
-            final alts = (srcData['alternate_greetings'] as List?)
-                    ?.map((e) => e.toString())
-                    .toList() ??
-                const <String>[];
-            final initValues = <String, String>{};
-            for (final t in [fm, ...alts]) {
-              initValues.addAll(RegexUiExtractor.extractBarFieldValues(t));
-            }
             // 合并 <字段>值</字段> 格式（branchPresets 已按分支提取）。
             // 分支 0 是 first_mes（默认开场白），它的值应优先。
             // 先收其它分支的值兜底，再让分支 0 覆盖回去，避免后面的分支

@@ -28,7 +28,14 @@ class AiUiDesigner {
   const AiUiDesigner._();
 
   /// 对提取结果做 AI 深度创作设计。失败时抛异常（由调用方回退到确定性模板）。
-  static Future<UiCreationIntent> design(UiExtraction extraction) async {
+  ///
+  /// [barInitialValues] 是从开场白里解析出的字段初始值（`{Xxx|key:val|...}` 与
+  /// `{key:val|...}` 两种格式），喂给 AI 让它把 `initialValue` 填上真实值，
+  /// 而不是因为「原卡模板是 $n 占位符」就全部留空。
+  static Future<UiCreationIntent> design(
+    UiExtraction extraction, {
+    Map<String, String> barInitialValues = const {},
+  }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
       throw StateError('未配置 AI（请先在设置中填写 API）');
@@ -39,7 +46,7 @@ class AiUiDesigner {
       apiKey: cfg.apiKey,
       model: cfg.model,
       systemPrompt: _systemPrompt,
-      userPrompt: _buildUserPrompt(extraction),
+      userPrompt: _buildUserPrompt(extraction, barInitialValues),
       temperature: 0.4, // 创作可稍高，但仍是结构化输出
     );
 
@@ -164,9 +171,23 @@ class AiUiDesigner {
 只输出 JSON，不要 markdown 代码块。
 ''';
 
-  static String _buildUserPrompt(UiExtraction extraction) {
+  static String _buildUserPrompt(
+    UiExtraction extraction, [
+    Map<String, String> barInitialValues = const {},
+  ]) {
     final buf = StringBuffer();
     buf.writeln('请分析以下角色卡的正则脚本，设计 UI 创作意图。\n');
+
+    // 把从开场白解析出的字段初始值喂给 AI：这些就是各字段此刻的真实值，
+    // 必须填进 initialValue，而不是留空。字段名可能和脚本里的不同（大小写、
+    // 中英），按语义对应即可。
+    if (barInitialValues.isNotEmpty) {
+      buf.writeln('【开场白中的字段初始值】（务必填入对应字段的 initialValue）：');
+      final keys = barInitialValues.keys.toList()..sort();
+      buf.writeln(keys.map((k) => '$k=$barInitialValues[$k]').join(' | '));
+      buf.writeln();
+    }
+
     buf.writeln('可用的脚本如下：');
     for (final script in extraction.scripts) {
       buf.writeln('---');

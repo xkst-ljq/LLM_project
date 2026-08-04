@@ -137,4 +137,34 @@ void main() {
       expect(hpField['initial_value'], '100');
     });
   });
+
+  group('extractBarFieldValues - 兼容两种块格式 + {{user}} 不截断', () {
+    test('{{user}} 占位符不再截断后续字段', () {
+      final v = RegexUiExtractor.extractBarFieldValues(
+          '{PlayerStatus|Name:{{user}}|Level:1|XP:0/100|HP:100/100|MP:50/100|STR:10|Class:冒险者(E级)}');
+      expect(v['Name'], '{{user}}');
+      expect(v['Level'], '1');
+      expect(v['XP'], '0'); // 去掉 /100 尾巴
+      expect(v['HP'], '100');
+      expect(v['MP'], '50');
+      expect(v['STR'], '10');
+      expect(v['Class'], '冒险者(E级)');
+    });
+
+    test('块名即首字段的 {key:val|...} 格式（quest 列表）', () {
+      final v = RegexUiExtractor.extractBarFieldValues(
+          '{quest:采集安神草|type:生活类|desc:为药剂师采集|reward:20银币}');
+      expect(v['quest'], '采集安神草');
+      expect(v['type'], '生活类');
+      expect(v['desc'], '为药剂师采集');
+      expect(v['reward'], '20银币');
+    });
+
+    test('同名键保留第一次出现的值', () {
+      final v = RegexUiExtractor.extractBarFieldValues(
+          '{quest:A|reward:10}{quest:B|reward:20}');
+      expect(v['quest'], 'A');
+      expect(v['reward'], '10');
+    });
+  });
 }
