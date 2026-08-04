@@ -4,6 +4,7 @@ import '../core/conversion_models.dart';
 import '../core/conversion_service.dart';
 import '../core/regex_ui_extractor.dart';
 import '../core/ui_assembly_builder.dart';
+import '../core/ai_ui_designer.dart';
 import '../core/greeting_sanitizer.dart';
 import '../core/ai_visual_extractor.dart';
 
@@ -269,9 +270,31 @@ class ConversionPipeline {
           ? <String, dynamic>{}
           : Map<String, dynamic>.from(base.characterData!);
 
+      // ── AI 深度创作（Step A+B）优先 ──
+      // 让 AI 识别多面板并设计 scene；失败或未配置 AI 时回退到确定性模板。
       UiVisualTheme? visualTheme;
-      final primary = UiAssemblyBuilder.pickPrimary(extraction.usableScripts);
-      if (primary != null && primary.rawReplace.isNotEmpty) {
+      BuiltAssembly? built;
+      var aiAttempted = false;
+      if (extraction.usableScripts.isNotEmpty) {
+        try {
+          aiAttempted = true;
+          final intent = await AiUiDesigner.design(extraction);
+          if (intent.hasUi) {
+            built = UiAssemblyBuilder.buildSceneFromIntent(
+              intent,
+              cardName: card['name']?.toString() ?? '',
+            );
+          }
+        } catch (_) {
+          // AI 设计失败（未配置 / 解析失败 / 网络）→ 回退确定性模板
+        }
+      }
+
+      // ── 确定性模板（回退路径 / 无 AI 时）──
+      final primary = built == null
+          ? UiAssemblyBuilder.pickPrimary(extraction.usableScripts)
+          : null;
+      if (built == null && primary != null && primary.rawReplace.isNotEmpty) {
         try {
           final extractedJson = await AiVisualThemeExtractor.extractTheme(primary.rawReplace);
           if (extractedJson != null) {
@@ -281,8 +304,7 @@ class ConversionPipeline {
           // AI 视觉提取失败则静默回落到方案 A 的默认主题
         }
       }
-
-      final built = UiAssemblyBuilder.build(
+      built ??= UiAssemblyBuilder.build(
         extraction,
         cardName: card['name']?.toString() ?? '',
         theme: visualTheme,
@@ -333,6 +355,9 @@ class ConversionPipeline {
 
       final notes = <ConversionNote>[
         ...base.notes,
+        if (aiAttempted)
+          ConversionNote.info(
+              built.assemblies.isNotEmpty ? 'UI 由 AI 深度创作生成（scene）。' : '已尝试 AI 创作，回退到确定性模板。'),
         ...extraction.notes.map(ConversionNote.info),
         ...built.notes.map(ConversionNote.info),
         ...sanitizeNotes.map(ConversionNote.info),

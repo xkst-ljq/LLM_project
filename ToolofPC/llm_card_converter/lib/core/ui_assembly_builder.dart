@@ -38,6 +38,7 @@
 library;
 
 import 'dart:convert';
+import 'ai_ui_designer.dart';
 import 'regex_ui_extractor.dart';
 
 /// 构建时的布局常量。
@@ -1690,6 +1691,180 @@ class UiAssemblyBuilder {
     if (lower.contains('体力') || lower.contains('精力') || lower.contains('stamina') || lower.contains('energy') || lower.contains('ap')) return 0xFF4CAF50; // 绿色
     if (lower.contains('饱腹') || lower.contains('饥饿') || lower.contains('food') || lower.contains('hunger')) return 0xFFFF9800; // 橙色
     return fallback;
+  }
+
+  /// Step B：把 AI 的「创作意图」转成合法的 scene assembly JSON。
+  ///
+  /// AI（Step A）只产出语义化意图（有哪些页/面板/字段/用什么组件），
+  /// 这里由确定性代码算坐标、绑数据通道、生成三层嵌套 JSON，
+  /// 杜绝 AI 直接写 JSON 的静默错误。
+  static BuiltAssembly buildSceneFromIntent(
+    UiCreationIntent intent, {
+    String cardName = '',
+    UiVisualTheme theme = const UiVisualTheme(),
+  }) {
+    final assemblies = <String>[];
+    final statusFields = <Map<String, dynamic>>[];
+    var seed = DateTime.now().millisecondsSinceEpoch;
+    String nextId(String prefix) => '${prefix}_${seed++}';
+    final notes = <String>[
+      ...intent.reasoning.map(
+        (r) => '【AI 思考】$r',
+      ),
+    ];
+
+    final pcbW = 360.0;
+    const pad = 14.0;
+    final innerW = pcbW - pad * 2;
+
+    // 每个页面：id -> elements
+    final pageElements = <String, List<Map<String, dynamic>>>{};
+    for (final p in intent.pages) {
+      pageElements[p.id] = <Map<String, dynamic>>[];
+    }
+
+    // 每个面板在对应页面摆放元素
+    for (final panel in intent.panels) {
+      final page = panel.page.isNotEmpty ? panel.page : intent.activePage;
+      final elements = pageElements.putIfAbsent(
+        page,
+        () => <Map<String, dynamic>>[],
+      );
+      var y = pad + 30.0; // 顶部留 Tab 栏空间
+
+      if (panel.title.isNotEmpty) {
+        elements.add(_text(
+          id: nextId('el'),
+          name: '面板标题',
+          text: panel.title,
+          x: pad,
+          y: y,
+          w: innerW,
+          h: 24,
+          fontSize: 15,
+          color: 0xFFFFFFFF,
+          align: 'left',
+          layer: 1,
+        ));
+        y += 30;
+      }
+
+      for (final field in panel.fields) {
+        final fid = 'sf_${_slug(field.name)}';
+        if (field.display == 'progress' && field.type == 'number') {
+          elements.add(_progress(
+            id: nextId('el'),
+            name: field.name,
+            x: pad,
+            y: y,
+            w: innerW,
+            h: 14,
+            layer: 1,
+            statusFieldId: fid,
+            barFillColor: _barColorOf(field.name, 0xFF4FA3D1),
+            barTrackColor: 0xFF2A2D36,
+          ));
+          // progress 本身不自带 label，加一行文本标签
+          elements.add(_text(
+            id: nextId('el'),
+            name: '${field.name}标签',
+            text: field.name,
+            x: pad,
+            y: y - 16,
+            w: innerW,
+            h: 14,
+            fontSize: 10,
+            color: 0xFFAAB0BC,
+            align: 'left',
+            layer: 1,
+          ));
+          statusFields.add({
+            'id': fid,
+            'name': field.name,
+            'type': 'number',
+            'initial_value': '0',
+            'min_value': field.min ?? 0.0,
+            'max_value': field.max ?? 100.0,
+            'pin_side': 'none',
+            'order': statusFields.length,
+            'owner': 'player',
+          });
+          y += 34;
+        } else {
+          elements.add(_text(
+            id: nextId('el'),
+            name: field.name,
+            text: '—',
+            x: pad,
+            y: y,
+            w: innerW,
+            h: 22,
+            fontSize: 12,
+            color: 0xFFE8EDF5,
+            align: 'left',
+            layer: 1,
+            statusFieldId: fid,
+          ));
+          statusFields.add({
+            'id': fid,
+            'name': field.name,
+            'type': 'text',
+            'initial_value': '',
+            'pin_side': 'none',
+            'order': statusFields.length,
+            'owner': 'player',
+          });
+          y += 28;
+        }
+      }
+    }
+
+    // 组装 pages：加底部底板 + 页面元数据
+    final pagesJson = <Map<String, dynamic>>[];
+    var sort = 0;
+    for (final p in intent.pages) {
+      final elements = pageElements[p.id] ?? <Map<String, dynamic>>[];
+      // 底板放最底层
+      final bg = _surface(
+        id: nextId('el'),
+        name: '底板',
+        x: 0,
+        y: 0,
+        w: pcbW,
+        h: 600,
+        color: theme.pcbColor,
+        layer: 0,
+        radius: theme.borderRadius,
+      );
+      pagesJson.add({
+        'id': p.id,
+        'name': p.name,
+        'type': 'base',
+        'parentPageId': null,
+        'sortOrder': sort++,
+        'elements': [bg, ...elements],
+        'gestures': <dynamic>[],
+        'propertyOverrides': <dynamic>[],
+      });
+    }
+
+    final json = _assembly(
+      id: nextId('asm'),
+      name: '${cardName.isEmpty ? "角色" : cardName}·场景',
+      mode: 'scene',
+      pcbW: pcbW,
+      pcbH: 600,
+      pages: pagesJson,
+      pcbColor: theme.pcbColor,
+      pcbRadius: theme.borderRadius,
+    );
+    assemblies.add(json);
+
+    return BuiltAssembly(
+      assemblies: assemblies,
+      statusFields: statusFields,
+      notes: notes,
+    );
   }
 }
 
