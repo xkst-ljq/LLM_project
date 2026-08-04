@@ -268,20 +268,6 @@ mixin _AssemblyPageLogic
     }
   }
 
-  /// 编辑态点击组件时的提示。
-  ///
-  /// 制作与预览严格分离：编辑器里不执行任何联动效果，包括页面跳转。
-  /// 原因是编辑时的点击 / 拖动极易误触发，而组件状态会被
-  /// `_persistAssemblyElements` 一并保存，污染最终产物。
-  void _showEditModeHint() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('编辑态不执行联动；切页请用图层面板，效果请进运行时预览'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
   String _gestureDirectionLabel(String direction) {
     return switch (direction) {
       'swipe_right' => '右滑',

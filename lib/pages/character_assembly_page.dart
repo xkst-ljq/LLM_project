@@ -800,7 +800,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                     ? const Color(0xFFD32F2F)
                     : const Color(0xFF555562),
               ),
-              _buildHudText('覆写 $_activePropertyOverrideCount'),
             ],
           ),
         ),
@@ -1612,7 +1611,6 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
             return;
           }
           _selectElement(el.id);
-          if (el.module!.type == 'button') _showEditModeHint();
         },
         // linker 已在上面提前返回，这里不会再遇到它。
         onDoubleTap: () {

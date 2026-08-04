@@ -583,7 +583,6 @@ mixin _AssemblyLogic on State<CharacterAssemblyPage> {
     _sanitizeActivePropertyOverrides();
   }
 
-  int get _activePropertyOverrideCount => _activePropertyOverrides.length;
   void _sanitizeActivePropertyOverrides() {
     final validIds = <String>{};
     final compositeIds = <String>{};
