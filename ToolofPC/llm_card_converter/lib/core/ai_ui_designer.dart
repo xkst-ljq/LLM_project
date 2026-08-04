@@ -91,8 +91,8 @@ class AiUiDesigner {
       "page": "页id",
       "title": "面板标题",
       "fields": [
-        {"name":"HP","type":"number","display":"progress","min":0,"max":100},
-        {"name":"武器","type":"text","display":"text"}
+        {"name":"HP","type":"number","display":"progress","min":0,"max":100,"initialValue":"100"},
+        {"name":"武器","type":"text","display":"text","initialValue":"木剑"}
       ]
     }
   ],
@@ -100,6 +100,7 @@ class AiUiDesigner {
 }
 
 【display 允许值】progress(数值条) / text(文本) / button(按钮)
+【initialValue】从原卡脚本/开场白里提取该字段的当前初始值（数值取当前值，如 HP 100/100 的 100；文本取原文）。没有就留空字符串。
 只输出 JSON，不要 markdown 代码块。
 ''';
 
@@ -224,12 +225,14 @@ class UiFieldIntent {
   final String display; // progress | text | button
   final double? min;
   final double? max;
+  final String initialValue; // 从原卡提取的初始值（如 HP 100/100 的当前值）
   const UiFieldIntent({
     required this.name,
     required this.type,
     required this.display,
     this.min,
     this.max,
+    this.initialValue = '',
   });
   factory UiFieldIntent.fromJson(Map<String, dynamic> json) {
     final display = json['display']?.toString() ?? 'text';
@@ -241,6 +244,7 @@ class UiFieldIntent {
           : 'text',
       min: (json['min'] as num?)?.toDouble(),
       max: (json['max'] as num?)?.toDouble(),
+      initialValue: json['initialValue']?.toString() ?? '',
     );
   }
 }

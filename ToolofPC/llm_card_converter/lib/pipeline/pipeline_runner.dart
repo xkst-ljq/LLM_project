@@ -140,6 +140,15 @@ class PipelineRunner {
       await pipeline.runBuildUiStage(item);
       final after = item.current?.characterData;
       _log(_describeUiResult(before, after));
+      // 上报 AI 深度创作的思考过程（如果有）
+      final thinking = item.current?.notes
+              ?.where((n) => n.message.contains('【AI 思考】'))
+              .map((n) => n.message)
+              .toList() ??
+          const <String>[];
+      for (final t in thinking) {
+        _log('  $t');
+      }
     } catch (e) {
       _log('  跳过（UI 生成失败）：$e');
     }

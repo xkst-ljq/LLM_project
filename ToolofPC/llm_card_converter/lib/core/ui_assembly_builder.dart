@@ -1404,6 +1404,9 @@ class UiAssemblyBuilder {
     required String statusFieldId,
     required int barFillColor,
     required int barTrackColor,
+    double current = 0.0,
+    double min = 0.0,
+    double max = 100.0,
   }) =>
       _element(
         id: id,
@@ -1420,9 +1423,9 @@ class UiAssemblyBuilder {
           shape: 2, // capsule
           radius: h / 2,
           props: {
-            'min': 0.0,
-            'max': 100.0,
-            'current': 0.0,
+            'min': min,
+            'max': max,
+            'current': current,
             'progressShape': 'capsule',
             'trackColor': barTrackColor,
             'dataChannel': _channel(
@@ -1753,6 +1756,8 @@ class UiAssemblyBuilder {
       for (final field in panel.fields) {
         final fid = 'sf_${_slug(field.name)}';
         if (field.display == 'progress' && field.type == 'number') {
+          // 初始值：从原卡提取的数值（如 HP 100/100 的当前值）
+          final cur = double.tryParse(field.initialValue) ?? 0.0;
           elements.add(_progress(
             id: nextId('el'),
             name: field.name,
@@ -1764,6 +1769,9 @@ class UiAssemblyBuilder {
             statusFieldId: fid,
             barFillColor: _barColorOf(field.name, 0xFF4FA3D1),
             barTrackColor: 0xFF2A2D36,
+            current: cur,
+            min: field.min ?? 0.0,
+            max: field.max ?? 100.0,
           ));
           // progress 本身不自带 label，加一行文本标签
           elements.add(_text(
@@ -1783,7 +1791,7 @@ class UiAssemblyBuilder {
             'id': fid,
             'name': field.name,
             'type': 'number',
-            'initial_value': '0',
+            'initial_value': field.initialValue,
             'min_value': field.min ?? 0.0,
             'max_value': field.max ?? 100.0,
             'pin_side': 'none',
@@ -1795,7 +1803,7 @@ class UiAssemblyBuilder {
           elements.add(_text(
             id: nextId('el'),
             name: field.name,
-            text: '—',
+            text: field.initialValue.isEmpty ? '—' : field.initialValue,
             x: pad,
             y: y,
             w: innerW,
@@ -1810,7 +1818,7 @@ class UiAssemblyBuilder {
             'id': fid,
             'name': field.name,
             'type': 'text',
-            'initial_value': '',
+            'initial_value': field.initialValue,
             'pin_side': 'none',
             'order': statusFields.length,
             'owner': 'player',
