@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llm_card_converter/core/ai_ui_designer.dart';
 import 'package:llm_card_converter/core/regex_ui_extractor.dart';
@@ -168,3 +170,58 @@ void main() {
     });
   });
 }
+
+  group('buildSceneFromIntent - 同页多面板不重叠', () {
+    test('两个面板放同一页时纵向接续排布', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [ScenePage(id: 'p1', name: '主场景')],
+        activePage: 'p1',
+        panels: [
+          UiPanel(
+            kind: 'quest_list',
+            page: 'p1',
+            title: '任务',
+            fields: const [UiFieldIntent(name: 'quest', type: 'text', display: 'text', initialValue: '采集安神草')],
+          ),
+          UiPanel(
+            kind: 'option_bar',
+            page: 'p1',
+            title: '选择',
+            fields: const [UiFieldIntent(name: 'option1_text', type: 'text', display: 'text', initialValue: '采集')],
+          ),
+        ],
+        reasoning: const [],
+      );
+
+      final built = UiAssemblyBuilder.buildSceneFromIntent(
+        intent,
+        cardName: '测试角色',
+        initialValues: const {'quest': '采集安神草', 'option1_text': '采集'},
+      );
+      final json = jsonDecode(built.assemblies.first) as Map;
+      final pages = (jsonDecode(json['pages'] as String) as List).cast<Map<String, dynamic>>();
+      final elements = (pages.first['elements'] as List).cast<Map<String, dynamic>>();
+
+      // 找两个面板字段的 y 坐标：同一页应接续排布，不得相同（否则重叠）
+      double? yOf(String name) {
+        for (final e in elements) {
+          final m = Map<String, dynamic>.from(e['module'] as Map);
+          final props = Map<String, dynamic>.from(m['properties'] as Map);
+          if (props['text'] == name) {
+            final off = Map<String, dynamic>.from(e['offset'] as Map);
+            return (off['y'] as num).toDouble();
+          }
+        }
+        return null;
+      }
+
+      final yQuest = yOf('采集安神草');
+      final yOption = yOf('采集');
+      expect(yQuest, isNotNull);
+      expect(yOption, isNotNull);
+      // 第二个面板必须排在第一个面板下面（quest 文本在 option 之上）
+      expect(yOption!, greaterThan(yQuest!),
+          reason: '同一页两个面板应接续排布，option 面板应在 quest 面板之下');
+    });
+  });

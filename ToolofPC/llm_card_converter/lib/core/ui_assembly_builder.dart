@@ -1955,6 +1955,13 @@ class UiAssemblyBuilder {
       pageElements[p.id] = <Map<String, dynamic>>[];
     }
 
+    // 每页的纵向游标：同一页上的多个面板要**接续排布**，而不是各自从
+    // y=250 开始——否则两个面板挤到同一页就会完全重叠（实测 quest_list
+    // 和 option_bar 都放「公会任务板」页时就是如此）。
+    final pageCursor = <String, double>{
+      for (final p in intent.pages) p.id: 250.0, // 消息流下方
+    };
+
     // 每个面板在对应页面摆放元素
     for (final panel in intent.panels) {
       final page = panel.page.isNotEmpty ? panel.page : intent.activePage;
@@ -1962,7 +1969,7 @@ class UiAssemblyBuilder {
         page,
         () => <Map<String, dynamic>>[],
       );
-      var y = 250.0; // 消息流下方
+      var y = pageCursor[page] ?? 250.0;
 
       if (panel.title.isNotEmpty) {
         elements.add(_text(
@@ -2059,6 +2066,9 @@ class UiAssemblyBuilder {
           y += 28;
         }
       }
+
+      // 面板底部留一个间距，下一块面板从这下面接续排布。
+      pageCursor[page] = y + 16.0;
     }
 
     // 组装 pages：加底部底板 + scene 必需组件（消息流/输入框/设置按钮）
@@ -2066,8 +2076,21 @@ class UiAssemblyBuilder {
     final pagesJson = <Map<String, dynamic>>[];
     var sort = 0;
     final pageCount = intent.pages.length;
-    const bottomY = 850.0; // 输入框/设置按钮这一行
-    const navY = 790.0; // 页签栏
+    // PCB 高度按「内容最多的那页」动态取，避免面板顶到底部导航/输入框。
+    // 底栏（页签+输入框+设置按钮）固定占约 130px，内容到 850 为止。
+    const contentBottomCap = 850.0;
+    // 每页内容底部（含面板间距）
+    double contentBottomOf(String id) =>
+        (pageCursor[id] ?? 250.0).clamp(250.0, contentBottomCap);
+    double maxContentBottom = 850.0;
+    for (final p in intent.pages) {
+      final b = contentBottomOf(p.id);
+      if (b > maxContentBottom) maxContentBottom = b;
+    }
+    // 留出底部 130 给页签+输入框+设置按钮
+    final pcbH = (maxContentBottom + 130.0).clamp(900.0, 2000.0);
+    final bottomY = pcbH - 50.0; // 输入框/设置按钮这一行
+    final navY = pcbH - 110.0; // 页签栏
     for (var pIdx = 0; pIdx < pageCount; pIdx++) {
       final p = intent.pages[pIdx];
       final elements = pageElements[p.id] ?? <Map<String, dynamic>>[];
@@ -2222,7 +2245,7 @@ class UiAssemblyBuilder {
         x: 0,
         y: 0,
         w: pcbW,
-        h: 900,
+        h: pcbH,
         color: visualTheme.pcbColor,
         layer: 0,
         radius: visualTheme.borderRadius,
@@ -2265,7 +2288,7 @@ class UiAssemblyBuilder {
       name: '${cardName.isEmpty ? "角色" : cardName}·场景',
       mode: 'scene',
       pcbW: pcbW,
-      pcbH: 900,
+      pcbH: pcbH,
       pages: pagesJson,
       pcbColor: visualTheme.pcbColor,
       pcbRadius: visualTheme.borderRadius,

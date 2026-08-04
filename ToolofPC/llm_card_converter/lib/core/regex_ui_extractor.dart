@@ -134,6 +134,7 @@ class UiRegexScript {
     required this.fields,
     required this.replaceLength,
     required this.visuals,
+    this.findRegex = '',
     this.sections = const [],
     this.rawReplace = '',
   });
@@ -141,6 +142,10 @@ class UiRegexScript {
   final String scriptName;
   final UiRegexKind kind;
   final List<UiField> fields;
+
+  /// 原始 `findRegex`。喂给 AI 时要连同捕获结构一起看，
+  /// 避免 AI 只依赖字段摘要而丢了字段间的连贯关系。
+  final String findRegex;
 
   /// `replaceString` 的长度。几千字符通常意味着一个完整面板。
   final int replaceLength;
@@ -614,6 +619,7 @@ class RegexUiExtractor {
       scriptName: name,
       kind: kind,
       fields: fields,
+      findRegex: find,
       replaceLength: replace.length,
       visuals: visuals,
       sections: sections,

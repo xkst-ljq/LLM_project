@@ -305,6 +305,8 @@ class ConversionPipeline {
           final intent = await AiUiDesigner.design(
             extraction,
             barInitialValues: initValues,
+            // 原卡开场白完整原文：让 AI 直接读连贯标记，而非只读提取摘要。
+            greetingsText: [fm, ...alts],
           );
           if (intent.hasUi) {
             // 合并 <字段>值</字段> 格式（branchPresets 已按分支提取）。

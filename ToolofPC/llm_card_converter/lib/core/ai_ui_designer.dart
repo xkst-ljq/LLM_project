@@ -32,9 +32,15 @@ class AiUiDesigner {
   /// [barInitialValues] 是从开场白里解析出的字段初始值（`{Xxx|key:val|...}` 与
   /// `{key:val|...}` 两种格式），喂给 AI 让它把 `initialValue` 填上真实值，
   /// 而不是因为「原卡模板是 $n 占位符」就全部留空。
+  ///
+  /// [greetingsText] 是原卡开场白（`first_mes` + `alternate_greetings`）的
+  /// **完整原文**。让 AI 直接读连贯的原始结构化标记（`{PlayerStatus|HP:100|...}`），
+  /// 而非只读被提取/截断后的摘要——避免自动化正则把连贯信息拆散或删掉，
+  /// 导致 AI 读不到本应存在的内容。
   static Future<UiCreationIntent> design(
     UiExtraction extraction, {
     Map<String, String> barInitialValues = const {},
+    List<String> greetingsText = const [],
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
@@ -46,7 +52,8 @@ class AiUiDesigner {
       apiKey: cfg.apiKey,
       model: cfg.model,
       systemPrompt: _systemPrompt,
-      userPrompt: _buildUserPrompt(extraction, barInitialValues),
+      userPrompt:
+          _buildUserPrompt(extraction, barInitialValues, greetingsText),
       temperature: 0.4, // 创作可稍高，但仍是结构化输出
     );
 
@@ -174,6 +181,7 @@ class AiUiDesigner {
   static String _buildUserPrompt(
     UiExtraction extraction, [
     Map<String, String> barInitialValues = const {},
+    List<String> greetingsText = const [],
   ]) {
     final buf = StringBuffer();
     buf.writeln('请分析以下角色卡的正则脚本，设计 UI 创作意图。\n');
@@ -185,6 +193,20 @@ class AiUiDesigner {
       buf.writeln('【开场白中的字段初始值】（务必填入对应字段的 initialValue）：');
       final keys = barInitialValues.keys.toList()..sort();
       buf.writeln(keys.map((k) => '$k=$barInitialValues[$k]').join(' | '));
+      buf.writeln();
+    }
+
+    // 原卡开场白完整原文：让 AI 直接读连贯的结构化标记，而不是只读被
+    // 提取/截断的摘要。这是「字段值从哪来」的第一手来源。
+    if (greetingsText.isNotEmpty) {
+      buf.writeln('【原卡开场白原文】（含结构化标记，字段初始值第一手来源，'
+          '请据此填充 initialValue）：');
+      for (final g in greetingsText) {
+        final t = g.trim();
+        if (t.isEmpty) continue;
+        buf.writeln('--- 开场白 ---');
+        buf.writeln(t.length > 4000 ? t.substring(0, 4000) : t);
+      }
       buf.writeln();
     }
 
@@ -201,6 +223,10 @@ class AiUiDesigner {
         buf.writeln('分区注释: ${script.sections.join(' / ')}');
       }
       buf.writeln('视觉线索: ${script.visuals.toJson()}');
+      // 原始 findRegex：字段捕获结构，让 AI 看到字段间的连贯关系
+      if (script.findRegex.isNotEmpty) {
+        buf.writeln('原始匹配正则(findRegex): ${script.findRegex}');
+      }
       // 给 AI 原始 CSS，让它能还原原卡视觉形态（配色/进度条/布局）
       if (script.rawReplace.isNotEmpty) {
         final css = script.rawReplace.length > 3000
