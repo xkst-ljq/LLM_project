@@ -1052,8 +1052,18 @@ mixin _AssemblyCanvasLogic
       'indicator',
       'input',
     };
-    return !element.isComposite &&
-        backgroundCapableTypes.contains(element.module?.type);
+    if (element.isComposite) return false;
+    if (backgroundCapableTypes.contains(element.module?.type)) return true;
+    // 叠加页内：有界渲染组件也可后台化——超出容器面即后台（前台/后台由
+    // 是否在容器面内决定）。容器面本身定义边界，不后台化；原生逻辑节点
+    // 天生后台，无需标记。
+    if (_activePage.isOverlay) {
+      final type = element.module?.type;
+      final isContainer =
+          element.module?.properties['is_overlay_container'] == true;
+      if (!isContainer && !_isNativeBackendNodeType(type)) return true;
+    }
+    return false;
   }
 
   bool _isBackstageElement(UIElement element) =>
@@ -1775,28 +1785,33 @@ mixin _AssemblyCanvasLogic
             size: size,
             layerIndex: 0,
           );
-    // 叠加层页：有界渲染组件必须先放置容器面（容器面作为该层边界）。
-    // 逻辑组件（linker/math_node/timer/page_router）无容器面也可放置。
+    // 叠加页内放置有界渲染组件：
+    // - 有容器面：夹取进容器面（前台渲染）
+    // - 无容器面：自动作为后台节点放置（超出容器面即后台，容器面未就位时
+    //   先以后台形态存在，作者放入容器面后它进入前台）
+    // 逻辑组件（linker/math_node/timer/page_router）无容器面也可直接放置。
+    UIElement? placed;
     if (_activePage.isOverlay &&
         _requiresPcbContainment(prototype) &&
         _activeOverlayContainer() == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('叠加页请先放置容器面，再放置组件。'),
-            backgroundColor: Color(0xFF8B4B4B),
-          ),
+      final mod = prototype.module;
+      if (mod != null) {
+        final props =
+            Map<String, dynamic>.from(_deepCloneValue(mod.properties) as Map);
+        props['runtimePlacement'] = 'background';
+        placed = prototype.copyWith(
+          module: mod.copyWith(properties: props),
+          offset: _applyPlacementConstraints(prototype, local),
         );
       }
-      return;
     }
-
-    setState(() {
-      _elements.add(
+    final elementToAdd = placed ??
         prototype.copyWith(
           offset: _applyPlacementConstraints(prototype, local),
-        ),
-      );
+        );
+
+    setState(() {
+      _elements.add(elementToAdd);
       payload.spawnedElementId = id;
     });
   }
