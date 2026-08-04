@@ -1705,8 +1705,12 @@ class UiAssemblyBuilder {
     UiCreationIntent intent, {
     String cardName = '',
     UiVisualTheme? theme,
+    Map<String, String> initialValues = const {},
   }) {
     final visualTheme = theme ?? UiVisualTheme.defaultTheme();
+    // 字段初始值：AI 给的优先，空则回落到从原卡解析的覆盖表。
+    String initOf(String name, String aiValue) =>
+        aiValue.isNotEmpty ? aiValue : (initialValues[name] ?? '');
     final assemblies = <String>[];
     final statusFields = <Map<String, dynamic>>[];
     var seed = DateTime.now().millisecondsSinceEpoch;
@@ -1757,7 +1761,8 @@ class UiAssemblyBuilder {
         final fid = 'sf_${_slug(field.name)}';
         if (field.display == 'progress' && field.type == 'number') {
           // 初始值：从原卡提取的数值（如 HP 100/100 的当前值）
-          final cur = double.tryParse(field.initialValue) ?? 0.0;
+          final iv = initOf(field.name, field.initialValue);
+          final cur = double.tryParse(iv) ?? 0.0;
           elements.add(_progress(
             id: nextId('el'),
             name: field.name,
@@ -1791,7 +1796,7 @@ class UiAssemblyBuilder {
             'id': fid,
             'name': field.name,
             'type': 'number',
-            'initial_value': field.initialValue,
+            'initial_value': initOf(field.name, field.initialValue),
             'min_value': field.min ?? 0.0,
             'max_value': field.max ?? 100.0,
             'pin_side': 'none',
@@ -1803,7 +1808,9 @@ class UiAssemblyBuilder {
           elements.add(_text(
             id: nextId('el'),
             name: field.name,
-            text: field.initialValue.isEmpty ? '—' : field.initialValue,
+            text: initOf(field.name, field.initialValue).isEmpty
+                ? '—'
+                : initOf(field.name, field.initialValue),
             x: pad,
             y: y,
             w: innerW,
@@ -1818,7 +1825,7 @@ class UiAssemblyBuilder {
             'id': fid,
             'name': field.name,
             'type': 'text',
-            'initial_value': field.initialValue,
+            'initial_value': initOf(field.name, field.initialValue),
             'pin_side': 'none',
             'order': statusFields.length,
             'owner': 'player',

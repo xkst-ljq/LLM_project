@@ -280,9 +280,24 @@ class ConversionPipeline {
           aiAttempted = true;
           final intent = await AiUiDesigner.design(extraction);
           if (intent.hasUi) {
+            // 从原卡开场白解析字段初始值（{PlayerStatus|Name:...|HP:100/100|...}），
+            // 供 AI 没给 initialValue 的字段兜底填充。
+            final srcData = src['data'] is Map
+                ? Map<String, dynamic>.from(src['data'] as Map)
+                : src;
+            final fm = srcData['first_mes']?.toString() ?? '';
+            final alts = (srcData['alternate_greetings'] as List?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                const <String>[];
+            final initValues = <String, String>{};
+            for (final t in [fm, ...alts]) {
+              initValues.addAll(RegexUiExtractor.extractBarFieldValues(t));
+            }
             built = UiAssemblyBuilder.buildSceneFromIntent(
               intent,
               cardName: card['name']?.toString() ?? '',
+              initialValues: initValues,
             );
           }
         } catch (_) {

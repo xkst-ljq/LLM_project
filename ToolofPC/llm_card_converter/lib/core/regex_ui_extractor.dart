@@ -701,6 +701,35 @@ class RegexUiExtractor {
     );
   }
 
+  /// 从文本里解析 `{Xxx|key1:value1|key2:value2|...}` 格式的结构化标记值。
+  ///
+  /// 酒馆卡常把运行时状态写在这种标记里（如 `{PlayerStatus|Name:...|
+  /// Level:1|HP:100/100|...}`），LLM 输出、正则替换成 HTML。转译时
+  /// 从这里能拿到各字段的**初始值**，供 UI 字段填充（而非占位符）。
+  ///
+  /// 返回 字段名 -> 值（去掉 `:cur/max` 的量程尾巴，只留当前值）。
+  static Map<String, String> extractBarFieldValues(String text) {
+    final out = <String, String>{};
+    // 匹配 {Xxx|key:value|...}，key 允许中英、value 到下一个 | 或 }
+    final re = RegExp(r'\{([A-Za-z_]+)\|([^}]*)\}', dotAll: true);
+    for (final m in re.allMatches(text)) {
+      final body = m.group(2) ?? '';
+      for (final part in body.split('|')) {
+        final idx = part.indexOf(':');
+        if (idx <= 0) continue;
+        final key = part.substring(0, idx).trim();
+        var value = part.substring(idx + 1).trim();
+        // 去掉 "cur/max" 的量程尾巴：HP:100/100 -> 100
+        final slash = value.indexOf('/');
+        if (slash > 0 && RegExp(r'^\d+$').hasMatch(value.substring(0, slash))) {
+          value = value.substring(0, slash);
+        }
+        if (key.isNotEmpty && value.isNotEmpty) out[key] = value;
+      }
+    }
+    return out;
+  }
+
   /// 抽 `onclick="send('文案')"` 里的文案。
   ///
   /// 用三引号原始字符串是因为要同时匹配单引号和双引号两种写法，
