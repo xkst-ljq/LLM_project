@@ -1154,10 +1154,9 @@ class UiAssemblyBuilder {
         w: colW,
         h: _Layout.buttonHeight,
         layer: elements.length + 1,
-        // 选开场白：点击即发送该选项文本给 AI，同时切换分支 + 关闭弹窗。
-        sendsMessage: true,
+        // 选开场白：只切换分支 + 关闭弹窗，不发送任何文本给 AI。
+        sendsMessage: false,
         keyAction: true,
-        message: label1,
         // 分支索引 = 选项下标 + 1：index 0 是 first_mes 引导页本身，
         // 选项要切到其后的 alternate_greetings（1..N）。
         targetBranchIndex: i + 1,
@@ -1202,10 +1201,9 @@ class UiAssemblyBuilder {
           w: colW,
           h: _Layout.buttonHeight,
           layer: elements.length + 1,
-          // 选开场白：点击即发送该选项文本给 AI，同时切换分支 + 关闭弹窗。
-          sendsMessage: true,
+          // 选开场白：只切换分支 + 关闭弹窗，不发送任何文本给 AI。
+          sendsMessage: false,
           keyAction: true,
-          message: label2,
           // 与选项1同理：分支索引 = 选项下标 + 1（跳过 first_mes 引导页本身）。
           targetBranchIndex: i + 2,
           color: theme.accentColor,
