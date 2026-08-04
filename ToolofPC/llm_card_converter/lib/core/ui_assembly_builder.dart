@@ -83,9 +83,7 @@ class _LogicSlots {
   static const double _rowGap = 52.0;
 
   /// 各层级的当前行号（默认最右列从 PCB 左侧开始）。
-  final Map<int, double> _rows;
-
-  const _LogicSlots() : _rows = const {};
+  final Map<int, double> _rows = {};
 
   /// 分配该层级下一个逻辑组件的位置（x, y）。
   ///
@@ -510,10 +508,11 @@ class UiAssemblyBuilder {
     required double innerW,
     Map<int, List<ActionOption>> branchActions = const {},
     Map<int, String> actionOverlayIds = const {},
-    _LogicSlots logicSlots = const _LogicSlots(),
+    _LogicSlots? logicSlots,
   }) {
     final elements = <Map<String, dynamic>>[];
     var y = _Layout.pcbPadding;
+    final ls = logicSlots ?? _LogicSlots();
 
     // ── 1. 顶部 Tab 标签切换栏 ──
     final tabW = (innerW - 6.0) / 2;
@@ -534,7 +533,7 @@ class UiAssemblyBuilder {
           name: '路由器_${tab.title}',
           targetPageId: tab.pageId,
           // page_router 是被 linker 指向的更深层逻辑（level 1，左一列）。
-          pos: logicSlots.slot(1),
+          pos: ls.slot(1),
         ));
       }
     }
@@ -586,7 +585,7 @@ class UiAssemblyBuilder {
           color: 0x00000000, // 保持完全透明作为按钮点击热区
         ));
 
-        final pos = logicSlots.slot(0);
+        final pos = ls.slot(0);
         elements.add(_pressLinker2(
           id: nextId('el'),
           name: '标签跳_${tab.title}',
@@ -766,9 +765,9 @@ class UiAssemblyBuilder {
               targetPageId: overlayId,
               action: 'open_overlay',
               // page_router 是更深层逻辑（level 1，左一列）。
-              pos: logicSlots.slot(1),
+              pos: ls.slot(1),
             ));
-            final pos = logicSlots.slot(0);
+            final pos = ls.slot(0);
             elements.add(_pressLinker2(
               id: nextId('el'),
               name: '动作跳_${sIdx + 1}',
