@@ -1422,7 +1422,7 @@ class UiAssemblyBuilder {
     return BuiltAssembly(
       assemblies: [json],
       statusFields: const [],
-      notes: const ['识别到 ${greetings.length} 条开场白，已生成「选择开局」opening 页。'],
+      notes: ['识别到 ${greetings.length} 条开场白，已生成「选择开局」opening 页。'],
     );
   }
 
