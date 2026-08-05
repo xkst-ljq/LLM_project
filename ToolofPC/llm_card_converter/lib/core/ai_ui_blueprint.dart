@@ -154,8 +154,12 @@ class AiUiBlueprint {
       buf.writeln('---');
       buf.writeln('#${item.index} [${item.kind}] ${item.title}');
       buf.writeln('意图: ${item.intent}');
-      if (item.fields.isNotEmpty) buf.writeln('字段: ${item.fields.join(', ')}');
-      if (item.relationship.isNotEmpty) buf.writeln('关系: ${item.relationship}');
+      if (item.fields.isNotEmpty) {
+        buf.writeln('字段: ${item.fields.join(', ')}');
+      }
+      if (item.relationship.isNotEmpty) {
+        buf.writeln('关系: ${item.relationship}');
+      }
     }
     return buf.toString();
   }
@@ -174,11 +178,11 @@ class BlueprintItem {
   /// 面板类型（status_bar / quest_list / option_bar / friend_list / ...）。
   final String kind;
 
-  /// 展示标题（如「任务·采集安神草」）。
-  final String title;
+  /// 展示标题（如「任务·采集安神草」）。用户可在蓝图确认时修改。
+  String title;
 
-  /// 设计意图描述（做什么、怎么排、用什么组件、为什么）。
-  final String intent;
+  /// 设计意图描述（做什么、怎么排、用什么组件、为什么）。用户可修改。
+  String intent;
 
   /// 涉及的原卡字段名。
   final List<String> fields;
@@ -199,7 +203,7 @@ class BlueprintItem {
     required this.index,
     required this.kind,
     required this.title,
-    required this.intent,
+    this.intent = '',
     this.fields = const [],
     this.relationship = '',
     this.keep = true,

@@ -44,10 +44,6 @@ class _BlueprintConfirmDialogState extends State<BlueprintConfirmDialog> {
     super.dispose();
   }
 
-  void _sync() {
-    setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
