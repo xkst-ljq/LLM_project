@@ -200,3 +200,201 @@
 5. **长文本用 scroll** 固定高度，不撑 PCB。
 6. **数值绑数据通道**，运行时实时更新。
 7. 完成布局后**自查坐标**：x+width≤360，矩形不重叠。
+
+---
+
+## 10. 交互链路完整写法（照抄即可用的最小示例）
+
+### 10.1 按钮跳转页面（button → page_router）
+
+**需要 3 个元素**：一个可点的 `button`（配 surface 底板）、一个逻辑 `page_router`、一条 `linker` 连线。
+
+```json
+{
+  "type": "button",
+  "properties": { "sendsMessage": false }
+}
+```
+```json
+{
+  "type": "page_router",
+  "properties": {
+    "route": { "targetPageId": "quests", "action": "switch_base_page" }
+  }
+}
+```
+```json
+{
+  "type": "linker",
+  "properties": {
+    "linker": {
+      "scheme": "button_to_page_route",
+      "sourceModuleId": "<button元素id>",
+      "targetModuleId": "<page_router元素id>",
+      "sourceGesture": "tap",
+      "enabled": true
+    }
+  }
+}
+```
+
+> `action`: `switch_base_page`(平级切页) / `open_overlay`(打开叠加层)。
+> `transition`/`durationMs` 可省略（引擎按 action 给默认：切页 base_slide，叠加层 overlay_fade）。
+> 按钮必须配 surface 底板才可见，见 3.3。
+
+### 10.2 按钮按压反馈（click_to_surface_press）
+
+把按钮点击连到底板 surface 的按压动画：
+
+```json
+{
+  "type": "linker",
+  "properties": {
+    "linker": {
+      "scheme": "click_to_surface_press",
+      "sourceModuleId": "<button元素id>",
+      "targetModuleId": "<surface底板元素id>",
+      "sourceGesture": "tap",
+      "enabled": true
+    }
+  }
+}
+```
+
+---
+
+## 11. 动画系统（`__anim`）
+
+动画挂在**元素**的 `properties.__anim` 上（不是连线上）。参数：类型/时长/曲线/强度/颜色。
+
+```json
+{
+  "type": "text",
+  "properties": {
+    "text": "HP 100",
+    "__anim": {
+      "type": "number_pop",
+      "durationMs": 260,
+      "curve": "easeInOut",
+      "intensity": 1.0
+    }
+  }
+}
+```
+
+**动画类型**（`type`）与建议时长：
+
+| type | 含义 | 建议 durationMs |
+|---|---|---|
+| `press` | 按压凹陷 | 150 |
+| `ripple` | 水波扩散 | 300 |
+| `flash` | 短暂高亮 | 300 |
+| `number_pop` | 数值跳动（目标值变化时放大回弹） | 260 |
+| `glow_pulse` | 发光脉冲（外发光呼吸） | 600 |
+| `particle_burst` | 粒子迸发 | 700 |
+
+**曲线**（`curve`）：`easeInOut` / `easeOut` / `easeIn` / `linear` / `bounceOut` / `elasticOut`。
+
+**触发**：
+- 按钮按压动画：用 `click_to_surface_press` 连线，或直接在 surface 上配 `__anim` 的 `press`；
+- 数值跳动：给 progress/text 配 `__anim` 的 `number_pop`，值变化时自动播放；
+- 发光/粒子：配 `__anim`，可用 `event_to_animation` 连线触发或值变化自动播放。
+
+---
+
+## 12. 数据通道完整写法（dataChannel）
+
+让组件被 LLM 读写、运行时实时更新。写在组件 `properties.dataChannel`：
+
+```json
+{
+  "type": "text",
+  "properties": {
+    "text": "木剑",
+    "dataChannel": {
+      "semanticLabel": "武器",
+      "semanticPath": "武器",
+      "sourceComponentId": "<元素id>",
+      "sourcePort": "text",
+      "targetKind": "status_field",
+      "targetId": "sf_武器",
+      "llmReadPolicy": "prompt",
+      "llmWritePolicy": "suggest_replace",
+      "fieldType": "text"
+    }
+  }
+}
+```
+
+- **数值字段**（progress）：`llmWritePolicy:"suggest_delta"`（LLM 只给增量，引擎 clamp 到 min/max）+ `fieldType:"number"`；
+- **文本字段**（text）：`llmWritePolicy:"suggest_replace"`（LLM 给新值整值替换）+ `fieldType:"text"`。
+
+**`targetKind` 5 种**：
+| targetKind | 说明 |
+|---|---|
+| `status_field` | 置顶状态栏字段，注入 prompt，LLM 可读写 |
+| `session_var` | 会话变量 |
+| `card_entry` | 角色卡条目字段 |
+| `local_ui_state` | 本地 UI 状态（仅界面内） |
+| `user_profile` | 玩家档案 |
+
+**`llmReadPolicy`**：`prompt`(值注入 prompt 供 LLM 读) / `ui_only`(仅界面)。
+
+> 进度条绑数值（HP/MP/XP）用 suggest_delta，文本绑字段用 suggest_replace，
+> 否则运行时就显示死值，不随剧情更新。
+
+---
+
+## 13. 动态选项（message_flow 的 onclick）
+
+`message_flow` 组件**运行时解析 AI 消息里的 `onclick="send('...')"`** 指令，渲染成可点按钮：
+
+- AI 输出消息里含 `onclick` → 消息流把指令 + 标签渲染成按钮；
+- **只在最新一条 AI 消息下方显示**（历史消息不显示，防误触）；
+- 点击把指令发回 LLM；
+- AI 可在对话中更新/新增选项（动态）。
+
+**对转译 AI 的意义**：原卡的「动作选项 / 玩家后续可选项」（如 `onclick="send('调查房间')"`）可以**保留在开场白/消息原文里**，由运行时 message_flow 自动变成按钮——**不需要转译 AI 为每个选项单独建 button 组件**。设计时只要确保主页面有 message_flow，选项就会自然出现。
+
+---
+
+## 14. 页面手势（gestures）
+
+页面可配 `gestures` 数组，实现滑动切页（引擎原生支持，不依赖按钮）：
+
+```json
+{
+  "id": "main",
+  "name": "主界面",
+  "gestures": [
+    { "direction": "swipe_left",  "action": "switch_base_page", "targetPageId": "quests" },
+    { "direction": "swipe_right", "action": "switch_base_page", "targetPageId": "friends" }
+  ]
+}
+```
+
+- `direction`: `swipe_left` / `swipe_right` / `swipe_up` / `swipe_down`；
+- `action`: `switch_base_page`；
+- 叠加层可用 `open_overlay` + `targetPageId`。
+
+---
+
+## 15. 逻辑组件
+
+### 15.1 math_node 计算节点
+- 运算：`set` / `+` / `-` / `*` / `/`（除零兜底）/ 比较 `>` `<` `>=` `<=` `==`。
+- 配合 `value_to_math_param` / `click_to_math_trigger` 等连线。
+
+### 15.2 timer 定时器
+- 周期脉冲。可配合 `timer_tick_to_progress_increment/_decrement`（定时增减进度）、
+  `timer_tick_to_switch_toggle`、`click_to_timer_toggle/_reset` 等连线。
+
+### 15.3 linker 完整 scheme 清单
+见第 6 节 + 第 10 节示例。核心交互：
+- `button_to_page_route` 页面跳转
+- `click_to_surface_press` 按压反馈
+- `event_to_animation` 事件→动画
+- `timer_tick_to_progress_increment` 定时→进度
+- `input_commit_to_text` 输入→文本
+- `progress_to_text` 进度→文本
+- `text_match_to_switch` 文本匹配→开关

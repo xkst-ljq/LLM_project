@@ -553,6 +553,19 @@ const String kIntentSystemPrompt = '''
 - **整卡必须有至少一个 settingsButton**（引擎硬性要求，不补兜底，漏了就报错）。
 - 没有任何默认模板：布局、颜色、组件、页面结构全由你逐卡设计。
 
+【交互写法（最小可落地）】
+- **按钮跳转**：需要 ① button(可点热区,配 surface 底板) + ② page_router(properties.route={targetPageId,action:"switch_base_page"})
+  + ③ linker(scheme:"button_to_page_route", sourceModuleId=button, targetModuleId=router)。三者缺一不可。
+- **按钮按压**：linker scheme `click_to_surface_press`（button→surface 底板）。
+- **动画**：元素 properties.__anim = {type:"number_pop"/"press"/"glow_pulse", durationMs, curve:"easeInOut"}。
+  数值跳动用 number_pop，按压用 press。
+- **数据通道**：properties.dataChannel = {targetKind:"status_field", targetId:"sf_xxx",
+  llmWritePolicy:"suggest_delta"(数值)/"suggest_replace"(文本), fieldType:"number"/"text"}。
+  不绑则运行时就显示死值。
+- **动态选项**：message_flow 运行时解析 AI 消息里的 onclick="send('...')" 自动渲染成按钮。
+  原卡的「动作选项」保留在消息原文里即可，**不必为每个选项建 button**，主页面有 message_flow 就会自然出现。
+- **手势切页**：页面 gestures = [{direction:"swipe_left", action:"switch_base_page", targetPageId:"..."}]。
+
 【输出 JSON】= 最终 UiCreationIntent：
 {
   "scene":{"mode":"scene","pages":[
