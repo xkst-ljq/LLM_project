@@ -1903,9 +1903,9 @@ class UiAssemblyBuilder {
   /// 返回 (height, overflowMode)。
   ///
   /// 「内容型」字段（描述/备注/任务/正文…）可能很长、且常是构建时为空、
-  /// 运行时才由 LLM 填入——一律给滚动 + 足够高度，保证不溢出。
-  /// 短值字段（名字/职业/状态/装备…）按当前值单行；引擎已对非滚动
-  /// 文本做硬裁剪，即便运行时变长也不会画到相邻元件上。
+  /// 运行时才由 LLM 填入——给滚动；高度按真实文本行数紧凑计算，
+  /// 空值给 2 行默认高度（运行时填长文也能滚，不会溢出）。
+  /// 短值字段（名字/职业/状态/装备…）按单行；引擎已对非滚动文本做硬裁剪。
   static (double, String) _sceneTextSizing(String name, String text) {
     final lower = name.toLowerCase();
     const contentKeys = {
@@ -1916,13 +1916,17 @@ class UiAssemblyBuilder {
     };
     final isContent =
         contentKeys.contains(lower) || contentKeys.contains(name) || text.length > 16;
-    if (isContent) {
-      // 估算行数：12px 中文约 20 字/行（内宽 332 - 滚动内边距）。
-      final estLines = (text.length / 20).ceil().clamp(2, 12);
-      final h = (estLines * 20.0 + 6.0).clamp(46.0, 240.0).toDouble();
-      return (h, 'scroll');
+    if (!isContent) return (22.0, 'ellipsis');
+
+    // 内容型字段：滚动 + 高度贴合真实行数，避免整页失控地高。
+    if (text.isEmpty || text == '—') {
+      // 运行时才填的空白内容：给 2 行默认高度 + 滚动，保证运行时填长文不外溢。
+      return (40.0, 'scroll');
     }
-    return (22.0, 'ellipsis');
+    // 12px 中文约 20 字/行（内宽 332 - 滚动内边距）。
+    final estLines = (text.length / 20).ceil().clamp(1, 8);
+    final h = (estLines * 20.0 + 6.0).clamp(26.0, 180.0).toDouble();
+    return (h, 'scroll');
   }
 
   static int _barColorOf(String name, int fallback) {
@@ -2111,19 +2115,18 @@ class UiAssemblyBuilder {
     final pagesJson = <Map<String, dynamic>>[];
     var sort = 0;
     final pageCount = intent.pages.length;
-    // PCB 高度按「内容最多的那页」动态取，避免面板顶到底部导航/输入框。
-    // 底栏（页签+输入框+设置按钮）固定占约 130px，内容到 850 为止。
-    const contentBottomCap = 850.0;
-    // 每页内容底部（含面板间距）
-    double contentBottomOf(String id) =>
-        (pageCursor[id] ?? 250.0).clamp(250.0, contentBottomCap);
-    double maxContentBottom = 850.0;
+
+    // PCB 高度按「内容最多的那页」的真实内容底部取，底栏（页签+输入框+
+    // 设置按钮）放在内容之下——避免内容超高时压到底栏上（重叠）。
+    double maxContentBottom = 250.0;
     for (final p in intent.pages) {
-      final b = contentBottomOf(p.id);
+      final b = pageCursor[p.id] ?? 250.0;
       if (b > maxContentBottom) maxContentBottom = b;
     }
-    // 留出底部 130 给页签+输入框+设置按钮
-    final pcbH = (maxContentBottom + 130.0).clamp(900.0, 2000.0);
+    // 内容区上限：PCB 高度最高 2000（引擎硬上限），底栏需在内容之下 130，
+    // 因此内容底部最高 1870，保证底栏始终位于真实内容之下、绝不重叠。
+    final contentBottom = maxContentBottom.clamp(250.0, 1870.0);
+    final pcbH = (contentBottom + 130.0).clamp(900.0, 2000.0);
     final bottomY = pcbH - 50.0; // 输入框/设置按钮这一行
     final navY = pcbH - 110.0; // 页签栏
     for (var pIdx = 0; pIdx < pageCount; pIdx++) {
