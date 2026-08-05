@@ -487,6 +487,14 @@ const String kBlueprintSystemPrompt = '''
 - 面板识别靠语义（字段特征）而非脚本数量。
 - scene 唯一硬性要求：整卡至少一处「打开聊天设置」按钮（引擎不启用）。
 
+【引擎默认渲染规则（规划时就要考虑）】
+- mode 有 4 种：scene(全屏)/opening(开场)/extra_companion(伴生,内嵌气泡≤212)/
+  extra_sticky(常驻悬浮)。附属信息(状态/好友/任务)可考虑伴生 UI，不必都用 scene 全屏。
+- button 运行期是纯透明热区，无视觉；每个按钮必须配 surface 底板+文字才可见。
+- style 实际配色：dark(深底亮字)/parchment(深棕底,文字要浅色否则同色)/cyber(深蓝底霓虹)/light(浅底深字)。
+- 消息流可定制 fontSize/userBubbleColor/assistantBubbleColor/bubbleRadius/richText。
+- pcbHeight 总显式写；纯内容页显式声明 chrome 避免引擎默认补消息流/输入框。
+
 【输出 JSON】
 {
   "cardName": "角色名",
@@ -526,6 +534,18 @@ const String kIntentSystemPrompt = '''
 - 视觉风格：每页可给 style（dark/parchment/cyber/light），按原卡基调选
 - 按钮字段：display:"button" 会自动套底板+点击热区，无需额外装饰
 - 数据通道：数值 progress 绑 status_field(suggest_delta)，文本 text 绑(suggest_replace)
+
+【重要：引擎默认渲染规则（务必主动覆盖，别套模板）】
+1. **mode 有 4 种**：scene(全屏) / opening(开场) / extra_companion(伴生,内嵌气泡≤212宽) /
+   extra_sticky(常驻悬浮)。**附属信息(状态/好友/任务)适合伴生 UI，不必都用 scene 全屏页。**
+2. **button 运行期是纯透明热区，无视觉**。每个按钮必须配一个 surface 底板 + 文字，
+   否则玩家看不见按钮。settingsButton 也需配 surface 齿轮图标。
+3. **消息流可定制**：fontSize / userBubbleColor / assistantBubbleColor / bubbleRadius /
+   richText / historyLimit。气泡文字色固定深色，所以气泡底色要配浅色。
+4. **style 实际配色**：dark(深底亮字蓝条)/parchment(深棕底羊皮纸,文字要浅色否则同色)/
+   cyber(深蓝黑底霓虹)/light(浅底深字)。**避免文本与背景同色。**
+5. **pcbHeight 总显式写**，否则用默认 800。
+6. 纯内容页也要显式声明 chrome 控制，避免引擎默认补消息流/输入框。
 
 【输出 JSON】= 最终 UiCreationIntent：
 {
