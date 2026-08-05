@@ -483,12 +483,14 @@ const String kIntentSystemPrompt = '''
 - 页面外壳 chrome：每页可声明 messageFlow(消息流)/input(输入框)/settingsButton(设置按钮)，
   含 x/y/width/height；未声明 = 纯内容页。整卡至少一个 settingsButton。
 - 页面：scene 多页，每页 pcbHeight 建议 650~900，页面间 page_router 切换
+- 视觉风格：每页可给 style（dark/parchment/cyber/light），按原卡基调选
+- 按钮字段：display:"button" 会自动套底板+点击热区，无需额外装饰
 - 数据通道：数值 progress 绑 status_field(suggest_delta)，文本 text 绑(suggest_replace)
 
 【输出 JSON】= 最终 UiCreationIntent：
 {
   "scene":{"mode":"scene","pages":[
-     {"id":"..","name":"..","pcbHeight":800,"chrome":{...}},
+     {"id":"..","name":"..","pcbHeight":800,"style":"parchment","chrome":{...}},
      ...
   ],"activePage":".."},
   "panels":[
@@ -511,6 +513,7 @@ const String kReviseSystemPrompt = '''
 - chrome（messageFlow/input/settingsButton）的 x+width 同样 ≤360。
 - 两列用 x=14 与 ~180；通栏 x=14 w≈332；靠右小按钮 x≈300 w≈44。
 - 长文本保持 scroll:true + 固定 height。
+- 保留每页 style（dark/parchment/cyber/light），不要丢失。
 
 只输出修正后的完整意图 JSON，不要 markdown 代码块。
 ''';

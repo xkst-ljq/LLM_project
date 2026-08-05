@@ -391,4 +391,49 @@ void main() {
     });
   });
 
+  group('UiVisualTheme - 风格系统', () {
+    test('byName 返回对应主题，未知回落 dark', () {
+      expect(UiVisualTheme.byName('parchment').pcbColor, 0xFF2A1E14);
+      expect(UiVisualTheme.byName('cyber').glow, isTrue);
+      expect(UiVisualTheme.byName('light').pcbColor, 0xFFF5F5F7);
+      expect(UiVisualTheme.byName('unknown_style').pcbColor, UiVisualTheme.byName('dark').pcbColor);
+    });
+
+    test('defaultTheme 与 dark 一致', () {
+      expect(UiVisualTheme.defaultTheme().pcbColor, UiVisualTheme.byName('dark').pcbColor);
+    });
+  });
+
+  group('buildSceneFromIntent - 按钮字段渲染 surface 底板', () {
+    test('display:button 的字段生成底板 surface + 点击热区', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [ScenePage(id: 'p1', name: '页')],
+        activePage: 'p1',
+        panels: const [
+          UiPanel(
+            kind: 'option_bar', page: 'p1', title: '选项',
+            fields: [
+              UiFieldIntent(name: 'option1_text', type: 'text', display: 'button', initialValue: '对话', x: 14, y: 30, width: 100, height: 40),
+            ],
+          ),
+        ],
+        reasoning: const [],
+      );
+      final built = UiAssemblyBuilder.buildSceneFromIntent(
+        intent, cardName: '测试', initialValues: const {},
+      );
+      final json = jsonDecode(built.assemblies.first) as Map;
+      final pages = (jsonDecode(json['pages'] as String) as List)
+          .cast<Map<String, dynamic>>();
+      final elements = (pages.first['elements'] as List).cast<Map<String, dynamic>>();
+      final types = elements
+          .map((e) => Map<String, dynamic>.from(e['module'] as Map)['type'])
+          .toSet();
+      // 应有 surface 底板（装饰）和 button 热区
+      expect(types, contains('surface'));
+      expect(types, contains('button'));
+    });
+  });
+
 }

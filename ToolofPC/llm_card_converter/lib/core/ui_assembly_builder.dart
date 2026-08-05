@@ -128,19 +128,47 @@ class UiVisualTheme {
     required this.glow,
   });
 
-  factory UiVisualTheme.defaultTheme() => const UiVisualTheme(
-        pcbColor: 0xFF15161A,
-        panelColor: 0xFF1E2027,
-        titleColor: 0xFFFFFFFF,
-        labelColor: 0xFFAAB0BC,
-        valueColor: 0xFFE8EDF5,
-        barFillColor: 0xFF4FA3D1,
-        barTrackColor: 0xFF2A2D36,
-        accentColor: 0xFF4FA3D1,
-        buttonBgColor: 0xFF2A3340,
-        borderRadius: 14.0,
-        glow: false,
-      );
+  factory UiVisualTheme.defaultTheme() => UiVisualTheme.byName('dark');
+
+  /// 预置风格：让 AI 在意图里选一套主题，而不是硬编码一套深色。
+  /// 每个风格给不同配色/圆角/材质感，让转译结果「有风格」。
+  static const Map<String, UiVisualTheme> presets = {
+    'dark': UiVisualTheme(
+      pcbColor: 0xFF15161A, panelColor: 0xFF1E2027,
+      titleColor: 0xFFFFFFFF, labelColor: 0xFFAAB0BC, valueColor: 0xFFE8EDF5,
+      barFillColor: 0xFF4FA3D1, barTrackColor: 0xFF2A2D36,
+      accentColor: 0xFF4FA3D1, buttonBgColor: 0xFF2A3340,
+      borderRadius: 14.0, glow: false,
+    ),
+    'parchment': UiVisualTheme(
+      // 羊皮纸 / 奇幻：暖色、皮革边框感
+      pcbColor: 0xFF2A1E14, panelColor: 0xFFEFE0C3,
+      titleColor: 0xFF3A2410, labelColor: 0xFF6B5138, valueColor: 0xFF2A1A08,
+      barFillColor: 0xFFB8860B, barTrackColor: 0xFFD9C7A3,
+      accentColor: 0xFFB8860B, buttonBgColor: 0xFFE4D3AE,
+      borderRadius: 12.0, glow: false,
+    ),
+    'cyber': UiVisualTheme(
+      // 赛博 / 霓虹：深底、霓虹高亮
+      pcbColor: 0xFF0A0E1A, panelColor: 0xFF121A2E,
+      titleColor: 0xFFFFFFFF, labelColor: 0xFF7C8DB5, valueColor: 0xFFE6F0FF,
+      barFillColor: 0xFF00E5FF, barTrackColor: 0xFF1E2A44,
+      accentColor: 0xFFFF2E88, buttonBgColor: 0xFF18233B,
+      borderRadius: 8.0, glow: true,
+    ),
+    'light': UiVisualTheme(
+      // 简约明亮
+      pcbColor: 0xFFF5F5F7, panelColor: 0xFFFFFFFF,
+      titleColor: 0xFF1C1C1E, labelColor: 0xFF6E6E73, valueColor: 0xFF1C1C1E,
+      barFillColor: 0xFF0A84FF, barTrackColor: 0xFFE3E3E8,
+      accentColor: 0xFF0A84FF, buttonBgColor: 0xFFF0F0F4,
+      borderRadius: 10.0, glow: false,
+    ),
+  };
+
+  /// 按名称取主题；未知名称回落 dark。
+  static UiVisualTheme byName(String? name) =>
+      presets[name?.toLowerCase()] ?? presets['dark']!;
 
   factory UiVisualTheme.fromJson(Map<String, dynamic> json) {
     int parseColor(dynamic v, int fallback) {
@@ -1993,6 +2021,11 @@ class UiAssemblyBuilder {
       for (final p in intent.pages) p.id: 250.0, // 消息流下方
     };
 
+    // 每页视觉主题（按 AI 声明的 style，回落默认 dark）。
+    final pageThemes = <String, UiVisualTheme>{
+      for (final p in intent.pages) p.id: UiVisualTheme.byName(p.style),
+    };
+
     // 每个面板在对应页面摆放元素
     for (final panel in intent.panels) {
       final page = panel.page.isNotEmpty ? panel.page : intent.activePage;
@@ -2000,6 +2033,7 @@ class UiAssemblyBuilder {
         page,
         () => <Map<String, dynamic>>[],
       );
+      final pageTheme = pageThemes[page] ?? UiVisualTheme.defaultTheme();
       // 该面板是否含 AI 显式布局（任一字段给了 x/y/w/h）
       final hasExplicitLayout = panel.fields.any(
         (f) => f.x != null || f.y != null || f.width != null || f.height != null,
@@ -2016,7 +2050,7 @@ class UiAssemblyBuilder {
           w: innerW,
           h: 24,
           fontSize: 15,
-          color: 0xFFFFFFFF,
+          color: pageTheme.titleColor,
           align: 'left',
           layer: 1,
         ));
@@ -2056,8 +2090,8 @@ class UiAssemblyBuilder {
             h: fh,
             layer: 1,
             statusFieldId: fid,
-            barFillColor: _barColorOf(field.name, 0xFF4FA3D1),
-            barTrackColor: 0xFF2A2D36,
+            barFillColor: _barColorOf(field.name, pageTheme.barFillColor),
+            barTrackColor: pageTheme.barTrackColor,
             current: cur,
             min: field.min ?? 0.0,
             max: field.max ?? 100.0,
@@ -2072,7 +2106,7 @@ class UiAssemblyBuilder {
             w: fw,
             h: 14,
             fontSize: 10,
-            color: 0xFFAAB0BC,
+            color: pageTheme.labelColor,
             align: 'left',
             layer: 1,
           ));
@@ -2088,6 +2122,60 @@ class UiAssemblyBuilder {
             'owner': 'player',
           });
           if (field.y == null) y += 34;
+        } else if (field.display == 'button') {
+          // 按钮字段：底板 surface + 文本 + 透明点击热区（sendsMessage）。
+          // 之前按钮被当文本渲染（没有 surface 装饰），看着很简陋。
+          final text = initOf(field.name, field.initialValue).isEmpty
+              ? field.name
+              : initOf(field.name, field.initialValue);
+          final bH = fh.clamp(34.0, 52.0);
+          elements.add(_surface(
+            id: nextId('el'),
+            name: '${field.name}底',
+            x: fx,
+            y: fy,
+            w: fw,
+            h: bH,
+            color: pageTheme.buttonBgColor,
+            layer: 1,
+            radius: 10.0,
+          ));
+          elements.add(_text(
+            id: nextId('el'),
+            name: field.name,
+            text: text,
+            x: fx,
+            y: fy + (bH - 20) / 2,
+            w: fw,
+            h: 20,
+            fontSize: 13,
+            color: pageTheme.valueColor,
+            align: 'center',
+            layer: 2,
+          ));
+          elements.add(_button(
+            id: nextId('el'),
+            name: '${field.name}热区',
+            x: fx,
+            y: fy,
+            w: fw,
+            h: bH,
+            layer: 3,
+            sendsMessage: true,
+            keyAction: false,
+            message: text,
+            color: 0x00000000,
+          ));
+          statusFields.add({
+            'id': fid,
+            'name': field.name,
+            'type': 'text',
+            'initial_value': initOf(field.name, field.initialValue),
+            'pin_side': 'none',
+            'order': statusFields.length,
+            'owner': 'player',
+          });
+          if (field.y == null) y += bH + 6;
         } else {
           // 文本字段：AI 明确 scroll:true 时用固定高度滚动框；
           // 否则按内容长度估算（兜底）。若 AI 给了 x/y/w/h 则用 AI 的，
@@ -2109,7 +2197,7 @@ class UiAssemblyBuilder {
             w: fw,
             h: effH,
             fontSize: 12,
-            color: 0xFFE8EDF5,
+            color: pageTheme.valueColor,
             align: 'left',
             layer: 1,
             statusFieldId: fid,
@@ -2204,6 +2292,8 @@ class UiAssemblyBuilder {
       final elements = pageElements[p.id] ?? <Map<String, dynamic>>[];
       final extras = <Map<String, dynamic>>[];
       final chrome = p.chrome;
+      // 本页主题：优先用 AI 声明的 style，否则回落默认（整个场景的主题）。
+      final pageTheme = UiVisualTheme.byName(p.style);
 
       // ── 消息流：AI 声明了才放 ──
       if (chrome.messageFlow != null) {
@@ -2280,7 +2370,7 @@ class UiAssemblyBuilder {
           layer: 2,
           sendsMessage: false,
           keyAction: true,
-          color: visualTheme.accentColor,
+          color: pageTheme.accentColor,
         ));
       }
 
@@ -2292,9 +2382,9 @@ class UiAssemblyBuilder {
         y: 0,
         w: pcbW,
         h: pcbH,
-        color: visualTheme.pcbColor,
+        color: pageTheme.pcbColor,
         layer: 0,
-        radius: visualTheme.borderRadius,
+        radius: pageTheme.borderRadius,
       );
 
       // 手势：左右滑切换平级页（引擎原生支持 AssemblyPageGesture）。

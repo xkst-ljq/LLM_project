@@ -131,8 +131,14 @@ class AiUiDesigner {
 
 ## 页面（pages）
 scene 是「全屏场景」，含多个平级页，页面间用 page_router 切换。
-意图里每页可给：`id`(页id)、`name`(显示名)、`pcbHeight`(页设计高度，建议 650~900)。
-示例：{"id":"lobby","name":"公会大厅","pcbHeight":800}
+意图里每页可给：`id`(页id)、`name`(显示名)、`pcbHeight`(页设计高度，建议 650~900)、
+`style`(视觉风格)。
+示例：{"id":"lobby","name":"公会大厅","pcbHeight":800,"style":"parchment"}
+
+## 视觉风格（style）—— 让 UI 有风格而非一律深色
+每页可声明 style，可选：`dark`(深色科幻) / `parchment`(羊皮纸奇幻) /
+`cyber`(赛博霓虹) / `light`(简约明亮)。按原卡视觉基调选：奇幻卡用 parchment、
+现代/科幻卡用 cyber 或 dark、明亮简洁卡用 light。不写则默认 dark。
 
 ## 字段 display（组件选型）
 - `progress`：数值进度条。参数：`type:"number"` + `min`(下限) + `max`(上限)。适合 HP/MP/XP/属性 等会增减的数值。
@@ -189,7 +195,7 @@ scene 是「全屏场景」，含多个平级页，页面间用 page_router 切�
   "scene": {
     "mode": "scene",
     "pages": [
-      {"id":"lobby","name":"公会大厅","pcbHeight":800,"chrome":{
+      {"id":"lobby","name":"公会大厅","pcbHeight":800,"style":"parchment","chrome":{
         "messageFlow":{"x":14,"y":30,"width":332,"height":200},
         "input":{"x":14,"y":820,"width":284,"height":40},
         "settingsButton":{"x":306,"y":820,"width":40,"height":40}
@@ -372,6 +378,7 @@ class UiCreationIntent {
                     if (p.pcbHeight != null) 'pcbHeight': p.pcbHeight,
                     if (p.pcbWidth != null) 'pcbWidth': p.pcbWidth,
                     'chrome': p.chrome.toJson(),
+                    if (p.style != null) 'style': p.style,
                   })
               .toList(),
           'activePage': activePage,
@@ -399,12 +406,17 @@ class ScenePage {
   /// 若 AI 整卡都没声明，Step B 会兜底补一个不碍事的位置并提示。
   final SceneChrome chrome;
 
+  /// 本页视觉风格（dark / parchment / cyber / light）。
+  /// 空则回落默认 dark。AI 可选，让 UI 有风格而非一律深色。
+  final String? style;
+
   const ScenePage({
     required this.id,
     required this.name,
     this.pcbHeight,
     this.pcbWidth,
     this.chrome = const SceneChrome(),
+    this.style,
   });
 
   factory ScenePage.fromJson(Map<String, dynamic> json) => ScenePage(
@@ -413,6 +425,7 @@ class ScenePage {
         pcbHeight: (json['pcbHeight'] as num?)?.toDouble(),
         pcbWidth: (json['pcbWidth'] as num?)?.toDouble(),
         chrome: SceneChrome.fromJson(json['chrome']),
+        style: json['style']?.toString(),
       );
 }
 
