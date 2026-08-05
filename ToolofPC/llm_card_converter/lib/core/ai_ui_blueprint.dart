@@ -186,7 +186,7 @@ class AiUiBlueprint {
     buf.writeln('\n【原意图】\n${jsonEncode(intent.toJson())}\n');
     buf.writeln('请输出修正后的意图 JSON（结构与之前一致）。只输出 JSON，不要 markdown 代码块。');
 
-    final raw = await _chat(cfg, kIntentSystemPrompt, buf.toString(), onToken);
+    final raw = await _chat(cfg, kReviseSystemPrompt, buf.toString(), onToken);
     final parsed = _parseJson(raw);
     if (parsed == null) throw const FormatException('AI 修正返回的不是合法 JSON');
     return UiCreationIntent.fromJson(parsed);
@@ -497,6 +497,22 @@ const String kIntentSystemPrompt = '''
   "reasoning":["..."]
 }
 只输出 JSON，不要 markdown 代码块。
+''';
+
+/// 修正系统提示词（轻量）：AI 已看过完整能力库，只需按红线问题改布局，
+/// 不必重发整段能力库（降低 TTFT / 减少 token）。
+const String kReviseSystemPrompt = '''
+你是一名 UI 设计师。给你一份已生成的 UI 意图和一份布局问题清单，
+请**保持整体设计意图**，仅修正布局问题（越界/重叠），重新输出完整的意图 JSON。
+
+硬约束（务必遵守）：
+- 画布宽恒 360，所有元素 x+width ≤ 360（x≥0）。
+- 页高 pcbHeight 建议 650~900，字段 y+height ≤ pcbHeight。
+- chrome（messageFlow/input/settingsButton）的 x+width 同样 ≤360。
+- 两列用 x=14 与 ~180；通栏 x=14 w≈332；靠右小按钮 x≈300 w≈44。
+- 长文本保持 scroll:true + 固定 height。
+
+只输出修正后的完整意图 JSON，不要 markdown 代码块。
 ''';
 
 /// 自检系统提示词：AI 检查意图里是否有重叠/越界/长文没滚动。

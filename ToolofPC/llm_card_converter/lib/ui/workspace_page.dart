@@ -80,7 +80,6 @@ class _WorkspacePageState extends State<WorkspacePage> {
   /// 当前正在流式累积的 AI 阶段（标题 + 已累积全文）。
   _AiStageOutput? _liveOutput;
   int _thinkingFrame = 0;
-
   @override
   void initState() {
     super.initState();
@@ -143,9 +142,10 @@ class _WorkspacePageState extends State<WorkspacePage> {
           _liveOutput ??= _AiStageOutput('AI 输出', StringBuffer());
           _liveOutput!.text.write(partial);
           _thinkingFrame++;
-          if (_thinkingFrame % 4 == 0) setState(() {});
+          // 每 2 帧刷新一次，让流式更连贯（原 4 帧）。
+          if (_thinkingFrame % 2 == 0) setState(() {});
         },
-        // 阶段切换：把上一个阶段归档为可折叠块，开新阶段。
+        // 阶段切换：把上一个阶段归档为可折叠块，开新阶段并立刻显示「思考中」。
         onStage: (stage) {
           if (!mounted) return;
           setState(() {
@@ -448,9 +448,9 @@ class _WorkspacePageState extends State<WorkspacePage> {
                       ),
                     // 各阶段的完整 AI 输出（可折叠，默认折叠）
                     for (final out in _aiOutputs) _aiOutputTile(out),
-                    // 当前正在流式的阶段（展开显示实时全文）
-                    if (_liveOutput != null && _liveOutput!.text.isNotEmpty)
-                      _liveOutputTile(_liveOutput!),
+                    // 当前正在流式的阶段：即使尚未收到 token 也显示「思考中」
+                    // 占位，避免用户以为卡死（TTFT 期间首 token 还没到）。
+                    if (_liveOutput != null) _liveOutputTile(_liveOutput!),
                   ],
                 ),
               ),
@@ -525,8 +525,9 @@ class _WorkspacePageState extends State<WorkspacePage> {
     );
   }
 
-  /// 当前正在流式的阶段输出（实时展开显示全文）。
+  /// 当前正在流式的阶段输出（实时展开显示全文；未收到 token 时显示思考中）。
   Widget _liveOutputTile(_AiStageOutput out) {
+    final text = out.text.toString();
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(top: 4),
@@ -535,10 +536,29 @@ class _WorkspacePageState extends State<WorkspacePage> {
         color: Colors.teal.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: SelectableText(
-        '【${out.title}】\n${out.text.toString()}',
-        style: const TextStyle(fontSize: 11, height: 1.4, color: Colors.teal),
-      ),
+      child: text.isEmpty
+          ? Row(
+              children: [
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    '【${out.title}】正在推理，等待首次输出…',
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.teal),
+                  ),
+                ),
+              ],
+            )
+          : SelectableText(
+              '【${out.title}】\n$text',
+              style: const TextStyle(
+                  fontSize: 11, height: 1.4, color: Colors.teal),
+            ),
     );
   }
 
