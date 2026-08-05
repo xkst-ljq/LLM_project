@@ -92,6 +92,10 @@ class ApiService {
   /// 与 [chatComplete] 语义一致，只是走 `stream: true` + SSE 解析，
   /// 让调用方能实时拿到增量 token（展示「AI 正在思考」的进度）。
   /// [onToken] 按解码后的文本块回调（可能含半句/半个 JSON，不必逐字拆分）。
+  ///
+  /// **关键**：这里必须把 SSE 的 `data: {...}` 外衣剥掉，只抽 `delta.content`
+  /// 拼成真正的响应文本返回——否则调用方 `_parseJson` 拿到的是夹满
+  /// `data:` 前缀的非法 JSON，解析必然失败（表现为「流式有字但最终没结果」）。
   static Future<String> chatCompleteStream({
     required String baseUrl,
     required String apiKey,
@@ -132,16 +136,82 @@ class ApiService {
     if (body == null) {
       throw Exception('请求失败：无响应体');
     }
-    final buffer = StringBuffer();
+
+    final content = StringBuffer();
+    // 跨 chunk 缓冲：SSE 的 `data:` 行可能被网络分包切开，
+    // 必须按行缓冲，凑齐一整行再解析。
+    final lineBuf = StringBuffer();
     // utf8.decoder 能正确处理跨 chunk 的 UTF-8 序列（多字节字符被切开）。
     await for (final decoded in utf8.decoder.bind(body.stream)) {
-      buffer.write(decoded);
-      onToken?.call(decoded);
+      lineBuf.write(decoded);
+      _drainSseLines(lineBuf, content, onToken);
     }
-    if (buffer.isEmpty) {
+    // 处理残留（无换行结尾的最后一行）
+    _drainSseLines(lineBuf, content, onToken, force: true);
+
+    final result = content.toString();
+    if (result.trim().isEmpty) {
       throw Exception('模型未返回内容');
     }
-    return buffer.toString();
+    return result;
+  }
+
+  /// 从行缓冲里榨出所有完整的 SSE `data:` 行，抽取增量内容。
+  ///
+  /// [force] 为 true 时，即使最后没有换行结尾，也把剩余内容当最后一行处理
+  ///（用于流结束时的残留）。
+  static void _drainSseLines(
+    StringBuffer lineBuf,
+    StringBuffer content,
+    void Function(String)? onToken, {
+    bool force = false,
+  }) {
+    final text = lineBuf.toString();
+    var rest = text;
+    // 处理所有带换行结尾的完整行
+    while (true) {
+      final idx = rest.indexOf('\n');
+      if (idx < 0) break;
+      final line = rest.substring(0, idx).trim();
+      rest = rest.substring(idx + 1);
+      _consumeSseData(line, content, onToken);
+    }
+    lineBuf.clear();
+    // 剩余无换行的部分：非 force 时留到下一批再拼，force 时立即处理
+    if (rest.isNotEmpty && rest.trim().isNotEmpty) {
+      if (force) {
+        _consumeSseData(rest.trim(), content, onToken);
+      } else {
+        lineBuf.write(rest);
+      }
+    }
+  }
+
+  /// 处理单条 SSE 行：剥掉 `data:` 前缀，抽 delta/message 的 content。
+  static void _consumeSseData(
+    String line,
+    StringBuffer content,
+    void Function(String)? onToken,
+  ) {
+    if (!line.startsWith('data:')) return;
+    final data = line.substring(5).trim();
+    if (data.isEmpty || data == '[DONE]') return;
+    try {
+      final decoded = jsonDecode(data);
+      final choices = decoded is Map ? decoded['choices'] : null;
+      if (choices is! List || choices.isEmpty) return;
+      final first = choices.first;
+      if (first is! Map) return;
+      final msg = first['delta'] is Map ? first['delta'] : first['message'];
+      if (msg is! Map) return;
+      final c = msg['content'];
+      if (c is String && c.isNotEmpty) {
+        content.write(c);
+        onToken?.call(c);
+      }
+    } catch (_) {
+      // 单行解析失败则跳过（如注释行），不影响其它行。
+    }
   }
 
   /// 粗略判断模型返回是否为"拒绝/审核拦截"（常见于 NSFW 内容触发内容政策）。

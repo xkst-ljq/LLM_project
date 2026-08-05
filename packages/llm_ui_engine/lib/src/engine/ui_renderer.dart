@@ -1336,13 +1336,15 @@ class UIRenderer {
       );
     }
 
-    return Container(
-      alignment: boxAlign,
+    return ClipRect(
       // 裁剪：非滚动 text 的 Text 没设 maxLines，长内容会无限换行，
       // 超出 box 后画到相邻元件上（用户反馈「文本溢出来」）。
       // 这里把溢出部分裁掉，保证不会污染相邻布局。
-      clipBehavior: Clip.hardEdge,
-      child: textWidget,
+      // （不能用 Container.clipBehavior —— 无 decoration 时 Flutter 会断言。）
+      child: Align(
+        alignment: boxAlign,
+        child: textWidget,
+      ),
     );
   }
 
