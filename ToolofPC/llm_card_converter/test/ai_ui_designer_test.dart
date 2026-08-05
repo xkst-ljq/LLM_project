@@ -225,8 +225,6 @@ void main() {
     });
   });
 
-}
-
   group('buildSceneFromIntent - AI 显式布局', () {
     test('AI 给定 x/y/w/h + scroll 时优先采用，滚动框不撑高 PCB', () {
       final intent = UiCreationIntent(
@@ -319,3 +317,5 @@ void main() {
       expect(yOf('名字')!, greaterThan(250.0));
     });
   });
+
+}

@@ -2053,7 +2053,7 @@ class UiAssemblyBuilder {
             x: fx,
             y: fy,
             w: fw,
-            h: 14,
+            h: fh,
             layer: 1,
             statusFieldId: fid,
             barFillColor: _barColorOf(field.name, 0xFF4FA3D1),
