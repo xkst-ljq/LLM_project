@@ -318,8 +318,6 @@ void main() {
     });
   });
 
-}
-
   group('buildSceneFromIntent - AI 声明外壳组件(chrome)', () {
     test('AI 声明消息流+输入+设置才放，未声明页面不放外壳', () {
       final intent = UiCreationIntent(
@@ -392,3 +390,5 @@ void main() {
           reason: '应在 notes 说明兜底了设置按钮');
     });
   });
+
+}
