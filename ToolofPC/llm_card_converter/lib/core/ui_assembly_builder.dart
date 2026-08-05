@@ -1986,9 +1986,9 @@ class UiAssemblyBuilder {
       pageElements[p.id] = <Map<String, dynamic>>[];
     }
 
-    // 每页的纵向游标：同一页上的多个面板要**接续排布**，而不是各自从
-    // y=250 开始——否则两个面板挤到同一页就会完全重叠（实测 quest_list
-    // 和 option_bar 都放「公会任务板」页时就是如此）。
+    // 每页的纵向游标：AI 没给布局时按此**接续排布**，而不是各自从 y=250
+    // 开始——否则两个面板挤到同一页就会完全重叠。AI 若给了 x/y/w/h
+    // 则优先用 AI 的布局（Step B 只做 clamp/兜底）。
     final pageCursor = <String, double>{
       for (final p in intent.pages) p.id: 250.0, // 消息流下方
     };
@@ -2000,9 +2000,13 @@ class UiAssemblyBuilder {
         page,
         () => <Map<String, dynamic>>[],
       );
-      var y = pageCursor[page] ?? 250.0;
+      // 该面板是否含 AI 显式布局（任一字段给了 x/y/w/h）
+      final hasExplicitLayout = panel.fields.any(
+        (f) => f.x != null || f.y != null || f.width != null || f.height != null,
+      );
 
-      if (panel.title.isNotEmpty) {
+      var y = pageCursor[page] ?? 250.0;
+      if (panel.title.isNotEmpty && !hasExplicitLayout) {
         elements.add(_text(
           id: nextId('el'),
           name: '面板标题',
@@ -2023,6 +2027,22 @@ class UiAssemblyBuilder {
         final fid = 'sf_${_slug(field.name)}';
         // 标签显示中文（AI 常用英文缩写，玩家看不懂）。
         final label = _sceneLabelOf(field.name);
+
+        // AI 给了布局就用 AI 的位置/尺寸，否则用兜底纵向游标。
+        double fx, fy, fw, fh;
+        if (field.x != null || field.y != null ||
+            field.width != null || field.height != null) {
+          fx = field.x ?? pad;
+          fy = field.y ?? y;
+          fw = field.width ?? innerW;
+          fh = field.height ?? 22;
+        } else {
+          fx = pad;
+          fy = y;
+          fw = innerW;
+          fh = 22;
+        }
+
         if (field.display == 'progress' && field.type == 'number') {
           // 初始值：从原卡提取的数值（如 HP 100/100 的当前值）
           final iv = initOf(field.name, field.initialValue);
@@ -2030,9 +2050,9 @@ class UiAssemblyBuilder {
           elements.add(_progress(
             id: nextId('el'),
             name: field.name,
-            x: pad,
-            y: y,
-            w: innerW,
+            x: fx,
+            y: fy,
+            w: fw,
             h: 14,
             layer: 1,
             statusFieldId: fid,
@@ -2042,14 +2062,14 @@ class UiAssemblyBuilder {
             min: field.min ?? 0.0,
             max: field.max ?? 100.0,
           ));
-          // progress 本身不自带 label，加一行文本标签
+          // progress 本身不自带 label，加一行文本标签（AI 没给布局时在条上方）
           elements.add(_text(
             id: nextId('el'),
             name: '${field.name}标签',
             text: label,
-            x: pad,
-            y: y - 16,
-            w: innerW,
+            x: fx,
+            y: (field.y != null) ? fy : fy - 16,
+            w: fw,
             h: 14,
             fontSize: 10,
             color: 0xFFAAB0BC,
@@ -2067,31 +2087,33 @@ class UiAssemblyBuilder {
             'order': statusFields.length,
             'owner': 'player',
           });
-          y += 34;
+          if (field.y == null) y += 34;
         } else {
-          // 文本字段：Step B 按真实文本长度自动决定高度与滚动方式，
-          // 不依赖 AI（AI 意图里没有渲染长度）。
-          // 关键：很多文本字段构建时是空的（运行时由 LLM 填入），
-          // 若按空值估成一行，运行时填长文本就会溢出。所以「内容型」
-          // 字段一律给滚动 + 足够高度，保证运行时不外溢。
+          // 文本字段：AI 明确 scroll:true 时用固定高度滚动框；
+          // 否则按内容长度估算（兜底）。若 AI 给了 x/y/w/h 则用 AI 的，
+          // 不靠估算撑高 PCB。
           final text = initOf(field.name, field.initialValue).isEmpty
               ? '—'
               : initOf(field.name, field.initialValue);
-          final (textH, overflowMode) = _sceneTextSizing(field.name, text);
+          final (autoH, autoMode) = _sceneTextSizing(field.name, text);
+          final effH = field.height != null ? field.height! : autoH;
+          final effMode = field.scroll || field.height != null
+              ? 'scroll'
+              : autoMode;
           elements.add(_text(
             id: nextId('el'),
             name: field.name,
             text: text,
-            x: pad,
-            y: y,
-            w: innerW,
-            h: textH,
+            x: fx,
+            y: fy,
+            w: fw,
+            h: effH,
             fontSize: 12,
             color: 0xFFE8EDF5,
             align: 'left',
             layer: 1,
             statusFieldId: fid,
-            overflow: overflowMode,
+            overflow: effMode,
           ));
           statusFields.add({
             'id': fid,
@@ -2102,12 +2124,12 @@ class UiAssemblyBuilder {
             'order': statusFields.length,
             'owner': 'player',
           });
-          y += textH + 6;
+          if (field.y == null) y += effH + 6;
         }
       }
 
-      // 面板底部留一个间距，下一块面板从这下面接续排布。
-      pageCursor[page] = y + 16.0;
+      // 面板底部留一个间距（仅当面板走兜底纵向排布时）。
+      pageCursor[page] = (hasExplicitLayout ? pageCursor[page]! : y) + 16.0;
     }
 
     // 组装 pages：加底部底板 + scene 必需组件（消息流/输入框/设置按钮）
@@ -2116,16 +2138,31 @@ class UiAssemblyBuilder {
     var sort = 0;
     final pageCount = intent.pages.length;
 
-    // PCB 高度按「内容最多的那页」的真实内容底部取，底栏（页签+输入框+
-    // 设置按钮）放在内容之下——避免内容超高时压到底栏上（重叠）。
+    // PCB 高度：
+    //  - 若 AI 为页面指定了 pcbHeight，优先采用（clamp 到合理范围），
+    //    底栏固定放在该页高度之下，内容超高时由滚动/紧凑布局容纳；
+    //  - 否则按「内容最多的那页」的真实内容底部推算，避免内容压到底栏。
     double maxContentBottom = 250.0;
+    bool anyExplicitPageHeight = false;
+    double maxExplicitPageHeight = 0.0;
     for (final p in intent.pages) {
       final b = pageCursor[p.id] ?? 250.0;
       if (b > maxContentBottom) maxContentBottom = b;
+      if (p.pcbHeight != null) {
+        anyExplicitPageHeight = true;
+        if (p.pcbHeight! > maxExplicitPageHeight) maxExplicitPageHeight = p.pcbHeight!;
+      }
     }
-    // 内容区上限：PCB 高度最高 2000（引擎硬上限），底栏需在内容之下 130，
-    // 因此内容底部最高 1870，保证底栏始终位于真实内容之下、绝不重叠。
-    final contentBottom = maxContentBottom.clamp(250.0, 1870.0);
+
+    double contentBottom;
+    if (anyExplicitPageHeight) {
+      // AI 指定了页高：取所有页里最大的指定高度（clamp 900~1870）。
+      contentBottom = maxExplicitPageHeight.clamp(700.0, 1870.0);
+    } else {
+      // 内容区上限：PCB 高度最高 2000（引擎硬上限），底栏需在内容之下 130，
+      // 因此内容底部最高 1870，保证底栏始终位于真实内容之下、绝不重叠。
+      contentBottom = maxContentBottom.clamp(250.0, 1870.0);
+    }
     final pcbH = (contentBottom + 130.0).clamp(900.0, 2000.0);
     final bottomY = pcbH - 50.0; // 输入框/设置按钮这一行
     final navY = pcbH - 110.0; // 页签栏

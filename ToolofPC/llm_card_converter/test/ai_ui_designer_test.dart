@@ -226,3 +226,96 @@ void main() {
   });
 
 }
+
+  group('buildSceneFromIntent - AI 显式布局', () {
+    test('AI 给定 x/y/w/h + scroll 时优先采用，滚动框不撑高 PCB', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [
+          ScenePage(id: 'lobby', name: '公会大厅', pcbHeight: 800),
+        ],
+        activePage: 'lobby',
+        panels: [
+          UiPanel(
+            kind: 'quest_list',
+            page: 'lobby',
+            title: '任务',
+            fields: const [
+              UiFieldIntent(
+                name: 'quest', type: 'text', display: 'text',
+                initialValue: '采集安神草',
+                x: 14, y: 30, width: 200, height: 26, scroll: true,
+              ),
+              UiFieldIntent(
+                name: 'desc', type: 'text', display: 'text',
+                initialValue: '为药剂师采集二十株安神草。',
+                x: 14, y: 60, width: 200, height: 60, scroll: true,
+              ),
+            ],
+          ),
+        ],
+        reasoning: const [],
+      );
+
+      final built = UiAssemblyBuilder.buildSceneFromIntent(
+        intent, cardName: '测试角色', initialValues: const {},
+      );
+      final json = jsonDecode(built.assemblies.first) as Map;
+      expect(json['pcbHeight'], 930.0, reason: 'AI 指定页高 800 → pcb 800+130=930');
+      final pages = (jsonDecode(json['pages'] as String) as List)
+          .cast<Map<String, dynamic>>();
+      final elements = (pages.first['elements'] as List).cast<Map<String, dynamic>>();
+
+      // 找到 desc 文本元素，验证它用了 AI 的 y/height 且是 scroll
+      double? findY(String name) {
+        for (final e in elements) {
+          final m = Map<String, dynamic>.from(e['module'] as Map);
+          if (m['name'] == name) {
+            final off = Map<String, dynamic>.from(e['offset'] as Map);
+            return (off['y'] as num).toDouble();
+          }
+        }
+        return null;
+      }
+      // desc 用了 AI 的 y=60（而非兜底纵向游标 30+26+6=62 附近）
+      expect(findY('desc'), 60.0, reason: 'AI 显式布局应覆盖兜底纵向排布');
+    });
+
+    test('AI 未给布局时仍兜底纵向排布（向后兼容）', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [ScenePage(id: 'p1', name: '页')],
+        activePage: 'p1',
+        panels: [
+          UiPanel(
+            kind: 'status_bar', page: 'p1', title: '状态',
+            fields: const [
+              UiFieldIntent(name: 'HP', type: 'number', display: 'progress', initialValue: '100'),
+              UiFieldIntent(name: '名字', type: 'text', display: 'text', initialValue: '阿明'),
+            ],
+          ),
+        ],
+        reasoning: const [],
+      );
+      final built = UiAssemblyBuilder.buildSceneFromIntent(
+        intent, cardName: '测试角色', initialValues: const {},
+      );
+      final json = jsonDecode(built.assemblies.first) as Map;
+      final pages = (jsonDecode(json['pages'] as String) as List)
+          .cast<Map<String, dynamic>>();
+      final elements = (pages.first['elements'] as List).cast<Map<String, dynamic>>();
+      // 名字文本应在 HP 之后（兜底纵向），y 大于 250
+      double? yOf(String name) {
+        for (final e in elements) {
+          final m = Map<String, dynamic>.from(e['module'] as Map);
+          if (m['name'] == name) {
+            final off = Map<String, dynamic>.from(e['offset'] as Map);
+            return (off['y'] as num).toDouble();
+          }
+        }
+        return null;
+      }
+      expect(yOf('名字'), isNotNull);
+      expect(yOf('名字')!, greaterThan(250.0));
+    });
+  });

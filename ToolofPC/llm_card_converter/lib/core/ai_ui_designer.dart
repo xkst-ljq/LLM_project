@@ -98,15 +98,16 @@ class AiUiDesigner {
   // ---------------- Prompt ----------------
 
   static const String _systemPrompt = '''
-你是一名高水平的 UI 设计师与角色卡转译专家。你的任务：分析酒馆(SillyTavern)角色卡的正则脚本，识别出它们描述的不同 UI 面板，并产出一份「UI 创作意图」。
+你是一名高水平的 UI 设计师与角色卡转译专家。你的任务：分析酒馆(SillyTavern)角色卡的正则脚本，识别出它们描述的不同 UI 面板，并产出一份「UI 创作意图」。**你只输出意图 JSON，装配由转译代码完成。**
 
-【重要原则】
-1. 你只输出「意图」——用什么面板、什么字段、放哪页、大概怎么排、用什么组件。**不要输出具体的 JSON 装配**（坐标/颜色/枚举等由转译代码负责）。
-2. 识别面板靠「语义」而非脚本数量：同样的脚本名/字段可能是换肤(皮肤)，也可能是不同功能。只有字段结构不同的才算不同面板。
-3. 尽可能还原原卡，在此之上优化；原卡没有的不要硬造。
-4. 数据值应绑定数据通道实时更新（数值用 progress，文本用 text）。
-5. 思考过程逐条写入 reasoning，让用户明白你如何判断这张卡。
-6. 充分利用 UI engine 的完整能力（见下方【UI engine 完整能力库】），做出有特色、有交互的高质量 UI，而不是简单的纵向列表。
+【最重要的一条布局铁律】
+页面是「全屏等比缩放」渲染的：整个设计画布（PCB）会被等比缩放到手机屏幕。
+- **不要靠无限拉高 PCB 来塞内容**——PCB 越高，缩放后整页字越小、越挤。
+- 一页的高度建议控制在 **650~900** 之间（接近手机竖屏比例）。内容多时：
+  - 拆成多页（用 page_router 切换）；
+  - 长文本用**滚动框**（固定高度，见下），而不是让文本撑高页面；
+  - 用横向排布 / 两列，而不是每个字段一行。
+- 这就是「PCB 太长 / 重叠 / 简陋」三个问题的共同解：**页高有限 + 紧凑布局 + 长文滚动**。
 
 【面板类型 kind】（字段特征判断）
 - status_bar：状态栏（HP/MP/XP/STR/AGI 等数值 + Name/Class/Weapon 等文本）
@@ -116,96 +117,80 @@ class AiUiDesigner {
 - read_skin：纯阅读皮肤（无数据槽）→ 不转，跳过
 - unknown：无法判断 → 保守不转
 
-【UI engine 完整能力库】
-## 页面模式（mode）
-- scene：场景 UI，全屏接管聊天页，可承载多页、多套面板
-- opening：开场白弹窗，开场时全屏，玩家确认后进入
-- extra_companion：伴生 UI，内嵌在最新 AI 气泡里（≤212px 宽）
-- extra_sticky：常驻 UI，悬浮小窗，可折叠
+【UI engine 完整能力库：每个 API 能干什么 + 参数 + 在意图里怎么写】
 
-## 组件原语（21 种）
-- surface / base_box：底板 / 面板容器
-- text：文本（可绑数据通道 / 富文本 richText / 滚动 overflow:scroll）
-- progress：进度条（min/max/current，progressShape: bar·ring·capsule）
-- button：点击热区（sendsMessage 点击发消息 / keyAction 关键职责）
-- input：文本输入框（回车提交 committedValue）
-- select：下拉选择（options[{label,value}] / current）
-- switch：开关（value bool）
-- slider：滑块（min/max/current/step）
-- indicator：指示点 / 状态灯
-- image：图片（本地 / 内联 / 网络）
-- line：分割线
-- linker：逻辑连线（数据流 / 控制流）
-- page_router：页面路由（切页 / 打开叠加层）
-- math_node：计算节点
-- timer：定时器
-- message_flow：内嵌消息流（可解析 AI 消息里的 onclick 动态选项）
-- primitive_art / surface_art / light_effect：装饰 / 光效
+## 页面（pages）
+scene 是「全屏场景」，含多个平级页，页面间用 page_router 切换。
+意图里每页可给：`id`(页id)、`name`(显示名)、`pcbHeight`(页设计高度，建议 650~900)。
+示例：{"id":"lobby","name":"公会大厅","pcbHeight":800}
 
-## 联动器方案（linker scheme，让 UI 有交互）
-- button_to_page_route：按钮 → 切页 / 打开叠加层
-- click_to_surface_press：按钮 → 表面按压动画
-- click_to_switch_toggle / _set_true / _set_false：按钮 → 开关
-- click_to_input_clear / click_to_slider_reset：重置输入/滑块
-- input_commit_to_text / input_live_to_text：输入 → 文本
-- input_to_progress / input_to_slider：输入 → 进度/滑块
-- input_nonempty_to_button_enable：输入非空才可点按钮
-- bool_to_visible / boolean_to_enabled：条件显隐 / 启用
-- select_to_text / select_value_to_switch：下拉 → 文本/开关
-- slider_to_progress / slider_to_text：滑块 → 进度/文本
-- progress_to_text / progress_threshold_to_switch：进度 → 文本/阈值控制
-- event_to_animation / event_to_indicator：事件 → 动画 / 指示
-- timer_tick_to_progress_increment / _decrement：定时器 → 进度增减
-- text_match_to_switch：文本匹配 → 开关
+## 字段 display（组件选型）
+- `progress`：数值进度条。参数：`type:"number"` + `min`(下限) + `max`(上限)。适合 HP/MP/XP/属性 等会增减的数值。
+- `text`：文本。参数：`type:"text"`。适合名字/职业/描述/备注等。
+- `button`：可点击按钮。参数：`type:"text"`（点击发送该文本）。适合选项、行动。
 
-## 动画系统（__anim）
-- press：按压凹陷（150ms）
-- ripple：水波折射扩散（300ms）
-- flash：短暂高亮（300ms）
-- number_pop：数值跳动（260ms）
-- glow_pulse：发光脉冲（600ms）
-- particle_burst：粒子迸发（700ms）
-- 曲线：easeInOut / easeOut / easeIn / linear / bounceOut / elasticOut
+## 滚动长文本（解决 PCB 变长的关键）
+`text` 字段可加 `"scroll":true` 声明为「固定高度滚动框」：
+- 用法：`{"name":"desc","type":"text","display":"text","scroll":true,"height":60}`
+- 效果：该字段固定 height 高度，内容超出就在框内滚动显示，**不撑高 PCB**。
+- 长描述/备注/正文/风险/奖励说明 等一律用 scroll，不要让它占 11 行。
 
-## 数据通道（Data Channel）
-- 组件绑定 status_field，LLM 可读写（实时更新数值）
-- 数值字段：suggest_delta（增量更新，引擎 clamp 到 min/max）
-- 文本字段：suggest_replace（整值替换）
-- 这是「数据值实时更新」的实现机制，务必让数值/文本字段都绑上
+## 布局（position/size）
+每个字段可给 `x` / `y` / `width` / `height`（设计坐标，与页面同坐标系）：
+- 给了就按指定位置放置（Step B 会 clamp 进 PCB 并校验不重叠）。
+- 不给就 Step B 自动纵向排布（兜底）。
+- 想横向排布/两列：给不同的 x + 合适 width 即可。
+- 用字段的 y 控间距，x + width 控横向布局。
 
-## 富文本
-- text 组件 richText: true → 渲染 HTML/Markdown
-- overflow: scroll → 长文滚动
+## 数据通道（让 LLM 能读写、数值实时更新）
+- 数值字段（progress）：绑定 status_field，写策略 suggest_delta（LLM 只给增量，引擎 clamp 到 min/max）。**所有数值 progress 都应绑定**。
+- 文本字段（text）：绑定 status_field，写策略 suggest_replace（整值替换）。**所有会变化的文本都应绑定**。
+- 意图里你只要声明 display 与 type，绑定由代码自动完成——**不用你写通道 JSON**，但请明确区分数值(text 用 progress)与文本。
 
-【输出 JSON 结构】（必须完整，字段合法）
+## 交互组件（在意图里如何表达）
+- `button`：display:"button"，type:"text"，initialValue 填点击要发送的文本。适合任务选择、行动选项。
+- `input`：用 `option_bar` 面板的 input_prompt 字段表达（type:"text"，display:"text"，initialValue 填占位提示）。
+- 交互联动（按钮→切页、输入→文本、开关控制显隐等）由代码按面板语义自动生成，你只需把字段语义设计清楚。
+
+## 动画（可选增强）
+进度条数值变化可用 `number_pop`（数值跳动）；按钮可用 `press`（按压）。意图里无需你写动画配置，标注「此字段建议动画」即可，代码会补。
+
+【输出 JSON 结构】（字段合法，字段值来自原卡/开场白）
 {
   "scene": {
     "mode": "scene",
-    "pages": [{"id":"...","name":"..."}, ...],   // 2~5 页
-    "activePage": "第一个页id"
+    "pages": [{"id":"lobby","name":"公会大厅","pcbHeight":800}, {"id":"status","name":"冒险者档案","pcbHeight":700}],
+    "activePage": "lobby"
   },
   "panels": [
     {
       "kind": "status_bar",
-      "page": "页id",
-      "title": "面板标题",
+      "page": "lobby",
+      "title": "冒险者状态",
       "fields": [
-        {"name":"HP","type":"number","display":"progress","min":0,"max":100,"initialValue":"100"},
-        {"name":"武器","type":"text","display":"text","initialValue":"木剑"}
+        {"name":"HP","type":"number","display":"progress","min":0,"max":100,"initialValue":"100","x":14,"y":30,"width":160,"height":14},
+        {"name":"武器","type":"text","display":"text","initialValue":"木剑","x":14,"y":50,"width":160,"height":22}
+      ]
+    },
+    {
+      "kind":"quest_list","page":"lobby","title":"任务·采集安神草",
+      "fields":[
+        {"name":"quest","type":"text","display":"text","initialValue":"采集安神草","scroll":true,"height":26},
+        {"name":"desc","type":"text","display":"text","initialValue":"为药剂师采集二十株安神草。","scroll":true,"height":60}
       ]
     }
   ],
   "reasoning": ["第1步思考", "第2步思考", ...]
 }
 
-【display 允许值】progress(数值条) / text(文本) / button(按钮)
-【initialValue】从原卡脚本/开场白里提取该字段的当前初始值（数值取当前值，如 HP 100/100 的 100；文本取原文）。没有就留空字符串。
-【设计建议】
-- 数值字段（HP/MP/XP/STR 等）用 progress 并给出合理 min/max
-- 文本字段（Name/Weapon/称号 等）用 text
-- 有明确交互意图的（选项/按钮/输入）用 button/input，并考虑用联动器实现交互
-- 多面板时用多页 + page_router 切换，避免一页塞满
-- 尽量还原原卡视觉与信息，在此之上用动画/联动器增强体验
+【display 允许值】progress / text / button
+【scroll】text 字段长内容时给 true + 固定 height，避免撑高 PCB。
+【pcbHeight】每页设计高度，建议 650~900，勿超 1200。
+【设计清单】
+- 长文本(desc/note/risk/reward/正文)一律 scroll，绝不占多行
+- 一页字段数多时用两列/紧凑排布或拆多页，别让单页超 900
+- 每页高度有限 → 拆页、滚动、横排，宁可信息分页也不要一个超长 PCB
+- 数值用 progress 绑数据通道，文本用 text 绑数据通道
 只输出 JSON，不要 markdown 代码块。
 ''';
 
@@ -344,10 +329,26 @@ class UiCreationIntent {
 class ScenePage {
   final String id;
   final String name;
-  const ScenePage({required this.id, required this.name});
+
+  /// 该页设计高度（可选）。AI 指定后，页面按此高度设计，内容超高时
+  /// 用滚动/紧凑布局容纳，而不是无限拉高 PCB。缺省由 Step B 推算。
+  final double? pcbHeight;
+
+  /// 该页设计宽度（可选，默认 360）。
+  final double? pcbWidth;
+
+  const ScenePage({
+    required this.id,
+    required this.name,
+    this.pcbHeight,
+    this.pcbWidth,
+  });
+
   factory ScenePage.fromJson(Map<String, dynamic> json) => ScenePage(
         id: json['id']?.toString() ?? 'page_${json['name'] ?? DateTime.now().millisecondsSinceEpoch}',
         name: json['name']?.toString() ?? '页面',
+        pcbHeight: (json['pcbHeight'] as num?)?.toDouble(),
+        pcbWidth: (json['pcbWidth'] as num?)?.toDouble(),
       );
 }
 
@@ -380,6 +381,18 @@ class UiFieldIntent {
   final double? min;
   final double? max;
   final String initialValue; // 从原卡提取的初始值（如 HP 100/100 的当前值）
+
+  /// 布局：在页面内的位置与尺寸（设计坐标，与 pcb 同一坐标系）。
+  /// 可选。给定了 Step B 就按此放置（校验+clamp）；没给则 Step B 兜底纵向排布。
+  final double? x;
+  final double? y;
+  final double? width;
+  final double? height;
+
+  /// 长文本滚动：true 时该字段用固定高度 + overflow:scroll 显示，
+  /// 内容再多也不撑高 PCB（解决「长文本导致 PCB 失控变长」）。
+  final bool scroll;
+
   const UiFieldIntent({
     required this.name,
     required this.type,
@@ -387,7 +400,13 @@ class UiFieldIntent {
     this.min,
     this.max,
     this.initialValue = '',
+    this.x,
+    this.y,
+    this.width,
+    this.height,
+    this.scroll = false,
   });
+
   factory UiFieldIntent.fromJson(Map<String, dynamic> json) {
     final display = json['display']?.toString() ?? 'text';
     return UiFieldIntent(
@@ -399,6 +418,11 @@ class UiFieldIntent {
       min: (json['min'] as num?)?.toDouble(),
       max: (json['max'] as num?)?.toDouble(),
       initialValue: json['initialValue']?.toString() ?? '',
+      x: (json['x'] as num?)?.toDouble(),
+      y: (json['y'] as num?)?.toDouble(),
+      width: (json['width'] as num?)?.toDouble(),
+      height: (json['height'] as num?)?.toDouble(),
+      scroll: json['scroll'] == true,
     );
   }
 }
