@@ -142,6 +142,22 @@ scene 是「全屏场景」，含多个平级页，页面间用 page_router 切�
 - 想横向排布/两列：给不同的 x + 合适 width 即可。
 - 用字段的 y 控间距，x + width 控横向布局。
 
+## 页面外壳（chrome）——你决定每页的交互外壳
+每页可用 `chrome` 声明三类外壳组件（不放则整页纯内容）：
+- `messageFlow`: 消息流，显示对话历史。给 `x/y/width/height`。
+- `input`: 玩家输入框（发送行动）。给 `x/y/width/height`。
+- `settingsButton`: 打开聊天设置的按钮。给 `x/y/width/height`。
+**重要**：这些不是强制，由你按本页该不该有来设计。scene 唯一硬性要求是
+**整卡至少一个 settingsButton**（否则引擎不启用），你只需在某页声明即可。
+示例：
+"chrome": {
+  "messageFlow": {"x":14,"y":30,"width":332,"height":200},
+  "input": {"x":14,"y":820,"width":284,"height":40},
+  "settingsButton": {"x":306,"y":820,"width":40,"height":40}
+}
+若某页不需要消息流/输入框，就不写对应键（纯内容页完全合法）。
+给 chrome 留出空间：字段布局不要与 chrome 区域重叠。
+
 ## 数据通道（让 LLM 能读写、数值实时更新）
 - 数值字段（progress）：绑定 status_field，写策略 suggest_delta（LLM 只给增量，引擎 clamp 到 min/max）。**所有数值 progress 都应绑定**。
 - 文本字段（text）：绑定 status_field，写策略 suggest_replace（整值替换）。**所有会变化的文本都应绑定**。
@@ -159,7 +175,14 @@ scene 是「全屏场景」，含多个平级页，页面间用 page_router 切�
 {
   "scene": {
     "mode": "scene",
-    "pages": [{"id":"lobby","name":"公会大厅","pcbHeight":800}, {"id":"status","name":"冒险者档案","pcbHeight":700}],
+    "pages": [
+      {"id":"lobby","name":"公会大厅","pcbHeight":800,"chrome":{
+        "messageFlow":{"x":14,"y":30,"width":332,"height":200},
+        "input":{"x":14,"y":820,"width":284,"height":40},
+        "settingsButton":{"x":306,"y":820,"width":40,"height":40}
+      }},
+      {"id":"status","name":"冒险者档案","pcbHeight":700,"chrome":{}}
+    ],
     "activePage": "lobby"
   },
   "panels": [
@@ -337,11 +360,19 @@ class ScenePage {
   /// 该页设计宽度（可选，默认 360）。
   final double? pcbWidth;
 
+  /// 页面外壳组件（消息流/输入框/设置按钮）声明。
+  ///
+  /// AI 决定本页要不要这些「外壳」元素、放哪、多大。
+  /// 不声明 = 本页不放（纯内容页）。设置按钮是引擎唯一硬性要求，
+  /// 若 AI 整卡都没声明，Step B 会兜底补一个不碍事的位置并提示。
+  final SceneChrome chrome;
+
   const ScenePage({
     required this.id,
     required this.name,
     this.pcbHeight,
     this.pcbWidth,
+    this.chrome = const SceneChrome(),
   });
 
   factory ScenePage.fromJson(Map<String, dynamic> json) => ScenePage(
@@ -349,7 +380,103 @@ class ScenePage {
         name: json['name']?.toString() ?? '页面',
         pcbHeight: (json['pcbHeight'] as num?)?.toDouble(),
         pcbWidth: (json['pcbWidth'] as num?)?.toDouble(),
+        chrome: SceneChrome.fromJson(json['chrome']),
       );
+}
+
+/// 单页的「外壳」组件声明：消息流 / 输入框 / 设置按钮。
+///
+/// 这些都是 scene 的交互外壳。Step B 不再擅自硬塞——**AI 声明什么就放什么**，
+/// 没声明就不放，把设计感交还给 AI。唯一硬性要求是设置按钮（引擎不启用
+/// 的条件），AI 漏了时 Step B 兜底。
+class SceneChrome {
+  /// 消息流：显示对话。null = 本页不放。
+  final MessageFlowIntent? messageFlow;
+
+  /// 玩家输入框（发送行动）。null = 本页不放。
+  final InputBarIntent? input;
+
+  /// 打开聊天设置的按钮。null = 本页不放（整卡需至少一页有，否则 Step B 兜底）。
+  final SettingsButtonIntent? settingsButton;
+
+  const SceneChrome({
+    this.messageFlow,
+    this.input,
+    this.settingsButton,
+  });
+
+  factory SceneChrome.fromJson(dynamic json) {
+    if (json is! Map) return const SceneChrome();
+    final m = Map<String, dynamic>.from(json);
+    return SceneChrome(
+      messageFlow: MessageFlowIntent.fromJson(m['messageFlow']),
+      input: InputBarIntent.fromJson(m['input']),
+      settingsButton: SettingsButtonIntent.fromJson(m['settingsButton']),
+    );
+  }
+
+  bool get hasAny =>
+      messageFlow != null || input != null || settingsButton != null;
+}
+
+/// 消息流声明。
+class MessageFlowIntent {
+  final double? x;
+  final double? y;
+  final double? width;
+  final double? height;
+  const MessageFlowIntent({this.x, this.y, this.width, this.height});
+
+  factory MessageFlowIntent.fromJson(dynamic json) {
+    if (json is! Map) return const MessageFlowIntent();
+    final m = Map<String, dynamic>.from(json);
+    return MessageFlowIntent(
+      x: (m['x'] as num?)?.toDouble(),
+      y: (m['y'] as num?)?.toDouble(),
+      width: (m['width'] as num?)?.toDouble(),
+      height: (m['height'] as num?)?.toDouble(),
+    );
+  }
+}
+
+/// 输入框声明。
+class InputBarIntent {
+  final double? x;
+  final double? y;
+  final double? width;
+  final double? height;
+  const InputBarIntent({this.x, this.y, this.width, this.height});
+
+  factory InputBarIntent.fromJson(dynamic json) {
+    if (json is! Map) return const InputBarIntent();
+    final m = Map<String, dynamic>.from(json);
+    return InputBarIntent(
+      x: (m['x'] as num?)?.toDouble(),
+      y: (m['y'] as num?)?.toDouble(),
+      width: (m['width'] as num?)?.toDouble(),
+      height: (m['height'] as num?)?.toDouble(),
+    );
+  }
+}
+
+/// 设置按钮声明。
+class SettingsButtonIntent {
+  final double? x;
+  final double? y;
+  final double? width;
+  final double? height;
+  const SettingsButtonIntent({this.x, this.y, this.width, this.height});
+
+  factory SettingsButtonIntent.fromJson(dynamic json) {
+    if (json is! Map) return const SettingsButtonIntent();
+    final m = Map<String, dynamic>.from(json);
+    return SettingsButtonIntent(
+      x: (m['x'] as num?)?.toDouble(),
+      y: (m['y'] as num?)?.toDouble(),
+      width: (m['width'] as num?)?.toDouble(),
+      height: (m['height'] as num?)?.toDouble(),
+    );
+  }
 }
 
 class UiPanel {

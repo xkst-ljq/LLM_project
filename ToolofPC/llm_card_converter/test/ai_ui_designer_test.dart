@@ -319,3 +319,76 @@ void main() {
   });
 
 }
+
+  group('buildSceneFromIntent - AI 声明外壳组件(chrome)', () {
+    test('AI 声明消息流+输入+设置才放，未声明页面不放外壳', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [
+          ScenePage(
+            id: 'lobby', name: '公会大厅', pcbHeight: 900,
+            chrome: SceneChrome(
+              messageFlow: MessageFlowIntent(x: 14, y: 30, width: 332, height: 200),
+              input: InputBarIntent(x: 14, y: 820, width: 284, height: 40),
+              settingsButton: SettingsButtonIntent(x: 306, y: 820, width: 40, height: 40),
+            ),
+          ),
+          ScenePage(id: 'pure', name: '纯内容页', pcbHeight: 600), // 无 chrome
+        ],
+        activePage: 'lobby',
+        panels: const [],
+        reasoning: const [],
+      );
+      final built = UiAssemblyBuilder.buildSceneFromIntent(
+        intent, cardName: '测试角色', initialValues: const {},
+      );
+      final json = jsonDecode(built.assemblies.first) as Map;
+      final pages = (jsonDecode(json['pages'] as String) as List)
+          .cast<Map<String, dynamic>>();
+
+      // lobby 页应有消息流、输入框、设置按钮
+      Map<String, dynamic> lobbyEl = pages.firstWhere((p) => p['name'] == '公会大厅');
+      final lobbyElems = (lobbyEl['elements'] as List).cast<Map<String, dynamic>>();
+      final lobbyTypes = lobbyElems
+          .map((e) => Map<String, dynamic>.from(e['module'] as Map)['type'])
+          .toSet();
+      expect(lobbyTypes, contains('message_flow'));
+      expect(lobbyTypes, contains('input'));
+      expect(lobbyTypes, contains('button')); // 设置
+
+      // 纯内容页不应有消息流/输入框（外壳全由 AI 声明，未声明不放）
+      final pureEl = pages.firstWhere((p) => p['name'] == '纯内容页');
+      final pureTypes = (pureEl['elements'] as List)
+          .cast<Map<String, dynamic>>()
+          .map((e) => Map<String, dynamic>.from(e['module'] as Map)['type'])
+          .toSet();
+      expect(pureTypes, isNot(contains('message_flow')));
+      expect(pureTypes, isNot(contains('input')));
+    });
+
+    test('整卡未声明设置按钮时首页兜底补一个', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [
+          ScenePage(id: 'lobby', name: '公会大厅', pcbHeight: 700),
+          ScenePage(id: 'p2', name: '页2', pcbHeight: 700),
+        ],
+        activePage: 'lobby',
+        panels: const [],
+        reasoning: const [],
+      );
+      final built = UiAssemblyBuilder.buildSceneFromIntent(
+        intent, cardName: '测试角色', initialValues: const {},
+      );
+      final json = jsonDecode(built.assemblies.first) as Map;
+      final pages = (jsonDecode(json['pages'] as String) as List)
+          .cast<Map<String, dynamic>>();
+      final firstTypes = (pages.first['elements'] as List)
+          .cast<Map<String, dynamic>>()
+          .map((e) => Map<String, dynamic>.from(e['module'] as Map)['type'])
+          .toSet();
+      expect(firstTypes, contains('button'), reason: '引擎要求首页兜底设置按钮');
+      expect(built.notes.any((n) => n.contains('兜底')), isTrue,
+          reason: '应在 notes 说明兜底了设置按钮');
+    });
+  });

@@ -2132,22 +2132,45 @@ class UiAssemblyBuilder {
       pageCursor[page] = (hasExplicitLayout ? pageCursor[page]! : y) + 16.0;
     }
 
-    // 组装 pages：加底部底板 + scene 必需组件（消息流/输入框/设置按钮）
-    // + 多页面切换（手势 + 底部页签按钮 + page_router/linker）
+    // 组装 pages：加底部底板 + 由 AI 声明的外壳（消息流/输入框/设置按钮）
+    // + 多页面切换（手势）
+    //
+    // **核心原则**：外壳组件不再硬塞，而是执行 AI 的 chrome 声明。
+    // AI 声明某页有消息流/输入框/设置按钮就放，没声明就不放（纯内容页）。
+    // 唯一兜底：整卡没有任何页声明 settingsButton 时，补一个到首页不碍事
+    // 的位置（引擎硬性要求，否则 scene 不启用），并写进 notes。
     final pagesJson = <Map<String, dynamic>>[];
     var sort = 0;
     final pageCount = intent.pages.length;
 
-    // PCB 高度：
-    //  - 若 AI 为页面指定了 pcbHeight，优先采用（clamp 到合理范围），
-    //    底栏固定放在该页高度之下，内容超高时由滚动/紧凑布局容纳；
-    //  - 否则按「内容最多的那页」的真实内容底部推算，避免内容压到底栏。
+    // 计算 PCB 高度：
+    //  - 若 AI 为页面指定了 pcbHeight，取各页最大的（clamp 合理范围）；
+    //  - 否则按「内容最多的那页」的真实内容底部推算（含面板与 chrome 占位）。
     double maxContentBottom = 250.0;
+    double maxChromeBottom = 250.0;
     bool anyExplicitPageHeight = false;
     double maxExplicitPageHeight = 0.0;
     for (final p in intent.pages) {
-      final b = pageCursor[p.id] ?? 250.0;
-      if (b > maxContentBottom) maxContentBottom = b;
+      final cb = pageCursor[p.id] ?? 250.0;
+      if (cb > maxContentBottom) maxContentBottom = cb;
+      // chrome 组件底部（消息流/输入框/设置按钮）
+      void consider(double? x, double? y, double? w, double? h) {
+        if (y != null && h != null && (y + h) > maxChromeBottom) {
+          maxChromeBottom = y + h;
+        }
+      }
+      consider(
+        p.chrome.messageFlow?.x, p.chrome.messageFlow?.y,
+        p.chrome.messageFlow?.width, p.chrome.messageFlow?.height,
+      );
+      consider(
+        p.chrome.input?.x, p.chrome.input?.y,
+        p.chrome.input?.width, p.chrome.input?.height,
+      );
+      consider(
+        p.chrome.settingsButton?.x, p.chrome.settingsButton?.y,
+        p.chrome.settingsButton?.width, p.chrome.settingsButton?.height,
+      );
       if (p.pcbHeight != null) {
         anyExplicitPageHeight = true;
         if (p.pcbHeight! > maxExplicitPageHeight) maxExplicitPageHeight = p.pcbHeight!;
@@ -2156,162 +2179,110 @@ class UiAssemblyBuilder {
 
     double contentBottom;
     if (anyExplicitPageHeight) {
-      // AI 指定了页高：取所有页里最大的指定高度（clamp 900~1870）。
+      // AI 指定了页高：取所有页里最大的指定高度（clamp 700~1870）。
       contentBottom = maxExplicitPageHeight.clamp(700.0, 1870.0);
     } else {
-      // 内容区上限：PCB 高度最高 2000（引擎硬上限），底栏需在内容之下 130，
-      // 因此内容底部最高 1870，保证底栏始终位于真实内容之下、绝不重叠。
-      contentBottom = maxContentBottom.clamp(250.0, 1870.0);
+      // 取「内容底部」与「chrome 底部」的较大者，避免内容或外壳越界。
+      final real = maxContentBottom > maxChromeBottom
+          ? maxContentBottom : maxChromeBottom;
+      // 内容区上限：PCB 高度最高 2000（引擎硬上限），底栏需在内容之下 130。
+      contentBottom = real.clamp(250.0, 1870.0);
     }
     final pcbH = (contentBottom + 130.0).clamp(900.0, 2000.0);
-    final bottomY = pcbH - 50.0; // 输入框/设置按钮这一行
-    final navY = pcbH - 110.0; // 页签栏
+
+    // 检查整卡是否有设置按钮（引擎硬性要求）。
+    bool anySettingsButton = intent.pages.any(
+      (p) => p.chrome.settingsButton != null,
+    );
+    if (!anySettingsButton) {
+      notes.add('AI 未在任何页面声明「打开聊天设置」按钮（引擎硬性要求），'
+          '已在首页兜底补一个，请到编辑器确认位置。');
+    }
+
     for (var pIdx = 0; pIdx < pageCount; pIdx++) {
       final p = intent.pages[pIdx];
       final elements = pageElements[p.id] ?? <Map<String, dynamic>>[];
       final extras = <Map<String, dynamic>>[];
+      final chrome = p.chrome;
 
-      // 消息流：显示对话（scene 接管后玩家靠它看消息）。
-      // 气泡用浅色：引擎的正文颜色是固定的深色(0xFF111116)，
-      // 若按深色主题把气泡也设成深色，字就看不见了。
-      extras.add(_element(
-        id: nextId('el'),
-        x: pad,
-        y: 30,
-        w: innerW,
-        h: 200,
-        layer: 1,
-        module: _module(
-          id: nextId('m'),
-          name: '消息流',
-          type: 'message_flow',
-          color: 0x00000000,
-          radius: 10,
-          props: {
-            'historyLimit': 0,
-            'fontSize': 12.5,
-            'showUser': true,
-            'showAssistant': true,
-            'richText': true,
-            'userBubbleColor': 0xFFDCF8C6,
-            'assistantBubbleColor': 0xFFF1F1F4,
-            'bubbleRadius': 10.0,
-          },
-        ),
-      ));
-
-      // ── 多页面页签栏：让平级页能互相切换 ──
-      if (pageCount > 1) {
-        final tabW = (innerW - (pageCount - 1) * 6.0) / pageCount;
-        final routerIds = <String, String>{}; // pageId -> router elementId
-        for (var i = 0; i < pageCount; i++) {
-          final target = intent.pages[i];
-          if (i == pIdx) continue;
-          final rId = nextId('el');
-          routerIds[target.id] = rId;
-          extras.add(_pageRouter(
-            id: rId,
-            name: '页签路由_${target.name}',
-            targetPageId: target.id,
-            pos: (-224.0 - 160.0, i * 52.0),
-          ));
-        }
-        for (var i = 0; i < pageCount; i++) {
-          final target = intent.pages[i];
-          final isActive = i == pIdx;
-          final tabX = pad + i * (tabW + 6.0);
-          final sId = nextId('el');
-          extras.add(_surface(
-            id: sId,
-            name: '页签底_${target.name}',
-            x: tabX,
-            y: navY,
-            w: tabW,
-            h: 40,
-            color: isActive ? visualTheme.accentColor : visualTheme.buttonBgColor,
-            layer: 3,
-            radius: 8.0,
-          ));
-          extras.add(_text(
-            id: nextId('el'),
-            name: '页签文_${target.name}',
-            text: target.name,
-            x: tabX + 2,
-            y: navY + 11,
-            w: tabW - 4,
-            h: 18,
-            fontSize: 11,
-            color: isActive ? 0xFFFFFFFF : visualTheme.labelColor,
-            align: 'center',
-            layer: 4,
-          ));
-          if (!isActive) {
-            final bId = nextId('el');
-            extras.add(_button(
-              id: bId,
-              name: '页签按_${target.name}',
-              x: tabX,
-              y: navY,
-              w: tabW,
-              h: 40,
-              layer: 4,
-              sendsMessage: false,
-              keyAction: false,
-              color: 0x00000000,
-            ));
-            final routerId = routerIds[target.id]!;
-            final lId = nextId('el');
-            extras.add(_pressLinker2(
-              id: lId,
-              name: '页签跳_${target.name}',
-              buttonId: bId,
-              routerId: routerId,
-              scheme: 'button_to_page_route',
-              x: -224.0,
-              y: 300.0 + i * 52.0,
-              layer: 5,
-            ));
-          }
-        }
+      // ── 消息流：AI 声明了才放 ──
+      if (chrome.messageFlow != null) {
+        final mf = chrome.messageFlow!;
+        extras.add(_element(
+          id: nextId('el'),
+          x: mf.x ?? pad,
+          y: mf.y ?? 30,
+          w: mf.width ?? innerW,
+          h: mf.height ?? 200,
+          layer: 1,
+          module: _module(
+            id: nextId('m'),
+            name: '消息流',
+            type: 'message_flow',
+            color: 0x00000000,
+            radius: 10,
+            props: {
+              'historyLimit': 0,
+              'fontSize': 12.5,
+              'showUser': true,
+              'showAssistant': true,
+              'richText': true,
+              'userBubbleColor': 0xFFDCF8C6,
+              'assistantBubbleColor': 0xFFF1F1F4,
+              'bubbleRadius': 10.0,
+            },
+          ),
+        ));
       }
 
-      // 输入框：玩家输入行动（sendsMessage，scene 靠它对话）
-      extras.add(_element(
-        id: nextId('el'),
-        x: pad,
-        y: bottomY,
-        w: innerW - 48,
-        h: 40,
-        layer: 2,
-        module: _module(
-          id: nextId('m'),
-          name: '行动输入',
-          type: 'input',
-          color: 0xFF000000,
-          radius: 8,
-          props: {
-            'placeholder': '写下你的行动，回车发送',
-            'text': '',
-            'committedValue': '',
-            'maxLength': 300,
-            'sendsMessage': true,
-          },
-        ),
-      ));
+      // ── 输入框：AI 声明了才放 ──
+      if (chrome.input != null) {
+        final inp = chrome.input!;
+        extras.add(_element(
+          id: nextId('el'),
+          x: inp.x ?? pad,
+          y: inp.y ?? pcbH - 50,
+          w: inp.width ?? innerW - 48,
+          h: inp.height ?? 40,
+          layer: 2,
+          module: _module(
+            id: nextId('m'),
+            name: '行动输入',
+            type: 'input',
+            color: 0xFF000000,
+            radius: 8,
+            props: {
+              'placeholder': '写下你的行动，回车发送',
+              'text': '',
+              'committedValue': '',
+              'maxLength': 300,
+              'sendsMessage': true,
+            },
+          ),
+        ));
+      }
 
-      // 打开聊天设置按钮（scene 的关键职责出口，缺少会被引擎拦截）
-      extras.add(_button(
-        id: nextId('el'),
-        name: '设置',
-        x: pad + innerW - 40,
-        y: bottomY,
-        w: 40,
-        h: 40,
-        layer: 2,
-        sendsMessage: false,
-        keyAction: true,
-        color: visualTheme.accentColor,
-      ));
+      // ── 设置按钮：AI 声明了放；整卡都没有时在首页兜底补一个 ──
+      if (chrome.settingsButton != null ||
+          (!anySettingsButton && pIdx == 0)) {
+        final sb = chrome.settingsButton;
+        final x = sb?.x ?? pad + innerW - 40;
+        final y = sb?.y ?? pcbH - 50;
+        final w = sb?.width ?? 40.0;
+        final h = sb?.height ?? 40.0;
+        extras.add(_button(
+          id: nextId('el'),
+          name: '设置',
+          x: x,
+          y: y,
+          w: w,
+          h: h,
+          layer: 2,
+          sendsMessage: false,
+          keyAction: true,
+          color: visualTheme.accentColor,
+        ));
+      }
 
       // 底板放最底层
       final bg = _surface(
