@@ -86,6 +86,112 @@ class AiUiBlueprint {
     return issues;
   }
 
+  /// **轻量布局自检（纯代码，不调 AI）**：确定性检查越界/重叠。
+  ///
+  /// 这是给 AI 的「布局审稿」反馈源：不靠 AI 检查，而是用确定性规则算出
+  /// 哪里越界、哪里重叠，把结果作为「修改意见」交给 AI 去改——就像设计师
+  /// 拿着一张标了红线的稿子回去重画，而不是让代码硬改坐标。
+  ///
+  /// 检测规则（宽恒 360，pad=14）：
+  /// - 越界：x < 0 或 x+width > 360，或 y+height > 页高；
+  /// - 重叠：同一页两个字段矩形相交。
+  static List<UiReviewIssue> checkLayout(UiCreationIntent intent) {
+    const double pcbW = 360.0;
+    const double pad = 14.0;
+    final issues = <UiReviewIssue>[];
+
+    for (final p in intent.pages) {
+      final pageH = p.pcbHeight ?? 900.0;
+      // 收集本页字段（含位置/尺寸，未给的跳过——由 Step B 兜底排布）
+      final rects = <({String name, double x, double y, double w, double h})>[];
+      for (final panel in intent.panels) {
+        if (panel.page.isNotEmpty && panel.page != p.id) continue;
+        for (final f in panel.fields) {
+          if (f.x == null && f.y == null) continue; // 走兜底，不参与检查
+          final x = f.x ?? pad;
+          final y = f.y ?? 0.0;
+          final w = f.width ?? (pcbW - pad * 2);
+          final h = f.height ?? 22.0;
+          rects.add((name: '${panel.title}/${f.name}', x: x, y: y, w: w, h: h));
+        }
+      }
+
+      // 越界检查
+      for (final r in rects) {
+        if (r.x < 0 || r.x + r.w > pcbW || r.y < 0) {
+          issues.add(UiReviewIssue(
+            severity: 'error',
+            page: p.id,
+            message: '字段「${r.name}」越界：x=${r.x.toStringAsFixed(0)} '
+                'w=${r.w.toStringAsFixed(0)}（需 x≥0 且 x+w≤360）',
+            suggestion: '把 x 与 width 收敛到 0~360 内',
+          ));
+        }
+        if (r.y + r.h > pageH) {
+          issues.add(UiReviewIssue(
+            severity: 'warn',
+            page: p.id,
+            message: '字段「${r.name}」超出页底：y+h=${(r.y + r.h).toStringAsFixed(0)} '
+                '> 页高 $pageH',
+            suggestion: '下移/缩小，或提高 pcbHeight（建议≤900）',
+          ));
+        }
+      }
+
+      // 重叠检查（两两比较矩形）
+      for (var i = 0; i < rects.length; i++) {
+        for (var j = i + 1; j < rects.length; j++) {
+          final a = rects[i], b = rects[j];
+          final overlapX = a.x < b.x + b.w && b.x < a.x + a.w;
+          final overlapY = a.y < b.y + b.h && b.y < a.y + a.h;
+          if (overlapX && overlapY) {
+            issues.add(UiReviewIssue(
+              severity: 'error',
+              page: p.id,
+              message: '字段「${a.name}」与「${b.name}」重叠',
+              suggestion: '错开 y 或 x，避免矩形相交',
+            ));
+          }
+        }
+      }
+    }
+    return issues;
+  }
+
+  /// **迭代修正**：把布局问题反馈给 AI，让 AI 重新出一版修正后的意图。
+  ///
+  /// 对应「设计师看稿→改稿」：Step B 不硬改坐标，而是把红线问题交给 AI，
+  /// AI 在语义层修正布局（保持设计意图，只解决越界/重叠）。
+  /// [issues] 来自 [checkLayout] 或 [reviewIntent]。
+  static Future<UiCreationIntent> reviseIntent(
+    UiCreationIntent intent,
+    List<UiReviewIssue> issues, {
+    void Function(String)? onToken,
+  }) async {
+    final cfg = await AppSettings.getApiConfig();
+    if (!cfg.isComplete) throw StateError('未配置 AI（请先在设置中填写 API）');
+
+    final buf = StringBuffer();
+    buf.writeln('你之前设计了一份 UI 意图，但布局审查发现以下问题。'
+        '请**保持整体设计意图**，仅修正布局，重新输出完整意图 JSON。\n');
+    buf.writeln('【问题清单】');
+    if (issues.isEmpty) {
+      buf.writeln('（无问题，可原样返回）');
+    } else {
+      for (final issue in issues) {
+        buf.writeln('- [${issue.severity}] ${issue.page}: ${issue.message}'
+            '${issue.suggestion != null ? ' → ${issue.suggestion}' : ''}');
+      }
+    }
+    buf.writeln('\n【原意图】\n${jsonEncode(intent.toJson())}\n');
+    buf.writeln('请输出修正后的意图 JSON（结构与之前一致）。只输出 JSON，不要 markdown 代码块。');
+
+    final raw = await _chat(cfg, kIntentSystemPrompt, buf.toString(), onToken);
+    final parsed = _parseJson(raw);
+    if (parsed == null) throw const FormatException('AI 修正返回的不是合法 JSON');
+    return UiCreationIntent.fromJson(parsed);
+  }
+
   // ---------------- 内部 ----------------
 
   static Future<String> _chat(

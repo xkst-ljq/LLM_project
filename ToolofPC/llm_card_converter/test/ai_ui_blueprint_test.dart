@@ -95,4 +95,66 @@ void main() {
       expect((fields.first as Map)['name'], 'HP');
     });
   });
+
+  group('AiUiBlueprint.checkLayout - 纯代码布局自检', () {
+    test('检测越界坐标（x+width>360）', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [ScenePage(id: 'p1', name: '页')],
+        activePage: 'p1',
+        panels: const [
+          UiPanel(
+            kind: 'status_bar', page: 'p1', title: '状态',
+            fields: [
+              // 越界：x=400 超出 360
+              UiFieldIntent(name: 'HP', type: 'text', display: 'text', x: 400, y: 30, width: 100, height: 20),
+            ],
+          ),
+        ],
+        reasoning: const [],
+      );
+      final issues = AiUiBlueprint.checkLayout(intent);
+      expect(issues.any((i) => i.severity == 'error' && i.message.contains('越界')), isTrue);
+    });
+
+    test('检测字段重叠', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [ScenePage(id: 'p1', name: '页')],
+        activePage: 'p1',
+        panels: const [
+          UiPanel(
+            kind: 'status_bar', page: 'p1', title: '状态',
+            fields: [
+              UiFieldIntent(name: 'A', type: 'text', display: 'text', x: 14, y: 30, width: 100, height: 20),
+              UiFieldIntent(name: 'B', type: 'text', display: 'text', x: 14, y: 30, width: 100, height: 20), // 与 A 完全重叠
+            ],
+          ),
+        ],
+        reasoning: const [],
+      );
+      final issues = AiUiBlueprint.checkLayout(intent);
+      expect(issues.any((i) => i.message.contains('重叠')), isTrue);
+    });
+
+    test('正常布局无问题', () {
+      final intent = UiCreationIntent(
+        mode: 'scene',
+        pages: const [ScenePage(id: 'p1', name: '页', pcbHeight: 600)],
+        activePage: 'p1',
+        panels: const [
+          UiPanel(
+            kind: 'status_bar', page: 'p1', title: '状态',
+            fields: [
+              UiFieldIntent(name: 'A', type: 'text', display: 'text', x: 14, y: 30, width: 100, height: 20),
+              UiFieldIntent(name: 'B', type: 'text', display: 'text', x: 14, y: 60, width: 100, height: 20),
+            ],
+          ),
+        ],
+        reasoning: const [],
+      );
+      final issues = AiUiBlueprint.checkLayout(intent);
+      expect(issues, isEmpty);
+    });
+  });
 }

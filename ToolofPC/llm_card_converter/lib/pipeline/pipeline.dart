@@ -543,9 +543,32 @@ class ConversionPipeline {
       );
     }
 
-    // —— 最终意图 AI 自检：只提示，不改内容 ——
+    // —— 最终意图布局自检 + 迭代修正 ——
+    // 用纯代码 checkLayout 确定性找出越界/重叠；发现问题则把红线反馈给 AI
+    // 让它在语义层修正（保持设计意图，仅改布局），最多迭代 2 轮。
+    // 这是「设计师看稿→改稿」，不是 Step B 硬改坐标。
     try {
-      final issues = await AiUiBlueprint.reviewIntent(intent, onToken: onToken);
+      var issues = AiUiBlueprint.checkLayout(intent);
+      var round = 0;
+      const maxRounds = 2;
+      // 只对 error 级（越界/重叠）做迭代修正
+      while (issues.any((i) => i.severity == 'error') && round < maxRounds) {
+        round++;
+        try {
+          intent = await AiUiBlueprint.reviseIntent(
+            intent,
+            issues.where((i) => i.severity == 'error').toList(),
+            onToken: onToken,
+          );
+          reviewNotes.add(ConversionNote.info(
+              'AI 布局修正（第 $round 轮）：已处理 ${issues.where((i) => i.severity == 'error').length} 处越界/重叠。'));
+        } catch (_) {
+          break; // 修正失败就停止，保留当前意图
+        }
+        issues = AiUiBlueprint.checkLayout(intent);
+      }
+
+      // 记录剩余问题（warn 级 / 修正后仍存在的 error）
       if (issues.isNotEmpty) {
         reviewNotes.add(ConversionNote.info(
             'AI 自检发现 ${issues.length} 处布局问题（仅供参考，可到编辑器调整）：'));
@@ -556,7 +579,7 @@ class ConversionPipeline {
               '${issue.suggestion != null ? '（建议：${issue.suggestion}）' : ''}'));
         }
       } else {
-        reviewNotes.add(ConversionNote.info('AI 自检：未发现明显布局问题。'));
+        reviewNotes.add(ConversionNote.info('布局自检：未发现越界/重叠。'));
       }
     } catch (_) {
       // 自检失败不阻断
