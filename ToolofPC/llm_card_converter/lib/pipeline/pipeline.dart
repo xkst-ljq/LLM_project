@@ -275,6 +275,7 @@ class ConversionPipeline {
   Future<CardConversionResult> runBuildUiStage(
     CardWorkItem item, {
     void Function(String token)? onToken,
+    void Function(String stage)? onStage,
   }) async {
     final base = item.stageOutputs[PipelineStage.aiClassify] ??
         item.stageOutputs[PipelineStage.rule];
@@ -329,6 +330,7 @@ class ConversionPipeline {
             initValues: initValues,
             greetingsText: [fm, ...alts],
             onToken: onToken,
+            onStage: onStage,
             reviewNotes: reviewNotes,
           );
           if (intent.hasUi) {
@@ -507,12 +509,14 @@ class ConversionPipeline {
     required Map<String, String> initValues,
     required List<String> greetingsText,
     required void Function(String)? onToken,
+    void Function(String stage)? onStage,
     required List<ConversionNote> reviewNotes,
   }) async {
     final confirmer = blueprintConfirmer;
     UiCreationIntent intent;
     if (confirmer != null) {
       // —— 蓝图阶段 ——
+      onStage?.call('AI 设计蓝图');
       final blueprint = await AiUiBlueprint.designBlueprint(
         extraction,
         cardName: cardName,
@@ -524,6 +528,7 @@ class ConversionPipeline {
         throw const FormatException('用户取消了 UI 蓝图');
       }
       // —— 蓝图 → 最终意图（进 API 库检验 + 降级） ——
+      onStage?.call('AI 落地意图（查 API / 降级）');
       final result = await AiUiBlueprint.designIntentFromBlueprint(
         confirmed,
         cardName: cardName,
@@ -535,6 +540,7 @@ class ConversionPipeline {
       intent = result.intent;
     } else {
       // —— 未注入确认回调：直接走原有 design 路径 ——
+      onStage?.call('AI 设计 UI 意图');
       intent = await AiUiDesigner.design(
         extraction,
         barInitialValues: initValues,
@@ -555,6 +561,7 @@ class ConversionPipeline {
       while (issues.any((i) => i.severity == 'error') && round < maxRounds) {
         round++;
         try {
+          onStage?.call('AI 布局修正（第 $round 轮）');
           intent = await AiUiBlueprint.reviseIntent(
             intent,
             issues.where((i) => i.severity == 'error').toList(),

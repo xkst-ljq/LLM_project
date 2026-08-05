@@ -47,6 +47,14 @@ class _WorkItem {
   _WorkItem(this.card, this.work);
 }
 
+/// 一次 AI 阶段（如「蓝图」「意图」「修正」）的完整流式输出。
+class _AiStageOutput {
+  final String title;
+  final StringBuffer text;
+  bool collapsed;
+  _AiStageOutput(this.title, this.text, {this.collapsed = true});
+}
+
 /// 统一工作区：处理 1~N 张卡。逐张串行转译，列表展示，可展开看预览、编辑、比对。
 class WorkspacePage extends StatefulWidget {
   final List<PickedCard> cards;
@@ -66,8 +74,11 @@ class _WorkspacePageState extends State<WorkspacePage> {
   int _runningIndex = 0;
   int? _expanded; // 当前展开的卡片索引
 
-  /// AI 生成中实时累计的 token 文本（流式）。空串表示未在生成。
-  String _thinkingText = '';
+  /// 每个 AI 阶段的一份完整流式输出（标题 + 全文 + 是否折叠）。
+  final List<_AiStageOutput> _aiOutputs = [];
+
+  /// 当前正在流式累积的 AI 阶段（标题 + 已累积全文）。
+  _AiStageOutput? _liveOutput;
   int _thinkingFrame = 0;
 
   @override
@@ -103,7 +114,8 @@ class _WorkspacePageState extends State<WorkspacePage> {
       _running = true;
       _doneCount = 0;
       _log.clear();
-      _thinkingText = '';
+      _aiOutputs.clear();
+      _liveOutput = null;
       _thinkingFrame = 0;
     });
 
@@ -125,16 +137,23 @@ class _WorkspacePageState extends State<WorkspacePage> {
           if (!mounted) return;
           setState(() => item.progress = p);
         },
-        // 流式：实时展示 AI 生成进度（节流避免每 token 都 setState）。
+        // 流式：把完整 token 累积进当前阶段，节流刷新。
         onThinking: (partial) {
           if (!mounted) return;
-          // 只保留尾部约 120 字，避免字符串无限增长。
-          final tail = partial.length > 120
-              ? partial.substring(partial.length - 120)
-              : partial;
-          _thinkingText = tail;
+          _liveOutput ??= _AiStageOutput('AI 输出', StringBuffer());
+          _liveOutput!.text.write(partial);
           _thinkingFrame++;
           if (_thinkingFrame % 4 == 0) setState(() {});
+        },
+        // 阶段切换：把上一个阶段归档为可折叠块，开新阶段。
+        onStage: (stage) {
+          if (!mounted) return;
+          setState(() {
+            if (_liveOutput != null && _liveOutput!.text.isNotEmpty) {
+              _aiOutputs.add(_liveOutput!);
+            }
+            _liveOutput = _AiStageOutput(stage, StringBuffer());
+          });
         },
       );
 
@@ -166,13 +185,21 @@ class _WorkspacePageState extends State<WorkspacePage> {
       setState(() {
         item.progress = 1;
         _doneCount++;
+        // 归档当前未结束的流式阶段（若还有残留）
+        if (_liveOutput != null && _liveOutput!.text.isNotEmpty) {
+          _aiOutputs.add(_liveOutput!);
+          _liveOutput = null;
+        }
       });
     }
 
     if (mounted) {
       setState(() {
         _running = false;
-        _thinkingText = '';
+        if (_liveOutput != null && _liveOutput!.text.isNotEmpty) {
+          _aiOutputs.add(_liveOutput!);
+        }
+        _liveOutput = null;
       });
     }
   }
@@ -374,45 +401,33 @@ class _WorkspacePageState extends State<WorkspacePage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                    const Text('简短日志：',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    if (_thinkingText.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                        const Text('简短日志：',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        if (_liveOutput != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                const SizedBox(width: 6),
+                                Text('AI 思考中… ${_liveOutput!.title}',
+                                    style: const TextStyle(
+                                        fontSize: 11, color: Colors.teal)),
+                              ],
                             ),
-                            const SizedBox(width: 6),
-                            const Text('AI 思考中…',
-                                style: TextStyle(
-                                    fontSize: 11, color: Colors.teal)),
-                          ],
-                        ),
-                      ),
+                          ),
                         IconButton(
                           visualDensity: VisualDensity.compact,
-                          tooltip: '复制全部日志',
+                          tooltip: '复制全部日志与 AI 输出',
                           iconSize: 16,
                           icon: const Icon(Icons.copy_all_outlined),
-                          onPressed: () async {
-                            final text = _log.join('\n');
-                            if (text.isEmpty) return;
-                            await Clipboard.setData(
-                              ClipboardData(text: text),
-                            );
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('日志已复制到剪贴板'),
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          },
+                          onPressed: _copyAllLog,
                         ),
                       ],
                     ),
@@ -423,21 +438,98 @@ class _WorkspacePageState extends State<WorkspacePage> {
                         child: Text(line,
                             style: const TextStyle(fontSize: 12, height: 1.4)),
                       ),
-                    if (_thinkingText.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
-                        child: Text(
-                          '  …$_thinkingText',
-                          style: const TextStyle(
-                              fontSize: 11, color: Colors.teal, height: 1.4),
-                        ),
-                      ),
+                    // 各阶段的完整 AI 输出（可折叠，默认折叠）
+                    for (final out in _aiOutputs) _aiOutputTile(out),
+                    // 当前正在流式的阶段（展开显示实时全文）
+                    if (_liveOutput != null && _liveOutput!.text.isNotEmpty)
+                      _liveOutputTile(_liveOutput!),
                   ],
                 ),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 完整复制：日志 + 所有阶段 AI 输出的全文。
+  Future<void> _copyAllLog() async {
+    final buf = StringBuffer()
+      ..writeln(_log.join('\n'));
+    if (_aiOutputs.isNotEmpty || (_liveOutput?.text.isNotEmpty ?? false)) {
+      buf.writeln('\n—— AI 完整输出 ——');
+      for (final out in _aiOutputs) {
+        buf.writeln('【${out.title}】');
+        buf.writeln(out.text);
+      }
+      if (_liveOutput != null && _liveOutput!.text.isNotEmpty) {
+        buf.writeln('【${_liveOutput!.title}】');
+        buf.writeln(_liveOutput!.text);
+      }
+    }
+    final text = buf.toString();
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('日志 + AI 完整输出已复制'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+  }
+
+  /// 已归档的某个 AI 阶段输出（默认折叠，点击展开/收起）。
+  Widget _aiOutputTile(_AiStageOutput out) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        dense: true,
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 6),
+        initiallyExpanded: !out.collapsed,
+        onExpansionChanged: (v) => setState(() => out.collapsed = !v),
+        title: Text(
+          '【${out.title}】',
+          style: const TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w700, color: Colors.teal),
+        ),
+        subtitle: Text(
+          '${out.text.length} 字符（点击展开）',
+          style: const TextStyle(fontSize: 10, color: Colors.black45),
+        ),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: SelectableText(
+              out.text.toString(),
+              style: const TextStyle(fontSize: 11, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 当前正在流式的阶段输出（实时展开显示全文）。
+  Widget _liveOutputTile(_AiStageOutput out) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.teal.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: SelectableText(
+        '【${out.title}】\n${out.text.toString()}',
+        style: const TextStyle(fontSize: 11, height: 1.4, color: Colors.teal),
       ),
     );
   }

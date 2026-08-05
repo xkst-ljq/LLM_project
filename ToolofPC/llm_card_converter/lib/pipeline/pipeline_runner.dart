@@ -25,12 +25,17 @@ class PipelineRunner {
   /// UI 据此实时展示「AI 正在思考…」。可为空（关闭流式）。
   final void Function(String partial)? onThinking;
 
+  /// 流式阶段切换回调：每次 AI 调用开始一个新阶段（蓝图/意图/修正）时触发，
+  /// 便于 UI 把不同阶段的流式输出分开展示。可为空。
+  final void Function(String stage)? onStage;
+
   PipelineRunner({
     required this.pipeline,
     this.useAi = true,
     this.onLog,
     this.onProgress,
     this.onThinking,
+    this.onStage,
   });
 
   void _log(String s) => onLog?.call(s);
@@ -148,6 +153,7 @@ class PipelineRunner {
         onToken: onThinking == null
             ? null
             : (tok) => onThinking!(tok),
+        onStage: onStage == null ? null : (s) => onStage!(s),
       );
       final after = item.current?.characterData;
       _log(_describeUiResult(before, after));

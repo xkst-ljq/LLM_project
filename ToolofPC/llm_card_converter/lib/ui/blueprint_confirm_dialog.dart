@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../core/ai_ui_blueprint.dart';
 
-/// 蓝图确认对话框：把 AI 产出的分条目 UI 蓝图逐条展示，供用户确认/修改。
+/// 蓝图确认对话框：把 AI 产出的 UI 蓝图**整体**展示，供用户确认。
 ///
-/// 用户可：
-/// - 逐条勾选保留/删除（keep）；
-/// - 修改某条的 title / intent；
-/// - 确认（返回修改后的蓝图）或取消（返回 null → 回退确定性模板）。
+/// 分两个视图：
+/// - **概览**：以 `1. 2. 3.` 编号列出整体蓝图（只读），一目了然；
+/// - **编辑**：点「编辑蓝图」进入逐条编辑（可删条目、改标题/意图）。
+///
+/// 确认返回修改后的蓝图；取消返回 null → 回退确定性模板。
 class BlueprintConfirmDialog extends StatefulWidget {
   final UiBlueprint blueprint;
   const BlueprintConfirmDialog({super.key, required this.blueprint});
@@ -18,6 +19,7 @@ class BlueprintConfirmDialog extends StatefulWidget {
 
 class _BlueprintConfirmDialogState extends State<BlueprintConfirmDialog> {
   late List<BlueprintItem> _items;
+  bool _editing = false;
   late final Map<int, TextEditingController> _titleCtrls;
   late final Map<int, TextEditingController> _intentCtrls;
 
@@ -44,95 +46,43 @@ class _BlueprintConfirmDialogState extends State<BlueprintConfirmDialog> {
     super.dispose();
   }
 
+  void _toggleEditing() {
+    // 进入编辑前把 controller 同步为当前 items 的值
+    if (!_editing) {
+      for (final it in _items) {
+        _titleCtrls[it.index]?.text = it.title;
+        _intentCtrls[it.index]?.text = it.intent;
+      }
+    }
+    setState(() => _editing = !_editing);
+  }
+
+  void _deleteItem(int idx) {
+    setState(() => _items.removeAt(idx));
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('确认 UI 蓝图 · ${widget.blueprint.cardName}'),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(_editing ? '编辑 UI 蓝图 · ${widget.blueprint.cardName}'
+                : '确认 UI 蓝图 · ${widget.blueprint.cardName}'),
+          ),
+          IconButton(
+            tooltip: _editing ? '完成编辑' : '编辑蓝图',
+            icon: Icon(_editing ? Icons.check : Icons.edit_outlined),
+            onPressed: _toggleEditing,
+          ),
+        ],
+      ),
       content: SizedBox(
         width: 620,
-        height: 480,
+        height: 460,
         child: _items.isEmpty
             ? const Center(child: Text('蓝图为空，将不生成 UI。'))
-            : ListView.separated(
-                itemCount: _items.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, idx) {
-                  final it = _items[idx];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Checkbox(
-                          value: it.keep,
-                          onChanged: (v) {
-                            setState(() => it.keep = v ?? true);
-                          },
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('#${it.index} [${it.kind}]',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: it.keep
-                                          ? Colors.black54
-                                          : Colors.black26)),
-                              const SizedBox(height: 2),
-                              TextField(
-                                controller: _titleCtrls[it.index],
-                                enabled: it.keep,
-                                style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w700),
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  border: InputBorder.none,
-                                  hintText: '标题',
-                                ),
-                                onChanged: (_) =>
-                                    it.title = _titleCtrls[it.index]!.text,
-                              ),
-                              if (it.fields.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text('字段: ${it.fields.join(', ')}',
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: it.keep
-                                              ? Colors.black45
-                                              : Colors.black26)),
-                                ),
-                              TextField(
-                                controller: _intentCtrls[it.index],
-                                enabled: it.keep,
-                                minLines: 1,
-                                maxLines: 3,
-                                style: const TextStyle(fontSize: 12),
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  border: InputBorder.none,
-                                  hintText: '设计意图…',
-                                ),
-                                onChanged: (_) =>
-                                    it.intent = _intentCtrls[it.index]!.text,
-                              ),
-                              if (it.relationship.isNotEmpty)
-                                Text('关系: ${it.relationship}',
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        color: it.keep
-                                            ? Colors.black38
-                                            : Colors.black26)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+            : _editing ? _buildEditor() : _buildOverview(),
       ),
       actions: [
         TextButton(
@@ -151,9 +101,132 @@ class _BlueprintConfirmDialogState extends State<BlueprintConfirmDialog> {
               ),
             );
           },
-          child: Text('确认（保留 ${_items.where((i) => i.keep).length} 条）'),
+          child: Text('确认（${_items.where((i) => i.keep).length} 项）'),
         ),
       ],
+    );
+  }
+
+  /// 概览视图：编号列出整体蓝图（只读）。
+  Widget _buildOverview() {
+    return ListView.separated(
+      itemCount: _items.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, idx) {
+        final it = _items[idx];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 编号
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Text('${idx + 1}',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(it.title,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text('[${it.kind}]',
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.black45)),
+                    const SizedBox(height: 4),
+                    Text(it.intent,
+                        style: const TextStyle(fontSize: 12, height: 1.4)),
+                    if (it.fields.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text('字段: ${it.fields.join(', ')}',
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.black45)),
+                      ),
+                    if (it.relationship.isNotEmpty)
+                      Text('关系: ${it.relationship}',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.black38)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 编辑视图：逐条可删、可改标题/意图。
+  Widget _buildEditor() {
+    return ListView.separated(
+      itemCount: _items.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, idx) {
+        final it = _items[idx];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: '删除这条',
+                icon: const Icon(Icons.delete_outline, size: 18,
+                    color: Colors.redAccent),
+                onPressed: () => _deleteItem(idx),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${idx + 1}. [${it.kind}]',
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.black54)),
+                    const SizedBox(height: 2),
+                    TextField(
+                      controller: _titleCtrls[it.index],
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: InputBorder.none,
+                        hintText: '标题',
+                      ),
+                      onChanged: (_) => it.title = _titleCtrls[it.index]!.text,
+                    ),
+                    TextField(
+                      controller: _intentCtrls[it.index],
+                      minLines: 1,
+                      maxLines: 3,
+                      style: const TextStyle(fontSize: 12),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: InputBorder.none,
+                        hintText: '设计意图…',
+                      ),
+                      onChanged: (_) => it.intent = _intentCtrls[it.index]!.text,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
