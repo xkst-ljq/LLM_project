@@ -15,6 +15,7 @@ import 'card_preview.dart';
 import 'compare_page.dart';
 import 'entry_editor_page.dart';
 import 'assembly_preview.dart';
+import 'blueprint_confirm_dialog.dart';
 
 /// 待转译文件项（主页选择 → 工作区转译）。
 class PickedCard {
@@ -74,11 +75,26 @@ class _WorkspacePageState extends State<WorkspacePage> {
     _pipeline = ConversionPipeline(
       aiClassify: AiClassifier.classify,
       aiRefine: AiRefiner.refine,
+      // 蓝图确认：UI 层弹出分条目蓝图供用户逐条确认/修改。
+      blueprintConfirmer: _confirmBlueprint,
     );
     for (final c in widget.cards) {
       _items.add(_WorkItem(c, _pipeline.createItem(c.name, c.bytes)));
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _runAll());
+  }
+
+  /// 蓝图确认回调：弹出蓝图对话框，让用户逐条确认/修改。
+  Future<UiBlueprint?> _confirmBlueprint(UiBlueprint blueprint) async {
+    // 先读设置：若用户关闭了「蓝图确认」，直接放行（返回原蓝图）。
+    final enabled = await AppSettings.getConfirmBlueprint();
+    if (!enabled) return blueprint;
+    if (!mounted) return blueprint;
+    return showDialog<UiBlueprint>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => BlueprintConfirmDialog(blueprint: blueprint),
+    );
   }
 
   Future<void> _runAll() async {

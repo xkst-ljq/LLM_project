@@ -347,6 +347,25 @@ class UiCreationIntent {
   }
 
   bool get hasUi => panels.isNotEmpty;
+
+  /// 序列化为 JSON（供 AI 自检阶段把意图喂回 AI 检查）。
+  Map<String, dynamic> toJson() => {
+        'scene': {
+          'mode': mode,
+          'pages': pages
+              .map((p) => {
+                    'id': p.id,
+                    'name': p.name,
+                    if (p.pcbHeight != null) 'pcbHeight': p.pcbHeight,
+                    if (p.pcbWidth != null) 'pcbWidth': p.pcbWidth,
+                    'chrome': p.chrome.toJson(),
+                  })
+              .toList(),
+          'activePage': activePage,
+        },
+        'panels': panels.map((p) => p.toJson()).toList(),
+        'reasoning': reasoning,
+      };
 }
 
 class ScenePage {
@@ -417,6 +436,30 @@ class SceneChrome {
 
   bool get hasAny =>
       messageFlow != null || input != null || settingsButton != null;
+
+  Map<String, dynamic> toJson() => {
+        if (messageFlow != null)
+          'messageFlow': {
+            if (messageFlow!.x != null) 'x': messageFlow!.x,
+            if (messageFlow!.y != null) 'y': messageFlow!.y,
+            if (messageFlow!.width != null) 'width': messageFlow!.width,
+            if (messageFlow!.height != null) 'height': messageFlow!.height,
+          },
+        if (input != null)
+          'input': {
+            if (input!.x != null) 'x': input!.x,
+            if (input!.y != null) 'y': input!.y,
+            if (input!.width != null) 'width': input!.width,
+            if (input!.height != null) 'height': input!.height,
+          },
+        if (settingsButton != null)
+          'settingsButton': {
+            if (settingsButton!.x != null) 'x': settingsButton!.x,
+            if (settingsButton!.y != null) 'y': settingsButton!.y,
+            if (settingsButton!.width != null) 'width': settingsButton!.width,
+            if (settingsButton!.height != null) 'height': settingsButton!.height,
+          },
+      };
 }
 
 /// 消息流声明。
@@ -499,6 +542,13 @@ class UiPanel {
             .map((f) => UiFieldIntent.fromJson(Map<String, dynamic>.from(f)))
             .toList(),
       );
+
+  Map<String, dynamic> toJson() => {
+        'kind': kind,
+        'page': page,
+        'title': title,
+        'fields': fields.map((f) => f.toJson()).toList(),
+      };
 }
 
 class UiFieldIntent {
@@ -552,4 +602,18 @@ class UiFieldIntent {
       scroll: json['scroll'] == true,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'type': type,
+        'display': display,
+        if (min != null) 'min': min,
+        if (max != null) 'max': max,
+        'initialValue': initialValue,
+        if (x != null) 'x': x,
+        if (y != null) 'y': y,
+        if (width != null) 'width': width,
+        if (height != null) 'height': height,
+        if (scroll) 'scroll': true,
+      };
 }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/ai_ui_blueprint.dart';
 import '../core/ai_ui_designer.dart';
 import '../core/ai_visual_extractor.dart';
 import '../core/conversion_models.dart';
@@ -177,6 +178,14 @@ typedef AiRefineFn = Future<List<RefineIssue>> Function(
   Map<String, dynamic> sourceJson,
 );
 
+/// 蓝图确认回调：UI 层弹出蓝图让用户逐条确认/修改。
+///
+/// 输入 AI 产出的蓝图，返回**用户确认/修改后**的蓝图。
+/// 返回 null 表示用户取消本次 UI 生成（回退到确定性模板）。
+/// 若未注入此回调，则视为「不确认」，直接进入最终意图生成。
+typedef BlueprintConfirmer =
+    Future<UiBlueprint?> Function(UiBlueprint blueprint);
+
 /// 流水线编排器。每个方法只跑一个阶段，可被 UI 单独触发/重跑。
 class ConversionPipeline {
   /// 第二步实现（可空：未配置 AI 时该步不可用）。
@@ -185,7 +194,15 @@ class ConversionPipeline {
   /// 第三步实现（可空）。
   final AiRefineFn? aiRefine;
 
-  ConversionPipeline({this.aiClassify, this.aiRefine});
+  /// 蓝图确认回调（可空）。注入后 UI 生成会走「蓝图 → 确认 → 最终意图」；
+  /// 不注入则直接生成最终意图（跳过确认）。
+  final BlueprintConfirmer? blueprintConfirmer;
+
+  ConversionPipeline({
+    this.aiClassify,
+    this.aiRefine,
+    this.blueprintConfirmer,
+  });
 
   /// 从字节创建工作项（不立即转换）。
   CardWorkItem createItem(String sourceName, List<int> bytes) {
@@ -302,15 +319,17 @@ class ConversionPipeline {
       BuiltAssembly? built;
       var aiAttempted = false;
       String? aiFailReason;
+      final reviewNotes = <ConversionNote>[];
       if (extraction.usableScripts.isNotEmpty) {
         try {
           aiAttempted = true;
-          final intent = await AiUiDesigner.design(
+          final intent = await _produceIntent(
             extraction,
-            barInitialValues: initValues,
-            // 原卡开场白完整原文：让 AI 直接读连贯标记，而非只读提取摘要。
+            cardName: card['name']?.toString() ?? '',
+            initValues: initValues,
             greetingsText: [fm, ...alts],
             onToken: onToken,
+            reviewNotes: reviewNotes,
           );
           if (intent.hasUi) {
             // 合并 <字段>值</字段> 格式（branchPresets 已按分支提取）。
@@ -430,6 +449,7 @@ class ConversionPipeline {
           ConversionNote.info('AI 创作失败原因：$aiFailReason'),
         ...extraction.notes.map(ConversionNote.info),
         ...built.notes.map(ConversionNote.info),
+        ...reviewNotes,
         ...sanitizeNotes.map(ConversionNote.info),
       ];
 
@@ -471,6 +491,88 @@ class ConversionPipeline {
       item.stageStatus[PipelineStage.buildUi] = StageStatus.failed;
       rethrow;
     }
+  }
+
+  /// 用「蓝图 → 确认 → 最终意图 → AI 自检」流程产出最终意图。
+  ///
+  /// 与直接 `AiUiDesigner.design` 相比：
+  /// - 若注入了 blueprintConfirmer，先让 AI 出分条目蓝图、交用户确认/修改；
+  /// - 再把（确认后的）蓝图交给 AI 落地为最终意图（逐条查 API、实现不了降级）；
+  /// - 最后让 AI 自检意图（重叠/越界/长文滚动），问题写进 reviewNotes 供用户参考。
+  ///
+  /// 未注入 blueprintConfirmer 时退化为原路径（直接 design 出意图）。
+  Future<UiCreationIntent> _produceIntent(
+    UiExtraction extraction, {
+    required String cardName,
+    required Map<String, String> initValues,
+    required List<String> greetingsText,
+    required void Function(String)? onToken,
+    required List<ConversionNote> reviewNotes,
+  }) async {
+    final confirmer = blueprintConfirmer;
+    UiCreationIntent intent;
+    if (confirmer != null) {
+      // —— 蓝图阶段 ——
+      final blueprint = await AiUiBlueprint.designBlueprint(
+        extraction,
+        cardName: cardName,
+        onToken: onToken,
+      );
+      // 用户确认/修改；取消则抛异常让上层回退模板
+      final confirmed = await confirmer(blueprint);
+      if (confirmed == null) {
+        throw const FormatException('用户取消了 UI 蓝图');
+      }
+      // —— 蓝图 → 最终意图（进 API 库检验 + 降级） ——
+      final result = await AiUiBlueprint.designIntentFromBlueprint(
+        confirmed,
+        cardName: cardName,
+        onToken: onToken,
+      );
+      for (final n in result.downgradeNotes) {
+        reviewNotes.add(ConversionNote.info('【AI 降级】$n'));
+      }
+      intent = result.intent;
+    } else {
+      // —— 未注入确认回调：直接走原有 design 路径 ——
+      intent = await AiUiDesigner.design(
+        extraction,
+        barInitialValues: initValues,
+        greetingsText: greetingsText,
+        onToken: onToken,
+      );
+    }
+
+    // —— 最终意图 AI 自检：只提示，不改内容 ——
+    try {
+      final issues = await AiUiBlueprint.reviewIntent(intent, onToken: onToken);
+      if (issues.isNotEmpty) {
+        reviewNotes.add(ConversionNote.info(
+            'AI 自检发现 ${issues.length} 处布局问题（仅供参考，可到编辑器调整）：'));
+        for (final issue in issues) {
+          final sev = issue.severity == 'error' ? '⚠' : '·';
+          reviewNotes.add(ConversionNote.info(
+              '$sev [${issue.page}] ${issue.message}'
+              '${issue.suggestion != null ? '（建议：${issue.suggestion}）' : ''}'));
+        }
+      } else {
+        reviewNotes.add(ConversionNote.info('AI 自检：未发现明显布局问题。'));
+      }
+    } catch (_) {
+      // 自检失败不阻断
+    }
+    return intent;
+  }
+
+  /// AI 自检最终意图：让 AI 检查重叠/越界/长文未滚动等，返回问题清单。
+  ///
+  /// 这是「设计完成后让 AI 过一遍」的最后检查环节。问题只作提示，
+  /// 不改内容（避免 AI 直接改三层嵌套 JSON 的静默错误）。
+  Future<List<UiReviewIssue>> runUiReviewStage(
+    UiCreationIntent intent, {
+    void Function(String token)? onToken,
+  }) async {
+    return AiUiBlueprint.reviewIntent(intent, onToken: onToken);
   }
 
   /// 第四步：检查精修。基于"当前最新结果"。可重跑。

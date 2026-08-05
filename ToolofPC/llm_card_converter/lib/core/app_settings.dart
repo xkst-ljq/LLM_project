@@ -8,6 +8,7 @@ class AppSettings {
   static const _kApiBaseUrl = 'api_base_url';
   static const _kApiKey = 'api_key';
   static const _kApiModel = 'api_model';
+  static const _kConfirmBlueprint = 'confirm_blueprint';
 
   /// 默认转译保存目录。空字符串表示未设置（首次保存时会询问）。
   static Future<String> getOutputDir() async {
@@ -41,6 +42,21 @@ class AppSettings {
     await prefs.setString(_kApiBaseUrl, c.baseUrl);
     await prefs.setString(_kApiKey, c.apiKey);
     await prefs.setString(_kApiModel, c.model);
+  }
+
+  // ---------- 蓝图确认开关（默认开启） ----------
+
+  /// 是否在生成 UI 前让 AI 先出「分条目蓝图」并等待用户确认。
+  /// 默认开启；关闭则跳过确认、AI 直接生成最终意图。
+  static Future<bool> getConfirmBlueprint() async {
+    final prefs = await SharedPreferences.getInstance();
+    // 默认 true（开启确认）
+    return prefs.getBool(_kConfirmBlueprint) ?? true;
+  }
+
+  static Future<void> setConfirmBlueprint(bool v) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kConfirmBlueprint, v);
   }
 }
 

@@ -58,6 +58,7 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
   bool _fetching = false;
   String? _fetchMsg;
   bool _obscureKey = true;
+  bool _confirmBlueprint = true;
 
   @override
   void initState() {
@@ -67,12 +68,14 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
 
   Future<void> _load() async {
     final c = await AppSettings.getApiConfig();
+    final confirmBp = await AppSettings.getConfirmBlueprint();
     if (!mounted) return;
     setState(() {
       _urlCtrl.text = c.baseUrl;
       _keyCtrl.text = c.apiKey;
       _modelCtrl.text = c.model;
       _selectedModel = c.model.isEmpty ? null : c.model;
+      _confirmBlueprint = confirmBp;
     });
   }
 
@@ -140,6 +143,7 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
       apiKey: _keyCtrl.text.trim(),
       model: model,
     ));
+    await AppSettings.setConfirmBlueprint(_confirmBlueprint);
     if (!mounted) return;
     Navigator.pop(context, true);
   }
@@ -267,6 +271,19 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
                   ),
                   onChanged: (v) => _selectedModel = v.trim(),
                 ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('UI 生成前显示蓝图确认',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                subtitle: const Text(
+                  '开启：AI 先出「分条目 UI 蓝图」，供你逐条确认/修改后再生成。\n'
+                  '关闭：AI 直接生成最终 UI。',
+                  style: TextStyle(fontSize: 11),
+                ),
+                value: _confirmBlueprint,
+                onChanged: (v) => setState(() => _confirmBlueprint = v),
+              ),
             ],
           ),
         ),
