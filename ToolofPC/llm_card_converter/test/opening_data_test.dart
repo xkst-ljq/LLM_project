@@ -60,8 +60,8 @@ void main() {
             title: '状态',
             page: 'p1',
             fields: [
-              UiFieldIntent(name: '生命', type: 'number', display: 'progress'),
-              UiFieldIntent(name: '称号', type: 'text', display: 'text'),
+              UiFieldIntent(name: '生命', type: 'number', display: 'progress', x: 14, y: 30, width: 100, height: 14),
+              UiFieldIntent(name: '称号', type: 'text', display: 'text', x: 14, y: 60, width: 100, height: 22),
             ],
           ),
         ],

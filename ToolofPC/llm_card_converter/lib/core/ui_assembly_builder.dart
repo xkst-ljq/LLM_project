@@ -2014,14 +2014,8 @@ class UiAssemblyBuilder {
       pageElements[p.id] = <Map<String, dynamic>>[];
     }
 
-    // 每页的纵向游标：AI 没给布局时按此**接续排布**，而不是各自从 y=250
-    // 开始——否则两个面板挤到同一页就会完全重叠。AI 若给了 x/y/w/h
-    // 则优先用 AI 的布局（Step B 只做 clamp/兜底）。
-    final pageCursor = <String, double>{
-      for (final p in intent.pages) p.id: 250.0, // 消息流下方
-    };
-
     // 每页视觉主题（按 AI 声明的 style，回落默认 dark）。
+    // 注意：A 类——布局完全由 AI 显式坐标决定，不再有任何自动纵向排布。
     final pageThemes = <String, UiVisualTheme>{
       for (final p in intent.pages) p.id: UiVisualTheme.byName(p.style),
     };
@@ -2034,47 +2028,22 @@ class UiAssemblyBuilder {
         () => <Map<String, dynamic>>[],
       );
       final pageTheme = pageThemes[page] ?? UiVisualTheme.defaultTheme();
-      // 该面板是否含 AI 显式布局（任一字段给了 x/y/w/h）
-      final hasExplicitLayout = panel.fields.any(
-        (f) => f.x != null || f.y != null || f.width != null || f.height != null,
-      );
-
-      var y = pageCursor[page] ?? 250.0;
-      if (panel.title.isNotEmpty && !hasExplicitLayout) {
-        elements.add(_text(
-          id: nextId('el'),
-          name: '面板标题',
-          text: panel.title,
-          x: pad,
-          y: y,
-          w: innerW,
-          h: 24,
-          fontSize: 15,
-          color: pageTheme.titleColor,
-          align: 'left',
-          layer: 1,
-        ));
-        y += 30;
-      }
 
       for (final field in panel.fields) {
         final fid = 'sf_${_slug(field.name)}';
         // 标签显示中文（AI 常用英文缩写，玩家看不懂）。
         final label = _sceneLabelOf(field.name);
 
-        // AI 给了布局就用 AI 的位置/尺寸，否则用兜底纵向游标。
-        double fx, fy, fw, fh;
-        if (field.x != null || field.y != null ||
-            field.width != null || field.height != null) {
-          fx = field.x ?? pad;
-          fy = field.y ?? y;
-          fw = field.width ?? innerW;
-          fh = field.height ?? 22;
-        } else {
-          fx = pad;
-          fy = y;
-          fw = innerW;
-          fh = 22;
+        // A 类：不再自动排布。AI 必须为每个字段提供完整坐标 (x/y/w/h)，
+        // 缺失则跳过该字段并记录提示——杜绝模板化自动布局。
+        final fx = field.x;
+        final fy = field.y;
+        final fw = field.width;
+        final fh = field.height;
+        if (fx == null || fy == null || fw == null || fh == null) {
+          notes.add('⚠ 字段「${field.name}」缺少完整坐标 (x/y/w/h)，已跳过。'
+              'AI 必须为每个字段显式提供位置与尺寸。');
+          continue;
         }
 
         if (field.display == 'progress' && field.type == 'number') {
@@ -2096,13 +2065,13 @@ class UiAssemblyBuilder {
             min: field.min ?? 0.0,
             max: field.max ?? 100.0,
           ));
-          // progress 本身不自带 label，加一行文本标签（AI 没给布局时在条上方）
+          // progress 本身不自带 label，加一行文本标签（在条上方）。
           elements.add(_text(
             id: nextId('el'),
             name: '${field.name}标签',
             text: label,
             x: fx,
-            y: (field.y != null) ? fy : fy - 16,
+            y: fy - 16,
             w: fw,
             h: 14,
             fontSize: 10,
@@ -2121,7 +2090,6 @@ class UiAssemblyBuilder {
             'order': statusFields.length,
             'owner': 'player',
           });
-          if (field.y == null) y += 34;
         } else if (field.display == 'button') {
           // 按钮字段：底板 surface + 文本 + 透明点击热区（sendsMessage）。
           // 之前按钮被当文本渲染（没有 surface 装饰），看着很简陋。
@@ -2175,7 +2143,7 @@ class UiAssemblyBuilder {
             'order': statusFields.length,
             'owner': 'player',
           });
-          if (field.y == null) y += bH + 6;
+          // (无兜底排布：坐标由 AI 显式给出)
         } else {
           // 文本字段：AI 明确 scroll:true 时用固定高度滚动框；
           // 否则按内容长度估算（兜底）。若 AI 给了 x/y/w/h 则用 AI 的，
@@ -2212,21 +2180,18 @@ class UiAssemblyBuilder {
             'order': statusFields.length,
             'owner': 'player',
           });
-          if (field.y == null) y += effH + 6;
+          // (无兜底排布：坐标由 AI 显式给出)
         }
       }
 
-      // 面板底部留一个间距（仅当面板走兜底纵向排布时）。
-      pageCursor[page] = (hasExplicitLayout ? pageCursor[page]! : y) + 16.0;
     }
 
     // 组装 pages：加底部底板 + 由 AI 声明的外壳（消息流/输入框/设置按钮）
     // + 多页面切换（手势）
     //
-    // **核心原则**：外壳组件不再硬塞，而是执行 AI 的 chrome 声明。
-    // AI 声明某页有消息流/输入框/设置按钮就放，没声明就不放（纯内容页）。
-    // 唯一兜底：整卡没有任何页声明 settingsButton 时，补一个到首页不碍事
-    // 的位置（引擎硬性要求，否则 scene 不启用），并写进 notes。
+    // **核心原则（A 类）**：外壳组件完全执行 AI 的 chrome 声明，零兜底。
+    // AI 声明什么就放什么；未声明的绝不自动补。settingsButton 若整卡都没
+    // 声明，只记录提示（不再兜底补），强制 AI 显式设计。
     final pagesJson = <Map<String, dynamic>>[];
     var sort = 0;
     final pageCount = intent.pages.length;
@@ -2239,8 +2204,9 @@ class UiAssemblyBuilder {
     bool anyExplicitPageHeight = false;
     double maxExplicitPageHeight = 0.0;
     for (final p in intent.pages) {
-      final cb = pageCursor[p.id] ?? 250.0;
-      if (cb > maxContentBottom) maxContentBottom = cb;
+      // A 类：无自动布局，内容底部不再由字段推算（坐标由 AI 显式给出）。
+      // 这里只保留 chrome 底部作为 PCB 高度下限。
+      if (250.0 > maxContentBottom) maxContentBottom = 250.0;
       // chrome 组件底部（消息流/输入框/设置按钮）
       void consider(double? x, double? y, double? w, double? h) {
         if (y != null && h != null && (y + h) > maxChromeBottom) {
@@ -2278,13 +2244,13 @@ class UiAssemblyBuilder {
     }
     final pcbH = (contentBottom + 130.0).clamp(900.0, 2000.0);
 
-    // 检查整卡是否有设置按钮（引擎硬性要求）。
+    // 检查整卡是否有设置按钮（引擎硬性要求，A 类：不再兜底补，必须 AI 显式声明）。
     bool anySettingsButton = intent.pages.any(
       (p) => p.chrome.settingsButton != null,
     );
     if (!anySettingsButton) {
-      notes.add('AI 未在任何页面声明「打开聊天设置」按钮（引擎硬性要求），'
-          '已在首页兜底补一个，请到编辑器确认位置。');
+      notes.add('⚠ AI 未在任何页面声明「打开聊天设置」按钮（引擎硬性要求）。'
+          '必须显式声明至少一个 chrome.settingsButton，否则 scene 无法启用。');
     }
 
     for (var pIdx = 0; pIdx < pageCount; pIdx++) {
@@ -2352,21 +2318,16 @@ class UiAssemblyBuilder {
         ));
       }
 
-      // ── 设置按钮：AI 声明了放；整卡都没有时在首页兜底补一个 ──
-      if (chrome.settingsButton != null ||
-          (!anySettingsButton && pIdx == 0)) {
-        final sb = chrome.settingsButton;
-        final x = sb?.x ?? pad + innerW - 40;
-        final y = sb?.y ?? pcbH - 50;
-        final w = sb?.width ?? 40.0;
-        final h = sb?.height ?? 40.0;
+      // ── 设置按钮：A 类，仅当 AI 显式声明时放；不兜底补 ──
+      if (chrome.settingsButton != null) {
+        final sb = chrome.settingsButton!;
         extras.add(_button(
           id: nextId('el'),
           name: '设置',
-          x: x,
-          y: y,
-          w: w,
-          h: h,
+          x: sb.x ?? pad + innerW - 40,
+          y: sb.y ?? pcbH - 50,
+          w: sb.width ?? 40.0,
+          h: sb.height ?? 40.0,
           layer: 2,
           sendsMessage: false,
           keyAction: true,

@@ -36,12 +36,14 @@ void main() {
                 min: 0,
                 max: 100,
                 initialValue: '', // AI 没给
+                x: 14, y: 30, width: 100, height: 14,
               ),
               UiFieldIntent(
                 name: '武器',
                 type: 'text',
                 display: 'text',
                 initialValue: '', // AI 没给
+                x: 14, y: 60, width: 100, height: 22,
               ),
             ],
           ),
@@ -88,6 +90,7 @@ void main() {
                 min: 0,
                 max: 100,
                 initialValue: '80', // AI 给了
+                x: 14, y: 30, width: 100, height: 14,
               ),
             ],
           ),
@@ -122,6 +125,7 @@ void main() {
                 min: 0,
                 max: 100,
                 initialValue: '',
+                x: 14, y: 30, width: 100, height: 14,
               ),
             ],
           ),
@@ -171,23 +175,23 @@ void main() {
   });
 
   group('buildSceneFromIntent - 同页多面板不重叠', () {
-    test('两个面板放同一页时纵向接续排布', () {
+    test('两个面板放同一页时用显式坐标，互不重叠', () {
       final intent = UiCreationIntent(
         mode: 'scene',
-        pages: const [ScenePage(id: 'p1', name: '主场景')],
+        pages: const [ScenePage(id: 'p1', name: '主场景', pcbHeight: 700)],
         activePage: 'p1',
         panels: [
           UiPanel(
             kind: 'quest_list',
             page: 'p1',
             title: '任务',
-            fields: const [UiFieldIntent(name: 'quest', type: 'text', display: 'text', initialValue: '采集安神草')],
+            fields: const [UiFieldIntent(name: 'quest', type: 'text', display: 'text', initialValue: '采集安神草', x: 14, y: 30, width: 200, height: 24)],
           ),
           UiPanel(
             kind: 'option_bar',
             page: 'p1',
             title: '选择',
-            fields: const [UiFieldIntent(name: 'option1_text', type: 'text', display: 'text', initialValue: '采集')],
+            fields: const [UiFieldIntent(name: 'option1_text', type: 'text', display: 'text', initialValue: '采集', x: 14, y: 80, width: 200, height: 24)],
           ),
         ],
         reasoning: const [],
@@ -202,12 +206,12 @@ void main() {
       final pages = (jsonDecode(json['pages'] as String) as List).cast<Map<String, dynamic>>();
       final elements = (pages.first['elements'] as List).cast<Map<String, dynamic>>();
 
-      // 找两个面板字段的 y 坐标：同一页应接续排布，不得相同（否则重叠）
-      double? yOf(String name) {
+      // 找两个面板字段的 y 坐标：应严格等于 AI 给的显式坐标（非自动排布）
+      double? yOf(String text) {
         for (final e in elements) {
           final m = Map<String, dynamic>.from(e['module'] as Map);
           final props = Map<String, dynamic>.from(m['properties'] as Map);
-          if (props['text'] == name) {
+          if (props['text'] == text) {
             final off = Map<String, dynamic>.from(e['offset'] as Map);
             return (off['y'] as num).toDouble();
           }
@@ -217,11 +221,9 @@ void main() {
 
       final yQuest = yOf('采集安神草');
       final yOption = yOf('采集');
-      expect(yQuest, isNotNull);
-      expect(yOption, isNotNull);
-      // 第二个面板必须排在第一个面板下面（quest 文本在 option 之上）
-      expect(yOption!, greaterThan(yQuest!),
-          reason: '同一页两个面板应接续排布，option 面板应在 quest 面板之下');
+      expect(yQuest, 30.0, reason: 'quest 用 AI 给的 y=30');
+      expect(yOption, 80.0, reason: 'option 用 AI 给的 y=80');
+      expect(yOption!, greaterThan(yQuest!));
     });
   });
 
@@ -279,16 +281,16 @@ void main() {
       expect(findY('desc'), 60.0, reason: 'AI 显式布局应覆盖兜底纵向排布');
     });
 
-    test('AI 未给布局时仍兜底纵向排布（向后兼容）', () {
+    test('字段缺坐标时被跳过并记录提示（A 类零兜底）', () {
       final intent = UiCreationIntent(
         mode: 'scene',
-        pages: const [ScenePage(id: 'p1', name: '页')],
+        pages: const [ScenePage(id: 'p1', name: '页', pcbHeight: 700)],
         activePage: 'p1',
         panels: [
           UiPanel(
             kind: 'status_bar', page: 'p1', title: '状态',
             fields: const [
-              UiFieldIntent(name: 'HP', type: 'number', display: 'progress', initialValue: '100'),
+              // 无坐标 → 应被跳过
               UiFieldIntent(name: '名字', type: 'text', display: 'text', initialValue: '阿明'),
             ],
           ),
@@ -302,19 +304,14 @@ void main() {
       final pages = (jsonDecode(json['pages'] as String) as List)
           .cast<Map<String, dynamic>>();
       final elements = (pages.first['elements'] as List).cast<Map<String, dynamic>>();
-      // 名字文本应在 HP 之后（兜底纵向），y 大于 250
-      double? yOf(String name) {
-        for (final e in elements) {
-          final m = Map<String, dynamic>.from(e['module'] as Map);
-          if (m['name'] == name) {
-            final off = Map<String, dynamic>.from(e['offset'] as Map);
-            return (off['y'] as num).toDouble();
-          }
-        }
-        return null;
-      }
-      expect(yOf('名字'), isNotNull);
-      expect(yOf('名字')!, greaterThan(250.0));
+      // 字段因缺坐标被跳过，不应出现在元素里（只有底板）
+      bool hasName = elements.any((e) {
+        final m = Map<String, dynamic>.from(e['module'] as Map);
+        return m['name'] == '名字';
+      });
+      expect(hasName, isFalse, reason: '缺坐标的字段应被跳过，不做自动排布');
+      expect(built.notes.any((n) => n.contains('缺少完整坐标')), isTrue,
+          reason: '应提示字段缺少坐标');
     });
   });
 
