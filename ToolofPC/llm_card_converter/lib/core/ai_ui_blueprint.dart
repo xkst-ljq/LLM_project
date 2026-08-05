@@ -467,6 +467,15 @@ const String kIntentSystemPrompt = '''
 3. 实现不了的条目 → **降级为可行的替代方案**（在 reasoning 里说明降级原因）；
 4. 检查整体布局：页高有限、长文本滚动、字段与 chrome 不重叠、PCB 不高。
 
+【最重要的布局硬约束】
+- **画布宽度恒为 360**。所有元素 x+width 必须落 0~360 内（x≥0，x+width≤360）。
+  这是绝对硬边界。chrome 的 messageFlow/input/settingsButton 的 x+width 同样 ≤360。
+- 每页高度 pcbHeight 建议 650~900，字段 y+height 尽量 ≤ pcbHeight。
+- 给出坐标后**在心里复核**：x+width 是否 >360？两个字段矩形是否相交（重叠）？
+  越界/重叠是最高频错误，输出前自查。
+- 想两列/横向：x 用 14 与 ~180 两档，各 width ~166；通栏 x=14 width≈332；
+  靠右小按钮（设置）x≈300 width≈44。
+
 【UI engine 能力库（可执行写法）】
 - 字段 display：progress(数值条,需 min/max) / text(文本) / button(可点按钮,点击发文本)
 - 长文本：text 字段加 "scroll":true + 固定 height，内容超出框内滚动，不撑高 PCB

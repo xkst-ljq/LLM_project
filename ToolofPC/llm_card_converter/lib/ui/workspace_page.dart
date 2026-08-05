@@ -404,22 +404,30 @@ class _WorkspacePageState extends State<WorkspacePage> {
                         const Text('简短日志：',
                             style: TextStyle(fontWeight: FontWeight.bold)),
                         if (_liveOutput != null)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                                const SizedBox(width: 6),
-                                Text('AI 思考中… ${_liveOutput!.title}',
-                                    style: const TextStyle(
-                                        fontSize: 11, color: Colors.teal)),
-                              ],
+                          Flexible(
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(
+                                      'AI 思考中… ${_liveOutput!.title}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontSize: 11, color: Colors.teal),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         IconButton(
