@@ -252,7 +252,9 @@ class AiUiBlueprint {
     }
     if (ex.branchPresets.isNotEmpty) {
       buf.writeln('\n开场分支初始值:');
-      for (final e in ex.branchPresets.entries) buf.writeln('  分支${e.key}: ${e.value}');
+      for (final e in ex.branchPresets.entries) {
+        buf.writeln('  分支${e.key}: ${e.value}');
+      }
     }
     if (ex.openingActions.isNotEmpty) {
       buf.writeln('\n开场选项: ${ex.openingActions.join(' / ')}');

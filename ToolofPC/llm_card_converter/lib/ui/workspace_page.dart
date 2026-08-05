@@ -56,8 +56,8 @@ class _AiStageOutput {
 
   /// 该阶段 AI 收到的用户 prompt（供「询问 AI」作为上下文）。
   final StringBuffer prompt;
-  bool collapsed;
-  _AiStageOutput(this.title, this.text, {String? prompt, this.collapsed = true})
+  bool collapsed = true;
+  _AiStageOutput(this.title, this.text, {String? prompt})
       : prompt = StringBuffer(prompt ?? '');
 }
 
@@ -483,16 +483,17 @@ class _WorkspacePageState extends State<WorkspacePage> {
   /// 打开「询问 AI」对话框：把本轮转译的完整上下文（prompt+回复）喂给 AI，
   /// 让用户持续追问，定位设计问题的根源。
   Future<void> _openAskAiDialog() async {
-    final context = AiTranscript.buildContext();
-    if (context.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    final ctx = context;
+    final aiContext = AiTranscript.buildContext();
+    if (aiContext.isEmpty) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
         const SnackBar(content: Text('本轮没有可用的 AI 上下文')),
       );
       return;
     }
     await showDialog<void>(
-      context: context,
-      builder: (_) => AskAiDialog(contextText: context),
+      context: ctx,
+      builder: (_) => AskAiDialog(contextText: aiContext),
     );
   }
 
