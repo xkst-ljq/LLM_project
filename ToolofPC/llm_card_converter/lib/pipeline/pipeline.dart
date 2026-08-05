@@ -520,6 +520,8 @@ class ConversionPipeline {
       final blueprint = await AiUiBlueprint.designBlueprint(
         extraction,
         cardName: cardName,
+        greetingsText: greetingsText,
+        barInitialValues: initValues,
         onToken: onToken,
       );
       // 用户确认/修改；取消则抛异常让上层回退模板

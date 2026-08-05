@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/app_settings.dart';
 import '../core/api_service.dart';
+
+/// 全局保存的「询问 AI」对话历史：关闭对话框后仍保留，
+/// 以便用户对照 AI 做的 UI 再提问。
+final List<({String role, String text})> _persistedDialogue = [];
 
 /// 「询问 AI」对话框：把本轮转译的完整上下文（prompt + 回复）喂给 AI，
 /// 让用户持续追问「为什么这样设计、你知道什么、不知道什么」。
@@ -19,9 +24,11 @@ class AskAiDialog extends StatefulWidget {
 
 class _AskAiDialogState extends State<AskAiDialog> {
   final TextEditingController _input = TextEditingController();
-  final List<({String role, String text})> _messages = [];
   bool _asking = false;
   bool _showContext = false;
+
+  /// 引用全局持久对话（关闭后不丢，重开继续）。
+  List<({String role, String text})> get _messages => _persistedDialogue;
 
   @override
   void dispose() {
@@ -77,6 +84,26 @@ class _AskAiDialogState extends State<AskAiDialog> {
     }
   }
 
+  /// 复制全部对话（含说话方），方便对照 UI 提问时引用。
+  Future<void> _copyDialogue() async {
+    final buf = StringBuffer();
+    if (_messages.isEmpty) {
+      buf.writeln('（尚无对话）');
+    } else {
+      for (final m in _messages) {
+        final who = m.role == 'user' ? '用户' : 'AI';
+        buf.writeln('【$who】');
+        buf.writeln(m.text);
+        buf.writeln();
+      }
+    }
+    await Clipboard.setData(ClipboardData(text: buf.toString()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('全部对话已复制')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -99,6 +126,11 @@ class _AskAiDialogState extends State<AskAiDialog> {
                     onPressed: () =>
                         setState(() => _showContext = !_showContext),
                     child: Text(_showContext ? '隐藏上下文' : '查看上下文'),
+                  ),
+                  IconButton(
+                    tooltip: '复制全部对话',
+                    icon: const Icon(Icons.copy_all_outlined, size: 18),
+                    onPressed: _copyDialogue,
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 18),

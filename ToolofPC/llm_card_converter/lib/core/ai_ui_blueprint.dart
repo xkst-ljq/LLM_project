@@ -23,15 +23,22 @@ class AiUiBlueprint {
   const AiUiBlueprint._();
 
   /// 步骤 1：读原卡 → 产出分条目蓝图。
+  ///
+  /// [greetingsText] 原卡开场白（first_mes + alternate_greetings）完整原文，
+  /// [barInitialValues] 从开场白解析出的字段初始值——必须喂给 AI，
+  /// 否则它看不到真实数据只能编造占位（此前蓝图流程漏喂，导致 UI 无文本）。
   static Future<UiBlueprint> designBlueprint(
     UiExtraction extraction, {
     String cardName = '',
+    List<String> greetingsText = const [],
+    Map<String, String> barInitialValues = const {},
     void Function(String)? onToken,
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) throw StateError('未配置 AI（请先在设置中填写 API）');
 
-    final raw = await _chat(cfg, '蓝图设计', kBlueprintSystemPrompt, _blueprintUser(extraction, cardName), onToken);
+    final raw = await _chat(cfg, '蓝图设计', kBlueprintSystemPrompt,
+        _blueprintUser(extraction, cardName, greetingsText, barInitialValues), onToken);
     final parsed = _parseJson(raw);
     if (parsed == null) throw const FormatException('AI 返回的不是合法 JSON');
     final bp = UiBlueprint.fromJson(parsed);
@@ -239,10 +246,32 @@ class AiUiBlueprint {
     return null;
   }
 
-  static String _blueprintUser(UiExtraction ex, String cardName) {
+  static String _blueprintUser(
+    UiExtraction ex,
+    String cardName, [
+    List<String> greetingsText = const [],
+    Map<String, String> barInitialValues = const {},
+  ]) {
     final buf = StringBuffer();
     buf.writeln('请分析以下角色卡，产出一份分条目 UI 蓝图。\n');
     buf.writeln('角色名：$cardName');
+
+    // 原卡开场白完整原文 + 初始值：AI 必须看到真实数据，否则会编造占位。
+    if (barInitialValues.isNotEmpty) {
+      buf.writeln('\n【开场白中的字段初始值】（据此还原真实显示值，别编造）：');
+      final keys = barInitialValues.keys.toList()..sort();
+      buf.writeln(keys.map((k) => '$k=$barInitialValues[$k]').join(' | '));
+    }
+    if (greetingsText.isNotEmpty) {
+      buf.writeln('\n【原卡开场白原文】（含结构化标记，字段值第一手来源）：');
+      for (final g in greetingsText) {
+        final t = g.trim();
+        if (t.isEmpty) continue;
+        buf.writeln('--- 开场白 ---');
+        buf.writeln(t.length > 3000 ? t.substring(0, 3000) : t);
+      }
+    }
+
     for (final script in ex.scripts) {
       buf.writeln('---');
       buf.writeln('脚本: ${script.scriptName} 类型: ${script.kind.name}');
