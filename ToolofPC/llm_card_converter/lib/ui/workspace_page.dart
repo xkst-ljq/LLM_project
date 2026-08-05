@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../core/ai_classifier.dart';
 import '../core/ai_refiner.dart';
+import '../core/ai_ui_blueprint.dart';
 import '../core/app_settings.dart';
 import '../core/conversion_writer.dart';
 import '../core/history_service.dart';
