@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'api_service.dart';
 import 'app_settings.dart';
+import 'ai_transcript.dart';
 import 'ai_ui_designer.dart';
 import 'regex_ui_extractor.dart';
 
@@ -30,7 +31,7 @@ class AiUiBlueprint {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) throw StateError('未配置 AI（请先在设置中填写 API）');
 
-    final raw = await _chat(cfg, kBlueprintSystemPrompt, _blueprintUser(extraction, cardName), onToken);
+    final raw = await _chat(cfg, '蓝图设计', kBlueprintSystemPrompt, _blueprintUser(extraction, cardName), onToken);
     final parsed = _parseJson(raw);
     if (parsed == null) throw const FormatException('AI 返回的不是合法 JSON');
     final bp = UiBlueprint.fromJson(parsed);
@@ -49,6 +50,7 @@ class AiUiBlueprint {
 
     final raw = await _chat(
       cfg,
+      '意图落地',
       kIntentSystemPrompt,
       _intentUser(blueprint, cardName),
       onToken,
@@ -73,6 +75,7 @@ class AiUiBlueprint {
 
     final raw = await _chat(
       cfg,
+      '自检',
       kReviewSystemPrompt,
       jsonEncode(intent.toJson()),
       onToken,
@@ -186,7 +189,7 @@ class AiUiBlueprint {
     buf.writeln('\n【原意图】\n${jsonEncode(intent.toJson())}\n');
     buf.writeln('请输出修正后的意图 JSON（结构与之前一致）。只输出 JSON，不要 markdown 代码块。');
 
-    final raw = await _chat(cfg, kReviseSystemPrompt, buf.toString(), onToken);
+    final raw = await _chat(cfg, '布局修正', kReviseSystemPrompt, buf.toString(), onToken);
     final parsed = _parseJson(raw);
     if (parsed == null) throw const FormatException('AI 修正返回的不是合法 JSON');
     return UiCreationIntent.fromJson(parsed);
@@ -196,25 +199,31 @@ class AiUiBlueprint {
 
   static Future<String> _chat(
     ApiConfig cfg,
+    String stage,
     String system,
     String user,
     void Function(String)? onToken,
   ) async {
+    String raw;
     if (onToken != null) {
       try {
-        return await ApiService.chatCompleteStream(
+        raw = await ApiService.chatCompleteStream(
           baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model,
           systemPrompt: system, userPrompt: user, temperature: 0.4,
           onToken: onToken,
         );
+        AiTranscript.add(stage, '【系统】\n$system\n\n【用户】\n$user', raw);
+        return raw;
       } catch (_) {
         // 流式不可用 → 回退
       }
     }
-    return ApiService.chatComplete(
+    raw = await ApiService.chatComplete(
       baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model,
       systemPrompt: system, userPrompt: user, temperature: 0.4,
     );
+    AiTranscript.add(stage, '【系统】\n$system\n\n【用户】\n$user', raw);
+    return raw;
   }
 
   static Map<String, dynamic>? _parseJson(String raw) {

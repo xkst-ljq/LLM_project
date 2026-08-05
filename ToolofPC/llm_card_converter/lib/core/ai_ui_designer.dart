@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'ai_transcript.dart';
 import 'api_service.dart';
 import 'app_settings.dart';
 import 'regex_ui_extractor.dart';
@@ -87,6 +88,8 @@ class AiUiDesigner {
         temperature: 0.4, // 创作可稍高，但仍是结构化输出
       );
     }
+
+    AiTranscript.add('意图设计', '【系统】\n$system\n\n【用户】\n$user', raw);
 
     final parsed = _parseJson(raw);
     if (parsed == null) {

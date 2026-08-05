@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../core/ai_classifier.dart';
 import '../core/ai_refiner.dart';
+import '../core/ai_transcript.dart';
 import '../core/ai_ui_blueprint.dart';
 import '../core/app_settings.dart';
 import '../core/conversion_writer.dart';
@@ -16,6 +17,7 @@ import 'card_preview.dart';
 import 'compare_page.dart';
 import 'entry_editor_page.dart';
 import 'assembly_preview.dart';
+import 'ask_ai_dialog.dart';
 import 'blueprint_confirm_dialog.dart';
 
 /// 待转译文件项（主页选择 → 工作区转译）。
@@ -51,8 +53,12 @@ class _WorkItem {
 class _AiStageOutput {
   final String title;
   final StringBuffer text;
+
+  /// 该阶段 AI 收到的用户 prompt（供「询问 AI」作为上下文）。
+  final StringBuffer prompt;
   bool collapsed;
-  _AiStageOutput(this.title, this.text, {this.collapsed = true});
+  _AiStageOutput(this.title, this.text, {String? prompt, this.collapsed = true})
+      : prompt = StringBuffer(prompt ?? '');
 }
 
 /// 统一工作区：处理 1~N 张卡。逐张串行转译，列表展示，可展开看预览、编辑、比对。
@@ -109,6 +115,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
   }
 
   Future<void> _runAll() async {
+    AiTranscript.clear();
     setState(() {
       _running = true;
       _doneCount = 0;
@@ -451,6 +458,18 @@ class _WorkspacePageState extends State<WorkspacePage> {
                     // 当前正在流式的阶段：即使尚未收到 token 也显示「思考中」
                     // 占位，避免用户以为卡死（TTFT 期间首 token 还没到）。
                     if (_liveOutput != null) _liveOutputTile(_liveOutput!),
+                    const SizedBox(height: 8),
+                    // 「询问 AI」：转译完成后追问 AI 为什么这样设计。
+                    if (!_running && AiTranscript.turns.isNotEmpty)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.quiz_outlined, size: 16),
+                          label: const Text('询问 AI：为什么这样设计',
+                              style: TextStyle(fontSize: 12)),
+                          onPressed: _openAskAiDialog,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -458,6 +477,22 @@ class _WorkspacePageState extends State<WorkspacePage> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 打开「询问 AI」对话框：把本轮转译的完整上下文（prompt+回复）喂给 AI，
+  /// 让用户持续追问，定位设计问题的根源。
+  Future<void> _openAskAiDialog() async {
+    final context = AiTranscript.buildContext();
+    if (context.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本轮没有可用的 AI 上下文')),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AskAiDialog(contextText: context),
     );
   }
 
