@@ -466,6 +466,16 @@ class SceneChrome {
   bool get hasAny =>
       messageFlow != null || input != null || settingsButton != null;
 
+  /// 是否「真的声明」了消息流：只有带坐标（x/y/w/h 至少一项）才算声明。
+  /// 空对象 `"messageFlow": {}` = 未声明 = 不放（避免默认消息流被误放）。
+  bool get hasMessageFlow => messageFlow != null && messageFlow!.isDeclared;
+
+  /// 是否真的声明了输入框。
+  bool get hasInput => input != null && input!.isDeclared;
+
+  /// 是否真的声明了设置按钮。
+  bool get hasSettings => settingsButton != null && settingsButton!.isDeclared;
+
   Map<String, dynamic> toJson() => {
         if (messageFlow != null)
           'messageFlow': {
@@ -499,6 +509,10 @@ class MessageFlowIntent {
   final double? height;
   const MessageFlowIntent({this.x, this.y, this.width, this.height});
 
+  /// 是否真的声明了位置/尺寸（至少一项非空）。
+  bool get isDeclared =>
+      x != null || y != null || width != null || height != null;
+
   factory MessageFlowIntent.fromJson(dynamic json) {
     if (json is! Map) return const MessageFlowIntent();
     final m = Map<String, dynamic>.from(json);
@@ -519,6 +533,10 @@ class InputBarIntent {
   final double? height;
   const InputBarIntent({this.x, this.y, this.width, this.height});
 
+  /// 是否真的声明了位置/尺寸（至少一项非空）。
+  bool get isDeclared =>
+      x != null || y != null || width != null || height != null;
+
   factory InputBarIntent.fromJson(dynamic json) {
     if (json is! Map) return const InputBarIntent();
     final m = Map<String, dynamic>.from(json);
@@ -538,6 +556,10 @@ class SettingsButtonIntent {
   final double? width;
   final double? height;
   const SettingsButtonIntent({this.x, this.y, this.width, this.height});
+
+  /// 是否真的声明了位置/尺寸（至少一项非空）。
+  bool get isDeclared =>
+      x != null || y != null || width != null || height != null;
 
   factory SettingsButtonIntent.fromJson(dynamic json) {
     if (json is! Map) return const SettingsButtonIntent();

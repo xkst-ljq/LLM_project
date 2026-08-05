@@ -2246,7 +2246,7 @@ class UiAssemblyBuilder {
 
     // 检查整卡是否有设置按钮（引擎硬性要求，A 类：不再兜底补，必须 AI 显式声明）。
     bool anySettingsButton = intent.pages.any(
-      (p) => p.chrome.settingsButton != null,
+      (p) => p.chrome.hasSettings,
     );
     if (!anySettingsButton) {
       notes.add('⚠ AI 未在任何页面声明「打开聊天设置」按钮（引擎硬性要求）。'
@@ -2261,8 +2261,8 @@ class UiAssemblyBuilder {
       // 本页主题：优先用 AI 声明的 style，否则回落默认（整个场景的主题）。
       final pageTheme = UiVisualTheme.byName(p.style);
 
-      // ── 消息流：AI 声明了才放 ──
-      if (chrome.messageFlow != null) {
+      // ── 消息流：仅当 AI 真的声明了位置/尺寸才放（空对象 {} = 不放）──
+      if (chrome.hasMessageFlow) {
         final mf = chrome.messageFlow!;
         extras.add(_element(
           id: nextId('el'),
@@ -2291,8 +2291,8 @@ class UiAssemblyBuilder {
         ));
       }
 
-      // ── 输入框：AI 声明了才放 ──
-      if (chrome.input != null) {
+      // ── 输入框：仅当 AI 真的声明了位置/尺寸才放（空对象 {} = 不放）──
+      if (chrome.hasInput) {
         final inp = chrome.input!;
         extras.add(_element(
           id: nextId('el'),
@@ -2318,8 +2318,8 @@ class UiAssemblyBuilder {
         ));
       }
 
-      // ── 设置按钮：A 类，仅当 AI 显式声明时放；不兜底补 ──
-      if (chrome.settingsButton != null) {
+      // ── 设置按钮：A 类，仅当 AI 真的声明位置/尺寸时放；不兜底补 ──
+      if (chrome.hasSettings) {
         final sb = chrome.settingsButton!;
         extras.add(_button(
           id: nextId('el'),
