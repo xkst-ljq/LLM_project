@@ -352,7 +352,7 @@ class UiEngineApiDictionary {
     'fidelityFirst': '先还原原卡渲染结构、阅读顺序和分组，再因移动端冲突做适配。',
     'avoidSparseTabs': '不要把原本单张长卡机械拆成很多空页；多页必须让每页有足够内容或作为 overlay 详情。',
     'textSizing': '有意义的状态值/任务/物品/选项/位置不能靠 ellipsis；使用 wrap/scroll 并给足高度。',
-    'reasonableInteraction': '原卡纯文本选项可在作者确认或语义明确时增强为 sendsMessage 按钮；不改变玩法规则。',
+    'reasonableInteraction': '原卡纯文本选项可在作者确认或语义明确时增强为 sendsMessage 按钮；不改变玩法规则。scene 中选项应靠近正文或作为 overlay/sticky 行动坞，不要单独做稀疏 tab。',
     'useOriginalGrid': '原卡有 flex/grid/两列进度条时，应优先保留其布局意图，而不是单列堆叠。',
   };
 

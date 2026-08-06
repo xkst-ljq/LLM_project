@@ -72,10 +72,11 @@ class UiPlanValidator {
           !_hasFieldLike(plan, const ['friends', 'album', 'friend', '羁绊', '好友'])) {
         errors.add('检测到稳定 FriendsAlbumPage schema；运行时 UI 应提供 friends_album/羁绊名录 滚动文本字段或页面，供 LLM 更新。');
       }
-      if (sourcePack.hasChoiceBoxSchema &&
-          plan.actions.isEmpty &&
-          !_hasFieldLike(plan, const ['choice', 'option', '选项', '抉择'])) {
-        warnings.add('检测到 DQ_ChoiceBox schema，但当前方案没有 action，也没有选项/抉择字段；若作者希望可点击，应生成 sendsMessage actions。');
+      if (sourcePack.hasChoiceBoxSchema && plan.actions.isEmpty) {
+        errors.add('检测到稳定 DQ_ChoiceBox schema；应在合理情况下生成 sendsMessage actions/buttons，让玩家可点击选择。若确实不能点击，也必须在 notes 说明原因并提供替代交互。');
+      }
+      if (plan.uiMode == 'scene' && _hasStandaloneActionPage(plan)) {
+        errors.add('scene 不应把行动/选项做成稀疏独立 tab。请把当前选项按钮/自由输入放在故事/message_flow 页面底部，或做成 overlay/sticky 行动坞。');
       }
     }
 
@@ -164,6 +165,49 @@ class UiPlanValidator {
 
     return plan.fields.any((field) =>
         hit(field.name) || hit(field.sourceKey) || hit(field.group) || hit(field.page));
+  }
+
+  static bool _hasStandaloneActionPage(UiDesignPlan plan) {
+    if (plan.actions.isEmpty && plan.inputs.isEmpty) return false;
+    final actionPages = <String>{
+      for (final page in plan.layout.pages)
+        if (_isActionPage(page.title, page.role)) page.title.trim(),
+    }..removeWhere((e) => e.isEmpty);
+    if (actionPages.isEmpty) return false;
+    final messagePages = <String>{
+      for (final page in plan.layout.pages)
+        if (_isMessagePage(page.title, page.role)) page.title.trim(),
+    }..removeWhere((e) => e.isEmpty);
+    if (messagePages.isEmpty) return false;
+    final actionHasFields = plan.fields.any((field) => actionPages.contains(field.page.trim()));
+    final actionHasControls = plan.actions.any((a) => actionPages.contains(a.page.trim())) ||
+        plan.inputs.any((input) => actionPages.contains(input.page.trim()));
+    return actionHasControls && !actionHasFields;
+  }
+
+  static bool _isActionPage(String title, String role) {
+    final r = role.toLowerCase();
+    final t = title.toLowerCase();
+    return const {'actions', 'choice', 'choices', 'input'}.contains(r) ||
+        title.contains('行动') ||
+        title.contains('指令') ||
+        title.contains('选项') ||
+        title.contains('抉择') ||
+        t.contains('action') ||
+        t.contains('choice');
+  }
+
+  static bool _isMessagePage(String title, String role) {
+    final r = role.toLowerCase();
+    final t = title.toLowerCase();
+    return const {'story', 'log', 'message', 'messages', 'content', 'narrative'}
+            .contains(r) ||
+        title.contains('日志') ||
+        title.contains('正文') ||
+        title.contains('剧情') ||
+        title.contains('故事') ||
+        t.contains('log') ||
+        t.contains('story');
   }
 
   static bool _badEllipsisField(UiPlanField field) {
