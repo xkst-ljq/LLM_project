@@ -649,11 +649,13 @@ class _AiDebugChatDialog extends StatefulWidget {
 class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  late final FocusNode _inputFocusNode;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
+    _inputFocusNode = FocusNode(onKeyEvent: _handleInputKey);
     WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest(jump: true));
   }
 
@@ -661,7 +663,27 @@ class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
   void dispose() {
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
+  }
+
+  KeyEventResult _handleInputKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    final isEnter = key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter;
+    if (!isEnter) return KeyEventResult.ignored;
+
+    // Enter 发送；Shift+Enter 保留换行能力。
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    if (!_busy && _inputCtrl.text.trim().isNotEmpty) {
+      _send();
+    }
+    return KeyEventResult.handled;
   }
 
   void _jumpToLatest({bool jump = false}) {
@@ -832,11 +854,14 @@ class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
                   Expanded(
                     child: TextField(
                       controller: _inputCtrl,
+                      focusNode: _inputFocusNode,
                       enabled: !_busy,
                       minLines: 1,
                       maxLines: 4,
+                      textInputAction: TextInputAction.newline,
                       decoration: const InputDecoration(
                         hintText: '问问转译 AI：为什么这样做？还缺什么证据？哪里不确定？',
+                        helperText: 'Enter 发送，Shift+Enter 换行',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
