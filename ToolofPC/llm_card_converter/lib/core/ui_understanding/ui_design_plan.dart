@@ -11,6 +11,7 @@ class UiDesignPlan {
   final UiPlanStyle visualStyle;
   final UiPlanLayout layout;
   final List<UiPlanField> fields;
+  final List<UiPlanInput> inputs;
   final List<UiPlanAction> actions;
   final List<UiPlanUnsupported> unsupported;
   final List<String> notes;
@@ -25,6 +26,7 @@ class UiDesignPlan {
     required this.visualStyle,
     required this.layout,
     required this.fields,
+    required this.inputs,
     required this.actions,
     required this.unsupported,
     required this.notes,
@@ -34,9 +36,11 @@ class UiDesignPlan {
     final layout = UiPlanLayout.fromJson(_mapOf(json['layout']));
 
     final fields = <UiPlanField>[];
+    final inputs = <UiPlanInput>[];
     final actions = <UiPlanAction>[];
 
     fields.addAll(_listOf(json['fields']).map(UiPlanField.fromJson));
+    inputs.addAll(_listOf(json['inputs']).map(UiPlanInput.fromJson));
     actions.addAll(_listOf(json['actions']).map(UiPlanAction.fromJson));
 
     // 兼容 AI 输出 nested pages: pages[].fields / pages[].actions。
@@ -46,6 +50,11 @@ class UiDesignPlan {
         final m = Map<String, dynamic>.from(f);
         m.putIfAbsent('page', () => title);
         fields.add(UiPlanField.fromJson(m));
+      }
+      for (final input in _listOf(page['inputs'])) {
+        final m = Map<String, dynamic>.from(input);
+        m.putIfAbsent('page', () => title);
+        inputs.add(UiPlanInput.fromJson(m));
       }
       for (final a in _listOf(page['actions'])) {
         final m = Map<String, dynamic>.from(a);
@@ -64,6 +73,7 @@ class UiDesignPlan {
       visualStyle: UiPlanStyle.fromJson(_mapOf(json['visualStyle'] ?? json['style'])),
       layout: layout,
       fields: fields,
+      inputs: inputs,
       actions: actions,
       unsupported:
           _listOf(json['unsupported']).map(UiPlanUnsupported.fromJson).toList(),
@@ -141,13 +151,19 @@ class UiPlanStyle {
 
 class UiPlanLayout {
   final String kind;
+  final String navigation;
   final List<UiPlanPageSpec> pages;
 
-  const UiPlanLayout({required this.kind, required this.pages});
+  const UiPlanLayout({
+    required this.kind,
+    required this.navigation,
+    required this.pages,
+  });
 
   factory UiPlanLayout.fromJson(Map<String, dynamic> json) {
     return UiPlanLayout(
       kind: _fallback(_str(json['kind']), 'tabbed_companion_panel'),
+      navigation: _navigationOf(json['navigation']),
       pages: _listOf(json['pages']).map(UiPlanPageSpec.fromJson).toList(),
     );
   }
@@ -169,6 +185,8 @@ class UiPlanPageSpec {
 
 class UiPlanField {
   final String name;
+  final String sourceKey;
+  final String group;
   final String type;
   final String display;
   final String initialValue;
@@ -180,6 +198,8 @@ class UiPlanField {
 
   const UiPlanField({
     required this.name,
+    required this.sourceKey,
+    required this.group,
     required this.type,
     required this.display,
     required this.initialValue,
@@ -194,6 +214,8 @@ class UiPlanField {
     final type = _fieldTypeOf(json['type']);
     return UiPlanField(
       name: _str(json['name']).trim(),
+      sourceKey: _str(json['sourceKey'] ?? json['key']).trim(),
+      group: _str(json['group'] ?? json['section']).trim(),
       type: type,
       display: _displayOf(json['display'], type),
       initialValue: _str(json['initialValue'] ?? json['initial_value']).trim(),
@@ -206,6 +228,29 @@ class UiPlanField {
   }
 
   bool get isNumber => type == 'number';
+}
+
+class UiPlanInput {
+  final String placeholder;
+  final bool sendOnSubmit;
+  final String page;
+  final String sourceRef;
+
+  const UiPlanInput({
+    required this.placeholder,
+    required this.sendOnSubmit,
+    required this.page,
+    required this.sourceRef,
+  });
+
+  factory UiPlanInput.fromJson(Map<String, dynamic> json) {
+    return UiPlanInput(
+      placeholder: _fallback(_str(json['placeholder'] ?? json['inputPrompt']), '输入你的决定...'),
+      sendOnSubmit: _boolOf(json['sendOnSubmit'] ?? json['sendsMessage']),
+      page: _str(json['page']).trim(),
+      sourceRef: _str(json['sourceRef']).trim(),
+    );
+  }
 }
 
 class UiPlanAction {
@@ -318,6 +363,16 @@ String _fieldTypeOf(dynamic raw) {
   if (v == 'text' || v == 'string') return 'text';
   if (v == 'bool' || v == 'boolean') return 'bool';
   return 'number';
+}
+
+String _navigationOf(dynamic raw) {
+  final v = _str(raw).toLowerCase().trim();
+  if (v == 'swipe' || v == 'gesture' || v == 'gestures') return 'swipe';
+  if (v == 'tabs' || v == 'tab') return 'tabs';
+  if (v == 'tabs_and_swipe' || v == 'tab_and_swipe' || v == 'both') {
+    return 'tabs_and_swipe';
+  }
+  return 'tabs_and_swipe';
 }
 
 String _displayOf(dynamic raw, String type) {

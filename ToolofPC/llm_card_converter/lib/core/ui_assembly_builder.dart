@@ -283,12 +283,19 @@ class UiAssemblyBuilder {
     final fieldsByPage = <String, List<UiPlanField>>{
       for (final title in pageTitles) title: <UiPlanField>[],
     };
+    final inputsByPage = <String, List<UiPlanInput>>{
+      for (final title in pageTitles) title: <UiPlanInput>[],
+    };
     final actionsByPage = <String, List<UiPlanAction>>{
       for (final title in pageTitles) title: <UiPlanAction>[],
     };
     for (final f in _dedupePlanFields(plan.fields)) {
       final page = _resolvePlanPage(f.page, pageTitles, f.isNumber ? '属性' : '档案');
       fieldsByPage.putIfAbsent(page, () => <UiPlanField>[]).add(f);
+    }
+    for (final input in plan.inputs) {
+      final page = _resolvePlanPage(input.page, pageTitles, '选项');
+      inputsByPage.putIfAbsent(page, () => <UiPlanInput>[]).add(input);
     }
     for (final a in plan.actions) {
       final page = _resolvePlanPage(a.page, pageTitles, '选项');
@@ -314,6 +321,7 @@ class UiAssemblyBuilder {
         pageTitles: pageTitles,
         pageIds: pageIds,
         fields: fieldsByPage[title] ?? const [],
+        inputs: inputsByPage[title] ?? const [],
         actions: actionsByPage[title] ?? const [],
         nextId: nextId,
         statusFields: statusFields,
@@ -331,7 +339,13 @@ class UiAssemblyBuilder {
         'parentPageId': null,
         'sortOrder': i,
         'elements': elements,
-        'gestures': <dynamic>[],
+        'gestures': _planGesturesForPage(
+          mode: mode,
+          index: i,
+          pageTitles: pageTitles,
+          pageIds: pageIds,
+          navigation: plan.layout.navigation,
+        ),
         'propertyOverrides': <dynamic>[],
       });
     }
@@ -878,6 +892,9 @@ class UiAssemblyBuilder {
     for (final f in plan.fields) {
       add(f.page);
     }
+    for (final input in plan.inputs) {
+      add(input.page);
+    }
     for (final a in plan.actions) {
       add(a.page);
     }
@@ -886,7 +903,7 @@ class UiAssemblyBuilder {
       final hasText = plan.fields.any((f) => !f.isNumber);
       if (hasNumber) titles.add('属性');
       if (hasText) titles.add('档案');
-      if (plan.actions.isNotEmpty) titles.add('选项');
+      if (plan.inputs.isNotEmpty || plan.actions.isNotEmpty) titles.add('选项');
       if (titles.isEmpty) titles.add('主界面');
     }
     return titles.take(5).toList();
@@ -915,6 +932,38 @@ class UiAssemblyBuilder {
     return out;
   }
 
+  static List<Map<String, dynamic>> _planGesturesForPage({
+    required String mode,
+    required int index,
+    required List<String> pageTitles,
+    required Map<String, String> pageIds,
+    required String navigation,
+  }) {
+    if (mode == 'opening') return const <Map<String, dynamic>>[];
+    if (pageTitles.length <= 1) return const <Map<String, dynamic>>[];
+    if (navigation == 'tabs') return const <Map<String, dynamic>>[];
+    final out = <Map<String, dynamic>>[];
+    if (index + 1 < pageTitles.length) {
+      out.add({
+        'direction': 'swipe_left',
+        'action': 'switch_base_page',
+        'targetPageId': pageIds[pageTitles[index + 1]] ?? '',
+        'transition': 'base_slide',
+        'durationMs': 220,
+      });
+    }
+    if (index - 1 >= 0) {
+      out.add({
+        'direction': 'swipe_right',
+        'action': 'switch_base_page',
+        'targetPageId': pageIds[pageTitles[index - 1]] ?? '',
+        'transition': 'base_slide',
+        'durationMs': 220,
+      });
+    }
+    return out;
+  }
+
   static double _pageContentHeight(List<Map<String, dynamic>> elements) {
     var maxH = 64.0;
     for (final e in elements) {
@@ -937,6 +986,7 @@ class UiAssemblyBuilder {
     required List<String> pageTitles,
     required Map<String, String> pageIds,
     required List<UiPlanField> fields,
+    required List<UiPlanInput> inputs,
     required List<UiPlanAction> actions,
     required String Function(String) nextId,
     required List<Map<String, dynamic>> statusFields,
@@ -1035,8 +1085,27 @@ class UiAssemblyBuilder {
     }
 
     const labelW = 56.0;
+    var currentGroup = '';
     for (final f in fields) {
-      final fieldId = 'sf_${_slug(f.name)}';
+      final group = f.group.trim();
+      if (group.isNotEmpty && group != currentGroup) {
+        currentGroup = group;
+        elements.add(_text(
+          id: nextId('el'),
+          name: '分组_$group',
+          text: group,
+          x: _Layout.pcbPadding,
+          y: y,
+          w: innerW,
+          h: 16,
+          fontSize: mode == 'extra_companion' ? 10 : 12,
+          color: theme.titleColor,
+          align: 'left',
+          layer: elements.length + 1,
+        ));
+        y += 18.0;
+      }
+      final fieldId = 'sf_${_slug(f.sourceKey.trim().isEmpty ? f.name : f.sourceKey)}';
       final isProgress = f.isNumber && f.display == 'progress';
       final min = f.min ?? 0.0;
       final max = f.max ?? 100.0;
@@ -1105,6 +1174,23 @@ class UiAssemblyBuilder {
     }
 
     final pressPairs = <({String surface, String button})>[];
+    for (var i = 0; i < inputs.length; i++) {
+      final input = inputs[i];
+      elements.add(_input(
+        id: nextId('el'),
+        name: '输入_${i + 1}',
+        placeholder: input.placeholder,
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        h: _Layout.buttonHeight,
+        layer: elements.length + 1,
+        sendsMessage: input.sendOnSubmit,
+        color: theme.accentColor,
+      ));
+      y += _Layout.buttonHeight + 8;
+    }
+
     final localActions = [...actions];
     final needsGeneratedKeyAction = mode == 'opening'
         ? localActions.isEmpty
@@ -1673,6 +1759,42 @@ class UiAssemblyBuilder {
               statusFieldId: statusFieldId,
               fieldType: 'number',
             ),
+          },
+        ),
+      );
+
+  static Map<String, dynamic> _input({
+    required String id,
+    required String name,
+    required String placeholder,
+    required double x,
+    required double y,
+    required double w,
+    required double h,
+    required int layer,
+    required bool sendsMessage,
+    required int color,
+  }) =>
+      _element(
+        id: id,
+        x: x,
+        y: y,
+        w: w,
+        h: h,
+        layer: layer,
+        module: _module(
+          id: id,
+          name: name,
+          type: 'input',
+          color: color,
+          props: {
+            'placeholder': placeholder,
+            'text': '',
+            'value': '',
+            'committedValue': '',
+            'visualMode': 'filled',
+            'multiline': false,
+            if (sendsMessage) 'sendsMessage': true,
           },
         ),
       );

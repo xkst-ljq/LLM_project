@@ -36,11 +36,12 @@ class UiPlanValidator {
       errors.add('非法 uiMode：${plan.uiMode}');
     }
 
-    if (plan.fields.isEmpty && plan.actions.isEmpty) {
-      errors.add('AI 判断有 UI，但没有输出任何字段或动作。');
+    if (plan.fields.isEmpty && plan.inputs.isEmpty && plan.actions.isEmpty) {
+      errors.add('AI 判断有 UI，但没有输出任何字段、输入框或动作。');
     }
 
     if (plan.sourceRefs.isEmpty && plan.fields.every((f) => f.sourceRef.isEmpty) &&
+        plan.inputs.every((i) => i.sourceRef.isEmpty) &&
         plan.actions.every((a) => a.sourceRef.isEmpty)) {
       errors.add('AI 判断有 UI，但没有提供任何 sourceRef 证据。');
     }
@@ -51,6 +52,9 @@ class UiPlanValidator {
 
     if (plan.fields.length > 40) {
       errors.add('字段过多（${plan.fields.length}），可能把正文/世界书误识别成 UI。');
+    }
+    if (plan.inputs.length > 4) {
+      warnings.add('输入框较多（${plan.inputs.length}），编译时会压缩布局。');
     }
     if (plan.actions.length > 24) {
       warnings.add('动作按钮较多（${plan.actions.length}），编译时会压缩布局。');
@@ -79,6 +83,15 @@ class UiPlanValidator {
         if (f.initialValue.trim().isNotEmpty && v == null) {
           warnings.add('数值字段「${f.name}」初值无法解析，将按 0 处理。');
         }
+      }
+    }
+
+    for (final input in plan.inputs) {
+      if (input.placeholder.trim().isEmpty) {
+        errors.add('存在空输入框占位提示。');
+      }
+      if (input.sourceRef.trim().isEmpty) {
+        warnings.add('输入框「${input.placeholder}」缺少 sourceRef。');
       }
     }
 
