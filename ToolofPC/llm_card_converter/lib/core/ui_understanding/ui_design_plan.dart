@@ -189,6 +189,8 @@ class UiPlanField {
   final String group;
   final String type;
   final String display;
+  final String textAlign;
+  final String overflow;
   final String initialValue;
   final double? min;
   final double? max;
@@ -202,6 +204,8 @@ class UiPlanField {
     required this.group,
     required this.type,
     required this.display,
+    required this.textAlign,
+    required this.overflow,
     required this.initialValue,
     required this.min,
     required this.max,
@@ -218,6 +222,8 @@ class UiPlanField {
       group: _str(json['group'] ?? json['section']).trim(),
       type: type,
       display: _displayOf(json['display'], type),
+      textAlign: _textAlignOf(json['textAlign'] ?? json['align']),
+      overflow: _overflowOf(json['overflow']),
       initialValue: _str(json['initialValue'] ?? json['initial_value']).trim(),
       min: _nullableDouble(json['min']),
       max: _nullableDouble(json['max']),
@@ -380,6 +386,18 @@ String _displayOf(dynamic raw, String type) {
   const allowed = {'progress', 'text', 'badge'};
   if (allowed.contains(v)) return v;
   return type == 'number' ? 'progress' : 'text';
+}
+
+String _textAlignOf(dynamic raw) {
+  final v = _str(raw).toLowerCase().trim();
+  if (v == 'left' || v == 'center' || v == 'right') return v;
+  return 'left';
+}
+
+String _overflowOf(dynamic raw) {
+  final v = _str(raw).toLowerCase().trim();
+  if (v == 'scroll' || v == 'wrap' || v == 'ellipsis') return v;
+  return 'ellipsis';
 }
 
 bool _boolOf(dynamic raw) {

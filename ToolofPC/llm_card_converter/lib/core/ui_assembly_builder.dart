@@ -275,6 +275,7 @@ class UiAssemblyBuilder {
     String nextId(String prefix) => '${prefix}_${seed++}';
 
     final statusFields = <Map<String, dynamic>>[];
+    final mode = plan.uiMode;
     final pageTitles = _planPageTitles(plan);
     final pageIds = <String, String>{
       for (final title in pageTitles) title: 'page_${nextId('page')}',
@@ -293,16 +294,19 @@ class UiAssemblyBuilder {
       final page = _resolvePlanPage(f.page, pageTitles, f.isNumber ? '属性' : '档案');
       fieldsByPage.putIfAbsent(page, () => <UiPlanField>[]).add(f);
     }
-    for (final input in plan.inputs) {
-      final page = _resolvePlanPage(input.page, pageTitles, '选项');
-      inputsByPage.putIfAbsent(page, () => <UiPlanInput>[]).add(input);
+    if (mode == 'extra_companion' && plan.inputs.isNotEmpty) {
+      notes.add('已跳过原卡 input_prompt：伴生 UI 内可直接使用聊天页主输入框，避免重复输入入口。');
+    } else {
+      for (final input in plan.inputs) {
+        final page = _resolvePlanPage(input.page, pageTitles, '选项');
+        inputsByPage.putIfAbsent(page, () => <UiPlanInput>[]).add(input);
+      }
     }
     for (final a in plan.actions) {
       final page = _resolvePlanPage(a.page, pageTitles, '选项');
       actionsByPage.putIfAbsent(page, () => <UiPlanAction>[]).add(a);
     }
 
-    final mode = plan.uiMode;
     final pcbW = switch (mode) {
       'extra_companion' => 212.0,
       'opening' => 320.0,
@@ -1138,6 +1142,7 @@ class UiAssemblyBuilder {
         layer: elements.length + 1,
       ));
 
+      final valueHeight = (!isProgress && f.overflow == 'scroll') ? 62.0 : _Layout.rowHeight;
       if (isProgress) {
         elements.add(_progress(
           id: nextId('el'),
@@ -1162,15 +1167,17 @@ class UiAssemblyBuilder {
           x: _Layout.pcbPadding + labelW + 6,
           y: y,
           w: innerW - labelW - 6,
-          h: _Layout.rowHeight,
+          h: valueHeight,
           fontSize: mode == 'extra_companion' ? 11 : 12,
           color: theme.valueColor,
-          align: 'left',
+          align: f.textAlign,
           layer: elements.length + 1,
           statusFieldId: fieldId,
+          overflow: f.overflow,
+          richText: f.overflow == 'scroll',
         ));
       }
-      y += _Layout.rowHeight + _Layout.rowGap;
+      y += (isProgress ? _Layout.rowHeight : valueHeight) + _Layout.rowGap;
     }
 
     final pressPairs = <({String surface, String button})>[];
@@ -1685,6 +1692,8 @@ class UiAssemblyBuilder {
     required String align,
     required int layer,
     String? statusFieldId,
+    String overflow = 'ellipsis',
+    bool richText = false,
   }) =>
       _element(
         id: id,
@@ -1703,8 +1712,8 @@ class UiAssemblyBuilder {
             'text': text,
             'fontSize': fontSize,
             'textAlign': align,
-            'overflow': 'ellipsis',
-            'richText': false,
+            'overflow': overflow,
+            'richText': richText,
             if (statusFieldId != null)
               'dataChannel': _channel(
                 label: name,

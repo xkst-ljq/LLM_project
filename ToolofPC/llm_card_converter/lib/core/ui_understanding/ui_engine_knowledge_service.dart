@@ -20,7 +20,7 @@ Default: choose extra_companion for status bars / dashboards that follow charact
 
 ## Visual primitives available through UiDesignPlan
 - surface: panel/background/card/button visual base.
-- text: labels, titles, values.
+- text: labels, titles, values. Supports textAlign = left/center/right and overflow = ellipsis/wrap/scroll. Use scroll for long descriptions or task details; use center/right only when the original visible layout supports it.
 - progress: numeric status bar, usually min/max/current.
 - button: invisible touch area. Use with a surface/text visual behind it.
 - input: free text field. Single-line input can submit text to the chat flow when marked as sendsMessage.
@@ -38,7 +38,7 @@ Default: choose extra_companion for status bars / dashboards that follow charact
 - IMPORTANT: use the human-facing labels from replaceString / rendered HTML as field.name. If the transport key is English (HP/MP/STR) but the rendered label is Chinese (生命值 (HP)), use the Chinese display label as name and put the raw key in sourceKey. Do not throw away the original display translation.
 - first_mes / alternate_greetings may contain initial status tags, e.g. <生命>84%</生命>.
 - onclick="send('...')" or send('...') means an action button.
-- input_prompt in a choice box means a free input field; put it in inputs[].
+- input_prompt in a choice box means a free input field. Put it in inputs[] for opening/scene UIs. For extra_companion, usually DO NOT generate an input component because the normal chat input already exists; record the input_prompt in notes unless the author explicitly wants an in-panel input.
 - tavern_helper external JS import means the UI may be runtime-generated; mark unsupported instead of inventing.
 - world book entries may contain variable definitions or initvar sections; use them as evidence if relevant.
 
@@ -92,6 +92,8 @@ Return exactly one JSON object:
       "group": "核心状态",
       "type": "number|text|bool",
       "display": "progress|text|badge",
+      "textAlign": "left|center|right",
+      "overflow": "ellipsis|wrap|scroll",
       "initialValue": "84",
       "min": 0,
       "max": 100,

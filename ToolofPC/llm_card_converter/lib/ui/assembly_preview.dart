@@ -56,6 +56,13 @@ class AssemblyPreview extends StatefulWidget {
 class _AssemblyPreviewState extends State<AssemblyPreview> {
   int _index = 0;
 
+  /// 默认按 100% 原始尺寸预览，超出区域滚动查看。
+  ///
+  /// 旧版为了“完整塞进 420px 展开区”会自动缩小，伴生 UI 高度稍高时
+  /// 看起来只有七八成大小，无法判断真实字号和间距。作者需要看真实效果
+  /// 时，100% 比“完整适配”更重要。
+  bool _fitToWindow = false;
+
   @override
   void didUpdateWidget(covariant AssemblyPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -123,12 +130,38 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${info.name} · ${_modeLabel(info.mode)} · '
-            '${info.pcbWidth.toStringAsFixed(0)}×'
-            '${info.pcbHeight.toStringAsFixed(0)} · '
-            '${_pagesOf(info).length} 页 / ${_elementCount(info)} 个元件',
-            style: const TextStyle(fontSize: 11, color: Color(0xFF666672)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${info.name} · ${_modeLabel(info.mode)} · '
+                  '${info.pcbWidth.toStringAsFixed(0)}×'
+                  '${info.pcbHeight.toStringAsFixed(0)} · '
+                  '${_pagesOf(info).length} 页 / ${_elementCount(info)} 个元件',
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF666672)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              SegmentedButton<bool>(
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: const WidgetStatePropertyAll(
+                    TextStyle(fontSize: 11),
+                  ),
+                ),
+                segments: const [
+                  ButtonSegment(value: false, label: Text('100%')),
+                  ButtonSegment(value: true, label: Text('适配')),
+                ],
+                selected: {_fitToWindow},
+                onSelectionChanged: (v) {
+                  setState(() => _fitToWindow = v.first);
+                },
+              ),
+            ],
           ),
           if (broken > 0)
             Padding(
@@ -145,38 +178,57 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
 
   /// 渲染舞台。
   ///
-  /// PCB 高度最大可到 2000，直接放会超出面板，因此按可用空间等比缩小；
-  /// **只缩小不放大**——放大会让 1px 的线变糊，反而看不清真实效果。
+  /// 默认 100% 原始尺寸，超出后滚动查看；只有作者手动切到“适配”时才
+  /// 等比缩小。这样可以真实判断字体大小、按钮触点和间距。
   Widget _buildStage(UIAssemblyInfo info) {
     return LayoutBuilder(
       builder: (context, box) {
-        final scale = _fitScale(
-          content: Size(info.pcbWidth, info.pcbHeight),
-          box: Size(box.maxWidth - 32, box.maxHeight - 32),
-        );
+        final scale = _fitToWindow
+            ? _fitScale(
+                content: Size(info.pcbWidth, info.pcbHeight),
+                box: Size(box.maxWidth - 32, box.maxHeight - 32),
+              )
+            : 1.0;
+        final scaledW = info.pcbWidth * scale;
+        final scaledH = info.pcbHeight * scale;
         return Container(
           color: const Color(0xFFEDEDF2),
-          alignment: Alignment.center,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: Transform.scale(
-                scale: scale,
-                alignment: Alignment.topCenter,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.16),
-                        blurRadius: 16,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: box.maxWidth,
+                  minHeight: box.maxHeight,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      width: scaledW,
+                      height: scaledH,
+                      child: Transform.scale(
+                        scale: scale,
+                        alignment: Alignment.topLeft,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.16),
+                                blurRadius: 16,
+                              ),
+                            ],
+                          ),
+                          child: SizedBox(
+                            width: info.pcbWidth,
+                            height: info.pcbHeight,
+                            // 与主 App 聊天页用的是同一个组件、同一份源码。
+                            child: UIAssemblyRuntimeView(assemblyInfo: info),
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
-                  child: SizedBox(
-                    width: info.pcbWidth,
-                    height: info.pcbHeight,
-                    // 与主 App 聊天页用的是同一个组件、同一份源码。
-                    child: UIAssemblyRuntimeView(assemblyInfo: info),
+                    ),
                   ),
                 ),
               ),
