@@ -155,7 +155,7 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('用于第二步「AI 智能归类」与第三步「检查精修」。',
+              const Text('用于第二步「AI 智能归类」、第三步「AI UI 理解」与第四步「检查精修」。',
                   style: TextStyle(fontSize: 12, color: Colors.black54)),
               const SizedBox(height: 4),
               const Text(

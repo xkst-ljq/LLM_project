@@ -637,7 +637,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             const Divider(height: 32),
             const Text('AI 配置', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text('用于第二步「AI 智能归类」与第三步「检查精修」。',
+            const Text('用于第二步「AI 智能归类」、第三步「AI UI 理解」与第四步「检查精修」。',
                 style: TextStyle(fontSize: 12, color: Colors.black54)),
             const SizedBox(height: 8),
             Row(

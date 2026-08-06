@@ -2,10 +2,9 @@ import 'dart:convert';
 
 import '../core/conversion_models.dart';
 import '../core/conversion_service.dart';
-import '../core/regex_ui_extractor.dart';
 import '../core/ui_assembly_builder.dart';
 import '../core/greeting_sanitizer.dart';
-import '../core/ai_visual_extractor.dart';
+import '../core/ui_understanding/ai_ui_interpreter.dart';
 
 /// 三步转译流水线（纯 Dart，平台无关）。
 ///
@@ -27,7 +26,7 @@ extension PipelineStageLabel on PipelineStage {
   String get label => switch (this) {
         PipelineStage.rule => '规则转译',
         PipelineStage.aiClassify => 'AI 智能归类',
-        PipelineStage.buildUi => 'UI 生成',
+        PipelineStage.buildUi => 'AI UI 理解',
         PipelineStage.refine => '检查精修',
       };
 }
@@ -264,45 +263,32 @@ class ConversionPipeline {
 
     item.stageStatus[PipelineStage.buildUi] = StageStatus.running;
     try {
-      final extraction = RegexUiExtractor.extract(src);
       final card = base.characterData == null
           ? <String, dynamic>{}
           : Map<String, dynamic>.from(base.characterData!);
 
-      UiVisualTheme? visualTheme;
-      final primary = UiAssemblyBuilder.pickPrimary(extraction.usableScripts);
-      if (primary != null && primary.rawReplace.isNotEmpty) {
-        try {
-          final extractedJson = await AiVisualThemeExtractor.extractTheme(primary.rawReplace);
-          if (extractedJson != null) {
-            visualTheme = UiVisualTheme.fromJson(extractedJson);
-          }
-        } catch (_) {
-          // AI 视觉提取失败则静默回落到方案 A 的默认主题
-        }
-      }
-
-      final built = UiAssemblyBuilder.build(
-        extraction,
+      // 新 UI 转译主线：整张卡证据包 → AI 理解 → UiDesignPlan → 确定性编译。
+      // 不再让 RegexUiExtractor 决定“该生成什么 UI”；规则层只保留在
+      // AiUiInterpreter 内部用于整理 sourceRef 证据。
+      final interpretation = await AiUiInterpreter.understand(
+        sourceJson: src,
+        baseResult: base,
+      );
+      final built = UiAssemblyBuilder.buildFromPlan(
+        interpretation.plan,
         cardName: card['name']?.toString() ?? '',
-        theme: visualTheme,
       );
 
       // ── 剥离开场白里的渲染标记 ──
       //
-      // 原卡的 `<终端状态>ONLINE</终端状态><正文>...` 在 ST 里会被
-      // 正则替换成 HTML；我们这边没有那套机制，照搬过来玩家就会
-      // 看到满屏尖括号。而标签里的数据已经进 UI 了，正文留一份重复。
-      //
-      // 即使没生成 UI 也要做：标记本身就不该出现在正文里。
+      // 这一步不再依赖正则规则判断 UI，而是使用 AI plan 中已经确认的
+      // 字段名作为 knownTags。AI 没确认的标签不会被删，避免误删正文。
       final knownTags = <String>{
-        for (final sc in extraction.scripts)
-          if (sc.usable)
-            for (final f in sc.fields) f.name,
+        for (final f in interpretation.plan.fields) f.name,
       };
       final sanitizeNotes = <String>[];
       final rawGreetings = card['opening_greetings'];
-      if (rawGreetings is String && rawGreetings.isNotEmpty) {
+      if (knownTags.isNotEmpty && rawGreetings is String && rawGreetings.isNotEmpty) {
         try {
           final list = jsonDecode(rawGreetings);
           if (list is List) {
@@ -322,8 +308,7 @@ class ConversionPipeline {
             }
             if (changed > 0) {
               card['opening_greetings'] = jsonEncode(out);
-              sanitizeNotes.add('$changed 条开场白已剥离渲染标记'
-                  '（原标记在 ST 里由正则转成 HTML，这里没有对应机制）。');
+              sanitizeNotes.add('$changed 条开场白已根据 AI UI 字段剥离渲染标记。');
             }
           }
         } catch (_) {
@@ -333,14 +318,13 @@ class ConversionPipeline {
 
       final notes = <ConversionNote>[
         ...base.notes,
-        ...extraction.notes.map(ConversionNote.info),
+        ...interpretation.validationWarnings.map(ConversionNote.warning),
         ...built.notes.map(ConversionNote.info),
         ...sanitizeNotes.map(ConversionNote.info),
       ];
 
       if (built.isEmpty) {
-        // 没有 UI 也算成功——这是预期结果，不是失败。
-        // 但开场白净化的结果要带上（card 可能已被改过）。
+        // 没有 UI 也算成功——这是 AI 对原卡的判断结果，不是流程失败。
         final out = base.copyWith(
           characterData: sanitizeNotes.isEmpty ? null : card,
           notes: notes,
@@ -366,7 +350,7 @@ class ConversionPipeline {
         notes: notes,
         convertedFields: [
           ...base.convertedFields,
-          'UI 界面 ×${built.assemblies.length}',
+          'AI UI 转译 ×${built.assemblies.length}',
         ],
       );
       item.stageOutputs[PipelineStage.buildUi] = out;
@@ -416,7 +400,7 @@ class ConversionPipeline {
       item.stageStatus[PipelineStage.aiClassify] = StageStatus.skipped;
     }
 
-    // UI 生成是纯代码，无论有没有配 AI 都跑。
+    // UI 生成现在需要 AI 理解原卡；未配置/失败时跳过，不再用规则模板硬造。
     try {
       await runBuildUiStage(item);
     } catch (_) {

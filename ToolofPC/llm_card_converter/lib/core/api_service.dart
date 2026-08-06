@@ -1,6 +1,41 @@
 import 'package:dio/dio.dart';
 
-/// OpenAI 兼容 API 调用（获取模型列表 / 后续聊天补全）。
+/// 一条聊天消息。
+class ChatMessage {
+  final String role;
+  final String content;
+
+  const ChatMessage({required this.role, required this.content});
+
+  Map<String, dynamic> toJson() => {
+        'role': role,
+        'content': content,
+      };
+}
+
+/// 聊天补全调用参数。
+class ChatCompleteOptions {
+  final double temperature;
+  final int? maxTokens;
+  final bool jsonMode;
+  final Duration timeout;
+
+  /// 预留扩展：不同 OpenAI 兼容服务的自定义字段。
+  ///
+  /// 例如部分服务支持 `top_p` / `presence_penalty` / `seed` 等，
+  /// 调用方可在不改底层 API 的情况下传入。
+  final Map<String, dynamic> extraBody;
+
+  const ChatCompleteOptions({
+    this.temperature = 0.2,
+    this.maxTokens,
+    this.jsonMode = false,
+    this.timeout = const Duration(seconds: 120),
+    this.extraBody = const {},
+  });
+}
+
+/// OpenAI 兼容 API 调用（获取模型列表 / 聊天补全）。
 class ApiService {
   /// 规范化 Base URL：去掉结尾斜杠与多余的 /v1，返回不含 /v1 的根地址。
   static String normalizeBase(String baseUrl) {
@@ -39,36 +74,37 @@ class ApiService {
 
   /// 聊天补全（非流式）。返回模型输出的文本内容。
   ///
-  /// [systemPrompt] 系统指令；[userPrompt] 用户内容。
-  /// [temperature] 默认较低，便于结构化稳定输出。
-  static Future<String> chatComplete({
+  /// 新的 UI 理解链路需要多段消息、JSON mode 与额外 body 字段，
+  /// 因此后续任务层应优先调用本方法；旧的 [chatComplete] 只是兼容包装。
+  static Future<String> chatMessages({
     required String baseUrl,
     required String apiKey,
     required String model,
-    required String systemPrompt,
-    required String userPrompt,
-    double temperature = 0.2,
-    Duration timeout = const Duration(seconds: 120),
+    required List<ChatMessage> messages,
+    ChatCompleteOptions options = const ChatCompleteOptions(),
   }) async {
     final base = normalizeBase(baseUrl);
     final dio = Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: timeout,
+      receiveTimeout: options.timeout,
     ));
+
+    final body = <String, dynamic>{
+      'model': model,
+      'temperature': options.temperature,
+      'messages': messages.map((e) => e.toJson()).toList(),
+      if (options.maxTokens != null) 'max_tokens': options.maxTokens,
+      if (options.jsonMode) 'response_format': {'type': 'json_object'},
+      ...options.extraBody,
+    };
+
     final response = await dio.post(
       '$base/v1/chat/completions',
       options: Options(headers: {
         'Authorization': 'Bearer $apiKey',
         'Content-Type': 'application/json',
       }),
-      data: {
-        'model': model,
-        'temperature': temperature,
-        'messages': [
-          {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': userPrompt},
-        ],
-      },
+      data: body,
     );
     if (response.statusCode != 200) {
       throw Exception('请求失败：HTTP ${response.statusCode}');
@@ -83,6 +119,34 @@ class ApiService {
       throw Exception('模型返回为空');
     }
     return content;
+  }
+
+  /// 聊天补全（非流式）。返回模型输出的文本内容。
+  ///
+  /// [systemPrompt] 系统指令；[userPrompt] 用户内容。
+  /// [temperature] 默认较低，便于结构化稳定输出。
+  static Future<String> chatComplete({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.2,
+    Duration timeout = const Duration(seconds: 120),
+  }) {
+    return chatMessages(
+      baseUrl: baseUrl,
+      apiKey: apiKey,
+      model: model,
+      messages: [
+        ChatMessage(role: 'system', content: systemPrompt),
+        ChatMessage(role: 'user', content: userPrompt),
+      ],
+      options: ChatCompleteOptions(
+        temperature: temperature,
+        timeout: timeout,
+      ),
+    );
   }
 
   /// 粗略判断模型返回是否为"拒绝/审核拦截"（常见于 NSFW 内容触发内容政策）。

@@ -130,18 +130,23 @@ class PipelineRunner {
     }
     _progress(2 / 4);
 
-    // 步骤三：UI 生成（根据 API 状态支持 AI 视觉美化）
+    // 步骤三：AI UI 理解与生成。
     //
-    // **必须在 `if (!aiOn) return` 之前**：这一步不调模型，
-    // 没配 API 的用户同样该拿到 UI。放到后面会被那条 return 挡掉。
-    _log('步骤三：UI 生成');
-    try {
-      final before = item.current?.characterData;
-      await pipeline.runBuildUiStage(item);
-      final after = item.current?.characterData;
-      _log(_describeUiResult(before, after));
-    } catch (e) {
-      _log('  跳过（UI 生成失败）：$e');
+    // 这一步现在会调用模型理解整张卡并输出 UiDesignPlan；未配置 AI 时
+    // 会明确跳过，而不是退回到规则模板硬造 UI。
+    _log('步骤三：AI UI 理解');
+    if (!aiOn) {
+      _log(useAi ? '  跳过（未配置 AI）' : '  跳过（已关闭 AI）');
+      item.stageStatus[PipelineStage.buildUi] = StageStatus.skipped;
+    } else {
+      try {
+        final before = item.current?.characterData;
+        await pipeline.runBuildUiStage(item);
+        final after = item.current?.characterData;
+        _log(_describeUiResult(before, after));
+      } catch (e) {
+        _log('  跳过（AI UI 理解失败）：$e');
+      }
     }
     _progress(3 / 4);
 

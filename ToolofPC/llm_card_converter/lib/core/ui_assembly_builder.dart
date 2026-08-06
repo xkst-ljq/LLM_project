@@ -39,6 +39,7 @@ library;
 
 import 'dart:convert';
 import 'regex_ui_extractor.dart';
+import 'ui_understanding/ui_design_plan.dart';
 
 /// 构建时的布局常量。
 ///
@@ -134,7 +135,9 @@ class UiVisualTheme {
       barTrackColor: parseColor(json['barTrackColor'], d.barTrackColor),
       accentColor: parseColor(json['accentColor'], d.accentColor),
       buttonBgColor: parseColor(json['buttonBgColor'], d.buttonBgColor),
-      borderRadius: parseDouble(json['borderRadius'], d.borderRadius).clamp(0.0, 32.0),
+      borderRadius: parseDouble(json['borderRadius'], d.borderRadius)
+          .clamp(0.0, 32.0)
+          .toDouble(),
       glow: json['glow'] == true,
     );
   }
@@ -229,6 +232,150 @@ class UiAssemblyBuilder {
 
     return BuiltAssembly(
       assemblies: assemblies,
+      statusFields: statusFields,
+      notes: notes,
+    );
+  }
+
+  /// AI UiDesignPlan → 合法 assembly/status_bar_fields。
+  ///
+  /// AI 只负责输出高层计划；内部 JSON 的三层 encode、ARGB、枚举下标、
+  /// keyAction 等易错细节仍由这里的确定性代码收口。
+  static BuiltAssembly buildFromPlan(
+    UiDesignPlan plan, {
+    String cardName = '',
+  }) {
+    final notes = <String>[];
+    if (!plan.hasUi) {
+      final reason = plan.evidenceSummary.trim().isEmpty
+          ? 'AI 判断原卡没有可转译 UI。'
+          : 'AI 判断不生成 UI：${plan.evidenceSummary}';
+      return BuiltAssembly(
+        assemblies: const [],
+        statusFields: const [],
+        notes: [reason, ...plan.notes],
+      );
+    }
+
+    final theme = UiVisualTheme.fromJson({
+      'pcbColor': plan.visualStyle.pcbColor,
+      'panelColor': plan.visualStyle.panelColor,
+      'titleColor': plan.visualStyle.titleColor,
+      'labelColor': plan.visualStyle.labelColor,
+      'valueColor': plan.visualStyle.valueColor,
+      'barFillColor': plan.visualStyle.barFillColor,
+      'barTrackColor': plan.visualStyle.barTrackColor,
+      'accentColor': plan.visualStyle.accentColor,
+      'buttonBgColor': plan.visualStyle.buttonBgColor,
+      'borderRadius': plan.visualStyle.borderRadius,
+      'glow': plan.visualStyle.glow,
+    });
+
+    var seed = DateTime.now().millisecondsSinceEpoch;
+    String nextId(String prefix) => '${prefix}_${seed++}';
+
+    final statusFields = <Map<String, dynamic>>[];
+    final pageTitles = _planPageTitles(plan);
+    final pageIds = <String, String>{
+      for (final title in pageTitles) title: 'page_${nextId('page')}',
+    };
+
+    final fieldsByPage = <String, List<UiPlanField>>{
+      for (final title in pageTitles) title: <UiPlanField>[],
+    };
+    final actionsByPage = <String, List<UiPlanAction>>{
+      for (final title in pageTitles) title: <UiPlanAction>[],
+    };
+    for (final f in _dedupePlanFields(plan.fields)) {
+      final page = _resolvePlanPage(f.page, pageTitles, f.isNumber ? '属性' : '档案');
+      fieldsByPage.putIfAbsent(page, () => <UiPlanField>[]).add(f);
+    }
+    for (final a in plan.actions) {
+      final page = _resolvePlanPage(a.page, pageTitles, '选项');
+      actionsByPage.putIfAbsent(page, () => <UiPlanAction>[]).add(a);
+    }
+
+    final mode = plan.uiMode;
+    final pcbW = switch (mode) {
+      'extra_companion' => 212.0,
+      'opening' => 320.0,
+      'scene' => 360.0,
+      'extra_sticky' => 320.0,
+      _ => 212.0,
+    };
+    final innerW = pcbW - _Layout.pcbPadding * 2;
+    final pages = <Map<String, dynamic>>[];
+    final pageHeights = <double>[];
+
+    for (var i = 0; i < pageTitles.length; i++) {
+      final title = pageTitles[i];
+      final elements = _buildPlanPageElements(
+        pageTitle: title,
+        pageIndex: i,
+        pageTitles: pageTitles,
+        pageIds: pageIds,
+        fields: fieldsByPage[title] ?? const [],
+        actions: actionsByPage[title] ?? const [],
+        nextId: nextId,
+        statusFields: statusFields,
+        theme: theme,
+        mode: mode,
+        pcbW: pcbW,
+        innerW: innerW,
+      );
+      final h = _pageContentHeight(elements);
+      pageHeights.add(h);
+      pages.add({
+        'id': pageIds[title],
+        'name': title,
+        'type': 'base',
+        'parentPageId': null,
+        'sortOrder': i,
+        'elements': elements,
+        'gestures': <dynamic>[],
+        'propertyOverrides': <dynamic>[],
+      });
+    }
+
+    final pcbH = pageHeights.isEmpty
+        ? 96.0
+        : pageHeights.reduce((a, b) => a > b ? a : b);
+    for (final page in pages) {
+      final elements = page['elements'];
+      if (elements is! List) continue;
+      for (final element in elements) {
+        if (element is Map && element['name'] == '底板') {
+          final size = element['size'];
+          if (size is Map) size['height'] = pcbH;
+        }
+      }
+    }
+
+    notes.add('AI 已理解原卡 UI 并生成 ${plan.uiName}（置信度 ${plan.confidence.toStringAsFixed(2)}）。');
+    if (plan.evidenceSummary.trim().isNotEmpty) {
+      notes.add('UI 证据：${plan.evidenceSummary.trim()}');
+    }
+    notes.addAll(plan.notes);
+    for (final item in plan.unsupported) {
+      final reason = item.reason.trim().isEmpty ? item.kind : item.reason.trim();
+      notes.add('未转译：$reason${item.sourceRef.trim().isEmpty ? '' : '（${item.sourceRef}）'}');
+    }
+
+    return BuiltAssembly(
+      assemblies: [
+        _assembly(
+          id: nextId('asm'),
+          name: plan.uiName.trim().isEmpty
+              ? '${cardName.isEmpty ? '角色' : cardName} UI'
+              : plan.uiName,
+          mode: mode,
+          pcbW: pcbW,
+          pcbH: pcbH,
+          pages: pages,
+          pcbColor: theme.pcbColor,
+          pcbRadius: theme.borderRadius,
+        ),
+      ],
       statusFields: statusFields,
       notes: notes,
     );
@@ -716,6 +863,371 @@ class UiAssemblyBuilder {
     return [bg, ...elements];
   }
 
+  // ─────────────────────── AI Plan 编译辅助 ───────────────────────
+
+  static List<String> _planPageTitles(UiDesignPlan plan) {
+    final titles = <String>[];
+    void add(String value) {
+      final v = value.trim();
+      if (v.isEmpty) return;
+      if (!titles.contains(v)) titles.add(v);
+    }
+
+    for (final p in plan.layout.pages) {
+      add(p.title);
+    }
+    for (final f in plan.fields) {
+      add(f.page);
+    }
+    for (final a in plan.actions) {
+      add(a.page);
+    }
+    if (titles.isEmpty) {
+      final hasNumber = plan.fields.any((f) => f.isNumber);
+      final hasText = plan.fields.any((f) => !f.isNumber);
+      if (hasNumber) titles.add('属性');
+      if (hasText) titles.add('档案');
+      if (plan.actions.isNotEmpty) titles.add('选项');
+      if (titles.isEmpty) titles.add('主界面');
+    }
+    return titles.take(5).toList();
+  }
+
+  static String _resolvePlanPage(
+    String requested,
+    List<String> titles,
+    String preferred,
+  ) {
+    final r = requested.trim();
+    if (r.isNotEmpty && titles.contains(r)) return r;
+    if (titles.contains(preferred)) return preferred;
+    return titles.isEmpty ? '主界面' : titles.first;
+  }
+
+  static List<UiPlanField> _dedupePlanFields(List<UiPlanField> fields) {
+    final seen = <String>{};
+    final out = <UiPlanField>[];
+    for (final f in fields) {
+      final key = f.name.trim().toLowerCase();
+      if (key.isEmpty || !seen.add(key)) continue;
+      out.add(f);
+      if (out.length >= _Layout.maxFields * 2) break;
+    }
+    return out;
+  }
+
+  static double _pageContentHeight(List<Map<String, dynamic>> elements) {
+    var maxH = 64.0;
+    for (final e in elements) {
+      final offset = e['offset'];
+      final size = e['size'];
+      if (offset is! Map || size is! Map) continue;
+      final x = (offset['x'] as num?)?.toDouble() ?? 0.0;
+      // 后台逻辑件不参与 PCB 高度计算。
+      if (x < 0) continue;
+      final y = (offset['y'] as num?)?.toDouble() ?? 0.0;
+      final h = (size['height'] as num?)?.toDouble() ?? 0.0;
+      final bottom = y + h + _Layout.pcbPadding;
+      if (bottom > maxH) maxH = bottom;
+    }
+    return maxH.clamp(64.0, 2000.0).toDouble();
+  }
+
+  static List<Map<String, dynamic>> _buildPlanPageElements({
+    required String pageTitle,
+    required int pageIndex,
+    required List<String> pageTitles,
+    required Map<String, String> pageIds,
+    required List<UiPlanField> fields,
+    required List<UiPlanAction> actions,
+    required String Function(String) nextId,
+    required List<Map<String, dynamic>> statusFields,
+    required UiVisualTheme theme,
+    required String mode,
+    required double pcbW,
+    required double innerW,
+  }) {
+    final elements = <Map<String, dynamic>>[];
+    var y = _Layout.pcbPadding;
+
+    if (pageTitles.length > 1) {
+      final tabW = (innerW - (pageTitles.length - 1) * 6.0) / pageTitles.length;
+      const tabH = 22.0;
+      final routerIds = <String, String>{};
+      for (final title in pageTitles) {
+        if (title == pageTitle) continue;
+        final routerId = nextId('el');
+        routerIds[title] = routerId;
+        elements.add(_pageRouter(
+          id: routerId,
+          name: '路由器_$title',
+          targetPageId: pageIds[title] ?? '',
+        ));
+      }
+      for (var i = 0; i < pageTitles.length; i++) {
+        final title = pageTitles[i];
+        final active = title == pageTitle;
+        final x = _Layout.pcbPadding + i * (tabW + 6.0);
+        final surfaceId = nextId('el');
+        elements.add(_surface(
+          id: surfaceId,
+          name: '标签底_$title',
+          x: x,
+          y: y,
+          w: tabW,
+          h: tabH,
+          color: active ? theme.accentColor : theme.buttonBgColor,
+          layer: elements.length + 1,
+          radius: 6,
+        ));
+        elements.add(_text(
+          id: nextId('el'),
+          name: '标签文_$title',
+          text: title,
+          x: x + 2,
+          y: y + 4,
+          w: tabW - 4,
+          h: 14,
+          fontSize: 9,
+          color: active ? theme.titleColor : theme.labelColor,
+          align: 'center',
+          layer: elements.length + 1,
+        ));
+        if (!active) {
+          final buttonId = nextId('el');
+          elements.add(_button(
+            id: buttonId,
+            name: '标签按_$title',
+            x: x,
+            y: y,
+            w: tabW,
+            h: tabH,
+            layer: elements.length + 1,
+            sendsMessage: false,
+            keyAction: false,
+            color: 0x00000000,
+          ));
+          elements.add(_pressLinker2(
+            id: nextId('el'),
+            name: '标签跳_$title',
+            buttonId: buttonId,
+            routerId: routerIds[title]!,
+            scheme: 'button_to_page_route',
+            y: i * 52.0,
+            layer: elements.length + 1,
+          ));
+        }
+      }
+      y += tabH + 12.0;
+    } else {
+      elements.add(_text(
+        id: nextId('el'),
+        name: '标题',
+        text: pageTitle,
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        h: 22,
+        fontSize: mode == 'extra_companion' ? 13 : 16,
+        color: theme.titleColor,
+        align: 'center',
+        layer: elements.length + 1,
+      ));
+      y += 28.0;
+    }
+
+    const labelW = 56.0;
+    for (final f in fields) {
+      final fieldId = 'sf_${_slug(f.name)}';
+      final isProgress = f.isNumber && f.display == 'progress';
+      final min = f.min ?? 0.0;
+      final max = f.max ?? 100.0;
+      final initialNumber = _numberOf(f.initialValue) ?? min;
+      final initial = f.isNumber ? _trimNumber(initialNumber) : f.initialValue;
+
+      statusFields.add({
+        'id': fieldId,
+        'name': f.name,
+        'type': f.isNumber ? 'number' : 'text',
+        'initial_value': initial,
+        'min_value': f.isNumber ? min : null,
+        'max_value': f.isNumber ? max : null,
+        'pin_side': 'none',
+        'order': statusFields.length,
+        'owner': f.owner,
+      });
+
+      elements.add(_text(
+        id: nextId('el'),
+        name: '${f.name}标签',
+        text: _decorateEmoji(f.name),
+        x: _Layout.pcbPadding,
+        y: y,
+        w: labelW,
+        h: _Layout.rowHeight,
+        fontSize: mode == 'extra_companion' ? 10 : 12,
+        color: theme.labelColor,
+        align: 'left',
+        layer: elements.length + 1,
+      ));
+
+      if (isProgress) {
+        elements.add(_progress(
+          id: nextId('el'),
+          name: f.name,
+          x: _Layout.pcbPadding + labelW + 6,
+          y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
+          w: innerW - labelW - 6,
+          h: _Layout.barHeight,
+          statusFieldId: fieldId,
+          layer: elements.length + 1,
+          barFillColor: _barColorOf(f.name, theme.barFillColor),
+          barTrackColor: theme.barTrackColor,
+          min: min,
+          max: max,
+          current: initialNumber.clamp(min, max).toDouble(),
+        ));
+      } else {
+        elements.add(_text(
+          id: nextId('el'),
+          name: f.name,
+          text: initial.isEmpty ? '—' : initial,
+          x: _Layout.pcbPadding + labelW + 6,
+          y: y,
+          w: innerW - labelW - 6,
+          h: _Layout.rowHeight,
+          fontSize: mode == 'extra_companion' ? 11 : 12,
+          color: theme.valueColor,
+          align: 'left',
+          layer: elements.length + 1,
+          statusFieldId: fieldId,
+        ));
+      }
+      y += _Layout.rowHeight + _Layout.rowGap;
+    }
+
+    final pressPairs = <({String surface, String button})>[];
+    final localActions = [...actions];
+    final needsGeneratedKeyAction = mode == 'opening'
+        ? localActions.isEmpty
+        : (_modeRequiresGeneratedKeyAction(mode) &&
+            !localActions.any((a) => a.sendText.trim().isEmpty));
+    if (needsGeneratedKeyAction) {
+      localActions.insert(
+        0,
+        UiPlanAction(
+          label: _keyActionLabel(mode),
+          sendText: '',
+          branchIndex: null,
+          page: pageTitle,
+          sourceRef: 'generated:keyAction',
+        ),
+      );
+    }
+    for (var i = 0; i < localActions.length; i++) {
+      final a = localActions[i];
+      final label = a.label.trim().isNotEmpty ? a.label.trim() : a.sendText.trim();
+      if (label.isEmpty) continue;
+      final surfaceId = nextId('el');
+      elements.add(_surface(
+        id: surfaceId,
+        name: '按钮底_${i + 1}',
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        h: _Layout.buttonHeight,
+        color: theme.buttonBgColor,
+        layer: elements.length + 1,
+        radius: 8,
+      ));
+      elements.add(_text(
+        id: nextId('el'),
+        name: '按钮文_${i + 1}',
+        text: label,
+        x: _Layout.pcbPadding + 10,
+        y: y + 8,
+        w: innerW - 20,
+        h: 18,
+        fontSize: mode == 'extra_companion' ? 10 : 12,
+        color: theme.valueColor,
+        align: 'center',
+        layer: elements.length + 1,
+      ));
+      final buttonId = nextId('el');
+      elements.add(_button(
+        id: buttonId,
+        name: label,
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        h: _Layout.buttonHeight,
+        layer: elements.length + 1,
+        sendsMessage: a.sendText.trim().isNotEmpty,
+        keyAction: _shouldMarkKeyAction(mode, a),
+        message: a.sendText.trim(),
+        targetBranchIndex: a.branchIndex,
+        color: theme.accentColor,
+      ));
+      pressPairs.add((surface: surfaceId, button: buttonId));
+      y += _Layout.buttonHeight + 8;
+    }
+
+    for (var i = 0; i < pressPairs.length; i++) {
+      elements.add(_pressLinker(
+        id: nextId('el'),
+        name: '按钮_${i + 1}按压',
+        buttonId: pressPairs[i].button,
+        surfaceId: pressPairs[i].surface,
+        y: i * 52.0,
+        layer: elements.length + 1,
+        color: theme.accentColor,
+      ));
+    }
+
+    final bg = _surface(
+      id: nextId('el'),
+      name: '底板',
+      x: 0,
+      y: 0,
+      w: pcbW,
+      h: (y + _Layout.pcbPadding).clamp(64.0, 2000.0).toDouble(),
+      color: theme.panelColor,
+      layer: 0,
+      radius: theme.borderRadius,
+    );
+    return [bg, ...elements];
+  }
+
+  static bool _modeRequiresGeneratedKeyAction(String mode) =>
+      mode == 'opening' || mode == 'scene' || mode == 'extra_sticky';
+
+  static bool _shouldMarkKeyAction(String mode, UiPlanAction action) {
+    if (mode == 'opening') return true;
+    if (mode == 'scene' || mode == 'extra_sticky') {
+      // 有发送内容的按钮承担“发消息”职责；非发送按钮承担关键操作。
+      return action.sendText.trim().isEmpty;
+    }
+    return false;
+  }
+
+  static String _keyActionLabel(String mode) => switch (mode) {
+        'opening' => '开始',
+        'scene' => '设置',
+        'extra_sticky' => '收起',
+        _ => '确认',
+      };
+
+  static double? _numberOf(String raw) {
+    if (RegExp(r'[万亿千百]').hasMatch(raw)) return null;
+    final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(raw);
+    return m == null ? null : double.tryParse(m.group(0)!);
+  }
+
+  static String _trimNumber(double value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+  }
+
   static Map<String, dynamic> _pageRouter({
     required String id,
     required String name,
@@ -1132,6 +1644,9 @@ class UiAssemblyBuilder {
     required String statusFieldId,
     required int barFillColor,
     required int barTrackColor,
+    double min = 0.0,
+    double max = 100.0,
+    double current = 0.0,
   }) =>
       _element(
         id: id,
@@ -1148,9 +1663,9 @@ class UiAssemblyBuilder {
           shape: 2, // capsule
           radius: h / 2,
           props: {
-            'min': 0.0,
-            'max': 100.0,
-            'current': 0.0,
+            'min': min,
+            'max': max,
+            'current': current,
             'progressShape': 'capsule',
             'trackColor': barTrackColor,
             'dataChannel': _channel(

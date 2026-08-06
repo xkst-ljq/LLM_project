@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llm_card_converter/core/conversion_models.dart';
+import 'package:llm_card_converter/core/ui_assembly_builder.dart';
+import 'package:llm_card_converter/core/ui_understanding/ui_design_plan.dart';
 import 'package:llm_card_converter/pipeline/pipeline.dart';
 
 Map<String, dynamic> _ariaV2() => {
@@ -126,6 +128,74 @@ void main() {
       expect(item.stageStatus[PipelineStage.rule], StageStatus.done);
       expect(item.stageStatus[PipelineStage.aiClassify], StageStatus.skipped);
       expect(item.stageStatus[PipelineStage.refine], StageStatus.skipped);
+    });
+  });
+
+  group('AI UI plan compiler', () {
+    test('compiles UiDesignPlan into assembly JSON and status fields', () {
+      final plan = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'confidence': 0.9,
+        'uiMode': 'extra_companion',
+        'uiName': '状态面板',
+        'evidenceSummary': '测试证据',
+        'sourceRefs': ['data.first_mes'],
+        'visualStyle': {
+          'pcbColor': '#111318',
+          'panelColor': '#1E232B',
+          'titleColor': '#FFFFFF',
+          'labelColor': '#AAB0BC',
+          'valueColor': '#E8EDF5',
+          'accentColor': '#4FA3D1',
+          'buttonBgColor': '#2A3340',
+          'barFillColor': '#4FA3D1',
+          'barTrackColor': '#2A2D36',
+          'borderRadius': 14,
+          'glow': false,
+        },
+        'layout': {
+          'kind': 'tabbed_companion_panel',
+          'pages': [
+            {'title': '属性', 'role': 'stats'},
+            {'title': '选项', 'role': 'actions'},
+          ],
+        },
+        'fields': [
+          {
+            'name': '生命',
+            'type': 'number',
+            'display': 'progress',
+            'initialValue': '84',
+            'min': 0,
+            'max': 100,
+            'owner': 'player',
+            'page': '属性',
+            'sourceRef': 'data.first_mes:<生命>84%</生命>',
+          },
+        ],
+        'actions': [
+          {
+            'label': '继续',
+            'sendText': '继续',
+            'branchIndex': 0,
+            'page': '选项',
+            'sourceRef': 'data.first_mes onclick send',
+          },
+        ],
+        'unsupported': [],
+        'notes': [],
+      });
+
+      final built = UiAssemblyBuilder.buildFromPlan(plan, cardName: '测试卡');
+      expect(built.isEmpty, isFalse);
+      expect(built.statusFields, hasLength(1));
+      expect(built.statusFields.first['name'], '生命');
+
+      final assembly = jsonDecode(built.assemblies.first) as Map;
+      expect(assembly['mode'], 'extra_companion');
+      expect(assembly['elements'], '[]');
+      final pages = jsonDecode(assembly['pages'] as String) as List;
+      expect(pages, hasLength(2));
     });
   });
 
