@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -593,6 +594,63 @@ class _WorkspacePageState extends State<WorkspacePage> {
     );
   }
 
+  Future<void> _retryAiUiStage(_WorkItem item) async {
+    if (_running) return;
+    final cfg = await AppSettings.getApiConfig();
+    if (!cfg.isComplete) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未配置 AI API，请先在设置中填写 API。')),
+      );
+      return;
+    }
+
+    _addLog('${item.card.name}：重试 AI UI 理解');
+    setState(() {
+      item.progress = 0;
+      item.error = null;
+      item.showUiPreview = true;
+      item.work.stageStatus[PipelineStage.buildUi] = StageStatus.running;
+    });
+
+    try {
+      await _pipeline.runBuildUiStage(item.work);
+      final after = item.work.current?.characterData;
+      final count = _countAssemblies(after);
+      _addLog(count == 0 ? '  未生成（AI 判断无 UI）' : '  已重新生成 $count 份 UI');
+      if (item.status == _WorkStatus.failed) item.status = _WorkStatus.done;
+      item.progress = 1;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('AI UI 理解已重试完成')),
+      );
+    } catch (e) {
+      item.error = 'AI UI 重试失败：$e';
+      item.work.stageStatus[PipelineStage.buildUi] = StageStatus.failed;
+      _addLog('  重试失败：$e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI UI 重试失败：$e')),
+      );
+    } finally {
+      if (mounted) setState(() {});
+    }
+  }
+
+  int _countAssemblies(Map<String, dynamic>? card) {
+    if (card == null) return 0;
+    final raw = card['meta_json'];
+    if (raw is! String || raw.isEmpty) return 0;
+    try {
+      final meta = jsonDecode(raw);
+      if (meta is! Map) return 0;
+      final list = meta['ui_assemblies'];
+      return list is List ? list.length : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Widget _sideButtons(_WorkItem item) {
     return Padding(
       padding: const EdgeInsets.all(8),
@@ -608,6 +666,19 @@ class _WorkspacePageState extends State<WorkspacePage> {
                 Icon(Icons.edit, size: 18),
                 SizedBox(height: 4),
                 Text('编辑', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: _running ? null : () => _retryAiUiStage(item),
+            style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
+            child: const Column(
+              children: [
+                Icon(Icons.refresh, size: 18),
+                SizedBox(height: 4),
+                Text('重试UI', style: TextStyle(fontSize: 12)),
               ],
             ),
           ),

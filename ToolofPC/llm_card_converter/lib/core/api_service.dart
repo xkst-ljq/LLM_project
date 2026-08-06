@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 
 /// 一条聊天消息。
@@ -20,6 +22,15 @@ class ChatCompleteOptions {
   final bool jsonMode;
   final Duration timeout;
 
+  /// 网络瞬断 / 握手失败 / 5xx / 429 的自动重试次数。
+  ///
+  /// 注意：400 这类请求结构错误不会重试——例如某些服务不支持
+  /// `response_format` 时，上层会直接降级为普通请求。
+  final int retryCount;
+
+  /// 首次重试等待时间；后续按 2x 简单退避。
+  final Duration retryDelay;
+
   /// 预留扩展：不同 OpenAI 兼容服务的自定义字段。
   ///
   /// 例如部分服务支持 `top_p` / `presence_penalty` / `seed` 等，
@@ -31,6 +42,8 @@ class ChatCompleteOptions {
     this.maxTokens,
     this.jsonMode = false,
     this.timeout = const Duration(seconds: 120),
+    this.retryCount = 2,
+    this.retryDelay = const Duration(milliseconds: 900),
     this.extraBody = const {},
   });
 }
@@ -83,6 +96,37 @@ class ApiService {
     required List<ChatMessage> messages,
     ChatCompleteOptions options = const ChatCompleteOptions(),
   }) async {
+    Object? lastError;
+    final attempts = options.retryCount < 0 ? 1 : options.retryCount + 1;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        return await _chatMessagesOnce(
+          baseUrl: baseUrl,
+          apiKey: apiKey,
+          model: model,
+          messages: messages,
+          options: options,
+        );
+      } catch (e) {
+        lastError = e;
+        final canRetry = attempt + 1 < attempts && _isRetryableError(e);
+        if (!canRetry) rethrow;
+        final multiplier = 1 << attempt;
+        await Future<void>.delayed(
+          Duration(milliseconds: options.retryDelay.inMilliseconds * multiplier),
+        );
+      }
+    }
+    throw lastError ?? Exception('请求失败：未知错误');
+  }
+
+  static Future<String> _chatMessagesOnce({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required List<ChatMessage> messages,
+    required ChatCompleteOptions options,
+  }) async {
     final base = normalizeBase(baseUrl);
     final dio = Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 15),
@@ -119,6 +163,29 @@ class ApiService {
       throw Exception('模型返回为空');
     }
     return content;
+  }
+
+  static bool _isRetryableError(Object error) {
+    if (error is DioException) {
+      switch (error.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.connectionError:
+          return true;
+        case DioExceptionType.badResponse:
+          final code = error.response?.statusCode ?? 0;
+          return code == 408 || code == 409 || code == 425 || code == 429 ||
+              (code >= 500 && code <= 599);
+        case DioExceptionType.unknown:
+          final inner = error.error;
+          return inner is SocketException || inner is HandshakeException;
+        case DioExceptionType.cancel:
+        case DioExceptionType.badCertificate:
+          return false;
+      }
+    }
+    return error is SocketException || error is HandshakeException;
   }
 
   /// 聊天补全（非流式）。返回模型输出的文本内容。
