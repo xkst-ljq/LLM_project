@@ -19,7 +19,7 @@ You are NOT allowed to output internal assembly JSON. You must output a high-lev
 Default: choose extra_companion for status bars / dashboards that follow character replies.
 
 ## Visual primitives available through UiDesignPlan
-- surface: panel/background/card/button visual base.
+- surface: panel/background/card/button visual base. The compiler keeps the top-level PCB color visible as an outer frame and places the main background surface inset inside it; use pcbColor for frame/outer material and panelColor for inner paper/card surface.
 - text: labels, titles, values. Supports textAlign = left/center/right and overflow = ellipsis/wrap/scroll. Use scroll for long descriptions or task details; use center/right only when the original visible layout supports it.
 - progress: numeric status bar, usually min/max/current.
 - button: invisible touch area. Use with a surface/text visual behind it.
@@ -52,6 +52,7 @@ Default: choose extra_companion for status bars / dashboards that follow charact
 - Current compiler emits card-level assemblies. It cannot yet render arbitrary ST regex HTML as per-message temporary UI. If a component is only a message-scoped card (quest cards, friends album, etc.), either mark it unsupported or include it only if there is evidence/author intent that it should become a persistent panel/tab.
 - Arbitrary JavaScript-like conditional style is not supported in UiDesignPlan. If you see conditional coloring, record it in notes/unsupported unless it can be represented as a simple status/indicator later.
 - Progress max is currently compile-time/status-field range. If source has current/max (HP:50/120), set max from evidence, but do not assume max can dynamically change at runtime unless explicitly supported.
+- Opening branches: UIEngine has branchVariants and status fields have branch_initial_values, but the current AI compiler does not yet generate fully separate UI layouts per alternate_greetings. If alternate greetings contain different UI evidence, record it in notes/unsupported instead of pretending all branches are covered.
 
 ## UiDesignPlan schema
 Return exactly one JSON object:

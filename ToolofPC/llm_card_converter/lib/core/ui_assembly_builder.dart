@@ -276,10 +276,7 @@ class UiAssemblyBuilder {
 
     final statusFields = <Map<String, dynamic>>[];
     final mode = plan.uiMode;
-    final pageTitles = _planPageTitles(plan);
-    final pageIds = <String, String>{
-      for (final title in pageTitles) title: 'page_${nextId('page')}',
-    };
+    var pageTitles = _planPageTitles(plan);
 
     final fieldsByPage = <String, List<UiPlanField>>{
       for (final title in pageTitles) title: <UiPlanField>[],
@@ -306,6 +303,28 @@ class UiAssemblyBuilder {
       final page = _resolvePlanPage(a.page, pageTitles, '选项');
       actionsByPage.putIfAbsent(page, () => <UiPlanAction>[]).add(a);
     }
+
+    // AI 有时会根据原卡证据创建“任务/好友”等页签，但没有给出可编译
+    // 字段或动作。空页会误导作者，以为内容丢失；这里直接移除并说明原因。
+    if (pageTitles.length > 1) {
+      final emptyPages = pageTitles.where((title) {
+        return (fieldsByPage[title]?.isEmpty ?? true) &&
+            (inputsByPage[title]?.isEmpty ?? true) &&
+            (actionsByPage[title]?.isEmpty ?? true);
+      }).toList();
+      if (emptyPages.isNotEmpty && emptyPages.length < pageTitles.length) {
+        pageTitles = pageTitles
+            .where((title) => !emptyPages.contains(title))
+            .toList();
+        for (final title in emptyPages) {
+          notes.add('已移除空页面「$title」：AI 没有提供可编译的字段/输入/动作。');
+        }
+      }
+    }
+    if (pageTitles.isEmpty) pageTitles = ['主界面'];
+    final pageIds = <String, String>{
+      for (final title in pageTitles) title: 'page_${nextId('page')}',
+    };
 
     final pcbW = switch (mode) {
       'extra_companion' => 212.0,
@@ -363,7 +382,17 @@ class UiAssemblyBuilder {
       for (final element in elements) {
         if (element is Map && element['name'] == '底板') {
           final size = element['size'];
-          if (size is Map) size['height'] = pcbH;
+          final offset = element['offset'];
+          if (size is Map) {
+            final insetX = offset is Map
+                ? ((offset['x'] as num?)?.toDouble() ?? 0.0)
+                : 0.0;
+            final insetY = offset is Map
+                ? ((offset['y'] as num?)?.toDouble() ?? 0.0)
+                : 0.0;
+            size['width'] = (pcbW - insetX * 2).clamp(0.0, pcbW).toDouble();
+            size['height'] = (pcbH - insetY * 2).clamp(0.0, pcbH).toDouble();
+          }
         }
       }
     }
@@ -1275,18 +1304,29 @@ class UiAssemblyBuilder {
       ));
     }
 
+    final frameInset = _frameInsetFor(mode);
+    final bgHeight = (y + _Layout.pcbPadding).clamp(64.0, 2000.0).toDouble();
     final bg = _surface(
       id: nextId('el'),
       name: '底板',
-      x: 0,
-      y: 0,
-      w: pcbW,
-      h: (y + _Layout.pcbPadding).clamp(64.0, 2000.0).toDouble(),
+      x: frameInset,
+      y: frameInset,
+      w: (pcbW - frameInset * 2).clamp(0.0, pcbW).toDouble(),
+      h: (bgHeight - frameInset * 2).clamp(0.0, bgHeight).toDouble(),
       color: theme.panelColor,
       layer: 0,
       radius: theme.borderRadius,
     );
     return [bg, ...elements];
+  }
+
+  static double _frameInsetFor(String mode) {
+    // 伴生面板宽度很窄，留 8px 就足以看出“PCB 外框 + 内层面板”层次。
+    if (mode == 'extra_companion') return 8.0;
+    if (mode == 'opening' || mode == 'scene' || mode == 'extra_sticky') {
+      return 12.0;
+    }
+    return 8.0;
   }
 
   static bool _modeRequiresGeneratedKeyAction(String mode) =>

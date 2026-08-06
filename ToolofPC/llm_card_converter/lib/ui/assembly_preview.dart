@@ -56,12 +56,12 @@ class AssemblyPreview extends StatefulWidget {
 class _AssemblyPreviewState extends State<AssemblyPreview> {
   int _index = 0;
 
-  /// 默认按 100% 原始尺寸预览，超出区域滚动查看。
+  /// 默认放大到 150% 预览，超出区域滚动查看。
   ///
-  /// 旧版为了“完整塞进 420px 展开区”会自动缩小，伴生 UI 高度稍高时
-  /// 看起来只有七八成大小，无法判断真实字号和间距。作者需要看真实效果
-  /// 时，100% 比“完整适配”更重要。
-  bool _fitToWindow = false;
+  /// PC 工具窗口里 1:1 的 212px 伴生 UI 仍然偏小，不利于审稿；预览放大
+  /// 只影响工作台查看，不改变导出的 UI 实际尺寸。作者仍可切回 100%
+  /// 或适配窗口。
+  double _previewScale = 1.5;
 
   @override
   void didUpdateWidget(covariant AssemblyPreview oldWidget) {
@@ -144,22 +144,21 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
                 ),
               ),
               const SizedBox(width: 8),
-              SegmentedButton<bool>(
-                style: ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: const WidgetStatePropertyAll(
-                    TextStyle(fontSize: 11),
-                  ),
+              DropdownButtonHideUnderline(
+                child: DropdownButton<double>(
+                  value: _previewScale,
+                  isDense: true,
+                  items: const [
+                    DropdownMenuItem(value: 1.0, child: Text('100%')),
+                    DropdownMenuItem(value: 1.5, child: Text('150%')),
+                    DropdownMenuItem(value: 2.0, child: Text('200%')),
+                    DropdownMenuItem(value: 0.0, child: Text('适配')),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _previewScale = v);
+                  },
                 ),
-                segments: const [
-                  ButtonSegment(value: false, label: Text('100%')),
-                  ButtonSegment(value: true, label: Text('适配')),
-                ],
-                selected: {_fitToWindow},
-                onSelectionChanged: (v) {
-                  setState(() => _fitToWindow = v.first);
-                },
               ),
             ],
           ),
@@ -183,12 +182,12 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
   Widget _buildStage(UIAssemblyInfo info) {
     return LayoutBuilder(
       builder: (context, box) {
-        final scale = _fitToWindow
+        final scale = _previewScale == 0.0
             ? _fitScale(
                 content: Size(info.pcbWidth, info.pcbHeight),
                 box: Size(box.maxWidth - 32, box.maxHeight - 32),
               )
-            : 1.0;
+            : _previewScale;
         final scaledW = info.pcbWidth * scale;
         final scaledH = info.pcbHeight * scale;
         return Container(
