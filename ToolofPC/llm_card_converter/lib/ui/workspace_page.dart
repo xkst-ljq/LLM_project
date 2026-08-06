@@ -776,6 +776,96 @@ class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
     );
   }
 
+  String _roleLabel(String role) {
+    switch (role) {
+      case 'system':
+        return '系统提示';
+      case 'assistant':
+        return '转译AI';
+      case 'user':
+        return '制作者/上下文';
+      default:
+        return role;
+    }
+  }
+
+  String _translationLogText() {
+    final context = widget.item.work.uiAiConversationContext;
+    if (context.isEmpty) return '（没有可显示的 UI 转译日志 / 隐藏上下文）';
+    final title = widget.item.work.current?.characterName ?? widget.item.card.name;
+    final buffer = StringBuffer()
+      ..writeln('LLM Project UI 转译日志')
+      ..writeln('卡片：$title')
+      ..writeln('上下文消息数：${context.length}')
+      ..writeln('说明：这是“与转译 AI 对话”时注入的隐藏上下文；不包含你后续追问的可见对话。')
+      ..writeln(''.padLeft(60, '='));
+    for (var i = 0; i < context.length; i++) {
+      final m = context[i];
+      buffer
+        ..writeln()
+        ..writeln('【${i + 1}. ${_roleLabel(m.role)} / ${m.role}】')
+        ..writeln(m.content.trim());
+    }
+    return buffer.toString();
+  }
+
+  Future<void> _copyTranslationLog() async {
+    await Clipboard.setData(ClipboardData(text: _translationLogText()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制转译日志（隐藏上下文）')),
+    );
+  }
+
+  Future<void> _openTranslationLogDialog() async {
+    final logText = _translationLogText();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('UI 转译日志 / 隐藏上下文'),
+        content: SizedBox(
+          width: 820,
+          height: 560,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F7FA),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE0E0E6)),
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: SelectableText(
+                logText,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.45,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: logText));
+              if (!dialogContext.mounted) return;
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                const SnackBar(content: Text('已复制转译日志')),
+              );
+            },
+            icon: const Icon(Icons.copy_all_outlined, size: 18),
+            label: const Text('复制日志'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final turns = widget.item.aiChatTurns;
@@ -812,8 +902,18 @@ class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
                     ),
                   ),
                   IconButton(
+                    tooltip: '查看 UI 转译日志（隐藏上下文）',
+                    icon: const Icon(Icons.article_outlined),
+                    onPressed: _openTranslationLogDialog,
+                  ),
+                  IconButton(
+                    tooltip: '一键复制 UI 转译日志（隐藏上下文）',
+                    icon: const Icon(Icons.copy_rounded),
+                    onPressed: _copyTranslationLog,
+                  ),
+                  IconButton(
                     tooltip: '复制制作者与 AI 的对话（不含上下文）',
-                    icon: const Icon(Icons.copy_all_outlined),
+                    icon: const Icon(Icons.forum_outlined),
                     onPressed: _copyVisibleConversation,
                   ),
                   IconButton(
