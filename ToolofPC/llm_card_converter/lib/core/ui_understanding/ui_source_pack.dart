@@ -40,6 +40,24 @@ class UiSourcePack {
       actionSnippets.isNotEmpty ||
       worldBookEvidence.isNotEmpty;
 
+  bool get hasQuestSchema => _hasSchemaToken('quest:') ||
+      worldBookEvidence.any((e) => e.content.contains('{quest:'));
+
+  bool get hasChoiceBoxSchema => _hasSchemaToken('DQ_ChoiceBox') ||
+      worldBookEvidence.any((e) => e.content.contains('DQ_ChoiceBox'));
+
+  bool get hasFriendsAlbumSchema => _hasSchemaToken('FriendsAlbumPage') ||
+      worldBookEvidence.any((e) => e.content.contains('FriendsAlbumPage'));
+
+  bool _hasSchemaToken(String token) {
+    if (firstMes.contains(token)) return true;
+    if (alternateGreetings.any((e) => e.contains(token))) return true;
+    if (regexScripts.any((e) => e.findRegex.contains(token) || e.replaceString.contains(token))) {
+      return true;
+    }
+    return false;
+  }
+
   bool get _sourceSuggestsProfilePool {
     final text = '$description\n$systemPrompt'.toLowerCase();
     const markers = ['未指定', '随机生成', '姓名', '年龄', '服装', '外貌', '性格'];
@@ -55,6 +73,18 @@ class UiSourcePack {
     if (_sourceSuggestsProfilePool) {
       b.writeln('\n# Player profile input opportunity');
       b.writeln('The source says player traits may be specified or randomly generated. If opening UI is generated, add multiple profile input fields bound to status_field, e.g. 姓名/年龄/性别/外貌/性格/身份职业倾向/补充设定. Leave them optional; blank means the original random-generation rule still applies.');
+    }
+    if (hasQuestSchema || hasChoiceBoxSchema || hasFriendsAlbumSchema) {
+      b.writeln('\n# Stable UI schemas that may become persistent UI');
+      if (hasQuestSchema) {
+        b.writeln('- quest schema exists. If making a persistent UI, prefer a task_board scroll text field/page that LLM can update, instead of marking quest unsupported by default.');
+      }
+      if (hasChoiceBoxSchema) {
+        b.writeln('- DQ_ChoiceBox schema exists. If options are usable choices, generate sendsMessage actions/buttons; input_prompt may become an input in scene/opening.');
+      }
+      if (hasFriendsAlbumSchema) {
+        b.writeln('- FriendsAlbumPage schema exists. Consider a friends_album scroll text field/page that LLM can update for current team/known companions.');
+      }
     }
     if (description.trim().isNotEmpty) {
       b.writeln('\n## description\n${_clip(description, 5000)}');

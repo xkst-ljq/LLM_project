@@ -1187,21 +1187,23 @@ class UiAssemblyBuilder {
     }
 
     if (showMessageFlow) {
+      final fullMessagePage = fields.isEmpty && inputs.isEmpty && actions.isEmpty;
+      final flowHeight = fullMessagePage ? 650.0 : 320.0;
       elements.add(_messageFlow(
         id: nextId('el'),
         name: '剧情消息流',
         x: _Layout.pcbPadding,
         y: y,
         w: innerW,
-        h: 190,
+        h: flowHeight,
         color: theme.panelColor,
         layer: elements.length + 1,
         radius: 10,
       ));
-      y += 202.0;
+      y += flowHeight + 12.0;
     }
 
-    const labelW = 56.0;
+    final labelW = mode == 'extra_companion' ? 64.0 : 104.0;
     var currentGroup = '';
     for (final f in fields) {
       final group = f.group.trim();
@@ -1256,32 +1258,38 @@ class UiAssemblyBuilder {
       });
 
       final shouldScrollText = !isProgress && _shouldScrollTextField(f, initial, mode);
+      final shouldWrapText = !isProgress && f.overflow == 'wrap';
       final effectiveOverflow = shouldScrollText ? 'scroll' : f.overflow;
       final valueHeight = shouldScrollText
           ? _scrollTextHeightFor(initial, mode)
-          : _Layout.rowHeight;
+          : (shouldWrapText ? _wrapTextHeightFor(initial, mode) : _Layout.rowHeight);
+      final fullProgress = isProgress && mode != 'extra_companion';
+      final labelText = fullProgress
+          ? '${_decorateEmoji(f.name)}: $initial/${_trimNumber(max)}'
+          : _decorateEmoji(f.name);
 
       elements.add(_text(
         id: nextId('el'),
         name: '${f.name}标签',
-        text: _decorateEmoji(f.name),
+        text: labelText,
         x: _Layout.pcbPadding,
         y: y,
-        w: shouldScrollText ? innerW : labelW,
-        h: _Layout.rowHeight,
+        w: (shouldScrollText || fullProgress) ? innerW : labelW,
+        h: fullProgress ? 18 : _Layout.rowHeight,
         fontSize: mode == 'extra_companion' ? 10 : 12,
         color: theme.labelColor,
-        align: 'left',
+        align: fullProgress ? 'center' : 'left',
         layer: elements.length + 1,
+        overflow: fullProgress ? 'wrap' : 'ellipsis',
       ));
 
       if (isProgress) {
         elements.add(_progress(
           id: nextId('el'),
           name: f.name,
-          x: _Layout.pcbPadding + labelW + 6,
-          y: y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-          w: innerW - labelW - 6,
+          x: fullProgress ? _Layout.pcbPadding : _Layout.pcbPadding + labelW + 6,
+          y: fullProgress ? y + 20 : y + (_Layout.rowHeight - _Layout.barHeight) / 2,
+          w: fullProgress ? innerW : innerW - labelW - 6,
           h: _Layout.barHeight,
           statusFieldId: fieldId,
           layer: elements.length + 1,
@@ -1310,7 +1318,7 @@ class UiAssemblyBuilder {
         ));
       }
       y += (isProgress
-              ? _Layout.rowHeight
+              ? (fullProgress ? 20 + _Layout.barHeight : _Layout.rowHeight)
               : (shouldScrollText ? _Layout.rowHeight + valueHeight : valueHeight)) +
           _Layout.rowGap;
     }
@@ -1499,6 +1507,14 @@ class UiAssemblyBuilder {
     if (len > 180) return mode == 'extra_companion' ? 120.0 : 160.0;
     if (len > 90) return mode == 'extra_companion' ? 96.0 : 128.0;
     return base;
+  }
+
+  static double _wrapTextHeightFor(String value, String mode) {
+    final len = value.runes.length;
+    final line = mode == 'extra_companion' ? 18.0 : 20.0;
+    if (len > 42) return line * 3;
+    if (len > 20) return line * 2;
+    return _Layout.rowHeight;
   }
 
   static double? _numberOf(String raw) {

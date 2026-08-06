@@ -64,6 +64,21 @@ class UiPlanValidator {
       }
     }
 
+    if (plan.uiMode != 'opening') {
+      if (sourcePack.hasQuestSchema && !_hasFieldLike(plan, const ['quest', 'task', '任务'])) {
+        errors.add('检测到稳定 {quest...} 任务 schema；除非作者明确拒绝，运行时 UI 应提供 task_board/任务板 滚动文本字段或页面，供 LLM 更新任务，而不是只标 unsupported。');
+      }
+      if (sourcePack.hasFriendsAlbumSchema &&
+          !_hasFieldLike(plan, const ['friends', 'album', 'friend', '羁绊', '好友'])) {
+        errors.add('检测到稳定 FriendsAlbumPage schema；运行时 UI 应提供 friends_album/羁绊名录 滚动文本字段或页面，供 LLM 更新。');
+      }
+      if (sourcePack.hasChoiceBoxSchema &&
+          plan.actions.isEmpty &&
+          !_hasFieldLike(plan, const ['choice', 'option', '选项', '抉择'])) {
+        warnings.add('检测到 DQ_ChoiceBox schema，但当前方案没有 action，也没有选项/抉择字段；若作者希望可点击，应生成 sendsMessage actions。');
+      }
+    }
+
     if (plan.sourceRefs.isEmpty && plan.fields.every((f) => f.sourceRef.isEmpty) &&
         plan.inputs.every((i) => i.sourceRef.isEmpty) &&
         plan.actions.every((a) => a.sourceRef.isEmpty)) {
@@ -133,6 +148,16 @@ class UiPlanValidator {
       errors: errors,
       warnings: warnings,
     );
+  }
+
+  static bool _hasFieldLike(UiDesignPlan plan, List<String> needles) {
+    bool hit(String value) {
+      final lower = value.toLowerCase();
+      return needles.any((needle) => lower.contains(needle.toLowerCase()));
+    }
+
+    return plan.fields.any((field) =>
+        hit(field.name) || hit(field.sourceKey) || hit(field.group) || hit(field.page));
   }
 
   static bool _sourceSuggestsProfilePool(UiSourcePack sourcePack) {
