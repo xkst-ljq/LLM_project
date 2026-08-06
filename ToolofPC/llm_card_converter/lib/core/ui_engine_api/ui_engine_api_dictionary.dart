@@ -348,6 +348,14 @@ class UiEngineApiDictionary {
     'utility': ['name_to_text', 'to_string'],
   };
 
+  static const Map<String, dynamic> layoutPolicies = {
+    'fidelityFirst': '先还原原卡渲染结构、阅读顺序和分组，再因移动端冲突做适配。',
+    'avoidSparseTabs': '不要把原本单张长卡机械拆成很多空页；多页必须让每页有足够内容或作为 overlay 详情。',
+    'textSizing': '有意义的状态值/任务/物品/选项/位置不能靠 ellipsis；使用 wrap/scroll 并给足高度。',
+    'reasonableInteraction': '原卡纯文本选项可在作者确认或语义明确时增强为 sendsMessage 按钮；不改变玩法规则。',
+    'useOriginalGrid': '原卡有 flex/grid/两列进度条时，应优先保留其布局意图，而不是单列堆叠。',
+  };
+
   static const Map<String, dynamic> layoutPatterns = {
     'opening_then_scene': {
       'useWhen': '一次性开场方向选择 / 简介 / 少量人物信息 + 后续沉浸式正文/状态 UI',
@@ -386,6 +394,7 @@ class UiEngineApiDictionary {
     'semanticRoles': semanticRoles,
     'dataChannel': dataChannel,
     'linkerSchemes': linkerSchemes,
+    'layoutPolicies': layoutPolicies,
     'layoutPatterns': layoutPatterns,
     'limitations': limitations,
   };
@@ -423,6 +432,7 @@ modes: ${modes.keys.join(', ')}
 visible components: ${components.keys.join(', ')}
 logic components: ${logicComponents.keys.join(', ')}
 semantic roles: ${semanticRoles.keys.join(', ')}
+layout policies: ${layoutPolicies.keys.join(', ')}
 layout patterns: ${layoutPatterns.keys.join(', ')}
 linker groups: ${linkerSchemes.keys.join(', ')}
 
@@ -463,6 +473,8 @@ Use dictionary paths like `components.text`, `components.progress`, `modes.scene
       final pitfalls = c['pitfalls'];
       if (pitfalls is List) b.writeln('- pitfalls: ${pitfalls.join(' / ')}');
     }
+    b.writeln('\n# Layout policies');
+    layoutPolicies.forEach((key, value) => b.writeln('- $key: $value'));
     b.writeln('\n# Logic details');
     logicComponents.forEach((key, value) {
       final v = value as Map;

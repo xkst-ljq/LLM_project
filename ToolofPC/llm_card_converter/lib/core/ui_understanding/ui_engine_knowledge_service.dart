@@ -30,6 +30,15 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - Multiple assemblies can coexist when lifecycles differ: opening + scene is valid. scene suppresses native chat/extra_companion; sticky remains a tool layer; opening is shown until dismissed.
 - Logic components are optional. Use math_node/timer/indicator/linker only when source evidence or confirmed author intent requires native computation/condition/automation. Pure visual upgrades may use line/surface/animation without changing gameplay.
 
+# Layout fidelity and mobile adaptation policy
+- First reconstruct the original rendered UI structure: section order, grouping, columns/grid/flex, header/body/status/actions/footer, and which blocks are simultaneously visible.
+- Preserve the original semantic reading order by default. Do NOT split a single long original card into many sparse tabs just because groups exist.
+- Only adapt when there is an actual mobile/UIEngine conflict: narrow width, huge text, repeated low-frequency details, or interaction ergonomics. When adapting, prefer: keep main flow as a scrollable scene page; move low-frequency details into overlay pages; keep status grids compact.
+- If the original has two-column progress rows or grid attributes, express that intention in layout/notes and avoid one-field-per-row designs that waste PCB area.
+- Fill the PCB intentionally. Avoid pages that contain only one or two small fields unless they are overlay detail pages.
+- Text sizing is part of the design: do not use ellipsis for meaningful state values, task text, item lists, reputation, money, locations, or action choices. Use wrap/scroll and allocate enough height. Ellipsis is only acceptable for short IDs or decorative labels.
+- Reasonable interaction enhancement is allowed when it preserves gameplay: clickable choice text may become sendsMessage buttons; stable schemas may become LLM-updatable persistent panels; details may open in overlay pages. Do not add mechanics that change the original rules.
+
 # What to extract from a SillyTavern card
 - regex_scripts findRegex/replaceString may define UI fields and HTML/CSS layout.
 - IMPORTANT: use the human-facing labels from replaceString / rendered HTML as field.name. If the transport key is English (HP/MP/STR) but the rendered label is Chinese (生命值 (HP)), use the Chinese display label as name and put the raw key in sourceKey. Do not throw away the original display translation.

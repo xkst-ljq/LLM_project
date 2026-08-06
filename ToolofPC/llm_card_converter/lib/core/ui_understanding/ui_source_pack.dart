@@ -59,8 +59,22 @@ class UiSourcePack {
   }
 
   bool get _sourceSuggestsProfilePool {
-    final text = '$description\n$systemPrompt'.toLowerCase();
-    const markers = ['未指定', '随机生成', '姓名', '年龄', '服装', '外貌', '性格'];
+    final text = '$description\n$systemPrompt\n$firstMes\n${alternateGreetings.join('\n')}'
+        .toLowerCase();
+    const markers = [
+      '未指定',
+      '随机生成',
+      '姓名',
+      '年龄',
+      '服装',
+      '外貌',
+      '性格',
+      '无设定user',
+      '无具体设定',
+      '自定义',
+      '出场方式',
+      '身份',
+    ];
     return markers.any(text.contains);
   }
 
@@ -118,6 +132,8 @@ class UiSourcePack {
       b.writeln('\n# extensions.regex_scripts');
       for (final e in regexScripts) {
         b.writeln('\n## ${e.path} ${e.scriptName} enabled=${e.enabled}');
+        final hint = _layoutHintOf(e.replaceString);
+        if (hint.isNotEmpty) b.writeln('layout hints: $hint');
         b.writeln('findRegex:\n${_clip(e.findRegex, 3000)}');
         b.writeln('replaceString excerpt:\n${_clip(e.replaceString, 7000)}');
       }
@@ -179,6 +195,35 @@ class UiSourcePack {
       }
     }
     if (all.length > 8) b.writeln('- ... omitted ${all.length - 8} extra branches');
+  }
+
+  static String _layoutHintOf(String html) {
+    if (html.trim().isEmpty) return '';
+    int count(String pattern) =>
+        RegExp(pattern, caseSensitive: false).allMatches(html).length;
+    final hints = <String>[];
+    final comments = RegExp(r'<!--\s*(.*?)\s*-->')
+        .allMatches(html)
+        .map((m) => m.group(1)!.trim())
+        .where((v) => v.isNotEmpty && v.length <= 32)
+        .take(8)
+        .toList();
+    if (comments.isNotEmpty) hints.add("sections=${comments.join(' > ')}");
+    final flex = count(r'display\s*:\s*flex');
+    final grid = count(r'display\s*:\s*grid');
+    if (flex > 0) hints.add('flex=$flex');
+    if (grid > 0) hints.add('grid=$grid');
+    if (count(r'flex-wrap') > 0) hints.add('wrap-layout');
+    if (count(r'justify-content\s*:\s*space-between') > 0) {
+      hints.add('space-between rows');
+    }
+    if (count(r'overflow-y\s*:\s*auto|overflow\s*:\s*auto') > 0) {
+      hints.add('scrollable content');
+    }
+    if (count(r'border') > 3) hints.add('bordered panels');
+    if (count(r'linear-gradient') > 0) hints.add('gradient surfaces');
+    if (count(r'width\s*:\s*48%') > 0) hints.add('two-column 48/48 layout');
+    return hints.join('; ');
   }
 
   static String _summarizeBranchText(String text) {

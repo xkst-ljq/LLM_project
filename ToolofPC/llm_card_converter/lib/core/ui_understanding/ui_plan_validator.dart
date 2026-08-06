@@ -92,6 +92,9 @@ class UiPlanValidator {
     if (plan.fields.length > 40) {
       errors.add('字段过多（${plan.fields.length}），可能把正文/世界书误识别成 UI。');
     }
+    if (plan.uiMode == 'scene' && plan.layout.pages.length > 5) {
+      errors.add('scene 页面过多（${plan.layout.pages.length} 页），容易形成稀疏空页。请优先参考原卡长卡/网格结构，合并为主正文页 + 状态/任务/羁绊等少量页面，或使用 overlay 承载低频详情。');
+    }
     if (plan.inputs.length > 4) {
       warnings.add('输入框较多（${plan.inputs.length}），编译时会压缩布局。');
     }
@@ -111,6 +114,9 @@ class UiPlanValidator {
       }
       if (f.sourceRef.trim().isEmpty) {
         warnings.add('字段「${f.name}」缺少 sourceRef。');
+      }
+      if (_badEllipsisField(f)) {
+        errors.add('字段「${f.name}」包含有意义的状态/长文本信息，不应使用 ellipsis 截断。请改用 overflow=wrap 或 scroll，并确保文本框高度足够。');
       }
       if (f.isNumber) {
         final min = f.min ?? 0.0;
@@ -160,8 +166,49 @@ class UiPlanValidator {
         hit(field.name) || hit(field.sourceKey) || hit(field.group) || hit(field.page));
   }
 
+  static bool _badEllipsisField(UiPlanField field) {
+    if (field.overflow != 'ellipsis') return false;
+    if (field.display == 'progress') return false;
+    final values = [field.initialValue, ...field.branchInitialValues.values]
+        .where((v) => v.trim().isNotEmpty)
+        .toList();
+    final text = '${field.name} ${field.sourceKey} ${field.group} ${field.page}';
+    const meaningfulMarkers = [
+      '物品',
+      'items',
+      '声望',
+      'reputation',
+      '点数',
+      'pts',
+      'money',
+      '位置',
+      'location',
+      '关系',
+      'relation',
+      '选项',
+      'choice',
+      '任务',
+      'quest',
+      '羁绊',
+      '好友',
+      'friends',
+      '罪名',
+      '称号',
+      '当前',
+      '状态效果',
+      '备注',
+      '说明',
+    ];
+    if (meaningfulMarkers.any((m) => text.toLowerCase().contains(m.toLowerCase()))) {
+      return true;
+    }
+    return values.any((v) => v.runes.length > 18) || field.name.runes.length > 14;
+  }
+
   static bool _sourceSuggestsProfilePool(UiSourcePack sourcePack) {
-    final text = '${sourcePack.description}\n${sourcePack.systemPrompt}'.toLowerCase();
+    final text = '${sourcePack.description}\n${sourcePack.systemPrompt}\n'
+            '${sourcePack.firstMes}\n${sourcePack.alternateGreetings.join('\n')}'
+        .toLowerCase();
     const markers = [
       '未指定',
       '随机生成',
@@ -171,6 +218,11 @@ class UiPlanValidator {
       '外貌',
       '性格',
       '玩家指定',
+      '无设定user',
+      '无具体设定',
+      '自定义',
+      '出场方式',
+      '身份',
       'user profile',
       'appearance',
       'personality',
