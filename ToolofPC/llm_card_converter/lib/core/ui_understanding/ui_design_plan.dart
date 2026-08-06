@@ -192,6 +192,7 @@ class UiPlanField {
   final String textAlign;
   final String overflow;
   final String initialValue;
+  final Map<String, String> branchInitialValues;
   final double? min;
   final double? max;
   final String owner;
@@ -207,6 +208,7 @@ class UiPlanField {
     required this.textAlign,
     required this.overflow,
     required this.initialValue,
+    required this.branchInitialValues,
     required this.min,
     required this.max,
     required this.owner,
@@ -225,6 +227,9 @@ class UiPlanField {
       textAlign: _textAlignOf(json['textAlign'] ?? json['align']),
       overflow: _overflowOf(json['overflow']),
       initialValue: _str(json['initialValue'] ?? json['initial_value']).trim(),
+      branchInitialValues: _stringMapOf(
+        json['branchInitialValues'] ?? json['branch_initial_values'],
+      ),
       min: _nullableDouble(json['min']),
       max: _nullableDouble(json['max']),
       owner: _ownerOf(json['owner']),
@@ -331,6 +336,17 @@ List<Map<String, dynamic>> _listOf(dynamic raw) {
       .whereType<Map>()
       .map((e) => Map<String, dynamic>.from(e))
       .toList();
+}
+
+Map<String, String> _stringMapOf(dynamic raw) {
+  if (raw is! Map) return const <String, String>{};
+  final out = <String, String>{};
+  raw.forEach((key, value) {
+    final k = key.toString().trim();
+    final v = value?.toString().trim() ?? '';
+    if (k.isNotEmpty && v.isNotEmpty) out[k] = v;
+  });
+  return out;
 }
 
 double _doubleOf(dynamic v, double fallback) {

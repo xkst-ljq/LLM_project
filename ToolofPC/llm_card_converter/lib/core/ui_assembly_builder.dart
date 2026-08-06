@@ -1117,6 +1117,21 @@ class UiAssemblyBuilder {
       y += 28.0;
     }
 
+    if (mode == 'scene') {
+      elements.add(_messageFlow(
+        id: nextId('el'),
+        name: '剧情消息流',
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        h: 190,
+        color: theme.panelColor,
+        layer: elements.length + 1,
+        radius: 10,
+      ));
+      y += 202.0;
+    }
+
     const labelW = 56.0;
     var currentGroup = '';
     for (final f in fields) {
@@ -1155,6 +1170,8 @@ class UiAssemblyBuilder {
         'pin_side': 'none',
         'order': statusFields.length,
         'owner': f.owner,
+        if (f.branchInitialValues.isNotEmpty)
+          'branch_initial_values': f.branchInitialValues,
       });
 
       final shouldScrollText = !isProgress && _shouldScrollTextField(f, initial, mode);
@@ -1836,6 +1853,43 @@ class UiAssemblyBuilder {
               statusFieldId: statusFieldId,
               fieldType: 'number',
             ),
+          },
+        ),
+      );
+
+  static Map<String, dynamic> _messageFlow({
+    required String id,
+    required String name,
+    required double x,
+    required double y,
+    required double w,
+    required double h,
+    required int color,
+    required int layer,
+    double radius = 12,
+  }) =>
+      _element(
+        id: id,
+        x: x,
+        y: y,
+        w: w,
+        h: h,
+        layer: layer,
+        module: _module(
+          id: id,
+          name: name,
+          type: 'message_flow',
+          color: color,
+          radius: radius,
+          props: {
+            'historyLimit': 0,
+            'showUser': true,
+            'showAssistant': true,
+            'richText': true,
+            'fontSize': 12.5,
+            'userBubbleColor': 0xFFDCF8C6,
+            'assistantBubbleColor': 0xFFF1F1F4,
+            'bubbleRadius': 12.0,
           },
         ),
       );
