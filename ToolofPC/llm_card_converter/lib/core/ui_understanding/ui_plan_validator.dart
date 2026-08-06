@@ -46,6 +46,15 @@ class UiPlanValidator {
     if (plan.uiMode == 'opening' && plan.actions.isEmpty && plan.inputs.isEmpty) {
       errors.add('opening UI 必须至少有一个开场按钮或输入框。');
     }
+    if (plan.uiMode == 'opening' && sourcePack.alternateGreetings.isNotEmpty) {
+      final branchActions = plan.actions.where((a) => a.branchIndex != null).length;
+      if (branchActions == 0) {
+        errors.add('角色卡存在多个开场白，opening actions 必须用 branchIndex 对应 first_mes / alternate_greetings；不要把某条开场内部的 DQ/任务选项当作 opening 选择。');
+      }
+    }
+    if (plan.uiMode == 'opening' && plan.fields.length > 8) {
+      errors.add('opening UI 字段过多：opening 只应承载简介、少量人物信息与开场方向选择；完整 PlayerStatus 应放入 scene/companion/sticky。');
+    }
 
     if (plan.sourceRefs.isEmpty && plan.fields.every((f) => f.sourceRef.isEmpty) &&
         plan.inputs.every((i) => i.sourceRef.isEmpty) &&

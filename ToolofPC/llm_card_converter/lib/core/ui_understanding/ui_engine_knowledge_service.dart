@@ -38,6 +38,7 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - input_prompt in a choice box means a free input field. Put it in inputs[] for opening/scene UIs. For extra_companion, usually DO NOT generate an input component because the normal chat input already exists; record the input_prompt in notes unless the author explicitly wants an in-panel input.
 - tavern_helper external JS import means the UI may be runtime-generated; mark unsupported instead of inventing.
 - world book entries may contain variable definitions or initvar sections; use them as evidence if relevant.
+- Stable message-level schemas like `{quest:...}`, `{DQ_ChoiceBox|...}` and `{FriendsAlbumPage|...}` may be represented as persistent LLM-updatable UI fields/pages (for example scroll text task_board/friends_album or action buttons) when that improves usability and does not change gameplay. Prefer this over unsupported when the schema is clear and recurring.
 
 # Strict anti-hallucination rules
 - If the original card has no explicit UI evidence, return hasUi=false.
@@ -46,10 +47,12 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - Do not invent fields absent from source evidence.
 - Do not translate source text unless the source itself is translated, but do preserve display labels that already exist in the original HTML/CSS.
 - Preserve {{char}} / {{user}} placeholders.
-- Current compiler emits card-level assemblies. It cannot yet render arbitrary ST regex HTML as per-message temporary UI. However scene mode can include message_flow, so it can place the real AI/user messages inside a custom frame. If a component is only a message-scoped card (quest cards, friends album, etc.), either mark it unsupported or include it only if there is evidence/author intent that it should become a persistent panel/tab.
+- Current compiler emits card-level assemblies. It cannot yet render arbitrary ST regex HTML as per-message temporary UI. However scene mode can include message_flow, so it can place the real AI/user messages inside a custom frame. If a component is only a message-scoped card (quest cards, friends album, etc.), either mark it unsupported or convert it into an LLM-updatable persistent page/field when the source provides a stable schema or the author intent says it should be retained.
 - Arbitrary JavaScript-like conditional style is not supported in UiDesignPlan. If you see conditional coloring, record it in notes/unsupported unless it can be represented as a simple status/indicator later.
 - Progress max is currently compile-time/status-field range. If source has current/max (HP:50/120), set max from evidence, but do not assume max can dynamically change at runtime unless explicitly supported.
 - Opening branches: UIEngine has branchVariants and status fields have branch_initial_values. If alternate_greetings share the same UI structure but have different starting values, fill fields[].branchInitialValues. The current AI compiler does not yet generate fully separate UI layouts per branch; if a branch has a truly different UI structure, record it in notes/unsupported instead of pretending all branches are covered.
+- Opening UI purpose: introduce the card/world, collect minimal player/profile info if needed, and choose the opening greeting direction by branchIndex. Do NOT put a branch-internal DQ_ChoiceBox or quest choice into opening unless there is only one greeting and the author explicitly intends it as the opening choice.
+- Runtime status fields belong in scene/companion/sticky, not in opening. Opening may collect/edit a small number of player identity fields, but should not duplicate a full PlayerStatus dashboard.
 
 # UiDesignPlan schema
 Return exactly one JSON object. For a simple card, return a single plan. For opening + scene or opening + companion, prefer:

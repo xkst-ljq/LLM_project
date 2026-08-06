@@ -45,6 +45,7 @@ class UiSourcePack {
     final b = StringBuffer();
     b.writeln('# Card Basic Fields');
     b.writeln('name: $cardName');
+    _writeOpeningBranchSummary(b);
     if (description.trim().isNotEmpty) {
       b.writeln('\n## description\n${_clip(description, 5000)}');
     }
@@ -118,6 +119,48 @@ class UiSourcePack {
     }
 
     return b.toString();
+  }
+
+  void _writeOpeningBranchSummary(StringBuffer b) {
+    b.writeln('\n# Opening greeting branches (branchIndex mapping)');
+    b.writeln('IMPORTANT: opening UI, if generated, should choose among these branch directions.');
+    b.writeln('Do NOT promote DQ_ChoiceBox / quest choices inside one branch into opening-level choices.');
+    final all = <({int index, String label, String text})>[
+      (index: 0, label: 'first_mes', text: firstMes),
+      for (var i = 0; i < alternateGreetings.length; i++)
+        (index: i + 1, label: 'alternate_greetings[$i]', text: alternateGreetings[i]),
+    ];
+    for (final item in all.take(8)) {
+      final summary = _summarizeBranchText(item.text);
+      b.writeln('- branchIndex ${item.index} (${item.label}): $summary');
+      final choices = _choiceTextsOf(item.text);
+      if (choices.isNotEmpty) {
+        b.writeln('  internal DQ choices in this branch (not opening-level choices): ${choices.join(' / ')}');
+      }
+    }
+    if (all.length > 8) b.writeln('- ... omitted ${all.length - 8} extra branches');
+  }
+
+  static String _summarizeBranchText(String text) {
+    var t = text
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll(RegExp(r'\{[^}]+\}'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (t.isEmpty) return '(empty)';
+    if (t.length > 120) t = '${t.substring(0, 120)}...';
+    return t;
+  }
+
+  static List<String> _choiceTextsOf(String text) {
+    final out = <String>[];
+    final re = RegExp(r'option\d+_text:([^|}]+)');
+    for (final m in re.allMatches(text)) {
+      final value = m.group(1)?.trim() ?? '';
+      if (value.isNotEmpty) out.add(value);
+      if (out.length >= 5) break;
+    }
+    return out;
   }
 
   static String _clip(String s, int max) {

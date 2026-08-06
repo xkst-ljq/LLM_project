@@ -350,8 +350,9 @@ class UiEngineApiDictionary {
 
   static const Map<String, dynamic> layoutPatterns = {
     'opening_then_scene': {
-      'useWhen': '一次性开场选择 + 后续沉浸式正文/状态 UI',
+      'useWhen': '一次性开场方向选择 / 简介 / 少量人物信息 + 后续沉浸式正文/状态 UI',
       'assemblies': ['opening', 'scene'],
+      'openingShouldChoose': 'opening_greetings branchIndex, not branch-internal DQ_ChoiceBox/quest choices',
     },
     'scene_terminal': {
       'useWhen': '原卡把正文、状态、选项包在一个终端/档案卡里',
@@ -374,6 +375,8 @@ class UiEngineApiDictionary {
     '完整 branchVariants 布局生成仍待扩展；当前优先同布局 + branchInitialValues。',
     '复杂条件样式需 indicator.statusRules 或后续 conditionalStyles schema。',
     '动态 progress max/min 需要额外 API；不要默认假设。',
+    'Opening UI 应选择 opening_greetings 分支方向并收集少量人物信息；不要把某个分支内部的 quest/DQ 选择提升成 opening 选择。',
+    'quest / DQ_ChoiceBox / FriendsAlbumPage 等稳定消息级 schema，在来源明确或作者确认时可映射为 LLM 可更新的持久字段/页面。',
   ];
 
   static const Map<String, dynamic> root = {
