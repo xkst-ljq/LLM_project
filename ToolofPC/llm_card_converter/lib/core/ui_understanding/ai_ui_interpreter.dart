@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../api_service.dart';
 import '../json_ai_client.dart';
 import '../conversion_models.dart';
@@ -25,39 +23,35 @@ class AiUiInterpreter {
       characterName: baseResult.characterName,
     );
 
-    final rawPlanJson = await JsonAiClient.completeObject(
+    var result = await JsonAiClient.completeObjectWithTranscript(
       taskName: 'UI 理解',
       messages: messages,
       temperature: 0.12,
       repairAttempts: 1,
     );
 
-    var plan = UiDesignPlan.fromJson(rawPlanJson);
+    var plan = UiDesignPlan.fromJson(result.json);
     var validation = UiPlanValidator.validate(plan, sourcePack);
+    var transcript = result.transcript;
 
     // 语义校验失败时，再给模型一次“只修 JSON”的机会。
     if (!validation.ok) {
-      final repairedJson = await JsonAiClient.completeObject(
+      final repairPrompt = ChatMessage(
+        role: 'user',
+        content: '上面的 UiDesignPlan 没通过校验：\n'
+            '${validation.errors.map((e) => '- $e').join('\n')}\n\n'
+            '请只输出修正后的 JSON 对象。不要新增原卡没有证据的 UI 字段；'
+            '如果证据不足，应改为 hasUi=false。',
+      );
+      result = await JsonAiClient.completeObjectWithTranscript(
         taskName: 'UI 理解方案修复',
-        messages: [
-          ...messages,
-          ChatMessage(
-            role: 'assistant',
-            content: const JsonEncoder.withIndent('  ').convert(rawPlanJson),
-          ),
-          ChatMessage(
-            role: 'user',
-            content: '上面的 UiDesignPlan 没通过校验：\n'
-                '${validation.errors.map((e) => '- $e').join('\n')}\n\n'
-                '请只输出修正后的 JSON 对象。不要新增原卡没有证据的 UI 字段；'
-                '如果证据不足，应改为 hasUi=false。',
-          ),
-        ],
+        messages: [...transcript, repairPrompt],
         temperature: 0.0,
         repairAttempts: 1,
       );
-      plan = UiDesignPlan.fromJson(repairedJson);
+      plan = UiDesignPlan.fromJson(result.json);
       validation = UiPlanValidator.validate(plan, sourcePack);
+      transcript = result.transcript;
     }
 
     if (!validation.ok) {
@@ -68,6 +62,7 @@ class AiUiInterpreter {
       plan: plan,
       validationWarnings: validation.warnings,
       sourcePack: sourcePack,
+      conversationContext: transcript,
     );
   }
 
@@ -114,9 +109,14 @@ class AiUiInterpretation {
   final List<String> validationWarnings;
   final UiSourcePack sourcePack;
 
+  /// 隐藏上下文：从“开始理解 UI”的 prompt 到最终结构化输出。
+  /// 工作区里的对话按钮会把它作为上下文继续与同一个转译 AI 对话。
+  final List<ChatMessage> conversationContext;
+
   const AiUiInterpretation({
     required this.plan,
     required this.validationWarnings,
     required this.sourcePack,
+    required this.conversationContext,
   });
 }

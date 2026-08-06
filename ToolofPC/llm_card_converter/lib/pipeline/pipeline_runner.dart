@@ -91,7 +91,7 @@ class PipelineRunner {
   String _describeUiResult(
       Map<String, dynamic>? before, Map<String, dynamic>? after) {
     final n = _countAssemblies(after);
-    if (n == 0) return '  未生成（原卡没有可识别的界面元素）';
+    if (n == 0) return '  未生成（AI 判断没有可转译 UI 或证据不足）';
     return '  已生成 $n 份 UI 界面';
   }
 

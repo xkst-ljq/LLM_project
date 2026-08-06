@@ -311,7 +311,6 @@ class UiAssemblyBuilder {
       final title = pageTitles[i];
       final elements = _buildPlanPageElements(
         pageTitle: title,
-        pageIndex: i,
         pageTitles: pageTitles,
         pageIds: pageIds,
         fields: fieldsByPage[title] ?? const [],
@@ -935,7 +934,6 @@ class UiAssemblyBuilder {
 
   static List<Map<String, dynamic>> _buildPlanPageElements({
     required String pageTitle,
-    required int pageIndex,
     required List<String> pageTitles,
     required Map<String, String> pageIds,
     required List<UiPlanField> fields,

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/api_service.dart';
 import '../core/conversion_models.dart';
 import '../core/conversion_service.dart';
 import '../core/ui_assembly_builder.dart';
@@ -56,6 +57,13 @@ class CardWorkItem {
     PipelineStage.buildUi: StageStatus.pending,
     PipelineStage.refine: StageStatus.pending,
   };
+
+  /// 第三步 AI UI 理解的隐藏上下文。
+  ///
+  /// 转译完成后，工作区可用它打开“与转译 AI 对话”：继续沿用
+  /// UI 理解阶段的 prompt / 知识库 / 原卡证据 / 模型输出，帮助作者追问
+  /// AI 为什么这么转、缺少哪些证据。该上下文不参与复制按钮导出。
+  List<ChatMessage> uiAiConversationContext = const [];
 
   /// 第三步产出的审计问题清单（不改内容，只给建议）。
   List<RefineIssue> refineIssues = [];
@@ -202,6 +210,7 @@ class ConversionPipeline {
       item.stageOutputs[PipelineStage.rule] = result;
       item.stageStatus[PipelineStage.rule] =
           result.success ? StageStatus.done : StageStatus.failed;
+      item.uiAiConversationContext = const [];
 
       // 记录源 JSON（从 raw 条目里取，便于后续 AI 阶段引用）
       item.sourceJson ??= _extractSourceJson(result);
@@ -274,6 +283,7 @@ class ConversionPipeline {
         sourceJson: src,
         baseResult: base,
       );
+      item.uiAiConversationContext = interpretation.conversationContext;
       final built = UiAssemblyBuilder.buildFromPlan(
         interpretation.plan,
         cardName: card['name']?.toString() ?? '',

@@ -2,9 +2,11 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/ai_classifier.dart';
 import '../core/ai_refiner.dart';
+import '../core/api_service.dart';
 import '../core/app_settings.dart';
 import '../core/conversion_writer.dart';
 import '../core/history_service.dart';
@@ -38,7 +40,21 @@ class _WorkItem {
   /// 逐卡记忆：批量转译时挨个展开查看，不该被别的卡重置。
   bool showUiPreview = false;
 
+  /// 与“转译 AI”的追问对话。只保存作者主动发问与 AI 回复；
+  /// UI 理解阶段的隐藏上下文在 [work.uiAiConversationContext]。
+  final List<_AiChatTurn> aiChatTurns = [];
+
   _WorkItem(this.card, this.work);
+}
+
+class _AiChatTurn {
+  final String role; // user / assistant
+  final String content;
+
+  const _AiChatTurn({
+    required this.role,
+    required this.content,
+  });
 }
 
 /// 统一工作区：处理 1~N 张卡。逐张串行转译，列表展示，可展开看预览、编辑、比对。
@@ -141,6 +157,17 @@ class _WorkspacePageState extends State<WorkspacePage> {
 
   int get _successCount =>
       _items.where((e) => e.status == _WorkStatus.done).length;
+
+  _WorkItem? get _chatTargetItem {
+    if (_expanded != null && _expanded! >= 0 && _expanded! < _items.length) {
+      final item = _items[_expanded!];
+      if (item.work.uiAiConversationContext.isNotEmpty) return item;
+    }
+    for (final item in _items.reversed) {
+      if (item.work.uiAiConversationContext.isNotEmpty) return item;
+    }
+    return null;
+  }
 
   double get _overallProgress {
     if (_items.isEmpty) return 0;
@@ -342,9 +369,38 @@ class _WorkspacePageState extends State<WorkspacePage> {
               ),
             ),
           ),
+          const SizedBox(height: 8),
+          _aiChatButton(),
         ],
       ),
     );
+  }
+
+  Widget _aiChatButton() {
+    final item = _chatTargetItem;
+    if (_running || item == null) {
+      return FilledButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.forum_outlined, size: 18),
+        label: Text(_running ? '等待转译完成后可追问 AI' : '暂无 AI UI 上下文'),
+      );
+    }
+    return FilledButton.icon(
+      onPressed: () => _openAiChat(item),
+      icon: const Icon(Icons.forum_outlined, size: 18),
+      label: const Text('与转译 AI 对话'),
+    );
+  }
+
+  Future<void> _openAiChat(_WorkItem item) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => _AiDebugChatDialog(item: item),
+    );
+    if (!mounted) return;
+    // 对话保存在 item 内，关闭弹窗不清空；刷新一下按钮/预览状态。
+    setState(() {});
   }
 
   Widget _cardListPanel() {
@@ -576,6 +632,305 @@ class _WorkspacePageState extends State<WorkspacePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AiDebugChatDialog extends StatefulWidget {
+  final _WorkItem item;
+
+  const _AiDebugChatDialog({required this.item});
+
+  @override
+  State<_AiDebugChatDialog> createState() => _AiDebugChatDialogState();
+}
+
+class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
+  final _inputCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest(jump: true));
+  }
+
+  @override
+  void dispose() {
+    _inputCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _jumpToLatest({bool jump = false}) {
+    if (!_scrollCtrl.hasClients) return;
+    final target = _scrollCtrl.position.maxScrollExtent;
+    if (jump) {
+      _scrollCtrl.jumpTo(target);
+    } else {
+      _scrollCtrl.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  List<ChatMessage> _requestMessages() {
+    return [
+      ...widget.item.work.uiAiConversationContext,
+      const ChatMessage(
+        role: 'user',
+        content: '【模式切换】UI 转译结构化阶段已经结束。接下来请作为“转译 AI”'
+            '与卡片制作者对话，基于刚才的 UI 理解上下文回答问题。'
+            '请用自然语言解释你为什么这样转、缺少哪些原卡证据、需要制作者补充什么。'
+            '不要再强制输出 UiDesignPlan JSON，除非制作者明确要求。',
+      ),
+      const ChatMessage(
+        role: 'assistant',
+        content: '好的。我会基于刚才的 UI 转译上下文回答制作者的问题，并指出我缺少的证据或不确定之处。',
+      ),
+      for (final turn in widget.item.aiChatTurns)
+        ChatMessage(role: turn.role, content: turn.content),
+    ];
+  }
+
+  Future<void> _send() async {
+    final text = _inputCtrl.text.trim();
+    if (text.isEmpty || _busy) return;
+    _inputCtrl.clear();
+    widget.item.aiChatTurns.add(_AiChatTurn(
+      role: 'user',
+      content: text,
+    ));
+    setState(() => _busy = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+
+    try {
+      final cfg = await AppSettings.getApiConfig();
+      if (!cfg.isComplete) {
+        throw StateError('未配置 AI API，请先在设置中填写 API。');
+      }
+      final reply = await ApiService.chatMessages(
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        model: cfg.model,
+        messages: _requestMessages(),
+        options: const ChatCompleteOptions(
+          temperature: 0.25,
+          timeout: Duration(seconds: 240),
+        ),
+      );
+      widget.item.aiChatTurns.add(_AiChatTurn(
+        role: 'assistant',
+        content: reply,
+      ));
+    } catch (e) {
+      widget.item.aiChatTurns.add(_AiChatTurn(
+        role: 'assistant',
+        content: '请求失败：$e',
+      ));
+    } finally {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+    }
+  }
+
+  Future<void> _copyVisibleConversation() async {
+    final turns = widget.item.aiChatTurns;
+    final text = turns.isEmpty
+        ? '（还没有制作者与转译 AI 的对话）'
+        : turns.map((t) {
+            final who = t.role == 'user' ? '制作者' : '转译AI';
+            return '【$who】\n${t.content.trim()}';
+          }).join('\n\n');
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制当前对话（不包含隐藏上下文）')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final turns = widget.item.aiChatTurns;
+    final title = widget.item.work.current?.characterName ?? widget.item.card.name;
+    return Dialog(
+      insetPadding: const EdgeInsets.all(28),
+      child: SizedBox(
+        width: 760,
+        height: 620,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.forum_outlined, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('与转译 AI 对话 · $title',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text(
+                          '已载入本次 UI 转译的隐藏上下文 ${widget.item.work.uiAiConversationContext.length} 条；复制时不会包含上下文。',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '复制制作者与 AI 的对话（不含上下文）',
+                    icon: const Icon(Icons.copy_all_outlined),
+                    onPressed: _copyVisibleConversation,
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: turns.isEmpty
+                  ? _emptyHint()
+                  : ListView.builder(
+                      controller: _scrollCtrl,
+                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+                      itemCount: turns.length + (_busy ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (_busy && index == turns.length) {
+                          return _bubble(
+                            role: 'assistant',
+                            content: '正在思考…',
+                            pending: true,
+                          );
+                        }
+                        final turn = turns[index];
+                        return _bubble(role: turn.role, content: turn.content);
+                      },
+                    ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _inputCtrl,
+                      enabled: !_busy,
+                      minLines: 1,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText: '问问转译 AI：为什么这样做？还缺什么证据？哪里不确定？',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _send(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _send,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send, size: 18),
+                    label: Text(_busy ? '等待' : '发送'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyHint() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.psychology_alt_outlined, size: 44, color: Colors.black38),
+            SizedBox(height: 12),
+            Text('可以开始追问转译 AI',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            Text(
+              '它已经带着本次 UI 转译 prompt、UIEngine 知识库、原卡证据和结构化输出作为隐藏上下文。\n'
+              '你可以问它为什么生成这些字段、为什么跳过某段 UI、还需要你补充什么。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, height: 1.5, color: Colors.black54),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _bubble({
+    required String role,
+    required String content,
+    bool pending = false,
+  }) {
+    final isUser = role == 'user';
+    final bg = isUser ? const Color(0xFFE3F2FD) : const Color(0xFFF3F3F7);
+    final fg = isUser ? const Color(0xFF0D47A1) : const Color(0xFF202027);
+    final name = isUser ? '制作者' : '转译AI';
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 560),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: fg.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment:
+              isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(name,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: fg.withValues(alpha: 0.72),
+                )),
+            const SizedBox(height: 4),
+            SelectableText(
+              content,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: fg.withValues(alpha: pending ? 0.62 : 1),
+                fontStyle: pending ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
