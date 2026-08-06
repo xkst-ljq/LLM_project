@@ -25,21 +25,32 @@ Use multiple assemblies when the original card has distinct lifecycle UI, e.g. o
 Default: choose extra_companion for compact status bars / dashboards that follow character replies. If the original card wraps narrative body + status + actions into one immersive terminal/card, consider scene with message_flow instead of companion.
 
 ## Visual primitives available through UiDesignPlan
-- surface: panel/background/card/button visual base. The compiler keeps the top-level PCB color visible as an outer frame and places the main background surface inset inside it; use pcbColor for frame/outer material and panelColor for inner paper/card surface.
-- text: labels, titles, values. Supports textAlign = left/center/right and overflow = ellipsis/wrap/scroll. Use scroll for long descriptions or task details; use center/right only when the original visible layout supports it. The compiler also auto-upgrades obviously long text values to scroll blocks so content is not clipped.
-- progress: numeric status bar, usually min/max/current.
-- button: invisible touch area. Use with a surface/text visual behind it.
-- input: free text field. Single-line input can submit text to the chat flow when marked as sendsMessage.
+- surface/base_box: panel/background/card/button visual base. Materials: glass, solid, gradient, outline. Shapes: rectangle, rounded, capsule, circle, heart, star5, star4. The compiler keeps the top-level PCB color visible as an outer frame and places the main background surface inset inside it; use pcbColor for frame/outer material and panelColor for inner paper/card surface.
+- text: labels, titles, values. Supports fontSize, textAlign = left/center/right, overflow = ellipsis/clip/scroll, richText Markdown/HTML. Use scroll for long descriptions or task details; use center/right only when the original visible layout supports it. The compiler also auto-upgrades obviously long text values to scroll blocks so content is not clipped.
+- progress: numeric status bar with min/max/current, trackColor and progressShape. Good for HP/MP/XP/percent. Do not assume runtime max changes unless API explicitly maps it.
+- button: invisible touch area. Use with a surface/text visual behind it. Emits tap/double_tap/long_press. Can carry keyAction, sendsMessage, targetBranchIndex.
+- input: free text field. Supports placeholder, default text, maxLength, multiline, vertical/horizontal text alignment. Single-line input can submit text to chat flow when marked sendsMessage.
+- select: option list [{label,value}], current/defaultValue. Can be filtered/matched from input via linker.
+- switch: boolean value.
+- slider: user-draggable number with min/max/current/step.
+- line: divider, axis horizontal/vertical, styles solid/dashed/dotted/curve/double.
+- indicator: status dot with dotSize/defaultGlow/defaultColor/statusRules. Do not use fake isOn/onColor keys.
+- image: custom URL/asset/data URI, character avatar, user avatar; fit cover/contain/fill; borderRadius.
 - message_flow: scrollable real chat history / AI正文 flow, supplied by MessageFlowScope in runtime. Use it in scene when the original ST UI wraps the narrative body inside a custom terminal/card.
-- line: divider.
 
 ## Logic/linker concepts the compiler can create
-- button_to_page_route: tab button switches pages.
-- page gestures: base pages can switch by swipe_left/swipe_right/swipe_up/swipe_down through AssemblyPage.gestures. The compiler can create tabs plus swipe navigation; do not claim gestures are unsupported. Opening mode currently should rely on keyAction/buttons, not swipe.
+- page_router + button_to_page_route: tab button switches pages or opens/closes overlay pages.
+- page gestures: base pages can switch by swipe_left/swipe_right/swipe_up/swipe_down through AssemblyPage.gestures. The compiler can create tabs plus swipe navigation; do not claim gestures are unsupported. Opening mode should rely on keyAction/buttons, not swipe.
+- overlay pages: AssemblyPage type can be overlay with parentPageId. Use this for detail drawers, dossiers, expanded status panels, and non-primary information.
 - click_to_surface_press: button click gives the backing surface press feedback.
-- dataChannel: bind text/progress to status_bar_fields so the LLM can read/update values.
+- button_to_message_action: scene UI can expose regenerate/continue/edit/delete/version navigation for latest AI message.
+- dataChannel: bind text/progress/slider/input/select/switch to status_bar_fields, session vars, card entries, or user_profile so the LLM/runtime can read/update values.
 - input sendsMessage: a single-line input can send the typed text on submit, useful for ST input_prompt.
 - scene keyAction: mark a normal button with keyAction=true to open the chat settings/menu panel. Do not claim this system action is unsupported.
+- math_node + linker: use value_to_math_param, click_to_math_trigger, result_to_text/result_to_progress for native arithmetic instead of JS.
+- timer + linker: timer_tick can drive progress/switch/math/text for cooldowns, decay, regeneration.
+- indicator + statusRules + linker: represent simple condition/status lights.
+- animation: click_to_surface_press and event_to_animation can trigger press/glow/ripple/flash style animations when configured on the target element.
 
 ## What to extract from a SillyTavern card
 - regex_scripts findRegex/replaceString may define UI fields and HTML/CSS layout.
