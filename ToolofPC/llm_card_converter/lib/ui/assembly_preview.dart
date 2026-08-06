@@ -56,18 +56,38 @@ class AssemblyPreview extends StatefulWidget {
 class _AssemblyPreviewState extends State<AssemblyPreview> {
   int _index = 0;
 
-  /// 默认放大到 150% 预览，超出区域滚动查看。
+  /// 默认“适配全图”，保证一打开就能看到完整 UI。
   ///
-  /// PC 工具窗口里 1:1 的 212px 伴生 UI 仍然偏小，不利于审稿；预览放大
-  /// 只影响工作台查看，不改变导出的 UI 实际尺寸。作者仍可切回 100%
-  /// 或适配窗口。
-  double _previewScale = 1.5;
+  /// 需要审稿字号和触点时可手动切到 100% / 125% / 150% / 200%，
+  /// 超出区域会显示滚动条，不影响导出的 UI 实际尺寸。
+  double _previewScale = 0.0;
+
+  final ScrollController _verticalScroll = ScrollController();
+  final ScrollController _horizontalScroll = ScrollController();
 
   @override
   void didUpdateWidget(covariant AssemblyPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 换了一张卡就回到第一份 UI，否则可能停在不存在的下标上。
-    if (oldWidget.characterData != widget.characterData) _index = 0;
+    if (oldWidget.characterData != widget.characterData) {
+      _index = 0;
+      _resetScrollAfterFrame();
+    }
+  }
+
+  @override
+  void dispose() {
+    _verticalScroll.dispose();
+    _horizontalScroll.dispose();
+    super.dispose();
+  }
+
+  void _resetScrollAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_verticalScroll.hasClients) _verticalScroll.jumpTo(0);
+      if (_horizontalScroll.hasClients) _horizontalScroll.jumpTo(0);
+    });
   }
 
   @override
@@ -149,14 +169,16 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
                   value: _previewScale,
                   isDense: true,
                   items: const [
+                    DropdownMenuItem(value: 0.0, child: Text('适配全图')),
                     DropdownMenuItem(value: 1.0, child: Text('100%')),
+                    DropdownMenuItem(value: 1.25, child: Text('125%')),
                     DropdownMenuItem(value: 1.5, child: Text('150%')),
                     DropdownMenuItem(value: 2.0, child: Text('200%')),
-                    DropdownMenuItem(value: 0.0, child: Text('适配')),
                   ],
                   onChanged: (v) {
                     if (v == null) return;
                     setState(() => _previewScale = v);
+                    _resetScrollAfterFrame();
                   },
                 ),
               ),
@@ -177,8 +199,8 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
 
   /// 渲染舞台。
   ///
-  /// 默认 100% 原始尺寸，超出后滚动查看；只有作者手动切到“适配”时才
-  /// 等比缩小。这样可以真实判断字体大小、按钮触点和间距。
+  /// 默认“适配全图”，确保完整 UI 一屏可见；切到放大倍率时通过横向 / 纵向
+  /// 滚动条查看超出区域。放大只影响工作台预览，不改变导出尺寸。
   Widget _buildStage(UIAssemblyInfo info) {
     return LayoutBuilder(
       builder: (context, box) {
@@ -192,38 +214,56 @@ class _AssemblyPreviewState extends State<AssemblyPreview> {
         final scaledH = info.pcbHeight * scale;
         return Container(
           color: const Color(0xFFEDEDF2),
-          child: SingleChildScrollView(
+          child: Scrollbar(
+            controller: _verticalScroll,
+            thumbVisibility: _previewScale != 0.0,
+            notificationPredicate: (notification) =>
+                notification.metrics.axis == Axis.vertical,
             child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minWidth: box.maxWidth,
-                  minHeight: box.maxHeight,
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: SizedBox(
-                      width: scaledW,
-                      height: scaledH,
-                      child: Transform.scale(
-                        scale: scale,
-                        alignment: Alignment.topLeft,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.16),
-                                blurRadius: 16,
+              controller: _verticalScroll,
+              primary: false,
+              child: Scrollbar(
+                controller: _horizontalScroll,
+                thumbVisibility: _previewScale != 0.0,
+                notificationPredicate: (notification) =>
+                    notification.metrics.axis == Axis.horizontal,
+                child: SingleChildScrollView(
+                  controller: _horizontalScroll,
+                  primary: false,
+                  scrollDirection: Axis.horizontal,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: box.maxWidth,
+                      minHeight: box.maxHeight,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          width: scaledW,
+                          height: scaledH,
+                          child: Transform.scale(
+                            scale: scale,
+                            alignment: Alignment.topLeft,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.16),
+                                    blurRadius: 16,
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: SizedBox(
-                            width: info.pcbWidth,
-                            height: info.pcbHeight,
-                            // 与主 App 聊天页用的是同一个组件、同一份源码。
-                            child: UIAssemblyRuntimeView(assemblyInfo: info),
+                              child: SizedBox(
+                                width: info.pcbWidth,
+                                height: info.pcbHeight,
+                                // 与主 App 聊天页用的是同一个组件、同一份源码。
+                                child: UIAssemblyRuntimeView(
+                                  assemblyInfo: info,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
