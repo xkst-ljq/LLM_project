@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llm_card_converter/core/conversion_models.dart';
 import 'package:llm_card_converter/core/ui_assembly_builder.dart';
+import 'package:llm_card_converter/core/ui_engine_api/ui_engine_api_dictionary.dart';
 import 'package:llm_card_converter/core/ui_understanding/ui_design_plan.dart';
 import 'package:llm_card_converter/pipeline/pipeline.dart';
 
@@ -128,6 +129,16 @@ void main() {
       expect(item.stageStatus[PipelineStage.rule], StageStatus.done);
       expect(item.stageStatus[PipelineStage.aiClassify], StageStatus.skipped);
       expect(item.stageStatus[PipelineStage.refine], StageStatus.skipped);
+    });
+  });
+
+  group('UIEngine API dictionary', () {
+    test('exposes component and mode details for translator lookup', () {
+      expect(UiEngineApiDictionary.lookup('components.text.properties.overflow'), isNotNull);
+      expect(UiEngineApiDictionary.lookup('components.message_flow.properties.historyLimit'), isNotNull);
+      expect(UiEngineApiDictionary.lookup('modes.scene.keyActionMeaning'), contains('聊天设置'));
+      expect(UiEngineApiDictionary.component('base_box'), isNotNull);
+      expect(UiEngineApiDictionary.compactIndexMarkdown(), contains('components.text'));
     });
   });
 
