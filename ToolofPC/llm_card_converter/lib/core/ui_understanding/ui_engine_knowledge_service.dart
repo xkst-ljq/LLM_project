@@ -7,8 +7,12 @@ import '../ui_engine_api/ui_engine_api_dictionary.dart';
 class UiEngineKnowledgeService {
   const UiEngineKnowledgeService._();
 
+  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-07.4';
+
   static String compactPrompt() => '''
 # LLM Project UIEngine capabilities
+
+Knowledge version: $knowledgeVersion
 
 You are NOT allowed to output internal assembly JSON. You must output high-level UiDesignPlan data only. Dart code will compile it.
 

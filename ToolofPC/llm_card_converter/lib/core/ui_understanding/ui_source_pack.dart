@@ -82,6 +82,7 @@ class UiSourcePack {
   String toPromptText() {
     final b = StringBuffer();
     b.writeln('# Card Basic Fields');
+    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.4');
     b.writeln('name: $cardName');
     _writeOpeningBranchSummary(b);
     if (_sourceSuggestsProfilePool) {
