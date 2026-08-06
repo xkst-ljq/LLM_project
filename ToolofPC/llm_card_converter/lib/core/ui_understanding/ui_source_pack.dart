@@ -40,12 +40,22 @@ class UiSourcePack {
       actionSnippets.isNotEmpty ||
       worldBookEvidence.isNotEmpty;
 
+  bool get _sourceSuggestsProfilePool {
+    final text = '$description\n$systemPrompt'.toLowerCase();
+    const markers = ['未指定', '随机生成', '姓名', '年龄', '服装', '外貌', '性格'];
+    return markers.any(text.contains);
+  }
+
   /// 压成适合模型阅读的文本。
   String toPromptText() {
     final b = StringBuffer();
     b.writeln('# Card Basic Fields');
     b.writeln('name: $cardName');
     _writeOpeningBranchSummary(b);
+    if (_sourceSuggestsProfilePool) {
+      b.writeln('\n# Player profile input opportunity');
+      b.writeln('The source says player traits may be specified or randomly generated. If opening UI is generated, add multiple profile input fields bound to status_field, e.g. 姓名/年龄/性别/外貌/性格/身份职业倾向/补充设定. Leave them optional; blank means the original random-generation rule still applies.');
+    }
     if (description.trim().isNotEmpty) {
       b.writeln('\n## description\n${_clip(description, 5000)}');
     }
@@ -143,8 +153,12 @@ class UiSourcePack {
 
   static String _summarizeBranchText(String text) {
     var t = text
+        .replaceAll('{{user}}', '__USER_MACRO__')
+        .replaceAll('{{char}}', '__CHAR_MACRO__')
         .replaceAll(RegExp(r'<[^>]+>'), ' ')
         .replaceAll(RegExp(r'\{[^}]+\}'), ' ')
+        .replaceAll('__USER_MACRO__', '{{user}}')
+        .replaceAll('__CHAR_MACRO__', '{{char}}')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     if (t.isEmpty) return '(empty)';

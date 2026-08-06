@@ -52,7 +52,8 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - Progress max is currently compile-time/status-field range. If source has current/max (HP:50/120), set max from evidence, but do not assume max can dynamically change at runtime unless explicitly supported.
 - Opening branches: UIEngine has branchVariants and status fields have branch_initial_values. If alternate_greetings share the same UI structure but have different starting values, fill fields[].branchInitialValues. The current AI compiler does not yet generate fully separate UI layouts per branch; if a branch has a truly different UI structure, record it in notes/unsupported instead of pretending all branches are covered.
 - Opening UI purpose: introduce the card/world, collect minimal player/profile info if needed, and choose the opening greeting direction by branchIndex. Do NOT put a branch-internal DQ_ChoiceBox or quest choice into opening unless there is only one greeting and the author explicitly intends it as the opening choice.
-- Runtime status fields belong in scene/companion/sticky, not in opening. Opening may collect/edit a small number of player identity fields, but should not duplicate a full PlayerStatus dashboard.
+- If the source says the player may specify name/age/gender/appearance/personality/background or otherwise be randomly generated, opening should include multiple profile input fields. Use inputs[] with targetKind="status_field", sendOnSubmit=false, sourceKey like UserProfile_Name/UserProfile_Age/UserProfile_Gender/UserProfile_Appearance/UserProfile_Personality/UserProfile_Background/UserProfile_Extra.
+- Runtime status fields like HP/MP/XP/STR belong in scene/companion/sticky, not in opening. Opening may collect/edit profile fields, but should not duplicate a full PlayerStatus dashboard.
 
 # UiDesignPlan schema
 Return exactly one JSON object. For a simple card, return a single plan. For opening + scene or opening + companion, prefer:
@@ -118,8 +119,20 @@ Single UiDesignPlan object shape:
   ],
   "inputs": [
     {
+      "name": "姓名",
+      "sourceKey": "UserProfile_Name",
+      "placeholder": "留空则随机生成",
+      "initialValue": "",
+      "sendOnSubmit": false,
+      "targetKind": "status_field",
+      "page": "角色设定",
+      "sourceRef": "description: 若{{user}}未指定...随机生成"
+    },
+    {
+      "name": "自由行动",
       "placeholder": "在此输入你的决定...",
       "sendOnSubmit": true,
+      "targetKind": "none",
       "page": "选项",
       "sourceRef": "data.first_mes DQ_ChoiceBox input_prompt"
     }

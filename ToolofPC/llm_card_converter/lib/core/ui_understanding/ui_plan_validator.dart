@@ -55,6 +55,14 @@ class UiPlanValidator {
     if (plan.uiMode == 'opening' && plan.fields.length > 8) {
       errors.add('opening UI 字段过多：opening 只应承载简介、少量人物信息与开场方向选择；完整 PlayerStatus 应放入 scene/companion/sticky。');
     }
+    if (plan.uiMode == 'opening' && _sourceSuggestsProfilePool(sourcePack)) {
+      final profileInputs = plan.inputs
+          .where((input) => input.targetKind == 'status_field' && !input.sendOnSubmit)
+          .length;
+      if (profileInputs < 3) {
+        errors.add('源卡允许/要求玩家指定姓名、年龄、外貌、性格等信息；opening UI 应提供多个绑定到 status_field 的角色设定输入框，而不是只给开场方向按钮。');
+      }
+    }
 
     if (plan.sourceRefs.isEmpty && plan.fields.every((f) => f.sourceRef.isEmpty) &&
         plan.inputs.every((i) => i.sourceRef.isEmpty) &&
@@ -125,6 +133,24 @@ class UiPlanValidator {
       errors: errors,
       warnings: warnings,
     );
+  }
+
+  static bool _sourceSuggestsProfilePool(UiSourcePack sourcePack) {
+    final text = '${sourcePack.description}\n${sourcePack.systemPrompt}'.toLowerCase();
+    const markers = [
+      '未指定',
+      '随机生成',
+      '姓名',
+      '年龄',
+      '服装',
+      '外貌',
+      '性格',
+      '玩家指定',
+      'user profile',
+      'appearance',
+      'personality',
+    ];
+    return markers.any(text.contains);
   }
 
   static double? _cleanNumber(String raw) {

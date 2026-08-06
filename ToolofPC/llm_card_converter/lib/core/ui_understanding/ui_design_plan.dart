@@ -274,22 +274,45 @@ class UiPlanField {
 }
 
 class UiPlanInput {
+  final String name;
+  final String sourceKey;
   final String placeholder;
+  final String initialValue;
   final bool sendOnSubmit;
+
+  /// 输入值写入哪里。
+  ///
+  /// - `status_field`: 生成一个状态字段并用 dataChannel 绑定，适合 opening 的
+  ///   多个“玩家设定词条”；
+  /// - `session_var`: 写入会话变量；
+  /// - `user_profile`: 写入用户档案（仅昵称/详情两类，多个字段不建议用）；
+  /// - `none`: 只作为发送框 / 本地输入框。
+  final String targetKind;
   final String page;
   final String sourceRef;
 
   const UiPlanInput({
+    required this.name,
+    required this.sourceKey,
     required this.placeholder,
+    required this.initialValue,
     required this.sendOnSubmit,
+    required this.targetKind,
     required this.page,
     required this.sourceRef,
   });
 
   factory UiPlanInput.fromJson(Map<String, dynamic> json) {
+    final placeholder =
+        _fallback(_str(json['placeholder'] ?? json['inputPrompt']), '输入你的决定...');
+    final name = _fallback(_str(json['name'] ?? json['label']), placeholder);
     return UiPlanInput(
-      placeholder: _fallback(_str(json['placeholder'] ?? json['inputPrompt']), '输入你的决定...'),
+      name: name,
+      sourceKey: _str(json['sourceKey'] ?? json['key']).trim(),
+      placeholder: placeholder,
+      initialValue: _str(json['initialValue'] ?? json['initial_value']).trim(),
       sendOnSubmit: _boolOf(json['sendOnSubmit'] ?? json['sendsMessage']),
+      targetKind: _inputTargetKindOf(json['targetKind']),
       page: _str(json['page']).trim(),
       sourceRef: _str(json['sourceRef']).trim(),
     );
@@ -455,6 +478,15 @@ bool _boolOf(dynamic raw) {
   if (raw is bool) return raw;
   final v = _str(raw).toLowerCase().trim();
   return v == 'true' || v == '1' || v == 'yes' || v == '是';
+}
+
+String _inputTargetKindOf(dynamic raw) {
+  final v = _str(raw).toLowerCase().trim();
+  if (v == 'status_field' || v == 'session_var' || v == 'user_profile') {
+    return v;
+  }
+  if (v == 'none' || v == 'local') return 'none';
+  return 'none';
 }
 
 String _ownerOf(dynamic raw) {

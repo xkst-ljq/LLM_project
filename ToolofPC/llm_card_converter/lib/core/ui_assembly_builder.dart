@@ -317,6 +317,7 @@ class UiAssemblyBuilder {
     final statusFields = <Map<String, dynamic>>[];
     final mode = plan.uiMode;
     var pageTitles = _planPageTitles(plan);
+    final pageRoles = _planPageRoles(plan);
 
     final fieldsByPage = <String, List<UiPlanField>>{
       for (final title in pageTitles) title: <UiPlanField>[],
@@ -348,6 +349,7 @@ class UiAssemblyBuilder {
     // 字段或动作。空页会误导作者，以为内容丢失；这里直接移除并说明原因。
     if (pageTitles.length > 1) {
       final emptyPages = pageTitles.where((title) {
+        if (_isSceneMessagePage(mode, title, pageRoles[title])) return false;
         return (fieldsByPage[title]?.isEmpty ?? true) &&
             (inputsByPage[title]?.isEmpty ?? true) &&
             (actionsByPage[title]?.isEmpty ?? true);
@@ -392,6 +394,7 @@ class UiAssemblyBuilder {
         mode: mode,
         pcbW: pcbW,
         innerW: innerW,
+        showMessageFlow: _isSceneMessagePage(mode, title, pageRoles[title]),
       );
       final h = _pageContentHeight(elements);
       pageHeights.add(h);
@@ -982,6 +985,31 @@ class UiAssemblyBuilder {
     return titles.take(5).toList();
   }
 
+  static Map<String, String> _planPageRoles(UiDesignPlan plan) {
+    final out = <String, String>{};
+    for (final page in plan.layout.pages) {
+      final title = page.title.trim();
+      if (title.isNotEmpty) out[title] = page.role.trim().toLowerCase();
+    }
+    return out;
+  }
+
+  static bool _isSceneMessagePage(String mode, String title, String? role) {
+    if (mode != 'scene') return false;
+    final r = (role ?? '').toLowerCase();
+    if (const {'story', 'log', 'message', 'messages', 'content', 'narrative'}
+        .contains(r)) {
+      return true;
+    }
+    final t = title.toLowerCase();
+    return title.contains('日志') ||
+        title.contains('正文') ||
+        title.contains('剧情') ||
+        title.contains('故事') ||
+        t.contains('log') ||
+        t.contains('story');
+  }
+
   static String _resolvePlanPage(
     String requested,
     List<String> titles,
@@ -1067,6 +1095,7 @@ class UiAssemblyBuilder {
     required String mode,
     required double pcbW,
     required double innerW,
+    required bool showMessageFlow,
   }) {
     final elements = <Map<String, dynamic>>[];
     var y = _Layout.pcbPadding;
@@ -1157,7 +1186,7 @@ class UiAssemblyBuilder {
       y += 28.0;
     }
 
-    if (mode == 'scene') {
+    if (showMessageFlow) {
       elements.add(_messageFlow(
         id: nextId('el'),
         name: '剧情消息流',
@@ -1289,10 +1318,29 @@ class UiAssemblyBuilder {
     final pressPairs = <({String surface, String button})>[];
     for (var i = 0; i < inputs.length; i++) {
       final input = inputs[i];
+      final statusFieldId = input.targetKind == 'status_field'
+          ? 'sf_${_slug(input.sourceKey.trim().isEmpty ? input.name : input.sourceKey)}'
+          : null;
+      if (statusFieldId != null &&
+          !statusFields.any((field) => field['id'] == statusFieldId)) {
+        statusFields.add({
+          'id': statusFieldId,
+          'name': input.name,
+          'type': 'text',
+          'initial_value': input.initialValue,
+          'min_value': null,
+          'max_value': null,
+          'pin_side': 'none',
+          'order': statusFields.length,
+          'owner': 'player',
+        });
+      }
+      final inputId = nextId('el');
       elements.add(_input(
-        id: nextId('el'),
-        name: '输入_${i + 1}',
+        id: inputId,
+        name: input.name.trim().isEmpty ? '输入_${i + 1}' : input.name,
         placeholder: input.placeholder,
+        initialValue: input.initialValue,
         x: _Layout.pcbPadding,
         y: y,
         w: innerW,
@@ -1300,6 +1348,13 @@ class UiAssemblyBuilder {
         layer: elements.length + 1,
         sendsMessage: input.sendOnSubmit,
         color: theme.accentColor,
+        dataChannel: statusFieldId == null
+            ? null
+            : _inputStatusChannel(
+                label: input.name,
+                elementId: inputId,
+                statusFieldId: statusFieldId,
+              ),
       ));
       y += _Layout.buttonHeight + 8;
     }
@@ -1984,6 +2039,8 @@ class UiAssemblyBuilder {
     required String id,
     required String name,
     required String placeholder,
+    String initialValue = '',
+    Map<String, dynamic>? dataChannel,
     required double x,
     required double y,
     required double w,
@@ -2006,12 +2063,13 @@ class UiAssemblyBuilder {
           color: color,
           props: {
             'placeholder': placeholder,
-            'text': '',
-            'value': '',
-            'committedValue': '',
+            'text': initialValue,
+            'value': initialValue,
+            'committedValue': initialValue,
             'visualMode': 'filled',
             'multiline': false,
             if (sendsMessage) 'sendsMessage': true,
+            if (dataChannel != null) 'dataChannel': dataChannel,
           },
         ),
       );
@@ -2100,6 +2158,19 @@ class UiAssemblyBuilder {
             },
           },
         ),
+      );
+
+  static Map<String, dynamic> _inputStatusChannel({
+    required String label,
+    required String elementId,
+    required String statusFieldId,
+  }) =>
+      _channel(
+        label: label,
+        elementId: elementId,
+        port: 'committedValue',
+        statusFieldId: statusFieldId,
+        fieldType: 'text',
       );
 
   /// 数据通道：让 LLM 能读写这个组件。
