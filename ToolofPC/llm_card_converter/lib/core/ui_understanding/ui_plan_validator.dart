@@ -37,7 +37,14 @@ class UiPlanValidator {
     }
 
     if (plan.fields.isEmpty && plan.inputs.isEmpty && plan.actions.isEmpty) {
-      errors.add('AI 判断有 UI，但没有输出任何字段、输入框或动作。');
+      if (plan.uiMode == 'scene') {
+        warnings.add('scene 未输出字段/输入/动作，将只生成 message_flow 与系统设置按钮。');
+      } else {
+        errors.add('AI 判断有 UI，但没有输出任何字段、输入框或动作。');
+      }
+    }
+    if (plan.uiMode == 'opening' && plan.actions.isEmpty && plan.inputs.isEmpty) {
+      errors.add('opening UI 必须至少有一个开场按钮或输入框。');
     }
 
     if (plan.sourceRefs.isEmpty && plan.fields.every((f) => f.sourceRef.isEmpty) &&

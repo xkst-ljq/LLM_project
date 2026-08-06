@@ -32,6 +32,30 @@ class UiDesignPlan {
     required this.notes,
   });
 
+  static List<UiDesignPlan> listFromJson(Map<String, dynamic> json) {
+    final rawAssemblies = json['assemblies'];
+    if (rawAssemblies is List) {
+      final out = <UiDesignPlan>[];
+      for (final item in rawAssemblies) {
+        if (item is! Map) continue;
+        final child = Map<String, dynamic>.from(item);
+        child.putIfAbsent('hasUi', () => json['hasUi'] ?? true);
+        child.putIfAbsent('confidence', () => json['confidence']);
+        child.putIfAbsent('evidenceSummary', () => json['evidenceSummary']);
+        child.putIfAbsent('sourceRefs', () => json['sourceRefs']);
+        child.putIfAbsent('visualStyle', () => json['visualStyle'] ?? json['style']);
+        child.putIfAbsent('style', () => json['style'] ?? json['visualStyle']);
+        child.putIfAbsent('unsupported', () => const <dynamic>[]);
+        child.putIfAbsent('notes', () => const <dynamic>[]);
+        final mode = _modeOf(child['uiMode']);
+        child.putIfAbsent('uiName', () => _defaultNameForMode(mode));
+        out.add(UiDesignPlan.fromJson(child));
+      }
+      if (out.isNotEmpty) return out;
+    }
+    return [UiDesignPlan.fromJson(json)];
+  }
+
   factory UiDesignPlan.fromJson(Map<String, dynamic> json) {
     final layout = UiPlanLayout.fromJson(_mapOf(json['layout']));
 
@@ -80,6 +104,14 @@ class UiDesignPlan {
       notes: _strings(json['notes']),
     );
   }
+
+  static String _defaultNameForMode(String mode) => switch (mode) {
+        'opening' => '开场选择',
+        'scene' => '场景终端',
+        'extra_sticky' => '常驻 UI',
+        'extra_companion' => '伴生状态栏',
+        _ => 'AI 转译 UI',
+      };
 
   static String _modeOf(dynamic raw) {
     final v = _str(raw).trim();

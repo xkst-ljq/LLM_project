@@ -30,8 +30,8 @@ class AiUiInterpreter {
       repairAttempts: 1,
     );
 
-    var plan = UiDesignPlan.fromJson(result.json);
-    var validation = UiPlanValidator.validate(plan, sourcePack);
+    var plans = UiDesignPlan.listFromJson(result.json);
+    var validation = _validatePlans(plans, sourcePack);
     var transcript = result.transcript;
 
     // 语义校验失败时，再给模型一次“只修 JSON”的机会。
@@ -49,8 +49,8 @@ class AiUiInterpreter {
         temperature: 0.0,
         repairAttempts: 1,
       );
-      plan = UiDesignPlan.fromJson(result.json);
-      validation = UiPlanValidator.validate(plan, sourcePack);
+      plans = UiDesignPlan.listFromJson(result.json);
+      validation = _validatePlans(plans, sourcePack);
       transcript = result.transcript;
     }
 
@@ -59,10 +59,35 @@ class AiUiInterpreter {
     }
 
     return AiUiInterpretation(
-      plan: plan,
+      plans: plans,
       validationWarnings: validation.warnings,
       sourcePack: sourcePack,
       conversationContext: transcript,
+    );
+  }
+
+  static UiPlanValidationResult _validatePlans(
+    List<UiDesignPlan> plans,
+    UiSourcePack sourcePack,
+  ) {
+    if (plans.isEmpty) {
+      return const UiPlanValidationResult(
+        ok: false,
+        errors: ['AI 没有输出任何 UI 方案。'],
+      );
+    }
+    final errors = <String>[];
+    final warnings = <String>[];
+    for (var i = 0; i < plans.length; i++) {
+      final plan = plans[i];
+      final result = UiPlanValidator.validate(plan, sourcePack);
+      errors.addAll(result.errors.map((e) => '[${plan.uiMode}#$i] $e'));
+      warnings.addAll(result.warnings.map((e) => '[${plan.uiMode}#$i] $e'));
+    }
+    return UiPlanValidationResult(
+      ok: errors.isEmpty,
+      errors: errors,
+      warnings: warnings,
     );
   }
 
@@ -77,7 +102,7 @@ class AiUiInterpreter {
         content: '''
 你是 SillyTavern 角色卡 UI 转译架构师。你的任务不是凭空设计 UI，
 而是阅读原卡证据，判断原卡是否确实包含 UI / 状态栏 / 点击选项 / 插件界面，
-再输出一份高层 UiDesignPlan，交给 Dart 编译器生成 LLM Project UIEngine JSON。
+再输出高层 UiDesignPlan（必要时用 assemblies 输出多份方案），交给 Dart 编译器生成 LLM Project UIEngine JSON。
 
 硬性规则：
 1. 只输出一个 JSON 对象，不要 markdown，不要解释。
@@ -105,7 +130,8 @@ class AiUiInterpreter {
 }
 
 class AiUiInterpretation {
-  final UiDesignPlan plan;
+  final List<UiDesignPlan> plans;
+  UiDesignPlan get plan => plans.first;
   final List<String> validationWarnings;
   final UiSourcePack sourcePack;
 
@@ -114,7 +140,7 @@ class AiUiInterpretation {
   final List<ChatMessage> conversationContext;
 
   const AiUiInterpretation({
-    required this.plan,
+    required this.plans,
     required this.validationWarnings,
     required this.sourcePack,
     required this.conversationContext,

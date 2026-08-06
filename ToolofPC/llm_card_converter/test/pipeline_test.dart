@@ -197,6 +197,51 @@ void main() {
       final pages = jsonDecode(assembly['pages'] as String) as List;
       expect(pages, hasLength(2));
     });
+
+    test('supports multi-assembly plans such as opening plus scene', () {
+      final plans = UiDesignPlan.listFromJson({
+        'hasUi': true,
+        'visualStyle': {'pcbColor': '#111318', 'panelColor': '#1E232B'},
+        'assemblies': [
+          {
+            'uiMode': 'opening',
+            'uiName': '开场选择',
+            'actions': [
+              {
+                'label': '新人入狱',
+                'sendText': '选择开场1：新人入狱',
+                'branchIndex': 0,
+                'sourceRef': 'data.first_mes onclick',
+              },
+            ],
+          },
+          {
+            'uiMode': 'scene',
+            'uiName': '监控终端',
+            'fields': [
+              {
+                'name': '生命值 (HP)',
+                'sourceKey': 'HP',
+                'type': 'number',
+                'display': 'progress',
+                'initialValue': '100',
+                'min': 0,
+                'max': 100,
+                'sourceRef': 'data.first_mes HP',
+              },
+            ],
+          },
+        ],
+      });
+
+      final built = UiAssemblyBuilder.buildFromPlans(plans, cardName: '测试卡');
+      expect(built.assemblies, hasLength(2));
+      final modes = built.assemblies
+          .map((e) => (jsonDecode(e) as Map)['mode'])
+          .toList();
+      expect(modes, containsAll(['opening', 'scene']));
+      expect(built.statusFields, hasLength(1));
+    });
   });
 
   group('CardWorkItem - manual override', () {

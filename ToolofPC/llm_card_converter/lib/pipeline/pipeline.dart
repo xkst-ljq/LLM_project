@@ -284,8 +284,8 @@ class ConversionPipeline {
         baseResult: base,
       );
       item.uiAiConversationContext = interpretation.conversationContext;
-      final built = UiAssemblyBuilder.buildFromPlan(
-        interpretation.plan,
+      final built = UiAssemblyBuilder.buildFromPlans(
+        interpretation.plans,
         cardName: card['name']?.toString() ?? '',
       );
 

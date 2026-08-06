@@ -237,6 +237,46 @@ class UiAssemblyBuilder {
     );
   }
 
+  /// 多份 AI UiDesignPlan → 多个可共存 assembly。
+  ///
+  /// 例如 SillyTavern 的“开场身份选择 + 正文终端场景”应编译成
+  /// opening 与 scene 两份 UI，而不是把一次性的开场按钮硬塞进 scene。
+  static BuiltAssembly buildFromPlans(
+    List<UiDesignPlan> plans, {
+    String cardName = '',
+  }) {
+    final assemblies = <String>[];
+    final statusFields = <Map<String, dynamic>>[];
+    final notes = <String>[];
+    final seenStatusIds = <String>{};
+
+    if (plans.isEmpty) {
+      return const BuiltAssembly(
+        assemblies: [],
+        statusFields: [],
+        notes: ['AI 没有输出任何 UI 方案。'],
+      );
+    }
+
+    for (final plan in plans) {
+      final built = buildFromPlan(plan, cardName: cardName);
+      assemblies.addAll(built.assemblies);
+      for (final field in built.statusFields) {
+        final id = field['id']?.toString() ?? '';
+        if (id.isEmpty || seenStatusIds.add(id)) {
+          statusFields.add(field);
+        }
+      }
+      notes.addAll(built.notes);
+    }
+
+    return BuiltAssembly(
+      assemblies: assemblies,
+      statusFields: statusFields,
+      notes: notes,
+    );
+  }
+
   /// AI UiDesignPlan → 合法 assembly/status_bar_fields。
   ///
   /// AI 只负责输出高层计划；内部 JSON 的三层 encode、ARGB、枚举下标、

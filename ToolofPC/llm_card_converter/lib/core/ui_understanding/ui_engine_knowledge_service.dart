@@ -8,7 +8,13 @@ class UiEngineKnowledgeService {
   static String compactPrompt() => r'''
 # LLM Project UIEngine capabilities
 
-You are NOT allowed to output internal assembly JSON. You must output a high-level UiDesignPlan only. Dart code will compile it.
+You are NOT allowed to output internal assembly JSON. You must output high-level UiDesignPlan data only. Dart code will compile it.
+
+You may output either:
+1. A single UiDesignPlan object, or
+2. One top-level JSON object with "assemblies": [UiDesignPlan, UiDesignPlan, ...].
+
+Use multiple assemblies when the original card has distinct lifecycle UI, e.g. opening identity selection + scene runtime terminal.
 
 ## Modes
 - opening: full-screen opening UI. It must provide a keyAction button to confirm/close. Best for first-message branch choices. Opening can coexist with later companion/sticky/scene assemblies; after it is dismissed the normal runtime UI continues.
@@ -57,7 +63,19 @@ Default: choose extra_companion for compact status bars / dashboards that follow
 - Opening branches: UIEngine has branchVariants and status fields have branch_initial_values. If alternate_greetings share the same UI structure but have different starting values, fill fields[].branchInitialValues. The current AI compiler does not yet generate fully separate UI layouts per branch; if a branch has a truly different UI structure, record it in notes/unsupported instead of pretending all branches are covered.
 
 ## UiDesignPlan schema
-Return exactly one JSON object:
+Return exactly one JSON object. For a simple card, return a single plan. For opening + scene or opening + companion, prefer:
+{
+  "hasUi": true,
+  "evidenceSummary": "...",
+  "sourceRefs": ["..."],
+  "visualStyle": {"pcbColor":"#111318", "panelColor":"#1E232B"},
+  "assemblies": [
+    {"uiMode":"opening", "uiName":"开场选择", "actions":[...]},
+    {"uiMode":"scene", "uiName":"运行终端", "fields":[...]}
+  ]
+}
+
+Single UiDesignPlan object shape:
 {
   "hasUi": true,
   "confidence": 0.0,
