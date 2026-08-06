@@ -132,6 +132,11 @@ class UiPlanValidator {
       }
     }
 
+    final splitGroups = _groupsSplitAcrossPages(plan);
+    if (splitGroups.isNotEmpty) {
+      errors.add("以下字段组被拆散到多个页面：${splitGroups.join('、')}。语义关联紧密的信息应尽量放在同一页或同一 overlay 中，避免玩家来回切页。");
+    }
+
     for (final input in plan.inputs) {
       if (input.placeholder.trim().isEmpty) {
         errors.add('存在空输入框占位提示。');
@@ -155,6 +160,27 @@ class UiPlanValidator {
       errors: errors,
       warnings: warnings,
     );
+  }
+
+  static List<String> _groupsSplitAcrossPages(UiDesignPlan plan) {
+    final pagesByGroup = <String, Set<String>>{};
+    for (final field in plan.fields) {
+      final group = field.group.trim();
+      final page = field.page.trim();
+      if (group.isEmpty || page.isEmpty) continue;
+      pagesByGroup.putIfAbsent(group, () => <String>{}).add(page);
+    }
+    final result = <String>[];
+    pagesByGroup.forEach((group, pages) {
+      // 泛词有时被 AI 当作大类，避免误伤；真正需要约束的是
+      // 核心状态/装备与状态/羁绊名录/任务板这类明确小组。
+      const broadGroups = {'状态', '数据', '信息', '记录', '冒险记录', '详情', '其他'};
+      if (pages.length > 1 && group.runes.length > 1 && !broadGroups.contains(group)) {
+        result.add("$group(${pages.join('/')})");
+      }
+    });
+    result.sort();
+    return result;
   }
 
   static bool _hasFieldLike(UiDesignPlan plan, List<String> needles) {
