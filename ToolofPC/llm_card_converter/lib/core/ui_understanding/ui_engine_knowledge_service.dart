@@ -20,7 +20,7 @@ Default: choose extra_companion for status bars / dashboards that follow charact
 
 ## Visual primitives available through UiDesignPlan
 - surface: panel/background/card/button visual base. The compiler keeps the top-level PCB color visible as an outer frame and places the main background surface inset inside it; use pcbColor for frame/outer material and panelColor for inner paper/card surface.
-- text: labels, titles, values. Supports textAlign = left/center/right and overflow = ellipsis/wrap/scroll. Use scroll for long descriptions or task details; use center/right only when the original visible layout supports it.
+- text: labels, titles, values. Supports textAlign = left/center/right and overflow = ellipsis/wrap/scroll. Use scroll for long descriptions or task details; use center/right only when the original visible layout supports it. The compiler also auto-upgrades obviously long text values to scroll blocks so content is not clipped.
 - progress: numeric status bar, usually min/max/current.
 - button: invisible touch area. Use with a surface/text visual behind it.
 - input: free text field. Single-line input can submit text to the chat flow when marked as sendsMessage.

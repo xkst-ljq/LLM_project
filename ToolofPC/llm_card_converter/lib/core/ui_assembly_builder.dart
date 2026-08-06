@@ -1157,13 +1157,19 @@ class UiAssemblyBuilder {
         'owner': f.owner,
       });
 
+      final shouldScrollText = !isProgress && _shouldScrollTextField(f, initial, mode);
+      final effectiveOverflow = shouldScrollText ? 'scroll' : f.overflow;
+      final valueHeight = shouldScrollText
+          ? _scrollTextHeightFor(initial, mode)
+          : _Layout.rowHeight;
+
       elements.add(_text(
         id: nextId('el'),
         name: '${f.name}标签',
         text: _decorateEmoji(f.name),
         x: _Layout.pcbPadding,
         y: y,
-        w: labelW,
+        w: shouldScrollText ? innerW : labelW,
         h: _Layout.rowHeight,
         fontSize: mode == 'extra_companion' ? 10 : 12,
         color: theme.labelColor,
@@ -1171,7 +1177,6 @@ class UiAssemblyBuilder {
         layer: elements.length + 1,
       ));
 
-      final valueHeight = (!isProgress && f.overflow == 'scroll') ? 62.0 : _Layout.rowHeight;
       if (isProgress) {
         elements.add(_progress(
           id: nextId('el'),
@@ -1193,20 +1198,23 @@ class UiAssemblyBuilder {
           id: nextId('el'),
           name: f.name,
           text: initial.isEmpty ? '—' : initial,
-          x: _Layout.pcbPadding + labelW + 6,
-          y: y,
-          w: innerW - labelW - 6,
+          x: shouldScrollText ? _Layout.pcbPadding : _Layout.pcbPadding + labelW + 6,
+          y: shouldScrollText ? y + _Layout.rowHeight : y,
+          w: shouldScrollText ? innerW : innerW - labelW - 6,
           h: valueHeight,
           fontSize: mode == 'extra_companion' ? 11 : 12,
           color: theme.valueColor,
           align: f.textAlign,
           layer: elements.length + 1,
           statusFieldId: fieldId,
-          overflow: f.overflow,
-          richText: f.overflow == 'scroll',
+          overflow: effectiveOverflow,
+          richText: shouldScrollText,
         ));
       }
-      y += (isProgress ? _Layout.rowHeight : valueHeight) + _Layout.rowGap;
+      y += (isProgress
+              ? _Layout.rowHeight
+              : (shouldScrollText ? _Layout.rowHeight + valueHeight : valueHeight)) +
+          _Layout.rowGap;
     }
 
     final pressPairs = <({String surface, String button})>[];
@@ -1347,6 +1355,26 @@ class UiAssemblyBuilder {
         'extra_sticky' => '收起',
         _ => '确认',
       };
+
+  static bool _shouldScrollTextField(
+    UiPlanField field,
+    String value,
+    String mode,
+  ) {
+    if (field.overflow == 'scroll') return true;
+    final text = value.trim();
+    if (text.contains('\n')) return true;
+    final threshold = mode == 'extra_companion' ? 28 : 56;
+    return text.runes.length > threshold;
+  }
+
+  static double _scrollTextHeightFor(String value, String mode) {
+    final len = value.runes.length;
+    final base = mode == 'extra_companion' ? 76.0 : 96.0;
+    if (len > 180) return mode == 'extra_companion' ? 120.0 : 160.0;
+    if (len > 90) return mode == 'extra_companion' ? 96.0 : 128.0;
+    return base;
+  }
 
   static double? _numberOf(String raw) {
     if (RegExp(r'[万亿千百]').hasMatch(raw)) return null;
