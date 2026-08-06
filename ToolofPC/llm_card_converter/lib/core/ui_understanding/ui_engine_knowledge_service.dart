@@ -52,6 +52,16 @@ Default: choose extra_companion for compact status bars / dashboards that follow
 - indicator + statusRules + linker: represent simple condition/status lights.
 - animation: click_to_surface_press and event_to_animation can trigger press/glow/ripple/flash style animations when configured on the target element.
 
+## Confirmed runtime facts (do not present these as unknown)
+- message_flow is a normal UI module rendered in a SizedBox; it can be visually placed over/inside surfaces by absolute layout. It is not restricted to a top-level-only slot.
+- extra_companion has a hard width cap of 212px, but height can grow within PCB limits and the surrounding chat list scrolls. It can use pages/tabs/gestures, but dense layouts are discouraged because the width is narrow.
+- line color comes from module.color; thickness/axis/solid/dashed/dotted/curve/double are supported. Use line for borders, dividers, ornaments, and terminal/codex styling.
+- overlay pages open via page_router route action open_overlay and can contain their own text/input/buttons/scroll areas. They are suitable for dossiers, quest details, friend lists, and expanded status panels.
+- status_bar_fields are LLM Project native state fields. They are not an automatic SillyTavern parser: the translator must map ST keys into fields/sourceKey/dataChannel. Once mapped, the app prompt/update mechanism lets the LLM read and update them.
+- Tabs are a visual pattern built from surface/text/button plus page_router/linker. page_router is the mechanism; there is no conflict between tabs and overlay buttons.
+- Multiple assemblies can coexist when lifecycles differ: opening + scene is valid. scene suppresses native chat/extra_companion; sticky remains a tool layer; opening is shown until dismissed.
+- Logic components are optional. Use math_node/timer/indicator/linker only when source evidence or confirmed author intent requires native computation/condition/automation. Pure visual upgrades may use line/surface/animation without changing gameplay.
+
 ## What to extract from a SillyTavern card
 - regex_scripts findRegex/replaceString may define UI fields and HTML/CSS layout.
 - IMPORTANT: use the human-facing labels from replaceString / rendered HTML as field.name. If the transport key is English (HP/MP/STR) but the rendered label is Chinese (生命值 (HP)), use the Chinese display label as name and put the raw key in sourceKey. Do not throw away the original display translation.
@@ -147,6 +157,7 @@ Single UiDesignPlan object shape:
     {
       "label": "新人入狱",
       "sendText": "选择开场1：新人入狱",
+      "keyAction": false,
       "branchIndex": 0,
       "page": "选项",
       "sourceRef": "data.first_mes onclick send"

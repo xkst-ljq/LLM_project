@@ -299,6 +299,7 @@ class UiPlanInput {
 class UiPlanAction {
   final String label;
   final String sendText;
+  final bool keyAction;
   final int? branchIndex;
   final String page;
   final String sourceRef;
@@ -306,6 +307,7 @@ class UiPlanAction {
   const UiPlanAction({
     required this.label,
     required this.sendText,
+    this.keyAction = false,
     required this.branchIndex,
     required this.page,
     required this.sourceRef,
@@ -315,6 +317,7 @@ class UiPlanAction {
     return UiPlanAction(
       label: _str(json['label']).trim(),
       sendText: _str(json['sendText'] ?? json['message'] ?? json['text']).trim(),
+      keyAction: _boolOf(json['keyAction']),
       branchIndex: _intOf(json['branchIndex']),
       page: _str(json['page']).trim(),
       sourceRef: _str(json['sourceRef']).trim(),

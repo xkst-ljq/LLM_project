@@ -213,3 +213,51 @@
 6. 真正不同布局的开场分支，目前应标记为 notes/unsupported，除非转译层实现 `branchVariants`。
 7. 长文本要用 `text.overflow=scroll`。
 8. 选择项若原卡只是纯文本，不要擅自变按钮；若明确有 `onclick=send` 或制作者确认“可点击”，才生成 action/button。
+
+## 11. 转译 AI 常见疑问的已确认答案
+
+以下问题已经从引擎源码确认，转译 AI 不应继续把它们当成未知能力：
+
+1. **`message_flow` 是否能放进 scene 内部？**
+   - 可以。`message_flow` 是普通模块类型，由 `UIRenderer` 在任意给定 `SizedBox` 内渲染。
+   - 它的数据由 `MessageFlowScope` 注入，真实聊天中显示真实历史，编辑/预览中显示示例。
+   - 视觉上可用 `surface` 放在它下方形成“正文框”。
+
+2. **scene 的设置 / 退出按钮怎么做？**
+   - 使用普通 `button`，设置 `keyAction=true`。
+   - 在 `scene` 下，`keyAction` 的语义就是打开聊天设置 / 菜单，不是故事内动作。
+
+3. **`extra_companion` 能否多页 / tab / 滚动？**
+   - 可以使用多页面、page_router、手势切页。
+   - 宽度硬上限是 212px；高度可在 PCB 范围内增长，外层聊天列表会滚动。
+   - 由于宽度窄，不适合承载复杂正文或大表格；复杂信息更适合 scene 或 overlay。
+
+4. **`line` 可以装饰到什么程度？**
+   - `line` 使用 `module.color` 控色，支持 `thickness`、`axis`、`solid/dashed/dotted/curve/double`、dash/gap。
+   - 适合分隔线、边框线、终端装饰线、羊皮纸章节线。
+   - 不支持 CSS 渐变线 / hover 伪类；复杂动态线条需用动画能力近似。
+
+5. **overlay 页面实际如何工作？**
+   - `AssemblyPage.type='overlay'`，通过 `page_router.route.action='open_overlay'` 打开。
+   - 可通过 `close_overlay` 关闭；运行时也有空白区域关闭 overlay 的逻辑。
+   - overlay 可以有自己的元素、输入框、滚动 text/message_flow 等。
+
+6. **`status_bar_fields` 是否会自动解析 ST 的 `PlayerStatus`？**
+   - 不会自动解析任意 ST 文本。转译层需要把 `HP/MP/...` 映射为状态字段和 dataChannel。
+   - 映射完成后，LLM Project 的 Prompt / 状态更新机制会让 LLM 读写这些字段。
+
+7. **tabs 和 page_router 是什么关系？**
+   - tabs 只是视觉/交互模式。
+   - 实际切页机制是透明 `button` → `linker(button_to_page_route)` → `page_router`。
+   - tabs 与 overlay 按钮可以共存。
+
+8. **多 assembly 同时存在时怎么运行？**
+   - `opening` 可作为前置开场层，关闭后后续 UI 继续。
+   - `scene` 接管聊天页，原生消息气泡与 `extra_companion` 不渲染。
+   - `extra_sticky` 是工具层，可排在 scene 之上。
+   - `extra_companion` 依赖 AI 消息气泡，scene 接管时没有宿主。
+
+9. **逻辑组件是不是必须用？**
+   - 不是。忠实迁移优先。
+   - 只有源卡有规则或作者确认需求时，才引入 `math_node` / `timer` / `indicator` / 复杂 linker。
+   - 纯视觉增强可使用 `line`、`surface`、动画，不应改变原玩法。

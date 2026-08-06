@@ -1191,7 +1191,19 @@ class UiAssemblyBuilder {
           align: 'left',
           layer: elements.length + 1,
         ));
-        y += 18.0;
+        elements.add(_line(
+          id: nextId('el'),
+          name: '分组线_$group',
+          x: _Layout.pcbPadding,
+          y: y + 17,
+          w: innerW,
+          h: 2,
+          color: theme.accentColor,
+          layer: elements.length + 1,
+          style: 'dashed',
+          thickness: 1.0,
+        ));
+        y += 22.0;
       }
       final fieldId = 'sf_${_slug(f.sourceKey.trim().isEmpty ? f.name : f.sourceKey)}';
       final isProgress = f.isNumber && f.display == 'progress';
@@ -1398,6 +1410,7 @@ class UiAssemblyBuilder {
       mode == 'opening' || mode == 'scene' || mode == 'extra_sticky';
 
   static bool _shouldMarkKeyAction(String mode, UiPlanAction action) {
+    if (action.keyAction) return true;
     if (mode == 'opening') return true;
     if (mode == 'scene' || mode == 'extra_sticky') {
       // 有发送内容的按钮承担“发消息”职责；非发送按钮承担关键操作。
@@ -1893,6 +1906,39 @@ class UiAssemblyBuilder {
               statusFieldId: statusFieldId,
               fieldType: 'number',
             ),
+          },
+        ),
+      );
+
+  static Map<String, dynamic> _line({
+    required String id,
+    required String name,
+    required double x,
+    required double y,
+    required double w,
+    required double h,
+    required int color,
+    required int layer,
+    String axis = 'horizontal',
+    String style = 'solid',
+    double thickness = 1.0,
+  }) =>
+      _element(
+        id: id,
+        x: x,
+        y: y,
+        w: w,
+        h: h,
+        layer: layer,
+        module: _module(
+          id: id,
+          name: name,
+          type: 'line',
+          color: color,
+          props: {
+            'axis': axis,
+            'lineStyle': style,
+            'thickness': thickness,
           },
         ),
       );
