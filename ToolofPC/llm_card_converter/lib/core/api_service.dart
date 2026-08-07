@@ -192,8 +192,20 @@ class ApiService {
     final message = first is Map ? first['message'] : null;
     final content = message is Map ? message['content'] : null;
     final contentLen = content is String ? content.runes.length : 0;
-    onLog?.call('      普通响应：HTTP ${response.statusCode} choices=${choices.length} contentType=${content.runtimeType} contentLen=$contentLen finish=$finishReason');
+    // 诊断推理模型：content 为空但 reasoning_content 有内容时，
+    // 说明模型把 token 全花在思考链上，未轮到写正文（finish=length）。
+    final msgKeys = message is Map
+        ? message.keys.map((k) => k.toString()).join(',')
+        : 'not_map';
+    final reasoning = message is Map ? message['reasoning_content'] : null;
+    final reasoningLen = reasoning is String ? reasoning.runes.length : 0;
+    onLog?.call('      普通响应：HTTP ${response.statusCode} choices=${choices.length} contentType=${content.runtimeType} contentLen=$contentLen finish=$finishReason msgKeys=$msgKeys reasoningLen=$reasoningLen');
     if (content is! String || content.trim().isEmpty) {
+      // 若 message 里没有 content 字段但有 reasoning_content，提示可能是推理模型。
+      if (reasoningLen > 0) {
+        onLog?.call('      提示：模型输出了 $reasoningLen 字符思考链但正文为空——'
+            '可能是推理模型把 max_tokens 全花在思考上，或需读取 reasoning_content。');
+      }
       throw Exception('模型返回为空');
     }
     return content;
@@ -331,6 +343,7 @@ class ApiService {
     var doneSeen = false;
     var lastFrameKeys = '';
     var firstChoiceSample = '';
+    var sawReasoning = false;
     // ResponseBody.stream 是 Stream<Uint8List>，而 utf8.decoder 是
     // StreamTransformer<List<int>, String>。Dio 5.x 的泛型收窄会让
     // 直接 transform(utf8.decoder) 报类型不匹配，先 cast<List<int>>()。
@@ -364,6 +377,22 @@ class ApiService {
         } else if (stat.parsed) {
           nonContentFrameCount++;
         }
+        // 推理模型诊断：detect reasoning_content in this frame.
+        if (!sawReasoning) {
+          try {
+            final dec = jsonDecode(payload);
+            if (dec is Map) {
+              final choices = dec['choices'];
+              if (choices is List && choices.isNotEmpty && choices.first is Map) {
+                final delta = (choices.first as Map)['delta'];
+                if (delta is Map && delta['reasoning_content'] is String &&
+                    (delta['reasoning_content'] as String).isNotEmpty) {
+                  sawReasoning = true;
+                }
+              }
+            }
+          } catch (_) {}
+        }
         continue;
       }
 
@@ -395,6 +424,7 @@ class ApiService {
       'contentChars': full.runes.length,
       'nonContentFrames': nonContentFrameCount,
       'done': doneSeen,
+      'sawReasoning': sawReasoning,
       'lastFrameKeys': lastFrameKeys,
       'firstChoiceSample': firstChoiceSample,
     });
@@ -441,6 +471,18 @@ class ApiService {
       // 单个 chunk 解析失败不影响整体；continue 等下一个。
       return (parsed: false, content: false, keys: 'parse_error', choiceSample: '');
     }
+  }
+
+  /// 流式侧诊断：统计 reasoning_content 是否在产出（推理模型假设验证）。
+  static String reasoningStatOfFirstFrame(Map<dynamic, dynamic> choice) {
+    final delta = choice['delta'];
+    if (delta is Map) {
+      final reasoning = delta['reasoning_content'];
+      if (reasoning is String && reasoning.isNotEmpty) {
+        return 'delta.reasoning_content 有 ${reasoning.runes.length} 字符';
+      }
+    }
+    return '';
   }
 
   static String _choiceText(Map<dynamic, dynamic> choice) {
