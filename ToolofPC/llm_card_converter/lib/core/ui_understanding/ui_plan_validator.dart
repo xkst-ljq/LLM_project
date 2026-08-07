@@ -55,6 +55,9 @@ class UiPlanValidator {
     if (plan.uiMode == 'opening' && plan.fields.length > 8) {
       errors.add('opening UI 字段过多：opening 只应承载简介、少量人物信息与开场方向选择；完整 PlayerStatus 应放入 scene/companion/sticky。');
     }
+    if (plan.uiMode == 'opening' && plan.layout.pages.length > 1) {
+      errors.add('opening UI 不应把“角色设定填写”和“开场方向选择”拆成多个稀疏 tab；请合并为一张可滚动的档案/登记卡。');
+    }
     if (plan.uiMode == 'opening' && _sourceSuggestsProfilePool(sourcePack)) {
       final profileInputs = plan.inputs
           .where((input) => input.targetKind == 'status_field' && !input.sendOnSubmit)
@@ -98,6 +101,10 @@ class UiPlanValidator {
     }
     if (plan.uiMode == 'scene' && plan.layout.pages.length > 5) {
       errors.add('scene 页面过多（${plan.layout.pages.length} 页），容易形成稀疏空页。请优先参考原卡长卡/网格结构，合并为主正文页 + 状态/任务/羁绊等少量页面，或使用 overlay 承载低频详情。');
+    }
+    final sparsePages = _sparsePages(plan);
+    if (sparsePages.isNotEmpty) {
+      errors.add("以下页面内容过少，容易导致 PCB 大面积空白：${sparsePages.join('、')}。请合并到相关页面、改为 overlay，或放入大规格 scroll/message_flow 内容区。");
     }
     if (plan.inputs.length > 4) {
       warnings.add('输入框较多（${plan.inputs.length}），编译时会压缩布局。');
@@ -163,6 +170,28 @@ class UiPlanValidator {
       errors: errors,
       warnings: warnings,
     );
+  }
+
+  static List<String> _sparsePages(UiDesignPlan plan) {
+    if (plan.layout.pages.length <= 1) return const [];
+    final result = <String>[];
+    for (final page in plan.layout.pages) {
+      final title = page.title.trim();
+      if (title.isEmpty) continue;
+      if (_isMessagePage(title, page.role)) continue;
+      final fields = plan.fields.where((f) => f.page.trim() == title).toList();
+      final inputs = plan.inputs.where((i) => i.page.trim() == title).toList();
+      final actions = plan.actions.where((a) => a.page.trim() == title).toList();
+      final componentCount = fields.length + inputs.length + actions.length;
+      final hasLargeScrollField = fields.any((f) => f.overflow == 'scroll');
+      final isActionOnly = fields.isEmpty && (inputs.isNotEmpty || actions.isNotEmpty);
+      if (componentCount == 0) {
+        result.add('$title(空页)');
+      } else if (componentCount <= 2 && !hasLargeScrollField && !isActionOnly) {
+        result.add('$title($componentCount 项)');
+      }
+    }
+    return result;
   }
 
   static List<String> _groupsSplitAcrossPages(UiDesignPlan plan) {
