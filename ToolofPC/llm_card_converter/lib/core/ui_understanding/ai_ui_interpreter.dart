@@ -206,6 +206,11 @@ class AiUiInterpreter {
     // 不再把完整证据切片和组件 API 全量塞回去，避免修复轮爆炸。
     if (!validation.ok) {
       onLog?.call('  UI 方案校验失败：${validation.errors.length} 个错误，准备请求模型修复…');
+      final repairStep = traceBuilder?.beginStep(
+        stage: 'repair',
+        targetMode: '',
+        label: 'UI 方案修复',
+      );
       final repairMessages = _buildSlimRepairMessages(
         sourcePack: sourcePack,
         targetModes: targetModes,
@@ -222,7 +227,9 @@ class AiUiInterpreter {
         repairAttempts: 1,
         overallAttempts: 1,
         onLog: onLog,
+        trace: repairStep,
       );
+      repairStep?.complete(parsedOk: true, parsedJson: repairResult.json);
       plans = UiDesignPlan.listFromJson(repairResult.json);
       validation = _validatePlans(plans, sourcePack);
       transcript.addAll(repairResult.transcript);

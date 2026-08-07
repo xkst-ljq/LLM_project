@@ -161,6 +161,48 @@ class JsonAiClient {
       throw StateError('未配置 AI（请先在设置中填写 API）');
     }
 
+    try {
+      return await _completeOnceInner(
+        taskName: taskName,
+        messages: messages,
+        temperature: temperature,
+        maxTokens: maxTokens,
+        timeout: timeout,
+        repairAttempts: repairAttempts,
+        onDelta: onDelta,
+        onLog: onLog,
+        trace: trace,
+      );
+    } catch (e) {
+      // 无论成功还是失败，都确保 trace 步骤被标记完成，
+      // 否则观察器里该步骤 rawReply 为空、看不出失败原因。
+      trace?.addDiagnostic('请求异常：${_shortError(e.toString())}');
+      trace?.complete(
+        rawReply: '',
+        parsedOk: false,
+        parseError: '请求异常',
+        error: e.toString(),
+      );
+      rethrow;
+    }
+  }
+
+  static Future<JsonAiResult> _completeOnceInner({
+    required String taskName,
+    required List<ChatMessage> messages,
+    required double temperature,
+    required int? maxTokens,
+    required Duration timeout,
+    required int repairAttempts,
+    void Function(String delta)? onDelta,
+    void Function(String line)? onLog,
+    TraceStepBuilder? trace,
+  }) async {
+    final cfg = await AppSettings.getApiConfig();
+    if (!cfg.isComplete) {
+      throw StateError('未配置 AI（请先在设置中填写 API）');
+    }
+
     // 让流式 onDelta 同时喂给 trace 记录器。
     void onDeltaAndTrace(String delta) {
       onDelta?.call(delta);

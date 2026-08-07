@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../core/ui_translate_trace.dart';
@@ -95,60 +97,91 @@ class _StepCard extends StatelessWidget {
           ],
         ),
         children: [
-          // 请求消息（右侧 = 我们发的 prompt）
-          for (final message in step.requestMessages)
-            _MessageBubble(
-              role: message.role,
-              content: message.content,
-              maxHeight: 220,
-            ),
-          const Divider(height: 1),
-          // AI 回复（左侧）
+          // ── 请求消息（右侧 = 我们发的 prompt）──
+          if (step.requestMessages.isNotEmpty) ...[
+            for (final message in step.requestMessages)
+              _MessageBubble(
+                role: message.role,
+                content: message.content,
+                maxHeight: 220,
+              ),
+            const Divider(height: 1),
+          ],
+          // ── 内容区 ──
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'AI 回复 · ${step.rawReply.runes.length} 字符'
-                  '${step.gotDone ? ' · [DONE]' : ''}'
-                  '${step.streamingChunks.isNotEmpty ? ' · ${step.streamingChunks.length} chunks' : ''}'
-                  '${step.parsedOk ? ' · 解析成功' : ''}'
-                  '${step.parseError != null ? ' · 解析失败' : ''}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: step.parsedOk
-                        ? theme.colorScheme.primary
-                        : (step.error != null
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.onSurfaceVariant),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                if (step.rawReply.isNotEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
+                if (step.stage == 'deterministic') ...[
+                  // 确定性生成：没有请求 AI，直接展示程序生成的 JSON。
+                  _SectionTitle(title: '程序确定性生成（未请求 AI）'),
+                  const SizedBox(height: 6),
+                  if (step.parsedJson != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SelectableText(
+                        const JsonEncoder.withIndent('  ').convert(step.parsedJson),
+                        style: const TextStyle(fontSize: 12, height: 1.4),
+                      ),
+                    )
+                  else
+                    Text(
+                      '（无输出）',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                    child: SelectableText(
-                      step.rawReply,
-                      style: const TextStyle(fontSize: 12, height: 1.4),
-                    ),
-                  )
-                else
+                ] else ...[
                   Text(
-                    '（空回复）',
+                    'AI 回复 · ${step.rawReply.runes.length} 字符'
+                    '${step.gotDone ? ' · [DONE]' : ''}'
+                    '${step.streamingChunks.isNotEmpty ? ' · ${step.streamingChunks.length} chunks' : ''}'
+                    '${step.parsedOk ? ' · 解析成功' : ''}'
+                    '${step.parseError != null ? ' · 解析失败' : ''}',
                     style: TextStyle(
                       fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                      color: theme.colorScheme.error,
+                      fontWeight: FontWeight.bold,
+                      color: step.parsedOk
+                          ? theme.colorScheme.primary
+                          : (step.error != null
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.onSurfaceVariant),
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  if (step.rawReply.isNotEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SelectableText(
+                        step.rawReply,
+                        style: const TextStyle(fontSize: 12, height: 1.4),
+                      ),
+                    )
+                  else
+                    Text(
+                      step.error != null ? '（请求失败）' : '（空回复）',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                ],
                 if (step.error != null) ...[
                   const SizedBox(height: 6),
                   Text(
