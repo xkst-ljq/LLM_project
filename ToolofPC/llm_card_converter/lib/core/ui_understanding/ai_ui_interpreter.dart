@@ -450,6 +450,32 @@ class AiUiInterpreter {
       addTextField('当前护甲', 'Armor', '装备与状态', status['Armor'] ?? '—', statsPage);
     }
 
+    // XML 标签状态栏：黑曜石法外特区等卡用 <生命>84</生命> 表达状态。
+    // 从 first_mes / 分支文本按标签提取实际值，生成状态字段。
+    if (status.isEmpty && sourcePack.hasXmlStatusTags) {
+      final tagValues = sourcePack.tagValuesForBranchIndex(0);
+      const xmlLabel = {
+        '生命': '生命值', '精神': '精神值', '体力': '体力值', '饱腹': '饱腹值',
+        '势力': '势力', '关系': '关系', '声望': '声望', '点数': '点数',
+        '物品': '物品', '位置': '位置', '称号': '称号', '编号': '编号', '罪名': '罪名',
+        'HP': '生命值 (HP)', 'MP': '法力值 (MP)', 'XP': '经验值 (XP)',
+      };
+      const numericTags = {'生命', '精神', '体力', '饱腹', '声望', '点数', 'HP', 'MP', 'XP'};
+      for (final tag in tagValues.keys) {
+        final label = xmlLabel[tag];
+        if (label == null) continue;
+        final value = tagValues[tag] ?? '';
+        if (numericTags.contains(tag)) {
+          addNumberField(label, tag, '状态', value.isEmpty ? '0' : value, 'progress');
+        } else {
+          addTextField(label, tag, '状态', value.isEmpty ? '—' : value, statsPage);
+        }
+      }
+      if (tagValues.isEmpty) {
+        // 检测到 XML 状态标签但未在开场白提取到值，仅生成标签结构。
+      }
+    }
+
     if (sourcePack.hasQuestSchema) {
       fields.add({
         'name': '任务板',

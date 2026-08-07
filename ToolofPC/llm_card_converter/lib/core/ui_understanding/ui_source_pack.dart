@@ -50,7 +50,30 @@ class UiSourcePack {
       worldBookEvidence.any((e) => e.content.contains('FriendsAlbumPage'));
 
   bool get hasPlayerStatusSchema => _hasSchemaToken('PlayerStatus') ||
-      worldBookEvidence.any((e) => e.content.contains('PlayerStatus'));
+      worldBookEvidence.any((e) => e.content.contains('PlayerStatus')) ||
+      // XML 标签格式状态栏：<生命>x</生命> <精神> <体力> <饱腹> 等
+      hasXmlStatusTags;
+
+  /// 是否含 XML 标签格式的状态栏（如 `<生命>84</生命>`）。
+  ///
+  /// SillyTavern 卡除了 `{PlayerStatus|...}`，还常用自定义 XML 标签
+  /// 表达状态（黑曜石法外特区：`<生命>` `<精神>` `<体力>` `<饱腹>`
+  /// `<势力>` `<关系>` `<声望>` `<点数>` `<物品>` `<位置>`）。
+  /// 这类标签从 regex findRegex 或 first_mes 里可识别。
+  bool get hasXmlStatusTags {
+    const known = {
+      '生命', '精神', '体力', '饱腹', '势力', '声望', '点数',
+      '物品', '位置', '称号', '编号', '罪名', '关系', 'HP', 'MP', 'XP',
+    };
+    for (final tag in stableTagNames) {
+      if (known.contains(tag)) return true;
+    }
+    // 直接查 first_mes 里的 <生命> 等标签。
+    for (final name in known) {
+      if (branchText(0).contains('<$name>')) return true;
+    }
+    return false;
+  }
 
   bool get suggestsProfilePool => _sourceSuggestsProfilePool;
 
