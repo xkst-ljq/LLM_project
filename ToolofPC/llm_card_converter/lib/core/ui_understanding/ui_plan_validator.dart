@@ -67,6 +67,9 @@ class UiPlanValidator {
     if (plan.uiMode != 'opening') {
       if (sourcePack.hasQuestSchema && !_hasFieldLike(plan, const ['quest', 'task', '任务'])) {
         errors.add('检测到稳定 {quest...} 任务 schema；除非作者明确拒绝，运行时 UI 应提供 task_board/任务板 滚动文本字段或页面，供 LLM 更新任务，而不是只标 unsupported。');
+      } else if (sourcePack.hasQuestSchema) {
+        final questErrors = _questDisplayErrors(plan, sourcePack);
+        errors.addAll(questErrors);
       }
       if (sourcePack.hasFriendsAlbumSchema &&
           !_hasFieldLike(plan, const ['friends', 'album', 'friend', '羁绊', '好友'])) {
@@ -181,6 +184,44 @@ class UiPlanValidator {
     });
     result.sort();
     return result;
+  }
+
+  static List<String> _questDisplayErrors(
+    UiDesignPlan plan,
+    UiSourcePack sourcePack,
+  ) {
+    final taskFields = plan.fields.where((field) {
+      final text = '${field.name} ${field.sourceKey} ${field.group} ${field.page}'.toLowerCase();
+      return text.contains('quest') || text.contains('task') || text.contains('任务');
+    }).toList();
+    if (taskFields.isEmpty) return const [];
+
+    final values = <String>[
+      for (final f in taskFields) f.initialValue,
+      for (final f in taskFields) ...f.branchInitialValues.values,
+    ].where((v) => v.trim().isNotEmpty).toList();
+    final joined = values.join('\n');
+    final errors = <String>[];
+    if (RegExp(r'\{\s*quest\s*:|\|desc\s*:|\|reward\s*:|\|risk\s*:')
+        .hasMatch(joined)) {
+      errors.add('任务板不应直接显示原始 `{quest:...|desc:...}` 语段。请把任务格式化为玩家可读的任务卡/任务清单文本，并保留字段顺序和分隔。');
+    }
+    final names = sourcePack.questSummaries
+        .map((q) => q.name.trim())
+        .where((v) => v.isNotEmpty)
+        .toList();
+    if (names.length > 1 && joined.trim().isNotEmpty) {
+      final missing = names.where((name) => !joined.contains(name)).toList();
+      if (missing.isNotEmpty) {
+        errors.add("任务板初始内容缺少任务：${missing.join('、')}。如果 first_mes 提供多条任务，应全部纳入初始任务板，而不是只显示一条。");
+      }
+    }
+    for (final f in taskFields) {
+      if (f.overflow != 'scroll') {
+        errors.add('任务字段「${f.name}」应使用 overflow=scroll 并给足高度，避免任务详情显示不全。');
+      }
+    }
+    return errors;
   }
 
   static bool _hasFieldLike(UiDesignPlan plan, List<String> needles) {

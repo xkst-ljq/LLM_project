@@ -54,6 +54,8 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - tavern_helper external JS import means the UI may be runtime-generated; mark unsupported instead of inventing.
 - world book entries may contain variable definitions or initvar sections; use them as evidence if relevant.
 - Stable message-level schemas like `{quest:...}`, `{DQ_ChoiceBox|...}` and `{FriendsAlbumPage|...}` may be represented as persistent LLM-updatable UI fields/pages (for example scroll text task_board/friends_album or action buttons) when that improves usability and does not change gameplay. Prefer this over unsupported when the schema is clear and recurring.
+- When converting `{quest:...}` into a task_board text field, do not display raw schema text. Format every available initial quest into readable sections/cards, include all quests found in first_mes, preserve source order, and use overflow=scroll.
+- When converting `FriendsAlbumPage`, prefer a persistent friends_album scroll field/page or structured slots that can be updated by LLM. Do not show raw `{FriendsAlbumPage|...}` text.
 
 # Strict anti-hallucination rules
 - If the original card has no explicit UI evidence, return hasUi=false.

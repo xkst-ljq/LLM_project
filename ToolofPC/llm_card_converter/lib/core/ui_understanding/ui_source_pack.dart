@@ -49,6 +49,23 @@ class UiSourcePack {
   bool get hasFriendsAlbumSchema => _hasSchemaToken('FriendsAlbumPage') ||
       worldBookEvidence.any((e) => e.content.contains('FriendsAlbumPage'));
 
+  List<QuestSummary> get questSummaries {
+    final out = <QuestSummary>[];
+    void collect(String text, String path) {
+      out.addAll(_questSummariesOf(text, path));
+    }
+
+    collect(firstMes, 'data.first_mes');
+    for (var i = 0; i < alternateGreetings.length; i++) {
+      collect(alternateGreetings[i], 'data.alternate_greetings[$i]');
+    }
+    for (final e in worldBookEvidence) {
+      collect(e.content, e.path);
+    }
+    final seen = <String>{};
+    return out.where((q) => seen.add('${q.name}|${q.description}')).toList();
+  }
+
   bool _hasSchemaToken(String token) {
     if (firstMes.contains(token)) return true;
     if (alternateGreetings.any((e) => e.contains(token))) return true;
@@ -92,13 +109,20 @@ class UiSourcePack {
     if (hasQuestSchema || hasChoiceBoxSchema || hasFriendsAlbumSchema) {
       b.writeln('\n# Stable UI schemas that may become persistent UI');
       if (hasQuestSchema) {
-        b.writeln('- quest schema exists. If making a persistent UI, prefer a task_board scroll text field/page that LLM can update, instead of marking quest unsupported by default.');
+        b.writeln('- quest schema exists. If making a persistent UI, prefer a task_board scroll text field/page that LLM can update, instead of marking quest unsupported by default. Do not show raw `{quest:...}` text to the player; format it into readable task cards/sections.');
+        final quests = questSummaries;
+        if (quests.isNotEmpty) {
+          b.writeln('  extracted initial quests:');
+          for (final quest in quests.take(6)) {
+            b.writeln('  - ${quest.toPromptLine()}');
+          }
+        }
       }
       if (hasChoiceBoxSchema) {
         b.writeln('- DQ_ChoiceBox schema exists. If options are usable choices, generate sendsMessage actions/buttons; input_prompt may become an input in scene/opening.');
       }
       if (hasFriendsAlbumSchema) {
-        b.writeln('- FriendsAlbumPage schema exists. Consider a friends_album scroll text field/page that LLM can update for current team/known companions.');
+        b.writeln('- FriendsAlbumPage schema exists. Consider a friends_album scroll text field/page that LLM can update for current team/known companions. Do not show raw `{FriendsAlbumPage|...}` text to the player.');
       }
     }
     if (description.trim().isNotEmpty) {
@@ -196,6 +220,28 @@ class UiSourcePack {
       }
     }
     if (all.length > 8) b.writeln('- ... omitted ${all.length - 8} extra branches');
+  }
+
+  static List<QuestSummary> _questSummariesOf(String text, String path) {
+    final out = <QuestSummary>[];
+    final re = RegExp(r'\{quest:([^|}]+)\|type:([^|}]*)\|desc:([^|}]*)\|diff:([^|}]*)\|client:([^|}]*)\|reward:([^|}]*)\|location:([^|}]*)\|time:([^|}]*)\|equip:([^|}]*)\|risk:([^|}]*)\|note:([^}]*)\}');
+    for (final m in re.allMatches(text)) {
+      out.add(QuestSummary(
+        path: path,
+        name: m.group(1)?.trim() ?? '',
+        type: m.group(2)?.trim() ?? '',
+        description: m.group(3)?.trim() ?? '',
+        difficulty: m.group(4)?.trim() ?? '',
+        client: m.group(5)?.trim() ?? '',
+        reward: m.group(6)?.trim() ?? '',
+        location: m.group(7)?.trim() ?? '',
+        time: m.group(8)?.trim() ?? '',
+        equipment: m.group(9)?.trim() ?? '',
+        risk: m.group(10)?.trim() ?? '',
+        note: m.group(11)?.trim() ?? '',
+      ));
+    }
+    return out;
   }
 
   static String _layoutHintOf(String html) {
@@ -314,4 +360,48 @@ class UiActionEvidence {
   final String text;
 
   const UiActionEvidence({required this.path, required this.text});
+}
+
+class QuestSummary {
+  final String path;
+  final String name;
+  final String type;
+  final String description;
+  final String difficulty;
+  final String client;
+  final String reward;
+  final String location;
+  final String time;
+  final String equipment;
+  final String risk;
+  final String note;
+
+  const QuestSummary({
+    required this.path,
+    required this.name,
+    required this.type,
+    required this.description,
+    required this.difficulty,
+    required this.client,
+    required this.reward,
+    required this.location,
+    required this.time,
+    required this.equipment,
+    required this.risk,
+    required this.note,
+  });
+
+  String toPromptLine() {
+    final parts = <String>[
+      if (type.isNotEmpty) '类型:$type',
+      if (difficulty.isNotEmpty) '难度:$difficulty',
+      if (client.isNotEmpty) '委托人:$client',
+      if (reward.isNotEmpty) '报酬:$reward',
+      if (location.isNotEmpty) '地点:$location',
+      if (description.isNotEmpty) '描述:$description',
+      if (risk.isNotEmpty) '风险:$risk',
+      if (note.isNotEmpty) '说明:$note',
+    ];
+    return "$name (${parts.join('；')}) [$path]";
+  }
 }
