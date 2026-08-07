@@ -130,16 +130,44 @@ class TraceRequestParams {
 /// 逐步构建 [UiTranslateTrace] 的可变构造器。
 ///
 /// [AiUiInterpreter] 在转译过程中调用它的方法记录每个请求/步骤，
-/// 结束后 `build()` 产出不可变快照。不依赖 Flutter。
+/// 结束后 `build()` 产出不可变快照。
+///
+/// 支持实时监听：每次步骤开始 / 内容更新 / 完成都会调用 [addListener]
+/// 注册的回调，观察器可在转译进行中实时刷新，而不是等结束才看到。
+/// 保持纯 Dart（不依赖 Flutter），便于测试与复用。
 class UiTranslateTraceBuilder {
   final String cardName;
   final DateTime startedAt;
   final List<TraceStep> steps = <TraceStep>[];
+  final List<TraceStepBuilder> _openSteps = <TraceStepBuilder>[];
+  final List<void Function()> _listeners = <void Function()>[];
 
   UiTranslateTraceBuilder({
     required this.cardName,
     DateTime? startedAt,
   }) : startedAt = startedAt ?? DateTime.now();
+
+  /// 从已完成快照构造一个只读 builder（供观察器展示结束后内容）。
+  factory UiTranslateTraceBuilder.fromTrace(UiTranslateTrace trace) {
+    final builder = UiTranslateTraceBuilder(
+      cardName: trace.cardName,
+      startedAt: trace.startedAt,
+    );
+    builder.steps.addAll(trace.steps);
+    return builder;
+  }
+
+  /// 注册监听回调，返回取消函数。
+  void Function() addListener(void Function() listener) {
+    _listeners.add(listener);
+    return () => _listeners.remove(listener);
+  }
+
+  void _notify() {
+    for (final listener in List<void Function()>.of(_listeners)) {
+      listener();
+    }
+  }
 
   /// 开始一个新步骤，返回该步骤的可变上下文供后续填充。
   TraceStepBuilder beginStep({
@@ -152,17 +180,42 @@ class UiTranslateTraceBuilder {
       targetMode: targetMode,
       label: label,
       startedAt: DateTime.now(),
+      onChanged: _onStepChanged,
     );
-    steps.add(step.build());
+    _openSteps.add(step);
+    _snapshotStep(step);
+    _notify();
     return step;
   }
 
-  UiTranslateTrace build() => UiTranslateTrace(
-        cardName: cardName,
-        steps: List<TraceStep>.unmodifiable(steps),
-        startedAt: startedAt,
-        finishedAt: DateTime.now(),
-      );
+  /// 步骤内容变化（chunk 到达 / 诊断追加）时，把最新状态同步到 steps 快照。
+  void _onStepChanged(TraceStepBuilder step) {
+    _snapshotStep(step);
+    _notify();
+  }
+
+  void _snapshotStep(TraceStepBuilder step) {
+    final index = _openSteps.indexOf(step);
+    if (index < 0) return;
+    final snapshot = step.build();
+    if (index < steps.length) {
+      steps[index] = snapshot;
+    } else {
+      steps.add(snapshot);
+    }
+  }
+
+  UiTranslateTrace build() {
+    for (final step in _openSteps) {
+      _snapshotStep(step);
+    }
+    return UiTranslateTrace(
+      cardName: cardName,
+      steps: List<TraceStep>.unmodifiable(steps),
+      startedAt: startedAt,
+      finishedAt: DateTime.now(),
+    );
+  }
 }
 
 /// 单个 [TraceStep] 的可变构建上下文。
@@ -189,10 +242,17 @@ class TraceStepBuilder {
     required this.targetMode,
     required this.label,
     required this.startedAt,
-  });
+    void Function(TraceStepBuilder)? onChanged,
+  }) : _onChanged = onChanged;
+
+  /// 内容变化回调（由 UiTranslateTraceBuilder 注入，用于实时刷新）。
+  final void Function(TraceStepBuilder)? _onChanged;
+
+  void _notify() => _onChanged?.call(this);
 
   void addRequestMessage(String role, String content) {
     requestMessages.add(TraceMessage.fromRoleContent(role, content));
+    _notify();
   }
 
   void setParams({
@@ -207,13 +267,23 @@ class TraceStepBuilder {
       jsonMode: jsonMode,
       stream: stream,
     );
+    _notify();
   }
 
-  void addStreamingChunk(String chunk) => streamingChunks.add(chunk);
+  void addStreamingChunk(String chunk) {
+    streamingChunks.add(chunk);
+    _notify();
+  }
 
-  void addDiagnostic(String line) => diagnostics.add(line);
+  void addDiagnostic(String line) {
+    diagnostics.add(line);
+    _notify();
+  }
 
-  void markDone() => gotDone = true;
+  void markDone() {
+    gotDone = true;
+    _notify();
+  }
 
   void complete({
     String rawReply = '',
@@ -230,6 +300,7 @@ class TraceStepBuilder {
     this.parsedJson = parsedJson;
     this.error = error;
     finishedAt ??= DateTime.now();
+    _notify();
   }
 
   TraceStep build() => TraceStep(

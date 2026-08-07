@@ -434,12 +434,15 @@ class _WorkspacePageState extends State<WorkspacePage> {
   }
 
   /// 查看转译过程的按钮（流程观察器）。
+  ///
+  /// 转译进行中即可打开（监听实时 builder）；结束后看快照。
   Widget _traceButton() {
     final item = _items.isNotEmpty && _expanded != null && _expanded! < _items.length
         ? _items[_expanded!]
         : null;
+    final live = item?.work.uiTraceBuilder;
     final trace = item?.work.uiTranslateTrace;
-    if (trace == null || trace.steps.isEmpty) {
+    if (live == null && (trace == null || trace.steps.isEmpty)) {
       return OutlinedButton.icon(
         onPressed: null,
         icon: const Icon(Icons.visibility_outlined, size: 18),
@@ -449,11 +452,15 @@ class _WorkspacePageState extends State<WorkspacePage> {
     return OutlinedButton.icon(
       onPressed: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => UiTranslateTracePage(trace: trace),
+          builder: (_) => UiTranslateTracePage(
+            // 转译中传实时 builder；结束后 builder 已被置空，
+            // 此时传一个「快照 builder」包装已完成 trace，同样可看。
+            traceBuilder: live ?? UiTranslateTraceBuilder.fromTrace(trace!),
+          ),
         ),
       ),
       icon: const Icon(Icons.visibility_outlined, size: 18),
-      label: Text('转译过程（${trace.steps.length} 步）'),
+      label: Text(live != null ? '转译过程（实时 ${live.steps.length} 步）' : '转译过程（${trace?.steps.length ?? 0} 步）'),
     );
   }
 

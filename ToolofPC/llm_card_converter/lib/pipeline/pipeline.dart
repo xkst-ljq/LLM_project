@@ -72,6 +72,12 @@ class CardWorkItem {
   /// 解析结果、失败原因。转译完成后可供「查看转译过程」页面展示。
   UiTranslateTrace? uiTranslateTrace;
 
+  /// 实时过程记录器（转译进行中可访问，供观察器实时刷新）。
+  ///
+  /// 转译开始时创建，结束转为 [uiTranslateTrace] 快照；观察器在
+  /// 转译中监听它实时显示每一步。
+  UiTranslateTraceBuilder? uiTraceBuilder;
+
   /// 第三步产出的审计问题清单（不改内容，只给建议）。
   List<RefineIssue> refineIssues = [];
 
@@ -290,6 +296,7 @@ class ConversionPipeline {
       // 不再让 RegexUiExtractor 决定“该生成什么 UI”；规则层只保留在
       // AiUiInterpreter 内部用于整理 sourceRef 证据。
       final traceBuilder = UiTranslateTraceBuilder(cardName: card['name']?.toString() ?? '');
+      item.uiTraceBuilder = traceBuilder;
       final interpretation = await AiUiInterpreter.understand(
         sourceJson: src,
         baseResult: base,
@@ -298,6 +305,7 @@ class ConversionPipeline {
       );
       item.uiAiConversationContext = interpretation.conversationContext;
       item.uiTranslateTrace = traceBuilder.build();
+      item.uiTraceBuilder = null;
       final built = UiAssemblyBuilder.buildFromPlans(
         interpretation.plans,
         cardName: card['name']?.toString() ?? '',
