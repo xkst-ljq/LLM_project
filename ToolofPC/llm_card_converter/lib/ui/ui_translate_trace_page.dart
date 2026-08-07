@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../core/ui_translate_trace.dart';
@@ -168,7 +170,7 @@ class _StepCard extends StatelessWidget {
     return '完成';
   }
 
-  Widget _buildDeterministic(ColorScheme theme) {
+  Widget _buildDeterministic(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -209,7 +211,7 @@ class _StepCard extends StatelessWidget {
     );
   }
 
-  Widget _buildRequestReply(ColorScheme theme) {
+  Widget _buildRequestReply(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -313,7 +315,7 @@ class _StepCard extends StatelessWidget {
         (sum, m) => sum + m.content.runes.length,
       );
 
-  Widget _replyBox(ColorScheme theme, String content) {
+  Widget _replyBox(ThemeData theme, String content) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
@@ -329,7 +331,7 @@ class _StepCard extends StatelessWidget {
     );
   }
 
-  Widget _promptBox(ColorScheme theme, List<TraceMessage> messages) {
+  Widget _promptBox(ThemeData theme, List<TraceMessage> messages) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
@@ -362,7 +364,7 @@ class _StepCard extends StatelessWidget {
     );
   }
 
-  Widget _diagnosticsSection(ColorScheme theme) {
+  Widget _diagnosticsSection(ThemeData theme) {
     if (step.diagnostics.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

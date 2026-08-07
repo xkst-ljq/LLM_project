@@ -11,6 +11,7 @@ import '../core/api_service.dart';
 import '../core/app_settings.dart';
 import '../core/conversion_writer.dart';
 import '../core/history_service.dart';
+import '../core/ui_translate_trace.dart';
 import '../core/ui_understanding/ui_engine_knowledge_service.dart';
 import '../pipeline/pipeline.dart';
 import '../pipeline/pipeline_runner.dart';

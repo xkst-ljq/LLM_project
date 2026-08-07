@@ -138,8 +138,10 @@ class UiSourcePack {
     final out = <String, String>{};
     for (final tag in stableTagNames) {
       final escaped = RegExp.escape(tag);
+      // 相邻字符串字面量拼接：raw 段保留 \s 正则语义，插值段嵌入 tag。
+      final pattern = r'<\s*' '$escaped' r'\s*>([\s\S]*?)<\/\s*' '$escaped' r'\s*>';
       final match = RegExp(
-        '<\s*$escaped\s*>([\s\S]*?)<\/\s*$escaped\s*>',
+        pattern,
         caseSensitive: false,
       ).firstMatch(text);
       final value = match?.group(1)?.trim() ?? '';

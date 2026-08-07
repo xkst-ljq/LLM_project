@@ -385,7 +385,7 @@ class AiUiInterpreter {
         'overflow': 'ellipsis',
         'initialValue': current,
         'min': 0,
-        if (max != null) 'max': max,
+        'max': ?max,
         'owner': 'player',
         'page': statsPage,
         'sourceRef': 'data.first_mes PlayerStatus:$key',
