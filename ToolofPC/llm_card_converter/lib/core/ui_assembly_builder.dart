@@ -438,6 +438,10 @@ class UiAssemblyBuilder {
           }
         }
       }
+      _expandScrollableContentToFillPage(
+        elements.cast<Map<String, dynamic>>(),
+        pcbH: pcbH,
+      );
     }
 
     notes.add('AI 已理解原卡 UI 并生成 ${plan.uiName}（置信度 ${plan.confidence.toStringAsFixed(2)}）。');
@@ -1080,6 +1084,83 @@ class UiAssemblyBuilder {
       if (bottom > maxH) maxH = bottom;
     }
     return maxH.clamp(64.0, 2000.0).toDouble();
+  }
+
+  /// 多页 UI 的高度会按最高页统一。若某页只有一个滚动文本 / message_flow，
+  /// 统一高度后就会在下方留下大片空白。这里把页面内最后一个可滚动内容块
+  /// 拉伸到接近底部，让任务板、羁绊名录、日志页真正吃满 PCB。
+  static void _expandScrollableContentToFillPage(
+    List<Map<String, dynamic>> elements, {
+    required double pcbH,
+  }) {
+    var candidateIndex = -1;
+    var candidateY = -1.0;
+    for (var i = 0; i < elements.length; i++) {
+      final element = elements[i];
+      if (!_isVisibleContentElement(element)) continue;
+      if (!_isExpandableScrollableElement(element)) continue;
+      final y = _elementY(element);
+      if (y > candidateY) {
+        candidateY = y;
+        candidateIndex = i;
+      }
+    }
+    if (candidateIndex < 0) return;
+
+    final candidate = elements[candidateIndex];
+    final y = _elementY(candidate);
+    final currentH = _elementH(candidate);
+    var limit = pcbH - _Layout.pcbPadding;
+
+    // 如果候选块下面还有按钮/输入等可见元素，就不要越过它。
+    for (var i = 0; i < elements.length; i++) {
+      if (i == candidateIndex) continue;
+      final other = elements[i];
+      if (!_isVisibleContentElement(other)) continue;
+      final otherY = _elementY(other);
+      if (otherY > y + 1 && otherY < limit) limit = otherY - 8.0;
+    }
+
+    final nextH = (limit - y).clamp(currentH, 2000.0).toDouble();
+    if (nextH > currentH + 8) {
+      final size = candidate['size'];
+      if (size is Map) size['height'] = nextH;
+    }
+  }
+
+  static bool _isVisibleContentElement(Map<String, dynamic> element) {
+    final module = element['module'];
+    final type = module is Map ? module['type']?.toString() ?? '' : '';
+    if (const {'linker', 'page_router', 'math_node', 'timer'}.contains(type)) {
+      return false;
+    }
+    if (element['name'] == '底板') return false;
+    final offset = element['offset'];
+    if (offset is! Map) return false;
+    final x = (offset['x'] as num?)?.toDouble() ?? 0.0;
+    return x >= 0;
+  }
+
+  static bool _isExpandableScrollableElement(Map<String, dynamic> element) {
+    final module = element['module'];
+    if (module is! Map) return false;
+    final type = module['type']?.toString() ?? '';
+    final props = module['properties'];
+    if (type == 'message_flow') return true;
+    if (type == 'text' && props is Map) {
+      return props['overflow']?.toString() == 'scroll';
+    }
+    return false;
+  }
+
+  static double _elementY(Map<String, dynamic> element) {
+    final offset = element['offset'];
+    return offset is Map ? ((offset['y'] as num?)?.toDouble() ?? 0.0) : 0.0;
+  }
+
+  static double _elementH(Map<String, dynamic> element) {
+    final size = element['size'];
+    return size is Map ? ((size['height'] as num?)?.toDouble() ?? 0.0) : 0.0;
   }
 
   static List<Map<String, dynamic>> _buildPlanPageElements({
