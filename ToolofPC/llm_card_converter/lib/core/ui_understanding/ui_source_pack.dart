@@ -450,11 +450,65 @@ class UiSourcePack {
       }
     }
 
+    // ── 检测到的状态字段（显式列出，避免 AI 因信息藏在 HTML 里而漏判）──
+    // 黑曜石法外特区等卡用 XML 标签 <生命>100%</生命> 表达状态，
+    // 值在 first_mes / alternate_greetings 里有静态数据。这里把
+    // 各分支提取到的字段名与初始值显式列出，AI 一眼就能识别
+    // 这是「可迁移的状态栏」而不是动态脚本。
+    final detectedStatus = _detectedStatusFields();
+    if (detectedStatus.isNotEmpty) {
+      b.writeln('\n# Detected persistent status fields (migrate these to scene)');
+      b.writeln('The card has persistent status fields with static initial values found in greetings. '
+          'These are NOT runtime-only scripts - extract them into a scene status panel:');
+      for (final entry in detectedStatus.entries) {
+        b.writeln('- ${entry.key}: ${entry.value}');
+      }
+      b.writeln('Map these to a scene UI with role=stats overlay page. '
+          'Numeric values (percent or HP/MP/XP) use display=progress; text values use display=text.');
+    }
+
     if (!hasEvidence) {
       b.writeln('\n# UI evidence\nNo explicit UI evidence extracted. Return hasUi=false.');
     }
 
     return b.toString();
+  }
+
+  /// 汇总各分支可提取的状态字段与初始值。
+  ///
+  /// 覆盖两种格式：
+  /// 1. `{PlayerStatus|HP:100/100|MP:50/50}` 标准格式
+  /// 2. `<生命>100%</生命>` XML 标签格式
+  /// 返回 字段名 → 首个非空值，按黑曜石等卡的布局顺序排列。
+  Map<String, String> _detectedStatusFields() {
+    final out = <String, String>{};
+    // 标准 PlayerStatus 格式
+    final ps = playerStatusForBranchIndex(0);
+    if (ps.isNotEmpty) {
+      const order = ['Name', 'Level', 'HP', 'MP', 'XP', 'STR', 'AGI', 'INT', 'CON', 'PER', 'CHA', 'Class', 'Status', 'Weapon', 'Armor'];
+      for (final k in order) {
+        final v = ps[k];
+        if (v != null && v.isNotEmpty) out[k] = v;
+      }
+    }
+    // XML 标签格式（跨分支聚合）
+    const xmlLabels = {
+      '生命': '生命', '精神': '精神', '体力': '体力', '饱腹': '饱腹',
+      '势力': '势力', '关系': '关系', '声望': '声望', '点数': '点数',
+      '物品': '物品', '位置': '位置', '称号': '称号', '编号': '编号', '罪名': '罪名',
+    };
+    if (hasXmlStatusTags) {
+      final branchCount = 1 + alternateGreetings.length;
+      for (var branch = 0; branch < branchCount; branch++) {
+        final vals = tagValuesForBranchIndex(branch);
+        for (final tag in xmlLabels.keys) {
+          final v = vals[tag];
+          if (v == null || v.isEmpty) continue;
+          out.putIfAbsent(tag, () => v);
+        }
+      }
+    }
+    return out;
   }
 
   /// 阶段 1（Scout）用的证据摘要：远小于 [toPromptText]。
