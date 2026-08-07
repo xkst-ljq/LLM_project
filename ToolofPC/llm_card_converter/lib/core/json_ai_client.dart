@@ -187,6 +187,33 @@ class JsonAiClient {
     }
   }
 
+  /// 关闭推理模型思考链的请求体参数。
+  ///
+  /// deepseek-chat / V4 / V4-Flash 等模型支持 `thinking: {type: "disabled"}`
+  /// 让 API 不再返回 reasoning_content，只给最终 content——输出 token 减少、
+  /// 速度快数倍（实测单轮 UI 理解从 250s 降到数十秒）。
+  ///
+  /// 注意：deepseek-reasoner / R1 强制推理无法关闭，需换普通对话模型。
+  /// 两个参数（thinking / reasoning_effort）不可混用。
+  static const Map<String, dynamic> _noThinkingBody = {
+    'thinking': {'type': 'disabled'},
+  };
+
+  static ChatCompleteOptions _options({
+    required double temperature,
+    required int? maxTokens,
+    required bool jsonMode,
+    required Duration timeout,
+  }) =>
+      ChatCompleteOptions(
+        temperature: temperature,
+        maxTokens: maxTokens,
+        jsonMode: jsonMode,
+        timeout: timeout,
+        retryCount: 0,
+        extraBody: _noThinkingBody,
+      );
+
   static Future<JsonAiResult> _completeOnceInner({
     required String taskName,
     required List<ChatMessage> messages,
@@ -227,12 +254,11 @@ class JsonAiClient {
           apiKey: cfg.apiKey,
           model: cfg.model,
           messages: messages,
-          options: ChatCompleteOptions(
+          options: _options(
             temperature: temperature,
             maxTokens: maxTokens,
             jsonMode: false,
             timeout: timeout,
-            retryCount: 0,
           ),
           onDelta: onDeltaAndTrace,
           onLog: onLog,
@@ -260,12 +286,11 @@ class JsonAiClient {
           apiKey: cfg.apiKey,
           model: cfg.model,
           messages: messages,
-          options: ChatCompleteOptions(
+          options: _options(
             temperature: temperature,
             maxTokens: maxTokens,
             jsonMode: false,
             timeout: timeout,
-            retryCount: 0,
           ),
           onLog: onLog,
         ),
@@ -320,12 +345,11 @@ class JsonAiClient {
           apiKey: cfg.apiKey,
           model: cfg.model,
           messages: [...transcript, repairPrompt],
-          options: ChatCompleteOptions(
+          options: _options(
             temperature: 0.0,
             maxTokens: maxTokens,
             jsonMode: false,
             timeout: timeout,
-            retryCount: 0,
           ),
           onLog: onLog,
         ),
