@@ -203,14 +203,47 @@ class ApiService {
   /// `receiveTimeout` 不会在长上下文生成期间触发。每个完整 chunk 通过
   /// [onDelta] 回调（线程安全：用 addPostFrameCallback 或直接抛给 UI）。
   ///
-  /// 返回累积的完整文本。若服务不支持流式（返回非 SSE），自动回落为
-  /// 普通请求。
+  /// 返回累积的完整文本。若服务不支持流式（返回非 SSE），会尽量解析
+  /// 非流式 JSON；网络/空返回等可恢复错误按 [retryCount] 重试。
   static Future<String> chatMessagesStreaming({
     required String baseUrl,
     required String apiKey,
     required String model,
     required List<ChatMessage> messages,
     ChatCompleteOptions options = const ChatCompleteOptions(),
+    void Function(String delta)? onDelta,
+  }) async {
+    Object? lastError;
+    final attempts = options.retryCount < 0 ? 1 : options.retryCount + 1;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        return await _chatMessagesStreamingOnce(
+          baseUrl: baseUrl,
+          apiKey: apiKey,
+          model: model,
+          messages: messages,
+          options: options,
+          onDelta: onDelta,
+        );
+      } catch (e) {
+        lastError = e;
+        final canRetry = attempt + 1 < attempts && _isRetryableError(e);
+        if (!canRetry) rethrow;
+        final multiplier = 1 << attempt;
+        await Future<void>.delayed(
+          Duration(milliseconds: options.retryDelay.inMilliseconds * multiplier),
+        );
+      }
+    }
+    throw lastError ?? Exception('请求失败：未知错误');
+  }
+
+  static Future<String> _chatMessagesStreamingOnce({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required List<ChatMessage> messages,
+    required ChatCompleteOptions options,
     void Function(String delta)? onDelta,
   }) async {
     final base = normalizeBase(baseUrl);
@@ -249,6 +282,7 @@ class ApiService {
     }
 
     final buffer = StringBuffer();
+    var sawSseFrame = false;
     // ResponseBody.stream 是 Stream<Uint8List>，而 utf8.decoder 是
     // StreamTransformer<List<int>, String>。Dio 5.x 的泛型收窄会让
     // 直接 transform(utf8.decoder) 报类型不匹配，先 cast<List<int>>()。
@@ -260,21 +294,21 @@ class ApiService {
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
       if (trimmed == 'data: [DONE]') break;
-      if (!trimmed.startsWith('data:')) continue;
-      final payload = trimmed.substring(5).trim();
-      if (payload.isEmpty) continue;
-      try {
-        final json = jsonDecode(payload);
-        final choices = json['choices'] as List?;
-        if (choices == null || choices.isEmpty) continue;
-        final delta = choices.first['delta'] as Map?;
-        final content = delta?['content'];
-        if (content is String && content.isNotEmpty) {
-          buffer.write(content);
-          onDelta?.call(content);
-        }
-      } catch (_) {
-        // 单个 chunk 解析失败不影响整体；continue 等下一个。
+
+      // 标准 SSE: data: { ... }
+      if (trimmed.startsWith('data:')) {
+        sawSseFrame = true;
+        final payload = trimmed.substring(5).trim();
+        if (payload.isEmpty) continue;
+        _appendStreamingPayload(payload, buffer, onDelta);
+        continue;
+      }
+
+      // 兼容：部分“OpenAI 兼容”服务会忽略 stream=true，仍返回一整段
+      // JSON；由于 responseType=stream，这里会按普通行读到。不要直接丢弃，
+      // 否则最后会误报“模型返回为空”。
+      if (!sawSseFrame && trimmed.startsWith('{')) {
+        _appendStreamingPayload(trimmed, buffer, onDelta);
       }
     }
     final full = buffer.toString();
@@ -282,6 +316,65 @@ class ApiService {
       throw Exception('模型返回为空');
     }
     return full;
+  }
+
+  static void _appendStreamingPayload(
+    String payload,
+    StringBuffer buffer,
+    void Function(String delta)? onDelta,
+  ) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is! Map) return;
+      final choices = decoded['choices'];
+      if (choices is! List || choices.isEmpty) return;
+      final first = choices.first;
+      if (first is! Map) return;
+      final text = _choiceText(first);
+      if (text.isEmpty) return;
+      buffer.write(text);
+      onDelta?.call(text);
+    } catch (_) {
+      // 单个 chunk 解析失败不影响整体；continue 等下一个。
+    }
+  }
+
+  static String _choiceText(Map<dynamic, dynamic> choice) {
+    final delta = choice['delta'];
+    if (delta is Map) {
+      final content = _contentToText(delta['content']);
+      if (content.isNotEmpty) return content;
+      // 部分服务把增量放在 choices[].delta.text。
+      final text = _contentToText(delta['text']);
+      if (text.isNotEmpty) return text;
+    }
+
+    // 非流式 JSON 兜底：choices[].message.content
+    final message = choice['message'];
+    if (message is Map) {
+      final content = _contentToText(message['content']);
+      if (content.isNotEmpty) return content;
+    }
+
+    // 一些兼容服务沿用 completions 格式：choices[].text
+    return _contentToText(choice['text']);
+  }
+
+  static String _contentToText(dynamic content) {
+    if (content is String) return content;
+    if (content is List) {
+      final b = StringBuffer();
+      for (final item in content) {
+        if (item is String) {
+          b.write(item);
+        } else if (item is Map) {
+          final text = item['text'];
+          if (text is String) b.write(text);
+        }
+      }
+      return b.toString();
+    }
+    return '';
   }
 
   /// 聊天补全（非流式）。返回模型输出的文本内容。
