@@ -413,6 +413,21 @@ class UiSourcePack {
       }
     }
 
+    // ── 视觉语义提示（给 AI 参考，不强制）──
+    // 原卡 regex 脚本里的 HTML 注释（sections=...）和 findRegex 的 XML 标签
+    // 描述了原 UI 的视觉结构与布局意图。把这些线索显式汇总，让 AI
+    // 自行研究并决定如何在 opening/scene 里还原，而不是当作动态脚本丢弃。
+    final visualHints = _visualSemantics();
+    if (visualHints.isNotEmpty) {
+      b.writeln('\n# Visual semantics hints (study and decide how to reproduce)');
+      b.writeln('These are the original card\'s UI visual cues extracted from regex scripts. '
+          'Reproduce them where faithful, using visualStyle / layout / components. '
+          'You decide how; this is reference material, not a hard requirement:');
+      for (final line in visualHints) {
+        b.writeln('- $line');
+      }
+    }
+
     if (pluginScripts.isNotEmpty) {
       b.writeln('\n# extensions.tavern_helper script snippets');
       for (final e in pluginScripts) {
@@ -509,6 +524,38 @@ class UiSourcePack {
       }
     }
     return out;
+  }
+
+  /// 汇总原卡的视觉语义线索（供 AI 参考，不强制）。
+  ///
+  /// 从两个来源提取：
+  /// 1. findRegex 里的 XML 标签（如 `<终端状态>` `<当前位置>` `<当前时间>`）——
+  ///    它们描述了 UI 的结构分区，不只是数据字段。
+  /// 2. regex replaceString 的 HTML 注释（`sections=...`）——
+  ///    描述原 UI 的视觉布局（顶部状态栏、信息数据流、正文区、选项区等）。
+  ///
+  /// 返回逐行提示，AI 据此自行研究如何还原，而不是把带这些语义的
+  /// regex 当「动态脚本」整段丢弃。
+  List<String> _visualSemantics() {
+    final lines = <String>[];
+    final seen = <String>{};
+
+    // 1. findRegex 的 XML 标签（结构分区语义）
+    final tagPattern = RegExp(r'<([一-鿿A-Za-z]{2,8})>');
+    for (final script in regexScripts.where((e) => e.enabled)) {
+      for (final m in tagPattern.allMatches(script.findRegex)) {
+        final tag = m.group(1)!;
+        if (seen.add('tag:$tag')) {
+          lines.add('xml-section tag <$tag>: a UI region in the original layout');
+        }
+      }
+      // 2. HTML 注释的 sections 结构
+      final hint = _layoutHintOf(script.replaceString);
+      if (hint.isNotEmpty && seen.add('hint:$hint')) {
+        lines.add('layout hint: $hint');
+      }
+    }
+    return lines;
   }
 
   /// 阶段 1（Scout）用的证据摘要：远小于 [toPromptText]。
