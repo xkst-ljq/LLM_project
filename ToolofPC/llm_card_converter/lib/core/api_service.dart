@@ -86,6 +86,29 @@ class ApiService {
     throw Exception('请求失败：HTTP ${response.statusCode}');
   }
 
+  static String _diagError(Object error) {
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      final body = _bodyPreview(error.response?.data);
+      return 'DioException.type=${error.type.name}${status == null ? '' : ' HTTP=$status'}${body.isEmpty ? '' : ' body=$body'}';
+    }
+    final text = error.toString();
+    return text.length > 180 ? '${text.substring(0, 180)}…' : text;
+  }
+
+  static String _bodyPreview(dynamic data) {
+    if (data == null) return '';
+    String text;
+    try {
+      text = data is String ? data : jsonEncode(data);
+    } catch (_) {
+      text = data.toString();
+    }
+    text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.length > 180) text = '${text.substring(0, 180)}…';
+    return text;
+  }
+
   /// 聊天补全（非流式）。返回模型输出的文本内容。
   ///
   /// 新的 UI 理解链路需要多段消息、JSON mode 与额外 body 字段，
@@ -96,6 +119,7 @@ class ApiService {
     required String model,
     required List<ChatMessage> messages,
     ChatCompleteOptions options = const ChatCompleteOptions(),
+    void Function(String line)? onLog,
   }) async {
     Object? lastError;
     final attempts = options.retryCount < 0 ? 1 : options.retryCount + 1;
@@ -107,9 +131,11 @@ class ApiService {
           model: model,
           messages: messages,
           options: options,
+          onLog: onLog,
         );
       } catch (e) {
         lastError = e;
+        onLog?.call('      普通请求失败：${_diagError(e)}');
         final canRetry = attempt + 1 < attempts && _isRetryableError(e);
         if (!canRetry) rethrow;
         final multiplier = 1 << attempt;
@@ -127,6 +153,7 @@ class ApiService {
     required String model,
     required List<ChatMessage> messages,
     required ChatCompleteOptions options,
+    void Function(String line)? onLog,
   }) async {
     final base = normalizeBase(baseUrl);
     final dio = Dio(BaseOptions(
@@ -157,9 +184,14 @@ class ApiService {
     final data = response.data;
     final choices = data['choices'] as List?;
     if (choices == null || choices.isEmpty) {
+      onLog?.call('      普通响应：HTTP ${response.statusCode} choices=0 body=${_bodyPreview(data)}');
       throw Exception('模型未返回内容');
     }
-    final content = choices.first['message']?['content'];
+    final first = choices.first;
+    final finishReason = first is Map ? first['finish_reason']?.toString() ?? '' : '';
+    final content = first is Map ? first['message']?['content'] : null;
+    final contentLen = content is String ? content.runes.length : 0;
+    onLog?.call('      普通响应：HTTP ${response.statusCode} choices=${choices.length} contentType=${content.runtimeType} contentLen=$contentLen finish=$finishReason');
     if (content is! String || content.trim().isEmpty) {
       throw Exception('模型返回为空');
     }
@@ -212,6 +244,7 @@ class ApiService {
     required List<ChatMessage> messages,
     ChatCompleteOptions options = const ChatCompleteOptions(),
     void Function(String delta)? onDelta,
+    void Function(String line)? onLog,
   }) async {
     Object? lastError;
     final attempts = options.retryCount < 0 ? 1 : options.retryCount + 1;
@@ -224,9 +257,11 @@ class ApiService {
           messages: messages,
           options: options,
           onDelta: onDelta,
+          onLog: onLog,
         );
       } catch (e) {
         lastError = e;
+        onLog?.call('      流式请求失败：${_diagError(e)}');
         final canRetry = attempt + 1 < attempts && _isRetryableError(e);
         if (!canRetry) rethrow;
         final multiplier = 1 << attempt;
@@ -245,6 +280,7 @@ class ApiService {
     required List<ChatMessage> messages,
     required ChatCompleteOptions options,
     void Function(String delta)? onDelta,
+    void Function(String line)? onLog,
   }) async {
     final base = normalizeBase(baseUrl);
     final body = <String, dynamic>{
@@ -283,6 +319,13 @@ class ApiService {
 
     final buffer = StringBuffer();
     var sawSseFrame = false;
+    var rawLineCount = 0;
+    var dataFrameCount = 0;
+    var jsonFrameCount = 0;
+    var contentChunkCount = 0;
+    var nonContentFrameCount = 0;
+    var doneSeen = false;
+    var lastFrameKeys = '';
     // ResponseBody.stream 是 Stream<Uint8List>，而 utf8.decoder 是
     // StreamTransformer<List<int>, String>。Dio 5.x 的泛型收窄会让
     // 直接 transform(utf8.decoder) 报类型不匹配，先 cast<List<int>>()。
@@ -291,16 +334,28 @@ class ApiService {
         .transform(utf8.decoder)
         .transform(const LineSplitter());
     await for (final line in lines) {
+      rawLineCount++;
       final trimmed = line.trim();
       if (trimmed.isEmpty) continue;
-      if (trimmed == 'data: [DONE]') break;
+      if (trimmed == 'data: [DONE]') {
+        doneSeen = true;
+        break;
+      }
 
       // 标准 SSE: data: { ... }
       if (trimmed.startsWith('data:')) {
         sawSseFrame = true;
+        dataFrameCount++;
         final payload = trimmed.substring(5).trim();
         if (payload.isEmpty) continue;
-        _appendStreamingPayload(payload, buffer, onDelta);
+        final stat = _appendStreamingPayload(payload, buffer, onDelta);
+        if (stat.parsed) jsonFrameCount++;
+        if (stat.keys.isNotEmpty) lastFrameKeys = stat.keys;
+        if (stat.content) {
+          contentChunkCount++;
+        } else if (stat.parsed) {
+          nonContentFrameCount++;
+        }
         continue;
       }
 
@@ -308,34 +363,48 @@ class ApiService {
       // JSON；由于 responseType=stream，这里会按普通行读到。不要直接丢弃，
       // 否则最后会误报“模型返回为空”。
       if (!sawSseFrame && trimmed.startsWith('{')) {
-        _appendStreamingPayload(trimmed, buffer, onDelta);
+        dataFrameCount++;
+        final stat = _appendStreamingPayload(trimmed, buffer, onDelta);
+        if (stat.parsed) jsonFrameCount++;
+        if (stat.keys.isNotEmpty) lastFrameKeys = stat.keys;
+        if (stat.content) {
+          contentChunkCount++;
+        } else if (stat.parsed) {
+          nonContentFrameCount++;
+        }
       }
     }
     final full = buffer.toString();
+    onLog?.call('      SSE统计：lines=$rawLineCount data=$dataFrameCount json=$jsonFrameCount contentChunks=$contentChunkCount contentChars=${full.runes.length} nonContent=$nonContentFrameCount done=$doneSeen lastKeys=$lastFrameKeys');
     if (full.trim().isEmpty) {
       throw Exception('模型返回为空');
     }
     return full;
   }
 
-  static void _appendStreamingPayload(
+  static ({bool parsed, bool content, String keys}) _appendStreamingPayload(
     String payload,
     StringBuffer buffer,
     void Function(String delta)? onDelta,
   ) {
     try {
       final decoded = jsonDecode(payload);
-      if (decoded is! Map) return;
+      if (decoded is! Map) return (parsed: false, content: false, keys: '');
+      final keys = decoded.keys.map((e) => e.toString()).join(',');
       final choices = decoded['choices'];
-      if (choices is! List || choices.isEmpty) return;
+      if (choices is! List || choices.isEmpty) {
+        return (parsed: true, content: false, keys: keys);
+      }
       final first = choices.first;
-      if (first is! Map) return;
+      if (first is! Map) return (parsed: true, content: false, keys: keys);
       final text = _choiceText(first);
-      if (text.isEmpty) return;
+      if (text.isEmpty) return (parsed: true, content: false, keys: keys);
       buffer.write(text);
       onDelta?.call(text);
+      return (parsed: true, content: true, keys: keys);
     } catch (_) {
       // 单个 chunk 解析失败不影响整体；continue 等下一个。
+      return (parsed: false, content: false, keys: 'parse_error');
     }
   }
 
