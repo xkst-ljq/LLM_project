@@ -28,6 +28,7 @@ class AiUiInterpreter {
   static Future<AiUiInterpretation> understand({
     required Map<String, dynamic> sourceJson,
     required CardConversionResult baseResult,
+    void Function(String line)? onLog,
   }) async {
     final sourcePack = UiSourcePackBuilder.build(sourceJson);
     final characterName = baseResult.characterName;
@@ -36,6 +37,7 @@ class AiUiInterpreter {
     final scoutPlan = await _runScout(
       sourcePack: sourcePack,
       characterName: characterName,
+      onLog: onLog,
     );
 
     if (!scoutPlan.hasUi) {
@@ -85,6 +87,7 @@ class AiUiInterpreter {
       sourcePack: sourcePack,
       scoutPlan: scoutPlan,
       characterName: characterName,
+      onLog: onLog,
     );
 
     var plans = UiDesignPlan.listFromJson(result.json);
@@ -128,18 +131,29 @@ class AiUiInterpreter {
   static Future<UiScoutPlan> _runScout({
     required UiSourcePack sourcePack,
     required String characterName,
+    void Function(String line)? onLog,
   }) async {
+    onLog?.call('  UI 侦察（阶段 1）：扫描证据指纹…');
     final scoutPrompt = _buildScoutPrompt(
       sourcePack: sourcePack,
       characterName: characterName,
     );
+    var received = 0;
     final result = await JsonAiClient.completeObjectWithTranscript(
       taskName: 'UI 侦察',
       messages: scoutPrompt,
       temperature: 0.15,
       maxTokens: 1500,
       repairAttempts: 1,
+      onDelta: (delta) {
+        received += delta.length;
+        // 实时进度点：每 ~200 字符输出一个，证明生成在进行、未被超时。
+        if (received % 200 < delta.length) {
+          onLog?.call('  侦察中…（已接收 $received 字符）');
+        }
+      },
     );
+    onLog?.call('  侦察完成，已接收 $received 字符');
     final json = result.json;
     if (json.containsKey('hasUi') == false) {
       // 兼容 AI 直接输出完整 plan 的旧行为：hasUi 缺失但有关键字段。
@@ -183,7 +197,9 @@ class AiUiInterpreter {
     required UiSourcePack sourcePack,
     required UiScoutPlan scoutPlan,
     required String characterName,
+    void Function(String line)? onLog,
   }) async {
+    onLog?.call('  精修检索（阶段 2）：拼装组件 API + 证据切片…');
     // 组件 API 详情：只给 Scout 点名的组件。
     final componentDetails = UiEngineApiDictionary.detailForComponents(
       scoutPlan.components,
@@ -203,13 +219,22 @@ class AiUiInterpreter {
       componentDetails: componentDetails,
       detailEvidence: detailEvidence,
     );
-    return JsonAiClient.completeObjectWithTranscript(
+    var received = 0;
+    final result = await JsonAiClient.completeObjectWithTranscript(
       taskName: 'UI 理解',
       messages: messages,
       temperature: 0.12,
       maxTokens: 6000,
       repairAttempts: 1,
+      onDelta: (delta) {
+        received += delta.length;
+        if (received % 400 < delta.length) {
+          onLog?.call('  生成中…（已接收 $received 字符）');
+        }
+      },
     );
+    onLog?.call('  生成完成，已接收 $received 字符');
+    return result;
   }
 
   /// Scout 阶段的 prompt：能力索引 + 证据指纹，不含完整证据正文。

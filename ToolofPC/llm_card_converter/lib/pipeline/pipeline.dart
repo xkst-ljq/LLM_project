@@ -262,7 +262,10 @@ class ConversionPipeline {
   /// 产物写进 `meta_json` 的 `ui_assemblies` 与 `status_bar_fields`。
   /// 原卡没有可识别界面时**不生成**（用户明确要求「原版没有的不去设计」），
   /// 此时本阶段仍标记为 done，只是没有产出。
-  Future<CardConversionResult> runBuildUiStage(CardWorkItem item) async {
+  Future<CardConversionResult> runBuildUiStage(
+    CardWorkItem item, {
+    void Function(String line)? onLog,
+  }) async {
     final base = item.stageOutputs[PipelineStage.aiClassify] ??
         item.stageOutputs[PipelineStage.rule];
     if (base == null || !base.success) {
@@ -282,6 +285,7 @@ class ConversionPipeline {
       final interpretation = await AiUiInterpreter.understand(
         sourceJson: src,
         baseResult: base,
+        onLog: onLog,
       );
       item.uiAiConversationContext = interpretation.conversationContext;
       final built = UiAssemblyBuilder.buildFromPlans(

@@ -49,6 +49,7 @@ class JsonAiClient {
     int? maxTokens,
     Duration timeout = const Duration(seconds: 240),
     int repairAttempts = 1,
+    void Function(String delta)? onDelta,
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
@@ -70,6 +71,7 @@ class JsonAiClient {
           maxTokens: maxTokens,
           timeout: timeout,
           repairAttempts: repairAttempts,
+          onDelta: onDelta,
         );
       } catch (e) {
         lastFormatError = [e];
@@ -90,6 +92,7 @@ class JsonAiClient {
     required int? maxTokens,
     required Duration timeout,
     required int repairAttempts,
+    void Function(String delta)? onDelta,
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
@@ -97,8 +100,11 @@ class JsonAiClient {
     }
 
     String raw;
+    // 优先流式：模型边生成边吐 chunk，数据包持续到达，
+    // `receiveTimeout` 不会在长上下文生成期间触发。
+    // 若服务不支持流式（SSE 解析为空 / 抛异常），自动回落为普通请求。
     try {
-      raw = await ApiService.chatMessages(
+      raw = await ApiService.chatMessagesStreaming(
         baseUrl: cfg.baseUrl,
         apiKey: cfg.apiKey,
         model: cfg.model,
@@ -109,10 +115,10 @@ class JsonAiClient {
           jsonMode: true,
           timeout: timeout,
         ),
+        onDelta: onDelta,
       );
     } catch (_) {
-      // 很多 OpenAI 兼容服务并不支持 response_format；这里直接降级，
-      // 不让“JSON mode 不兼容”阻断整条 UI 理解链路。
+      // 流式失败（服务不支持 / jsonMode 不兼容 / 超时），回落普通请求。
       raw = await ApiService.chatMessages(
         baseUrl: cfg.baseUrl,
         apiKey: cfg.apiKey,

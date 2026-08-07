@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -194,6 +195,89 @@ class ApiService {
       return true;
     }
     return error is SocketException || error is HandshakeException;
+  }
+
+  /// 流式聊天补全（SSE）。
+  ///
+  /// 与 [chatMessages] 不同：模型边生成边吐 chunk，数据包持续到达，
+  /// `receiveTimeout` 不会在长上下文生成期间触发。每个完整 chunk 通过
+  /// [onDelta] 回调（线程安全：用 addPostFrameCallback 或直接抛给 UI）。
+  ///
+  /// 返回累积的完整文本。若服务不支持流式（返回非 SSE），自动回落为
+  /// 普通请求。
+  static Future<String> chatMessagesStreaming({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required List<ChatMessage> messages,
+    ChatCompleteOptions options = const ChatCompleteOptions(),
+    void Function(String delta)? onDelta,
+  }) async {
+    final base = normalizeBase(baseUrl);
+    final body = <String, dynamic>{
+      'model': model,
+      'temperature': options.temperature,
+      'messages': messages.map((e) => e.toJson()).toList(),
+      'stream': true,
+      if (options.maxTokens != null) 'max_tokens': options.maxTokens,
+      if (options.jsonMode) 'response_format': {'type': 'json_object'},
+      ...options.extraBody,
+    };
+
+    final dio = Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: options.timeout,
+    ));
+    final response = await dio.post<ResponseBody>(
+      '$base/v1/chat/completions',
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+        responseType: ResponseType.stream,
+      ),
+      data: body,
+    );
+    if (response.statusCode != 200) {
+      throw Exception('请求失败：HTTP ${response.statusCode}');
+    }
+    final responseBody = response.data;
+    if (responseBody == null) {
+      throw Exception('模型未返回内容');
+    }
+
+    final buffer = StringBuffer();
+    final lines = responseBody.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    await for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      if (trimmed == 'data: [DONE]') break;
+      if (!trimmed.startsWith('data:')) continue;
+      final payload = trimmed.substring(5).trim();
+      if (payload.isEmpty) continue;
+      try {
+        final json = jsonDecode(payload);
+        final choices = json['choices'] as List?;
+        if (choices == null || choices.isEmpty) continue;
+        final delta = choices.first['delta'] as Map?;
+        final content = delta?['content'];
+        if (content is String && content.isNotEmpty) {
+          buffer.write(content);
+          onDelta?.call(content);
+        }
+      } catch (_) {
+        // 单个 chunk 解析失败不影响整体；continue 等下一个。
+      }
+    }
+    final full = buffer.toString();
+    if (full.trim().isEmpty) {
+      throw Exception('模型返回为空');
+    }
+    return full;
   }
 
   /// 聊天补全（非流式）。返回模型输出的文本内容。

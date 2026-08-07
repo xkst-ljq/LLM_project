@@ -141,7 +141,7 @@ class PipelineRunner {
     } else {
       try {
         final before = item.current?.characterData;
-        await pipeline.runBuildUiStage(item);
+        await pipeline.runBuildUiStage(item, onLog: _log);
         final after = item.current?.characterData;
         _log(_describeUiResult(before, after));
       } catch (e) {
