@@ -7,7 +7,7 @@ import '../ui_engine_api/ui_engine_api_dictionary.dart';
 class UiEngineKnowledgeService {
   const UiEngineKnowledgeService._();
 
-  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-07.4';
+  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-07.5';
 
   static String compactPrompt() => '''
 # LLM Project UIEngine capabilities
@@ -32,7 +32,9 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - status_bar_fields are LLM Project native state fields. They are not an automatic SillyTavern parser: the translator must map ST keys into fields/sourceKey/dataChannel. Once mapped, the app prompt/update mechanism lets the LLM read and update them.
 - Tabs are a visual pattern built from surface/text/button plus page_router/linker. page_router is the mechanism; there is no conflict between tabs and overlay buttons.
 - Multiple assemblies can coexist when lifecycles differ: opening + scene is valid. scene suppresses native chat/extra_companion; sticky remains a tool layer; opening is shown until dismissed.
+- In scene mode, notes that "message_flow should be used" are not enough. To actually get message_flow, declare a base layout page whose role is story/message/narrative/content/log. Put current DQ choices and free input on that same page so they stay physically close to the story.
 - Logic components are optional. Use math_node/timer/indicator/linker only when source evidence or confirmed author intent requires native computation/condition/automation. Pure visual upgrades may use line/surface/animation without changing gameplay.
+- UIEngine runtime supports ElementAnimation / event_to_animation, but the current high-level UiDesignPlan compiler only emits automatic button press feedback and page transitions. Do not invent an animations[] schema; CSS loop/hover animations should be recorded as unsupported or as future enhancement unless they can be expressed by existing fields/notes without promising compiler output.
 
 # Layout fidelity and mobile adaptation policy
 - First reconstruct the original rendered UI structure: section order, grouping, columns/grid/flex, header/body/status/actions/footer, and which blocks are simultaneously visible.
@@ -45,6 +47,7 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - Text sizing is part of the design: do not use ellipsis for meaningful state values, task text, item lists, reputation, money, locations, or action choices. Use wrap/scroll and allocate enough height. Ellipsis is only acceptable for short IDs or decorative labels.
 - Reasonable interaction enhancement is allowed when it preserves gameplay: clickable choice text may become sendsMessage buttons; stable schemas may become LLM-updatable persistent panels; details may open in overlay pages. Do not add mechanics that change the original rules.
 - Do not create a sparse standalone “actions/options” tab in scene. Put current choice buttons and free input near the story/message_flow page bottom, or use an overlay/sticky action dock.
+- Use overlay pages for low-frequency detail panels in scene (full status, task board, friends album, dossier) when they would crowd the story page. In layout.pages set {"type":"overlay", "parentPage":"公会大厅"}; Dart will generate open-overlay buttons on the parent page.
 
 # What to extract from a SillyTavern card
 - regex_scripts findRegex/replaceString may define UI fields and HTML/CSS layout.
@@ -69,7 +72,7 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - Arbitrary JavaScript-like conditional style is not supported in UiDesignPlan. If you see conditional coloring, record it in notes/unsupported unless it can be represented as a simple status/indicator later.
 - Progress max is currently compile-time/status-field range. If source has current/max (HP:50/120), set max from evidence, but do not assume max can dynamically change at runtime unless explicitly supported.
 - Opening branches: UIEngine has branchVariants and status fields have branch_initial_values. If alternate_greetings share the same UI structure but have different starting values, fill fields[].branchInitialValues. The current AI compiler does not yet generate fully separate UI layouts per branch; if a branch has a truly different UI structure, record it in notes/unsupported instead of pretending all branches are covered.
-- Opening UI purpose: introduce the card/world, collect minimal player/profile info if needed, and choose the opening greeting direction by branchIndex. Do NOT put a branch-internal DQ_ChoiceBox or quest choice into opening unless there is only one greeting and the author explicitly intends it as the opening choice.
+- Opening UI purpose: introduce the card/world, collect minimal player/profile info if needed, and choose the opening greeting direction by branchIndex. Do NOT put a branch-internal DQ_ChoiceBox or quest choice into opening unless there is only one greeting and the author explicitly intends it as the opening choice. Opening branch buttons usually need branchIndex and label only; leave sendText empty unless the source has explicit onclick/send evidence.
 - If the source says the player may specify name/age/gender/appearance/personality/background or otherwise be randomly generated, opening should include multiple profile input fields. Use inputs[] with targetKind="status_field", sendOnSubmit=false, sourceKey like UserProfile_Name/UserProfile_Age/UserProfile_Gender/UserProfile_Appearance/UserProfile_Personality/UserProfile_Background/UserProfile_Extra.
 - Runtime status fields like HP/MP/XP/STR belong in scene/companion/sticky, not in opening. Opening may collect/edit profile fields, but should not duplicate a full PlayerStatus dashboard.
 
@@ -112,9 +115,9 @@ Single UiDesignPlan object shape:
     "kind": "tabbed_companion_panel|single_panel|opening_choices|scene_dashboard",
     "navigation": "tabs|swipe|tabs_and_swipe",
     "pages": [
-      {"title": "属性", "role": "stats"},
-      {"title": "档案", "role": "profile"},
-      {"title": "选项", "role": "actions"}
+      {"title": "公会大厅", "role": "story", "type": "base"},
+      {"title": "冒险者档案", "role": "stats", "type": "overlay", "parentPage": "公会大厅"},
+      {"title": "任务板", "role": "tasks", "type": "overlay", "parentPage": "公会大厅"}
     ]
   },
   "fields": [

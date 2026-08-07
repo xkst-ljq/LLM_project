@@ -63,7 +63,31 @@ class UiSourcePack {
       collect(e.content, e.path);
     }
     final seen = <String>{};
-    return out.where((q) => seen.add('${q.name}|${q.description}')).toList();
+    return out
+        .where((q) => !q.isTemplatePlaceholder)
+        .where((q) => seen.add('${q.name}|${q.description}'))
+        .toList();
+  }
+
+  bool get hasNarrativeUiWrapper {
+    bool scriptWrapsNarrative(UiRegexEvidence e) {
+      final find = e.findRegex;
+      final replace = e.replaceString;
+      final lower = '${e.scriptName}\n$find\n$replace'.toLowerCase();
+      final wrapsKnownTag = RegExp(
+        r'<\s*(alliance|outputtext|正文|main|story|content|message)[^>]*>',
+        caseSensitive: false,
+      ).hasMatch(find);
+      final hasContentSlot = lower.contains('content goes here') ||
+          lower.contains('正文内容') ||
+          lower.contains('main content area') ||
+          lower.contains('scrollable content area') ||
+          lower.contains('公会阅读界面') ||
+          lower.contains('阅读界面');
+      return wrapsKnownTag || hasContentSlot;
+    }
+
+    return regexScripts.any(scriptWrapsNarrative);
   }
 
   bool _hasSchemaToken(String token) {
@@ -99,7 +123,7 @@ class UiSourcePack {
   String toPromptText() {
     final b = StringBuffer();
     b.writeln('# Card Basic Fields');
-    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.4');
+    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.5');
     b.writeln('name: $cardName');
     _writeOpeningBranchSummary(b);
     if (_sourceSuggestsProfilePool) {
@@ -124,6 +148,10 @@ class UiSourcePack {
       if (hasFriendsAlbumSchema) {
         b.writeln('- FriendsAlbumPage schema exists. Consider a friends_album scroll text field/page that LLM can update for current team/known companions. Do not show raw `{FriendsAlbumPage|...}` text to the player.');
       }
+    }
+    if (hasNarrativeUiWrapper) {
+      b.writeln('\n# Scene message_flow requirement');
+      b.writeln('The source has a narrative/message wrapper regex (for example <Alliance>/<正文>/scrollable content). If you choose uiMode=scene, you MUST declare a base layout page with role="story"/"message"/"narrative" so Dart inserts a real message_flow component. Mentioning message_flow only in notes is not enough. Put DQ choices/free input on that same story page near the message_flow; move low-frequency status/task/friends details into overlay pages when crowded.');
     }
     if (description.trim().isNotEmpty) {
       b.writeln('\n## description\n${_clip(description, 5000)}');
@@ -390,6 +418,44 @@ class QuestSummary {
     required this.risk,
     required this.note,
   });
+
+  bool get isTemplatePlaceholder {
+    const placeholders = {
+      '任务名称',
+      '任务名',
+      '任务类型',
+      '任务描述',
+      '难度等级',
+      '委托人姓名',
+      '任务报酬',
+      '任务地点',
+      '时间限制',
+      '推荐装备',
+      '潜在风险',
+      '特别说明',
+    };
+    final values = [
+      name,
+      type,
+      description,
+      difficulty,
+      client,
+      reward,
+      location,
+      time,
+      equipment,
+      risk,
+      note,
+    ].map((v) => v.trim()).toList();
+    if (placeholders.contains(name.trim())) return true;
+    final placeholderHits = values.where((v) {
+      if (v.isEmpty) return false;
+      if (placeholders.contains(v)) return true;
+      if (RegExp(r'^\{\{.*\}\}$').hasMatch(v)) return true;
+      return false;
+    }).length;
+    return placeholderHits >= 3;
+  }
 
   String toPromptLine() {
     final parts = <String>[

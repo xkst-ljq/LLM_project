@@ -318,6 +318,8 @@ class UiAssemblyBuilder {
     final mode = plan.uiMode;
     var pageTitles = _planPageTitles(plan);
     final pageRoles = _planPageRoles(plan);
+    final pageTypes = _planPageTypes(plan);
+    final pageParents = _planPageParents(plan);
 
     final fieldsByPage = <String, List<UiPlanField>>{
       for (final title in pageTitles) title: <UiPlanField>[],
@@ -364,9 +366,54 @@ class UiAssemblyBuilder {
       }
     }
     if (pageTitles.isEmpty) pageTitles = ['主界面'];
+
+    var basePageTitles = pageTitles
+        .where((title) => pageTypes[title] != 'overlay')
+        .toList();
+    if (basePageTitles.isEmpty) {
+      final promoted = pageTitles.first;
+      pageTypes[promoted] = 'base';
+      basePageTitles = [promoted];
+      notes.add('AI 只输出了 overlay 页面，已将「$promoted」提升为 base 页面作为叠加页父级。');
+    }
+
+    final declaredMessagePage = pageTitles.any(
+      (title) => _isSceneMessagePage(mode, title, pageRoles[title]),
+    );
+    final fallbackMessagePage = mode == 'scene' && !declaredMessagePage
+        ? basePageTitles.first
+        : '';
+    if (fallbackMessagePage.isNotEmpty) {
+      notes.add('scene 方案没有声明 story/message 页面；已在「$fallbackMessagePage」自动插入 message_flow，避免正文悬空。');
+    }
+
     final pageIds = <String, String>{
       for (final title in pageTitles) title: 'page_${nextId('page')}',
     };
+
+    String parentTitleOf(String title) {
+      final requested = pageParents[title]?.trim() ?? '';
+      if (requested.isNotEmpty && basePageTitles.contains(requested)) {
+        return requested;
+      }
+      return basePageTitles.first;
+    }
+
+    final overlayTargetsByParent = <String, List<({String title, String pageId})>>{};
+    for (final title in pageTitles) {
+      if (pageTypes[title] != 'overlay') continue;
+      final parent = parentTitleOf(title);
+      overlayTargetsByParent
+          .putIfAbsent(parent, () => <({String title, String pageId})>[])
+          .add((title: title, pageId: pageIds[title] ?? ''));
+    }
+    if (overlayTargetsByParent.values.any((items) => items.isNotEmpty)) {
+      final count = overlayTargetsByParent.values.fold<int>(
+        0,
+        (sum, items) => sum + items.length,
+      );
+      notes.add('已编译 $count 个 overlay 叠加页，并在父页面生成打开入口。');
+    }
 
     final pcbW = switch (mode) {
       'extra_companion' => 212.0,
@@ -377,14 +424,21 @@ class UiAssemblyBuilder {
     };
     final innerW = pcbW - _Layout.pcbPadding * 2;
     final pages = <Map<String, dynamic>>[];
-    final pageHeights = <double>[];
+    final pageHeights = <({String title, bool isOverlay, double height})>[];
 
     for (var i = 0; i < pageTitles.length; i++) {
       final title = pageTitles[i];
+      final isOverlayPage = pageTypes[title] == 'overlay';
+      final parentTitle = isOverlayPage ? parentTitleOf(title) : null;
       final elements = _buildPlanPageElements(
         pageTitle: title,
-        pageTitles: pageTitles,
+        navigationTitles: isOverlayPage ? const [] : basePageTitles,
         pageIds: pageIds,
+        overlayTargets: isOverlayPage
+            ? const <({String title, String pageId})>[]
+            : (overlayTargetsByParent[title] ?? const <({String title, String pageId})>[]),
+        parentPageId: parentTitle == null ? null : pageIds[parentTitle],
+        isOverlayPage: isOverlayPage,
         fields: fieldsByPage[title] ?? const [],
         inputs: inputsByPage[title] ?? const [],
         actions: actionsByPage[title] ?? const [],
@@ -394,31 +448,41 @@ class UiAssemblyBuilder {
         mode: mode,
         pcbW: pcbW,
         innerW: innerW,
-        showMessageFlow: _isSceneMessagePage(mode, title, pageRoles[title]),
+        showMessageFlow: title == fallbackMessagePage ||
+            _isSceneMessagePage(mode, title, pageRoles[title]),
       );
       final h = _pageContentHeight(elements);
-      pageHeights.add(h);
+      pageHeights.add((title: title, isOverlay: isOverlayPage, height: h));
       pages.add({
         'id': pageIds[title],
         'name': title,
-        'type': 'base',
-        'parentPageId': null,
+        'type': isOverlayPage ? 'overlay' : 'base',
+        'parentPageId': parentTitle == null ? null : pageIds[parentTitle],
         'sortOrder': i,
         'elements': elements,
-        'gestures': _planGesturesForPage(
-          mode: mode,
-          index: i,
-          pageTitles: pageTitles,
-          pageIds: pageIds,
-          navigation: plan.layout.navigation,
-        ),
+        'gestures': isOverlayPage
+            ? const <Map<String, dynamic>>[]
+            : _planGesturesForPage(
+                mode: mode,
+                index: basePageTitles.indexOf(title),
+                pageTitles: basePageTitles,
+                pageIds: pageIds,
+                navigation: plan.layout.navigation,
+              ),
         'propertyOverrides': <dynamic>[],
       });
     }
 
-    final pcbH = pageHeights.isEmpty
+    final baseHeights = pageHeights
+        .where((item) => !item.isOverlay)
+        .map((item) => item.height)
+        .toList();
+    final candidateHeights = baseHeights.isNotEmpty
+        ? baseHeights
+        : pageHeights.map((item) => item.height).toList();
+    final pcbH = candidateHeights.isEmpty
         ? 96.0
-        : pageHeights.reduce((a, b) => a > b ? a : b);
+        : candidateHeights.reduce((a, b) => a > b ? a : b);
     for (final page in pages) {
       final elements = page['elements'];
       if (elements is! List) continue;
@@ -998,6 +1062,26 @@ class UiAssemblyBuilder {
     return out;
   }
 
+  static Map<String, String> _planPageTypes(UiDesignPlan plan) {
+    final out = <String, String>{};
+    for (final page in plan.layout.pages) {
+      final title = page.title.trim();
+      if (title.isNotEmpty) out[title] = page.type;
+    }
+    return out;
+  }
+
+  static Map<String, String> _planPageParents(UiDesignPlan plan) {
+    final out = <String, String>{};
+    for (final page in plan.layout.pages) {
+      final title = page.title.trim();
+      if (title.isNotEmpty && page.parentPage.trim().isNotEmpty) {
+        out[title] = page.parentPage.trim();
+      }
+    }
+    return out;
+  }
+
   static bool _isSceneMessagePage(String mode, String title, String? role) {
     if (mode != 'scene') return false;
     final r = (role ?? '').toLowerCase();
@@ -1110,21 +1194,50 @@ class UiAssemblyBuilder {
     final candidate = elements[candidateIndex];
     final y = _elementY(candidate);
     final currentH = _elementH(candidate);
-    var limit = pcbH - _Layout.pcbPadding;
-
-    // 如果候选块下面还有按钮/输入等可见元素，就不要越过它。
+    final candidateBottom = y + currentH;
+    final below = <int>[];
+    var lastBottom = candidateBottom;
     for (var i = 0; i < elements.length; i++) {
       if (i == candidateIndex) continue;
       final other = elements[i];
       if (!_isVisibleContentElement(other)) continue;
       final otherY = _elementY(other);
-      if (otherY > y + 1 && otherY < limit) limit = otherY - 8.0;
+      if (otherY <= candidateBottom + 1) continue;
+      below.add(i);
+      final bottom = otherY + _elementH(other);
+      if (bottom > lastBottom) lastBottom = bottom;
     }
 
+    // 若 message_flow / 滚动正文下面还有输入框和按钮，不能只因为“下面有东西”
+    // 就放弃扩展；否则全局 PCB 高度被其它页撑高时，正文页底部会空一大片。
+    // 正确做法是：把后续输入/按钮整体推到底部，同时把滚动区补高。
+    if (below.isNotEmpty) {
+      final delta = (pcbH - _Layout.pcbPadding - lastBottom)
+          .clamp(0.0, 2000.0)
+          .toDouble();
+      if (delta > 8) {
+        final size = candidate['size'];
+        if (size is Map) size['height'] = currentH + delta;
+        for (final index in below) {
+          _shiftElementY(elements[index], delta);
+        }
+      }
+      return;
+    }
+
+    final limit = pcbH - _Layout.pcbPadding;
     final nextH = (limit - y).clamp(currentH, 2000.0).toDouble();
     if (nextH > currentH + 8) {
       final size = candidate['size'];
       if (size is Map) size['height'] = nextH;
+    }
+  }
+
+  static void _shiftElementY(Map<String, dynamic> element, double delta) {
+    final offset = element['offset'];
+    if (offset is Map) {
+      final y = (offset['y'] as num?)?.toDouble() ?? 0.0;
+      offset['y'] = y + delta;
     }
   }
 
@@ -1163,10 +1276,93 @@ class UiAssemblyBuilder {
     return size is Map ? ((size['height'] as num?)?.toDouble() ?? 0.0) : 0.0;
   }
 
+  static double _addOverlayToolbar({
+    required List<Map<String, dynamic>> elements,
+    required List<({String surface, String button})> pressPairs,
+    required List<({String title, String pageId})> overlayTargets,
+    required String Function(String) nextId,
+    required UiVisualTheme theme,
+    required double y,
+    required double innerW,
+  }) {
+    if (overlayTargets.isEmpty) return y;
+    final count = overlayTargets.length.clamp(1, 4).toInt();
+    final gap = count == 1 ? 0.0 : 6.0;
+    final buttonW = (innerW - (count - 1) * gap) / count;
+    const buttonH = 26.0;
+    for (var i = 0; i < count; i++) {
+      final target = overlayTargets[i];
+      if (target.pageId.trim().isEmpty) continue;
+      final x = _Layout.pcbPadding + i * (buttonW + gap);
+      final routerId = nextId('el');
+      elements.add(_pageRouter(
+        id: routerId,
+        name: '打开_${target.title}',
+        targetPageId: target.pageId,
+        action: 'open_overlay',
+        transition: 'overlay_fade',
+        durationMs: 180,
+      ));
+      final surfaceId = nextId('el');
+      elements.add(_surface(
+        id: surfaceId,
+        name: '叠加入口底_${target.title}',
+        x: x,
+        y: y,
+        w: buttonW,
+        h: buttonH,
+        color: theme.buttonBgColor,
+        layer: elements.length + 1,
+        radius: 8,
+      ));
+      elements.add(_text(
+        id: nextId('el'),
+        name: '叠加入口文_${target.title}',
+        text: target.title,
+        x: x + 4,
+        y: y + 5,
+        w: buttonW - 8,
+        h: 16,
+        fontSize: 10,
+        color: theme.valueColor,
+        align: 'center',
+        layer: elements.length + 1,
+        overflow: 'wrap',
+      ));
+      final buttonId = nextId('el');
+      elements.add(_button(
+        id: buttonId,
+        name: '打开${target.title}',
+        x: x,
+        y: y,
+        w: buttonW,
+        h: buttonH,
+        layer: elements.length + 1,
+        sendsMessage: false,
+        keyAction: false,
+        color: 0x00000000,
+      ));
+      elements.add(_pressLinker2(
+        id: nextId('el'),
+        name: '打开_${target.title}_路由',
+        buttonId: buttonId,
+        routerId: routerId,
+        scheme: 'button_to_page_route',
+        y: -104.0 - i * 52.0,
+        layer: elements.length + 1,
+      ));
+      pressPairs.add((surface: surfaceId, button: buttonId));
+    }
+    return y + buttonH + 10.0;
+  }
+
   static List<Map<String, dynamic>> _buildPlanPageElements({
     required String pageTitle,
-    required List<String> pageTitles,
+    required List<String> navigationTitles,
     required Map<String, String> pageIds,
+    required List<({String title, String pageId})> overlayTargets,
+    required String? parentPageId,
+    required bool isOverlayPage,
     required List<UiPlanField> fields,
     required List<UiPlanInput> inputs,
     required List<UiPlanAction> actions,
@@ -1179,13 +1375,14 @@ class UiAssemblyBuilder {
     required bool showMessageFlow,
   }) {
     final elements = <Map<String, dynamic>>[];
+    final pressPairs = <({String surface, String button})>[];
     var y = _Layout.pcbPadding;
 
-    if (pageTitles.length > 1) {
-      final tabW = (innerW - (pageTitles.length - 1) * 6.0) / pageTitles.length;
+    if (navigationTitles.length > 1 && !isOverlayPage) {
+      final tabW = (innerW - (navigationTitles.length - 1) * 6.0) / navigationTitles.length;
       const tabH = 22.0;
       final routerIds = <String, String>{};
-      for (final title in pageTitles) {
+      for (final title in navigationTitles) {
         if (title == pageTitle) continue;
         final routerId = nextId('el');
         routerIds[title] = routerId;
@@ -1195,8 +1392,8 @@ class UiAssemblyBuilder {
           targetPageId: pageIds[title] ?? '',
         ));
       }
-      for (var i = 0; i < pageTitles.length; i++) {
-        final title = pageTitles[i];
+      for (var i = 0; i < navigationTitles.length; i++) {
+        final title = navigationTitles[i];
         final active = title == pageTitle;
         final x = _Layout.pcbPadding + i * (tabW + 6.0);
         final surfaceId = nextId('el');
@@ -1267,6 +1464,79 @@ class UiAssemblyBuilder {
       y += 28.0;
     }
 
+    if (isOverlayPage && parentPageId != null && parentPageId.isNotEmpty) {
+      final routerId = nextId('el');
+      elements.add(_pageRouter(
+        id: routerId,
+        name: '关闭叠加页',
+        targetPageId: parentPageId,
+        action: 'close_overlay',
+        transition: 'overlay_fade',
+        durationMs: 160,
+      ));
+      final closeX = pcbW - _Layout.pcbPadding - 28;
+      final surfaceId = nextId('el');
+      elements.add(_surface(
+        id: surfaceId,
+        name: '关闭底',
+        x: closeX,
+        y: _Layout.pcbPadding,
+        w: 24,
+        h: 22,
+        color: theme.buttonBgColor,
+        layer: elements.length + 1,
+        radius: 8,
+      ));
+      elements.add(_text(
+        id: nextId('el'),
+        name: '关闭文',
+        text: '×',
+        x: closeX,
+        y: _Layout.pcbPadding + 1,
+        w: 24,
+        h: 18,
+        fontSize: 16,
+        color: theme.titleColor,
+        align: 'center',
+        layer: elements.length + 1,
+      ));
+      final buttonId = nextId('el');
+      elements.add(_button(
+        id: buttonId,
+        name: '关闭叠加页',
+        x: closeX,
+        y: _Layout.pcbPadding,
+        w: 24,
+        h: 22,
+        layer: elements.length + 1,
+        sendsMessage: false,
+        keyAction: false,
+        color: 0x00000000,
+      ));
+      elements.add(_pressLinker2(
+        id: nextId('el'),
+        name: '关闭叠加页路由',
+        buttonId: buttonId,
+        routerId: routerId,
+        scheme: 'button_to_page_route',
+        y: -52.0,
+        layer: elements.length + 1,
+      ));
+      pressPairs.add((surface: surfaceId, button: buttonId));
+    }
+
+    if (overlayTargets.isNotEmpty) {
+      y = _addOverlayToolbar(
+        elements: elements,
+        pressPairs: pressPairs,
+        overlayTargets: overlayTargets,
+        nextId: nextId,
+        theme: theme,
+        y: y,
+        innerW: innerW,
+      );
+    }
+
     if (showMessageFlow) {
       final fullMessagePage = fields.isEmpty && inputs.isEmpty && actions.isEmpty;
       final flowHeight = fullMessagePage ? 650.0 : 320.0;
@@ -1285,11 +1555,16 @@ class UiAssemblyBuilder {
     }
 
     final labelW = mode == 'extra_companion' ? 64.0 : 104.0;
-    var currentGroup = '';
-    for (final f in fields) {
-      final group = f.group.trim();
-      if (group.isNotEmpty && group != currentGroup) {
-        currentGroup = group;
+    var fieldIndex = 0;
+    while (fieldIndex < fields.length) {
+      final group = fields[fieldIndex].group.trim();
+      final groupFields = <UiPlanField>[];
+      while (fieldIndex < fields.length && fields[fieldIndex].group.trim() == group) {
+        groupFields.add(fields[fieldIndex]);
+        fieldIndex++;
+      }
+
+      if (group.isNotEmpty) {
         elements.add(_text(
           id: nextId('el'),
           name: '分组_$group',
@@ -1317,100 +1592,46 @@ class UiAssemblyBuilder {
         ));
         y += 22.0;
       }
-      final fieldId = 'sf_${_slug(f.sourceKey.trim().isEmpty ? f.name : f.sourceKey)}';
-      final isProgress = f.isNumber && f.display == 'progress';
-      final min = f.min ?? 0.0;
-      final max = f.max ?? 100.0;
-      final initialNumber = _numberOf(f.initialValue) ?? min;
-      final initial = f.isNumber ? _trimNumber(initialNumber) : f.initialValue;
 
-      statusFields.add({
-        'id': fieldId,
-        'name': f.name,
-        'type': f.isNumber ? 'number' : 'text',
-        'initial_value': initial,
-        'min_value': f.isNumber ? min : null,
-        'max_value': f.isNumber ? max : null,
-        'pin_side': 'none',
-        'order': statusFields.length,
-        'owner': f.owner,
-        if (f.branchInitialValues.isNotEmpty)
-          'branch_initial_values': f.branchInitialValues,
-      });
-
-      final needsWideText = !isProgress && _needsWideTextLayout(f, initial, mode);
-      final shouldScrollText = !isProgress && _shouldScrollTextField(f, initial, mode);
-      final effectiveOverflow = shouldScrollText
-          ? 'scroll'
-          : (needsWideText && f.overflow == 'ellipsis' ? 'wrap' : f.overflow);
-      final shouldWrapText = !isProgress && effectiveOverflow == 'wrap';
-      final valueHeight = shouldScrollText
-          ? _scrollTextHeightFor(initial, mode)
-          : (shouldWrapText ? _wrapTextHeightFor(initial, mode) : _Layout.rowHeight);
-      final fullProgress = isProgress && mode != 'extra_companion';
-      final labelText = fullProgress
-          ? _progressLabelText(f.name, initial, max)
-          : f.name;
-
-      elements.add(_text(
-        id: nextId('el'),
-        name: '${f.name}标签',
-        text: labelText,
-        x: _Layout.pcbPadding,
-        y: y,
-        w: (shouldScrollText || fullProgress || needsWideText) ? innerW : labelW,
-        h: fullProgress ? 20 : _Layout.rowHeight,
-        fontSize: mode == 'extra_companion' ? 10 : 12,
-        color: theme.labelColor,
-        align: fullProgress ? 'center' : 'left',
-        layer: elements.length + 1,
-        overflow: (fullProgress || needsWideText) ? 'wrap' : 'ellipsis',
-        richText: fullProgress,
-      ));
-
-      if (isProgress) {
-        elements.add(_progress(
-          id: nextId('el'),
-          name: f.name,
-          x: fullProgress ? _Layout.pcbPadding : _Layout.pcbPadding + labelW + 6,
-          y: fullProgress ? y + 20 : y + (_Layout.rowHeight - _Layout.barHeight) / 2,
-          w: fullProgress ? innerW : innerW - labelW - 6,
-          h: _Layout.barHeight,
-          statusFieldId: fieldId,
-          layer: elements.length + 1,
-          barFillColor: _barColorOf(f.name, theme.barFillColor),
-          barTrackColor: _barTrackColorOf(f.name, theme.barTrackColor),
-          min: min,
-          max: max,
-          current: initialNumber.clamp(min, max).toDouble(),
-        ));
+      if (_isAttributeGridGroup(group, groupFields, mode)) {
+        y = _renderAttributeGridFields(
+          elements: elements,
+          fields: groupFields,
+          nextId: nextId,
+          statusFields: statusFields,
+          theme: theme,
+          y: y,
+          innerW: innerW,
+        );
+      } else if (_isCoreProgressGroup(groupFields, mode)) {
+        y = _renderProgressClusterFields(
+          elements: elements,
+          fields: groupFields,
+          nextId: nextId,
+          statusFields: statusFields,
+          theme: theme,
+          mode: mode,
+          y: y,
+          innerW: innerW,
+          labelW: labelW,
+        );
       } else {
-        elements.add(_text(
-          id: nextId('el'),
-          name: f.name,
-          text: initial.isEmpty ? '—' : initial,
-          x: (shouldScrollText || needsWideText) ? _Layout.pcbPadding : _Layout.pcbPadding + labelW + 6,
-          y: (shouldScrollText || needsWideText) ? y + _Layout.rowHeight : y,
-          w: (shouldScrollText || needsWideText) ? innerW : innerW - labelW - 6,
-          h: valueHeight,
-          fontSize: mode == 'extra_companion' ? 11 : 12,
-          color: theme.valueColor,
-          align: f.textAlign,
-          layer: elements.length + 1,
-          statusFieldId: fieldId,
-          overflow: effectiveOverflow,
-          richText: shouldScrollText,
-        ));
+        for (final f in groupFields) {
+          y = _renderPlanFieldStandard(
+            elements: elements,
+            field: f,
+            nextId: nextId,
+            statusFields: statusFields,
+            theme: theme,
+            mode: mode,
+            y: y,
+            innerW: innerW,
+            labelW: labelW,
+          );
+        }
       }
-      y += (isProgress
-              ? (fullProgress ? 20 + _Layout.barHeight : _Layout.rowHeight)
-              : ((shouldScrollText || needsWideText)
-                  ? _Layout.rowHeight + valueHeight
-                  : valueHeight)) +
-          _Layout.rowGap;
     }
 
-    final pressPairs = <({String surface, String button})>[];
     if (inputs.isNotEmpty) {
       elements.add(_sectionTitle(
         id: nextId('el'),
@@ -1495,10 +1716,12 @@ class UiAssemblyBuilder {
       ));
       y += 26.0;
     }
-    final needsGeneratedKeyAction = mode == 'opening'
-        ? localActions.isEmpty
-        : (_modeRequiresGeneratedKeyAction(mode) &&
-            !localActions.any((a) => a.sendText.trim().isEmpty));
+    final needsGeneratedKeyAction = isOverlayPage
+        ? false
+        : (mode == 'opening'
+            ? localActions.isEmpty
+            : (_modeRequiresGeneratedKeyAction(mode) &&
+                !localActions.any((a) => a.sendText.trim().isEmpty)));
     if (needsGeneratedKeyAction) {
       localActions.insert(
         0,
@@ -1515,6 +1738,7 @@ class UiAssemblyBuilder {
       final a = localActions[i];
       final label = a.label.trim().isNotEmpty ? a.label.trim() : a.sendText.trim();
       if (label.isEmpty) continue;
+      final buttonH = label.runes.length > 18 ? 44.0 : _Layout.buttonHeight;
       final surfaceId = nextId('el');
       elements.add(_surface(
         id: surfaceId,
@@ -1522,7 +1746,7 @@ class UiAssemblyBuilder {
         x: _Layout.pcbPadding,
         y: y,
         w: innerW,
-        h: _Layout.buttonHeight,
+        h: buttonH,
         color: theme.buttonBgColor,
         layer: elements.length + 1,
         radius: 8,
@@ -1532,31 +1756,34 @@ class UiAssemblyBuilder {
         name: '按钮文_${i + 1}',
         text: label,
         x: _Layout.pcbPadding + 10,
-        y: y + 8,
+        y: y + 7,
         w: innerW - 20,
-        h: 18,
+        h: buttonH - 12,
         fontSize: mode == 'extra_companion' ? 10 : 12,
         color: theme.valueColor,
         align: 'center',
         layer: elements.length + 1,
+        overflow: 'wrap',
       ));
       final buttonId = nextId('el');
+      final shouldSendMessage =
+          !(mode == 'opening' && a.branchIndex != null) && a.sendText.trim().isNotEmpty;
       elements.add(_button(
         id: buttonId,
         name: label,
         x: _Layout.pcbPadding,
         y: y,
         w: innerW,
-        h: _Layout.buttonHeight,
+        h: buttonH,
         layer: elements.length + 1,
-        sendsMessage: a.sendText.trim().isNotEmpty,
+        sendsMessage: shouldSendMessage,
         keyAction: _shouldMarkKeyAction(mode, a),
-        message: a.sendText.trim(),
+        message: shouldSendMessage ? a.sendText.trim() : '',
         targetBranchIndex: a.branchIndex,
         color: theme.accentColor,
       ));
       pressPairs.add((surface: surfaceId, button: buttonId));
-      y += _Layout.buttonHeight + 8;
+      y += buttonH + 8;
     }
 
     for (var i = 0; i < pressPairs.length; i++) {
@@ -1585,6 +1812,372 @@ class UiAssemblyBuilder {
       radius: theme.borderRadius,
     );
     return [bg, ...elements];
+  }
+
+  static String _planFieldId(UiPlanField field) =>
+      'sf_${_slug(field.sourceKey.trim().isEmpty ? field.name : field.sourceKey)}';
+
+  static void _addStatusFieldForPlanField(
+    List<Map<String, dynamic>> statusFields,
+    UiPlanField field, {
+    required String fieldId,
+    required String initial,
+    required double? min,
+    required double? max,
+  }) {
+    if (statusFields.any((item) => item['id'] == fieldId)) return;
+    statusFields.add({
+      'id': fieldId,
+      'name': field.name,
+      'type': field.isNumber ? 'number' : 'text',
+      'initial_value': initial,
+      'min_value': field.isNumber ? min : null,
+      'max_value': field.isNumber ? max : null,
+      'pin_side': 'none',
+      'order': statusFields.length,
+      'owner': field.owner,
+      if (field.branchInitialValues.isNotEmpty)
+        'branch_initial_values': field.branchInitialValues,
+    });
+  }
+
+  static bool _isCoreProgressGroup(List<UiPlanField> fields, String mode) {
+    if (mode == 'extra_companion') return false;
+    final progressFields = fields.where((f) => f.isNumber && f.display == 'progress').toList();
+    if (progressFields.length < 2) return false;
+    final joined = progressFields.map((f) => '${f.name} ${f.sourceKey}').join(' ').toLowerCase();
+    final hasHpMp = (joined.contains('hp') || joined.contains('生命')) &&
+        (joined.contains('mp') || joined.contains('法力') || joined.contains('魔力'));
+    final hasXp = joined.contains('xp') || joined.contains('经验') || joined.contains('exp');
+    return hasHpMp || hasXp;
+  }
+
+  static bool _isAttributeGridGroup(
+    String group,
+    List<UiPlanField> fields,
+    String mode,
+  ) {
+    if (mode == 'extra_companion') return false;
+    final numeric = fields.where((f) => f.isNumber && f.display != 'progress').toList();
+    if (numeric.length < 4) return false;
+    final fieldKeys = numeric.map((f) => '${f.name} ${f.sourceKey}').join(' ');
+    final text = '$group $fieldKeys'.toLowerCase();
+    const markers = ['核心属性', '属性', 'str', 'agi', 'int', 'con', 'per', 'cha', 'dex', 'wis'];
+    return markers.any(text.contains);
+  }
+
+  static double _renderPlanFieldStandard({
+    required List<Map<String, dynamic>> elements,
+    required UiPlanField field,
+    required String Function(String) nextId,
+    required List<Map<String, dynamic>> statusFields,
+    required UiVisualTheme theme,
+    required String mode,
+    required double y,
+    required double innerW,
+    required double labelW,
+  }) {
+    final fieldId = _planFieldId(field);
+    final isProgress = field.isNumber && field.display == 'progress';
+    final min = field.min ?? 0.0;
+    final max = field.max ?? 100.0;
+    final initialNumber = _numberOf(field.initialValue) ?? min;
+    final initial = field.isNumber ? _trimNumber(initialNumber) : field.initialValue;
+
+    _addStatusFieldForPlanField(
+      statusFields,
+      field,
+      fieldId: fieldId,
+      initial: initial,
+      min: min,
+      max: max,
+    );
+
+    final needsWideText = !isProgress && _needsWideTextLayout(field, initial, mode);
+    final shouldScrollText = !isProgress && _shouldScrollTextField(field, initial, mode);
+    final effectiveOverflow = shouldScrollText
+        ? 'scroll'
+        : (needsWideText && field.overflow == 'ellipsis' ? 'wrap' : field.overflow);
+    final shouldWrapText = !isProgress && effectiveOverflow == 'wrap';
+    final valueHeight = shouldScrollText
+        ? _scrollTextHeightFor(initial, mode)
+        : (shouldWrapText ? _wrapTextHeightFor(initial, mode) : _Layout.rowHeight);
+    final fullProgress = isProgress && mode != 'extra_companion';
+    final labelText = fullProgress
+        ? _progressLabelText(field.name, initial, max)
+        : field.name;
+
+    elements.add(_text(
+      id: nextId('el'),
+      name: '${field.name}标签',
+      text: labelText,
+      x: _Layout.pcbPadding,
+      y: y,
+      w: (shouldScrollText || fullProgress || needsWideText) ? innerW : labelW,
+      h: fullProgress ? 20 : _Layout.rowHeight,
+      fontSize: mode == 'extra_companion' ? 10 : 12,
+      color: theme.labelColor,
+      align: fullProgress ? 'center' : 'left',
+      layer: elements.length + 1,
+      overflow: (fullProgress || needsWideText) ? 'wrap' : 'ellipsis',
+      richText: fullProgress,
+    ));
+
+    if (isProgress) {
+      elements.add(_progress(
+        id: nextId('el'),
+        name: field.name,
+        x: fullProgress ? _Layout.pcbPadding : _Layout.pcbPadding + labelW + 6,
+        y: fullProgress ? y + 20 : y + (_Layout.rowHeight - _Layout.barHeight) / 2,
+        w: fullProgress ? innerW : innerW - labelW - 6,
+        h: _Layout.barHeight,
+        statusFieldId: fieldId,
+        layer: elements.length + 1,
+        barFillColor: _barColorOf(field.name, theme.barFillColor),
+        barTrackColor: _barTrackColorOf(field.name, theme.barTrackColor),
+        min: min,
+        max: max,
+        current: initialNumber.clamp(min, max).toDouble(),
+      ));
+    } else {
+      elements.add(_text(
+        id: nextId('el'),
+        name: field.name,
+        text: initial.isEmpty ? '—' : initial,
+        x: (shouldScrollText || needsWideText)
+            ? _Layout.pcbPadding
+            : _Layout.pcbPadding + labelW + 6,
+        y: (shouldScrollText || needsWideText) ? y + _Layout.rowHeight : y,
+        w: (shouldScrollText || needsWideText) ? innerW : innerW - labelW - 6,
+        h: valueHeight,
+        fontSize: mode == 'extra_companion' ? 11 : 12,
+        color: theme.valueColor,
+        align: field.textAlign,
+        layer: elements.length + 1,
+        statusFieldId: fieldId,
+        overflow: effectiveOverflow,
+        richText: shouldScrollText,
+      ));
+    }
+    return y +
+        (isProgress
+                ? (fullProgress ? 20 + _Layout.barHeight : _Layout.rowHeight)
+                : ((shouldScrollText || needsWideText)
+                    ? _Layout.rowHeight + valueHeight
+                    : valueHeight)) +
+            _Layout.rowGap;
+  }
+
+  static double _renderAttributeGridFields({
+    required List<Map<String, dynamic>> elements,
+    required List<UiPlanField> fields,
+    required String Function(String) nextId,
+    required List<Map<String, dynamic>> statusFields,
+    required UiVisualTheme theme,
+    required double y,
+    required double innerW,
+  }) {
+    const columns = 2;
+    const gap = 8.0;
+    const cellH = 32.0;
+    final cellW = (innerW - gap) / columns;
+    for (var i = 0; i < fields.length; i++) {
+      final field = fields[i];
+      final fieldId = _planFieldId(field);
+      final min = field.min ?? 0.0;
+      final max = field.max ?? 100.0;
+      final initialNumber = _numberOf(field.initialValue) ?? min;
+      final initial = field.isNumber ? _trimNumber(initialNumber) : field.initialValue;
+      _addStatusFieldForPlanField(
+        statusFields,
+        field,
+        fieldId: fieldId,
+        initial: initial,
+        min: field.isNumber ? min : null,
+        max: field.isNumber ? max : null,
+      );
+      final col = i % columns;
+      final row = i ~/ columns;
+      final x = _Layout.pcbPadding + col * (cellW + gap);
+      final cellY = y + row * (cellH + gap);
+      elements.add(_surface(
+        id: nextId('el'),
+        name: '${field.name}格底',
+        x: x,
+        y: cellY,
+        w: cellW,
+        h: cellH,
+        color: theme.buttonBgColor,
+        layer: elements.length + 1,
+        radius: 7,
+      ));
+      elements.add(_text(
+        id: nextId('el'),
+        name: field.name,
+        text: '${field.name}: ${initial.isEmpty ? '—' : initial}',
+        x: x + 6,
+        y: cellY + 7,
+        w: cellW - 12,
+        h: 18,
+        fontSize: 11,
+        color: theme.valueColor,
+        align: 'center',
+        layer: elements.length + 1,
+        statusFieldId: fieldId,
+        overflow: 'wrap',
+      ));
+    }
+    final rows = (fields.length / columns).ceil();
+    final rowGaps = ((rows - 1).clamp(0, 999) as num).toDouble() * gap;
+    return y + rows * cellH + rowGaps + _Layout.rowGap;
+  }
+
+  static double _renderProgressClusterFields({
+    required List<Map<String, dynamic>> elements,
+    required List<UiPlanField> fields,
+    required String Function(String) nextId,
+    required List<Map<String, dynamic>> statusFields,
+    required UiVisualTheme theme,
+    required String mode,
+    required double y,
+    required double innerW,
+    required double labelW,
+  }) {
+    final remaining = [...fields];
+    bool isHp(UiPlanField f) {
+      final t = '${f.name} ${f.sourceKey}'.toLowerCase();
+      return t.contains('hp') || t.contains('生命') || t.contains('health');
+    }
+
+    bool isMp(UiPlanField f) {
+      final t = '${f.name} ${f.sourceKey}'.toLowerCase();
+      return t.contains('mp') || t.contains('法力') || t.contains('魔力') || t.contains('mana');
+    }
+
+    final hpIndex = remaining.indexWhere(isHp);
+    final mpIndex = remaining.indexWhere(isMp);
+    if (hpIndex >= 0 && mpIndex >= 0 && hpIndex != mpIndex) {
+      final hp = remaining[hpIndex];
+      final mp = remaining[mpIndex];
+      const gap = 8.0;
+      final cellW = (innerW - gap) / 2;
+      _renderProgressCell(
+        elements: elements,
+        field: hp,
+        nextId: nextId,
+        statusFields: statusFields,
+        theme: theme,
+        x: _Layout.pcbPadding,
+        y: y,
+        w: cellW,
+        compact: true,
+      );
+      _renderProgressCell(
+        elements: elements,
+        field: mp,
+        nextId: nextId,
+        statusFields: statusFields,
+        theme: theme,
+        x: _Layout.pcbPadding + cellW + gap,
+        y: y,
+        w: cellW,
+        compact: true,
+      );
+      y += 38.0;
+      if (hpIndex > mpIndex) {
+        remaining.removeAt(hpIndex);
+        remaining.removeAt(mpIndex);
+      } else {
+        remaining.removeAt(mpIndex);
+        remaining.removeAt(hpIndex);
+      }
+    }
+
+    for (final field in remaining) {
+      if (field.isNumber && field.display == 'progress') {
+        _renderProgressCell(
+          elements: elements,
+          field: field,
+          nextId: nextId,
+          statusFields: statusFields,
+          theme: theme,
+          x: _Layout.pcbPadding,
+          y: y,
+          w: innerW,
+          compact: false,
+        );
+        y += 38.0;
+      } else {
+        y = _renderPlanFieldStandard(
+          elements: elements,
+          field: field,
+          nextId: nextId,
+          statusFields: statusFields,
+          theme: theme,
+          mode: mode,
+          y: y,
+          innerW: innerW,
+          labelW: labelW,
+        );
+      }
+    }
+    return y + _Layout.rowGap;
+  }
+
+  static void _renderProgressCell({
+    required List<Map<String, dynamic>> elements,
+    required UiPlanField field,
+    required String Function(String) nextId,
+    required List<Map<String, dynamic>> statusFields,
+    required UiVisualTheme theme,
+    required double x,
+    required double y,
+    required double w,
+    required bool compact,
+  }) {
+    final fieldId = _planFieldId(field);
+    final min = field.min ?? 0.0;
+    final max = field.max ?? 100.0;
+    final initialNumber = _numberOf(field.initialValue) ?? min;
+    final initial = _trimNumber(initialNumber);
+    _addStatusFieldForPlanField(
+      statusFields,
+      field,
+      fieldId: fieldId,
+      initial: initial,
+      min: min,
+      max: max,
+    );
+    elements.add(_text(
+      id: nextId('el'),
+      name: '${field.name}标签',
+      text: _progressLabelText(field.name, initial, max),
+      x: x,
+      y: y,
+      w: w,
+      h: 19,
+      fontSize: compact ? 10 : 11.5,
+      color: theme.labelColor,
+      align: 'center',
+      layer: elements.length + 1,
+      overflow: 'wrap',
+      richText: true,
+    ));
+    elements.add(_progress(
+      id: nextId('el'),
+      name: field.name,
+      x: x,
+      y: y + 21,
+      w: w,
+      h: _Layout.barHeight,
+      statusFieldId: fieldId,
+      layer: elements.length + 1,
+      barFillColor: _barColorOf(field.name, theme.barFillColor),
+      barTrackColor: _barTrackColorOf(field.name, theme.barTrackColor),
+      min: min,
+      max: max,
+      current: initialNumber.clamp(min, max).toDouble(),
+    ));
   }
 
   static double _frameInsetFor(String mode) {
@@ -1706,6 +2299,9 @@ class UiAssemblyBuilder {
     required String id,
     required String name,
     required String targetPageId,
+    String action = 'switch_base_page',
+    String transition = 'base_slide',
+    int durationMs = 200,
   }) =>
       _element(
         id: id,
@@ -1722,9 +2318,9 @@ class UiAssemblyBuilder {
           props: {
             'route': {
               'targetPageId': targetPageId,
-              'action': 'switch_base_page',
-              'transition': 'base_slide',
-              'durationMs': 200,
+              'action': action,
+              'transition': transition,
+              'durationMs': durationMs,
             },
           },
         ),

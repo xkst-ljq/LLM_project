@@ -74,7 +74,7 @@ class UiEngineApiDictionary {
       'properties': {
         'text': {'type': 'string', 'default': ''},
         'fontSize': {'type': 'double', 'default': 14, 'range': [10, 72]},
-        'overflow': {'type': 'enum', 'values': ['ellipsis', 'clip', 'scroll'], 'default': 'ellipsis'},
+        'overflow': {'type': 'enum', 'values': ['ellipsis', 'clip', 'wrap', 'scroll'], 'default': 'ellipsis'},
         'textAlign': {'type': 'enum', 'values': ['left', 'center', 'right'], 'default': 'center'},
         'richText': {'type': 'bool', 'default': false, 'description': 'scroll 模式默认适合开启；短数值不建议开启'},
         'contentPadding': {'type': 'double', 'default': 10, 'onlyFor': 'overflow=scroll'},
@@ -351,7 +351,7 @@ class UiEngineApiDictionary {
   static const Map<String, dynamic> layoutPolicies = {
     'fidelityFirst': '先还原原卡渲染结构、阅读顺序和分组，再因移动端冲突做适配。',
     'avoidSparseTabs': '不要把原本单张长卡机械拆成很多空页；多页必须让每页有足够内容、可滚动大内容区，或作为 overlay 详情。opening 的资料填写和开场方向选择默认应合并成同一张登记卡。',
-    'textSizing': '有意义的状态值/任务/物品/选项/位置不能靠 ellipsis；使用 wrap/scroll 并给足高度。',
+    'textSizing': '有意义的状态值/任务/物品/选项/位置不能靠 ellipsis；使用 wrap/scroll 并给足高度。wrap 会正常换行，scroll 用于长任务板/羁绊名录。',
     'semanticProximity': '语义关联紧密的信息应尽量放在一起，并使用精确 group 名称而非泛化大类：生存数值同组、任务详情与任务行动同组、正文与当前选项相邻、装备与状态相邻、opening 的设定填写和开场方向选择保持同一登记流程。',
     'reasonableInteraction': '原卡纯文本选项可在作者确认或语义明确时增强为 sendsMessage 按钮；不改变玩法规则。scene 中选项应靠近正文或作为 overlay/sticky 行动坞，不要单独做稀疏 tab。',
     'useOriginalGrid': '原卡有 flex/grid/两列进度条时，应优先保留其布局意图，而不是单列堆叠。',
@@ -365,7 +365,7 @@ class UiEngineApiDictionary {
     },
     'scene_terminal': {
       'useWhen': '原卡把正文、状态、选项包在一个终端/档案卡里',
-      'mustUse': ['message_flow', 'keyAction button'],
+      'mustUse': ['layout page role=story/message so compiler inserts message_flow', 'keyAction button'],
     },
     'companion_status': {
       'useWhen': '小型状态栏跟随 AI 消息',
@@ -374,7 +374,7 @@ class UiEngineApiDictionary {
     },
     'overlay_detail': {
       'useWhen': '低频详细信息，如档案、任务、好友列表',
-      'mechanism': 'overlay page + page_router open_overlay',
+      'mechanism': 'UiDesignPlan layout.pages[].type=overlay + parentPage; compiler emits page_router open_overlay buttons',
     },
   };
 
@@ -384,6 +384,7 @@ class UiEngineApiDictionary {
     '完整 branchVariants 布局生成仍待扩展；当前优先同布局 + branchInitialValues。',
     '复杂条件样式需 indicator.statusRules 或后续 conditionalStyles schema。',
     '动态 progress max/min 需要额外 API；不要默认假设。',
+    'UIEngine runtime 支持 ElementAnimation/event_to_animation，但当前 UiDesignPlan 编译器尚无通用 animations[] schema；只会自动生成按钮按压反馈与页面过渡。',
     'Opening UI 应选择 opening_greetings 分支方向并收集少量人物信息；不要把某个分支内部的 quest/DQ 选择提升成 opening 选择。',
     'quest / DQ_ChoiceBox / FriendsAlbumPage 等稳定消息级 schema，在来源明确或作者确认时可映射为 LLM 可更新的持久字段/页面。',
   ];

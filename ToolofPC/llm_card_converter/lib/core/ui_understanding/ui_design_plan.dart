@@ -205,12 +205,29 @@ class UiPlanPageSpec {
   final String title;
   final String role;
 
-  const UiPlanPageSpec({required this.title, required this.role});
+  /// 页面类型。
+  ///
+  /// - `base`: 平级主页面 / tab / swipe 页面；
+  /// - `overlay`: 叠加页，运行时覆盖在父 base 页面上，适合任务详情、档案、羁绊名录。
+  final String type;
+
+  /// overlay 的父页面标题。AI 可以用 parentPage / parent / parentPageId。
+  /// 如果留空，编译器会回退到第一个 base 页面。
+  final String parentPage;
+
+  const UiPlanPageSpec({
+    required this.title,
+    required this.role,
+    required this.type,
+    required this.parentPage,
+  });
 
   factory UiPlanPageSpec.fromJson(Map<String, dynamic> json) {
     return UiPlanPageSpec(
       title: _fallback(_str(json['title']), '页面'),
       role: _str(json['role']),
+      type: _pageTypeOf(json['type'] ?? json['presentation'] ?? json['pageType']),
+      parentPage: _str(json['parentPage'] ?? json['parent'] ?? json['parentPageId']).trim(),
     );
   }
 }
@@ -453,6 +470,14 @@ String _navigationOf(dynamic raw) {
     return 'tabs_and_swipe';
   }
   return 'tabs_and_swipe';
+}
+
+String _pageTypeOf(dynamic raw) {
+  final v = _str(raw).toLowerCase().trim();
+  if (v == 'overlay' || v == 'dialog' || v == 'modal' || v == 'popup' || v == '叠加页') {
+    return 'overlay';
+  }
+  return 'base';
 }
 
 String _displayOf(dynamic raw, String type) {

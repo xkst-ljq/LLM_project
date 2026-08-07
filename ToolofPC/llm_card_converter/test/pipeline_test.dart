@@ -5,6 +5,7 @@ import 'package:llm_card_converter/core/conversion_models.dart';
 import 'package:llm_card_converter/core/ui_assembly_builder.dart';
 import 'package:llm_card_converter/core/ui_engine_api/ui_engine_api_dictionary.dart';
 import 'package:llm_card_converter/core/ui_understanding/ui_design_plan.dart';
+import 'package:llm_card_converter/core/ui_understanding/ui_source_pack_builder.dart';
 import 'package:llm_card_converter/pipeline/pipeline.dart';
 
 Map<String, dynamic> _ariaV2() => {
@@ -142,6 +143,28 @@ void main() {
     });
   });
 
+  group('UI source pack', () {
+    test('filters quest schema templates from initial quest summaries', () {
+      final pack = UiSourcePackBuilder.build({
+        'data': {
+          'name': 'QuestCard',
+          'first_mes': '{quest:采集安神草|type:生活类|desc:采集二十株|diff:E级|client:赫尔曼|reward:20银币|location:森林|time:无|equip:无|risk:史莱姆|note:蓝紫色小花}',
+          'character_book': {
+            'entries': [
+              {
+                'comment': '任务界面',
+                'content': '{quest:任务名称|type:任务类型|desc:任务描述|diff:难度等级|client:委托人姓名|reward:任务报酬|location:任务地点|time:时间限制|equip:推荐装备|risk:潜在风险|note:特别说明}',
+              },
+            ],
+          },
+        },
+      });
+
+      expect(pack.questSummaries.map((q) => q.name), contains('采集安神草'));
+      expect(pack.questSummaries.map((q) => q.name), isNot(contains('任务名称')));
+    });
+  });
+
   group('AI UI plan compiler', () {
     test('compiles UiDesignPlan into assembly JSON and status fields', () {
       final plan = UiDesignPlan.fromJson({
@@ -207,6 +230,65 @@ void main() {
       expect(assembly['elements'], '[]');
       final pages = jsonDecode(assembly['pages'] as String) as List;
       expect(pages, hasLength(2));
+    });
+
+    test('compiles scene story page with message_flow and overlay details', () {
+      final plan = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'confidence': 0.9,
+        'uiMode': 'scene',
+        'uiName': '公会大厅',
+        'visualStyle': {'pcbColor': '#2C1A0E', 'panelColor': '#F7E9D7'},
+        'layout': {
+          'kind': 'scene_dashboard',
+          'pages': [
+            {'title': '公会大厅', 'role': 'story', 'type': 'base'},
+            {'title': '任务板', 'role': 'tasks', 'type': 'overlay', 'parentPage': '公会大厅'},
+          ],
+        },
+        'fields': [
+          {
+            'name': '任务板',
+            'sourceKey': 'TaskBoard',
+            'group': '任务板',
+            'type': 'text',
+            'display': 'text',
+            'overflow': 'scroll',
+            'initialValue': '任务一\n任务二',
+            'page': '任务板',
+            'sourceRef': 'data.first_mes quest',
+          },
+        ],
+        'actions': [
+          {
+            'label': '选择采集安神草的任务。',
+            'sendText': '选择采集安神草的任务。',
+            'page': '公会大厅',
+            'sourceRef': 'data.first_mes DQ_ChoiceBox',
+          },
+        ],
+      });
+
+      final built = UiAssemblyBuilder.buildFromPlan(plan, cardName: '异世界公会');
+      final assembly = jsonDecode(built.assemblies.first) as Map;
+      final pages = jsonDecode(assembly['pages'] as String) as List;
+      expect(pages.any((p) => (p as Map)['type'] == 'overlay'), isTrue);
+      final base = pages.cast<Map>().firstWhere((p) => p['name'] == '公会大厅');
+      final baseElements = base['elements'] as List;
+      expect(
+        baseElements.any((e) => ((e as Map)['module'] as Map)['type'] == 'message_flow'),
+        isTrue,
+      );
+      expect(
+        baseElements.any((e) {
+          final module = ((e as Map)['module'] as Map);
+          final props = module['properties'];
+          if (module['type'] != 'page_router' || props is! Map) return false;
+          final route = props['route'];
+          return route is Map && route['action'] == 'open_overlay';
+        }),
+        isTrue,
+      );
     });
 
     test('supports multi-assembly plans such as opening plus scene', () {

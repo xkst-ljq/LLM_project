@@ -81,6 +81,17 @@ class UiPlanValidator {
       if (sourcePack.hasChoiceBoxSchema && plan.actions.isEmpty) {
         errors.add('检测到稳定 DQ_ChoiceBox schema；应在合理情况下生成 sendsMessage actions/buttons，让玩家可点击选择。若确实不能点击，也必须在 notes 说明原因并提供替代交互。');
       }
+      if (plan.uiMode == 'scene') {
+        if (!_hasSceneMessagePage(plan)) {
+          errors.add('scene 会抑制原生聊天列表，必须声明一个 layout.pages role=story/message/narrative/content/log 的正文页，让编译器插入 message_flow；只在 notes 里说“建议使用 message_flow”不会生成组件。');
+        } else if (_messagePageIsOvercrowded(plan, sourcePack)) {
+          errors.add('scene 正文/message_flow 页面过于拥挤：不要把完整状态栏、任务板、羁绊名录等低频详情全部堆在正文与选项之间。请保留正文页 + 当前选项/自由输入，把完整状态/任务/羁绊改为 type=overlay 的叠加页或少量详情页。');
+        }
+        final baseDetailPages = _baseDetailPagesThatShouldBeOverlay(plan, sourcePack);
+        if (baseDetailPages.isNotEmpty) {
+          errors.add('scene 中以下低频详情页不应作为稀疏 base tab 撑大 PCB：${baseDetailPages.join('、')}。请在 layout.pages 中设置 type="overlay" 并指定 parentPage 为正文/message_flow 页面。');
+        }
+      }
       if (plan.uiMode == 'scene' && _hasStandaloneActionPage(plan)) {
         errors.add('scene 不应把行动/选项做成稀疏独立 tab。请把当前选项按钮/自由输入放在故事/message_flow 页面底部，或做成 overlay/sticky 行动坞。');
       }
@@ -185,9 +196,10 @@ class UiPlanValidator {
       final componentCount = fields.length + inputs.length + actions.length;
       final hasLargeScrollField = fields.any((f) => f.overflow == 'scroll');
       final isActionOnly = fields.isEmpty && (inputs.isNotEmpty || actions.isNotEmpty);
+      final isOverlay = page.type == 'overlay';
       if (componentCount == 0) {
         result.add('$title(空页)');
-      } else if (componentCount <= 2 && !hasLargeScrollField && !isActionOnly) {
+      } else if (!isOverlay && componentCount <= 2 && !hasLargeScrollField && !isActionOnly) {
         result.add('$title($componentCount 项)');
       }
     }
@@ -263,16 +275,96 @@ class UiPlanValidator {
         hit(field.name) || hit(field.sourceKey) || hit(field.group) || hit(field.page));
   }
 
+  static bool _hasSceneMessagePage(UiDesignPlan plan) {
+    return plan.layout.pages.any((page) =>
+        page.type != 'overlay' && _isMessagePage(page.title, page.role));
+  }
+
+  static bool _messagePageIsOvercrowded(
+    UiDesignPlan plan,
+    UiSourcePack sourcePack,
+  ) {
+    final messagePages = <String>{
+      for (final page in plan.layout.pages)
+        if (page.type != 'overlay' && _isMessagePage(page.title, page.role))
+          page.title.trim(),
+    }..removeWhere((e) => e.isEmpty);
+    if (messagePages.isEmpty) return false;
+
+    for (final page in messagePages) {
+      final fields = plan.fields.where((f) => f.page.trim() == page).toList();
+      final controlsOnPage = plan.actions.any((a) => a.page.trim() == page) ||
+          plan.inputs.any((input) => input.page.trim() == page);
+      if (!controlsOnPage) continue;
+      final hasDetailScroll = fields.any((f) {
+        final text = '${f.name} ${f.sourceKey} ${f.group}'.toLowerCase();
+        return f.overflow == 'scroll' &&
+            (text.contains('任务') ||
+                text.contains('quest') ||
+                text.contains('task') ||
+                text.contains('羁绊') ||
+                text.contains('好友') ||
+                text.contains('friends') ||
+                text.contains('album'));
+      });
+      final hasManyRuntimeFields = fields.length >= 9 &&
+          (sourcePack.hasQuestSchema ||
+              sourcePack.hasFriendsAlbumSchema ||
+              fields.any((f) => f.display == 'progress'));
+      if (hasDetailScroll || hasManyRuntimeFields) return true;
+    }
+    return false;
+  }
+
+  static List<String> _baseDetailPagesThatShouldBeOverlay(
+    UiDesignPlan plan,
+    UiSourcePack sourcePack,
+  ) {
+    if (!_hasSceneMessagePage(plan)) return const [];
+    if (!(sourcePack.hasQuestSchema ||
+        sourcePack.hasFriendsAlbumSchema ||
+        plan.fields.any((f) => f.display == 'progress'))) {
+      return const [];
+    }
+    final out = <String>[];
+    for (final page in plan.layout.pages) {
+      final title = page.title.trim();
+      if (title.isEmpty || page.type == 'overlay') continue;
+      if (_isMessagePage(title, page.role)) continue;
+      final fields = plan.fields.where((f) => f.page.trim() == title).toList();
+      final controls = plan.inputs.any((input) => input.page.trim() == title) ||
+          plan.actions.any((action) => action.page.trim() == title);
+      if (fields.isEmpty || controls) continue;
+      final text = '$title ${page.role} ${fields.map((f) => '${f.name} ${f.group}').join(' ')}'.toLowerCase();
+      final isLowFrequencyDetail = title.contains('状态') ||
+          title.contains('任务') ||
+          title.contains('伙伴') ||
+          title.contains('羁绊') ||
+          title.contains('好友') ||
+          title.contains('档案') ||
+          text.contains('stats') ||
+          text.contains('quest') ||
+          text.contains('task') ||
+          text.contains('companion') ||
+          text.contains('friend') ||
+          text.contains('album');
+      if (isLowFrequencyDetail) out.add(title);
+    }
+    return out;
+  }
+
   static bool _hasStandaloneActionPage(UiDesignPlan plan) {
     if (plan.actions.isEmpty && plan.inputs.isEmpty) return false;
     final actionPages = <String>{
       for (final page in plan.layout.pages)
-        if (_isActionPage(page.title, page.role)) page.title.trim(),
+        if (page.type != 'overlay' && _isActionPage(page.title, page.role))
+          page.title.trim(),
     }..removeWhere((e) => e.isEmpty);
     if (actionPages.isEmpty) return false;
     final messagePages = <String>{
       for (final page in plan.layout.pages)
-        if (_isMessagePage(page.title, page.role)) page.title.trim(),
+        if (page.type != 'overlay' && _isMessagePage(page.title, page.role))
+          page.title.trim(),
     }..removeWhere((e) => e.isEmpty);
     if (messagePages.isEmpty) return false;
     final actionHasFields = plan.fields.any((field) => actionPages.contains(field.page.trim()));
