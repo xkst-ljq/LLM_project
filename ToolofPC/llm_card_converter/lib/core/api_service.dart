@@ -246,6 +246,7 @@ class ApiService {
     ChatCompleteOptions options = const ChatCompleteOptions(),
     void Function(String delta)? onDelta,
     void Function(String line)? onLog,
+    void Function(Map<String, dynamic> stat)? onStat,
   }) async {
     Object? lastError;
     final attempts = options.retryCount < 0 ? 1 : options.retryCount + 1;
@@ -259,6 +260,7 @@ class ApiService {
           options: options,
           onDelta: onDelta,
           onLog: onLog,
+          onStat: onStat,
         );
       } catch (e) {
         lastError = e;
@@ -282,6 +284,7 @@ class ApiService {
     required ChatCompleteOptions options,
     void Function(String delta)? onDelta,
     void Function(String line)? onLog,
+    void Function(Map<String, dynamic> stat)? onStat,
   }) async {
     final base = normalizeBase(baseUrl);
     final body = <String, dynamic>{
@@ -377,6 +380,16 @@ class ApiService {
     }
     final full = buffer.toString();
     onLog?.call('      SSE统计：lines=$rawLineCount data=$dataFrameCount json=$jsonFrameCount contentChunks=$contentChunkCount contentChars=${full.runes.length} nonContent=$nonContentFrameCount done=$doneSeen lastKeys=$lastFrameKeys');
+    onStat?.call({
+      'lines': rawLineCount,
+      'dataFrames': dataFrameCount,
+      'jsonFrames': jsonFrameCount,
+      'contentChunks': contentChunkCount,
+      'contentChars': full.runes.length,
+      'nonContentFrames': nonContentFrameCount,
+      'done': doneSeen,
+      'lastFrameKeys': lastFrameKeys,
+    });
     if (full.trim().isEmpty) {
       throw Exception('模型返回为空');
     }

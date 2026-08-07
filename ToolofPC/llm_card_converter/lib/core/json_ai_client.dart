@@ -236,6 +236,11 @@ class JsonAiClient {
           ),
           onDelta: onDeltaAndTrace,
           onLog: onLog,
+          onStat: (stat) {
+            trace?.addDiagnostic(
+              'SSE统计：${stat.entries.map((e) => '${e.key}=${e.value}').join(' ')}',
+            );
+          },
         ),
         label: '$taskName/流式',
         every: const Duration(seconds: 30),
