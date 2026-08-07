@@ -247,5 +247,9 @@ Knowledge version: $knowledgeVersion
 - 用 columns/density/fill/span 控制空间分配；meaningful text 不要 ellipsis。
 - UI 依赖外部 JS 运行时写入 unsupported，除非证据中有静态可还原内容。
 - 保持相关内容物理邻近；避免一字段一行的稀疏布局浪费 PCB。
+- **多生命周期**：原卡既有「开局分支选择」又有「常驻状态栏/面板/正文」时，
+  必须输出 assemblies: [opening, scene] 两个方案，不要只挑一个。
+  识别常驻面板：`<生命>` `<精神>` `<体力>` 等状态标签、`{PlayerStatus|...}`、
+  `<Alliance>`/`<正文>` 包裹、regex 状态栏/仪表盘 HTML。
 ''';
 }

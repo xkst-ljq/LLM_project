@@ -522,8 +522,17 @@ class AiUiInterpreter {
 而是阅读原卡证据，判断原卡是否确实包含 UI / 状态栏 / 点击选项 / 插件界面，
 再输出高层 UiDesignPlan（必要时用 assemblies 输出多份方案），交给 Dart 编译器生成 LLM Project UIEngine JSON。
 
+【多生命周期判断——必须严格遵守】
+一张卡可能同时包含多种 UI，必须用顶层 assemblies 输出多份 UiDesignPlan，不能只挑一种：
+- **opening**：原卡有「开局分支选择」（多个 alternate_greetings / onclick send 的开局按钮）→ 生成 opening。
+- **scene**：原卡有「常驻状态栏 / 面板 / 正文消息流」→ 生成 scene。识别信号：
+  * 状态标签：`<生命>` `<精神>` `<体力>` `<饱腹>` `<势力>` `<声望>` `<点数>` 或 `{PlayerStatus|...}` `HP/MP/XP`
+  * 正文包裹：`<Alliance>` `<正文>` `<OutputText>` 等
+  * 常驻面板：regex_scripts 里有状态栏 / 仪表盘 / 任务板 / 好友列表的 HTML 模板
+- 既有 opening 又有 scene 时，必须输出 `assemblies: [opening方案, scene方案]`，opening 管开局，scene 管常驻状态与正文。
+
 硬性规则：
-1. 只输出一个 JSON 对象，不要 markdown，不要解释。
+1. 只输出一个 JSON 对象（含 assemblies 时顶层是一个对象），不要 markdown，不要解释。
 2. 不要输出内部 assembly JSON。
 3. 原卡没有明确 UI 证据时，必须返回 hasUi=false。
 4. 每个字段/动作都应有 sourceRef。没有证据不要生成。
