@@ -8,6 +8,7 @@ class AppSettings {
   static const _kApiBaseUrl = 'api_base_url';
   static const _kApiKey = 'api_key';
   static const _kApiModel = 'api_model';
+  static const _kAiUiRefineEnabled = 'ai_ui_refine_enabled';
 
   /// 默认转译保存目录。空字符串表示未设置（首次保存时会询问）。
   static Future<String> getOutputDir() async {
@@ -42,6 +43,23 @@ class AppSettings {
     await prefs.setString(_kApiKey, c.apiKey);
     await prefs.setString(_kApiModel, c.model);
   }
+
+  // ---------- AI UI 精修（慢速，可选） ----------
+
+  /// 是否启用 AI 对 UI 方案做慢速精修。
+  ///
+  /// 默认关闭：UI 阶段使用确定性 opening/scene 骨架，避免长 prompt 等待
+  /// 与模型空返回。打开后才让模型生成/精修 UiDesignPlan。
+  static Future<bool> getAiUiRefineEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kAiUiRefineEnabled) ?? false;
+  }
+
+  static Future<void> setAiUiRefineEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kAiUiRefineEnabled, value);
+  }
+
 }
 
 /// AI API 配置（OpenAI 兼容）。

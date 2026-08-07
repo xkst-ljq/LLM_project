@@ -58,6 +58,7 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
   bool _fetching = false;
   String? _fetchMsg;
   bool _obscureKey = true;
+  bool _aiUiRefineEnabled = false;
 
   @override
   void initState() {
@@ -67,12 +68,14 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
 
   Future<void> _load() async {
     final c = await AppSettings.getApiConfig();
+    final refine = await AppSettings.getAiUiRefineEnabled();
     if (!mounted) return;
     setState(() {
       _urlCtrl.text = c.baseUrl;
       _keyCtrl.text = c.apiKey;
       _modelCtrl.text = c.model;
       _selectedModel = c.model.isEmpty ? null : c.model;
+      _aiUiRefineEnabled = refine;
     });
   }
 
@@ -140,6 +143,7 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
       apiKey: _keyCtrl.text.trim(),
       model: model,
     ));
+    await AppSettings.setAiUiRefineEnabled(_aiUiRefineEnabled);
     if (!mounted) return;
     Navigator.pop(context, true);
   }
@@ -232,6 +236,17 @@ class _ApiConfigDialogState extends State<ApiConfigDialog> {
                               fontSize: 12, color: Colors.black54)),
                     ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('启用 AI UI 精修（慢速）'),
+                subtitle: const Text(
+                  '默认关闭：UI 阶段使用确定性骨架，秒级生成。打开后会让模型精修 UI，可能等待数分钟，失败也会保留确定性 UI。',
+                  style: TextStyle(fontSize: 11),
+                ),
+                value: _aiUiRefineEnabled,
+                onChanged: (value) => setState(() => _aiUiRefineEnabled = value),
               ),
               const SizedBox(height: 12),
 

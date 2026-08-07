@@ -454,9 +454,29 @@ class UiSourcePack {
   }
 
   static Map<String, String> _playerStatusOf(String text) {
-    final match = RegExp(r'\{PlayerStatus\|([^}]*)\}').firstMatch(text);
-    if (match == null) return const <String, String>{};
-    final raw = match.group(1) ?? '';
+    const marker = '{PlayerStatus|';
+    final start = text.indexOf(marker);
+    if (start < 0) return const <String, String>{};
+    final bodyStart = start + marker.length;
+    var i = bodyStart;
+    var end = -1;
+    while (i < text.length) {
+      // PlayerStatus 里常出现 {{user}} 这类宏，不能把宏里的 `}` 当成
+      // schema 结束符。跳过整段双花括号宏。
+      if (i + 1 < text.length && text.codeUnitAt(i) == 0x7B && text.codeUnitAt(i + 1) == 0x7B) {
+        final macroEnd = text.indexOf('}}', i + 2);
+        if (macroEnd < 0) break;
+        i = macroEnd + 2;
+        continue;
+      }
+      if (text.codeUnitAt(i) == 0x7D) {
+        end = i;
+        break;
+      }
+      i++;
+    }
+    if (end <= bodyStart) return const <String, String>{};
+    final raw = text.substring(bodyStart, end);
     final out = <String, String>{};
     for (final part in raw.split('|')) {
       final idx = part.indexOf(':');

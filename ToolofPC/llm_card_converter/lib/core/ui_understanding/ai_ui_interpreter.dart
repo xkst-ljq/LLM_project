@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../api_service.dart';
 import '../json_ai_client.dart';
 import '../conversion_models.dart';
+import '../app_settings.dart';
 import '../ui_engine_api/ui_engine_api_dictionary.dart';
 import 'ui_design_plan.dart';
 import 'ui_plan_validator.dart';
@@ -33,6 +34,17 @@ class AiUiInterpreter {
   }) async {
     final sourcePack = UiSourcePackBuilder.build(sourceJson);
     final characterName = baseResult.characterName;
+    final aiUiRefineEnabled = await AppSettings.getAiUiRefineEnabled();
+
+    if (!aiUiRefineEnabled) {
+      onLog?.call('  UI 模式：快速稳定（AI UI 精修未启用，使用确定性骨架）');
+      return _deterministicInterpretation(
+        sourcePack: sourcePack,
+        characterName: characterName,
+      );
+    }
+
+    onLog?.call('  UI 模式：AI 精修（慢速，可能等待较久）');
 
     // ── 阶段 1：Scout —— 轻量选型 ──
     final scoutPlan = await _runScout(
@@ -172,6 +184,89 @@ class AiUiInterpreter {
       validationWarnings: validation.warnings,
       sourcePack: sourcePack,
       conversationContext: transcript,
+    );
+  }
+
+  static AiUiInterpretation _deterministicInterpretation({
+    required UiSourcePack sourcePack,
+    required String characterName,
+  }) {
+    final detailJsons = <Map<String, dynamic>>[];
+    final transcripts = <ChatMessage>[];
+
+    if (_canBuildOpeningDeterministically(sourcePack)) {
+      final opening = _buildDeterministicOpeningJson(sourcePack, characterName);
+      detailJsons.add(opening);
+      transcripts.addAll(_syntheticTranscript(
+        'opening',
+        '快速稳定模式：opening 由分支摘要 + 玩家资料输入机会确定生成，未请求模型。',
+        opening,
+      ));
+    }
+
+    if (_canBuildSceneFallback(sourcePack)) {
+      final scene = _buildDeterministicSceneJson(sourcePack, characterName);
+      detailJsons.add(scene);
+      transcripts.addAll(_syntheticTranscript(
+        'scene',
+        '快速稳定模式：scene 由稳定 schema 证据生成：message_flow + 状态/任务/羁绊 overlay，未请求模型。',
+        scene,
+      ));
+    }
+
+    if (detailJsons.isEmpty) {
+      final plan = UiDesignPlan(
+        hasUi: false,
+        confidence: 0.4,
+        uiMode: 'extra_companion',
+        uiName: '无 UI',
+        evidenceSummary: '快速稳定模式未识别到可确定性转译的 opening/scene UI schema。',
+        sourceRefs: const [],
+        visualStyle: const UiPlanStyle(
+          styleName: 'dark terminal',
+          pcbColor: '#15161A',
+          panelColor: '#1E2027',
+          titleColor: '#FFFFFF',
+          labelColor: '#AAB0BC',
+          valueColor: '#E8EDF5',
+          accentColor: '#4FA3D1',
+          buttonBgColor: '#2A3340',
+          barFillColor: '#4FA3D1',
+          barTrackColor: '#2A2D36',
+          borderRadius: 14,
+          glow: false,
+        ),
+        layout: const UiPlanLayout(
+          kind: 'single_panel',
+          navigation: 'tabs_and_swipe',
+          pages: [],
+        ),
+        fields: const [],
+        inputs: const [],
+        actions: const [],
+        unsupported: const [],
+        notes: const ['未请求 AI UI 精修；如需 AI 判断更复杂 UI，请在设置中启用慢速 AI UI 精修。'],
+      );
+      return AiUiInterpretation(
+        plans: [plan],
+        validationWarnings: const [],
+        sourcePack: sourcePack,
+        conversationContext: transcripts,
+      );
+    }
+
+    final plans = <UiDesignPlan>[
+      for (final json in detailJsons) ...UiDesignPlan.listFromJson(json),
+    ];
+    final validation = _validatePlans(plans, sourcePack);
+    if (!validation.ok) {
+      throw FormatException('确定性 UI 方案未通过校验：${validation.errors.join('；')}');
+    }
+    return AiUiInterpretation(
+      plans: plans,
+      validationWarnings: validation.warnings,
+      sourcePack: sourcePack,
+      conversationContext: transcripts,
     );
   }
 
