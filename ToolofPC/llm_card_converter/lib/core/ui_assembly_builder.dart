@@ -1257,16 +1257,19 @@ class UiAssemblyBuilder {
           'branch_initial_values': f.branchInitialValues,
       });
 
+      final needsWideText = !isProgress && _needsWideTextLayout(f, initial, mode);
       final shouldScrollText = !isProgress && _shouldScrollTextField(f, initial, mode);
-      final shouldWrapText = !isProgress && f.overflow == 'wrap';
-      final effectiveOverflow = shouldScrollText ? 'scroll' : f.overflow;
+      final effectiveOverflow = shouldScrollText
+          ? 'scroll'
+          : (needsWideText && f.overflow == 'ellipsis' ? 'wrap' : f.overflow);
+      final shouldWrapText = !isProgress && effectiveOverflow == 'wrap';
       final valueHeight = shouldScrollText
           ? _scrollTextHeightFor(initial, mode)
           : (shouldWrapText ? _wrapTextHeightFor(initial, mode) : _Layout.rowHeight);
       final fullProgress = isProgress && mode != 'extra_companion';
       final labelText = fullProgress
-          ? '${_decorateEmoji(f.name)}: $initial/${_trimNumber(max)}'
-          : _decorateEmoji(f.name);
+          ? _progressLabelText(f.name, initial, max)
+          : f.name;
 
       elements.add(_text(
         id: nextId('el'),
@@ -1274,13 +1277,14 @@ class UiAssemblyBuilder {
         text: labelText,
         x: _Layout.pcbPadding,
         y: y,
-        w: (shouldScrollText || fullProgress) ? innerW : labelW,
-        h: fullProgress ? 18 : _Layout.rowHeight,
+        w: (shouldScrollText || fullProgress || needsWideText) ? innerW : labelW,
+        h: fullProgress ? 20 : _Layout.rowHeight,
         fontSize: mode == 'extra_companion' ? 10 : 12,
         color: theme.labelColor,
         align: fullProgress ? 'center' : 'left',
         layer: elements.length + 1,
-        overflow: fullProgress ? 'wrap' : 'ellipsis',
+        overflow: (fullProgress || needsWideText) ? 'wrap' : 'ellipsis',
+        richText: fullProgress,
       ));
 
       if (isProgress) {
@@ -1294,7 +1298,7 @@ class UiAssemblyBuilder {
           statusFieldId: fieldId,
           layer: elements.length + 1,
           barFillColor: _barColorOf(f.name, theme.barFillColor),
-          barTrackColor: theme.barTrackColor,
+          barTrackColor: _barTrackColorOf(f.name, theme.barTrackColor),
           min: min,
           max: max,
           current: initialNumber.clamp(min, max).toDouble(),
@@ -1304,9 +1308,9 @@ class UiAssemblyBuilder {
           id: nextId('el'),
           name: f.name,
           text: initial.isEmpty ? '—' : initial,
-          x: shouldScrollText ? _Layout.pcbPadding : _Layout.pcbPadding + labelW + 6,
-          y: shouldScrollText ? y + _Layout.rowHeight : y,
-          w: shouldScrollText ? innerW : innerW - labelW - 6,
+          x: (shouldScrollText || needsWideText) ? _Layout.pcbPadding : _Layout.pcbPadding + labelW + 6,
+          y: (shouldScrollText || needsWideText) ? y + _Layout.rowHeight : y,
+          w: (shouldScrollText || needsWideText) ? innerW : innerW - labelW - 6,
           h: valueHeight,
           fontSize: mode == 'extra_companion' ? 11 : 12,
           color: theme.valueColor,
@@ -1319,13 +1323,43 @@ class UiAssemblyBuilder {
       }
       y += (isProgress
               ? (fullProgress ? 20 + _Layout.barHeight : _Layout.rowHeight)
-              : (shouldScrollText ? _Layout.rowHeight + valueHeight : valueHeight)) +
+              : ((shouldScrollText || needsWideText)
+                  ? _Layout.rowHeight + valueHeight
+                  : valueHeight)) +
           _Layout.rowGap;
     }
 
     final pressPairs = <({String surface, String button})>[];
+    if (inputs.isNotEmpty) {
+      elements.add(_sectionTitle(
+        id: nextId('el'),
+        title: mode == 'opening' ? '角色设定填写' : '输入',
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        color: theme.titleColor,
+        layer: elements.length + 1,
+      ));
+      y += 26.0;
+    }
     for (var i = 0; i < inputs.length; i++) {
       final input = inputs[i];
+      final inputLabel = input.name.trim().isEmpty ? '输入 ${i + 1}' : input.name.trim();
+      elements.add(_text(
+        id: nextId('el'),
+        name: '${inputLabel}标签',
+        text: inputLabel,
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        h: 18,
+        fontSize: mode == 'extra_companion' ? 10 : 12,
+        color: theme.labelColor,
+        align: 'left',
+        layer: elements.length + 1,
+        overflow: 'wrap',
+      ));
+      y += 20.0;
       final statusFieldId = input.targetKind == 'status_field'
           ? 'sf_${_slug(input.sourceKey.trim().isEmpty ? input.name : input.sourceKey)}'
           : null;
@@ -1368,6 +1402,18 @@ class UiAssemblyBuilder {
     }
 
     final localActions = [...actions];
+    if (localActions.isNotEmpty) {
+      elements.add(_sectionTitle(
+        id: nextId('el'),
+        title: mode == 'opening' ? '选择开场方向' : '可执行操作',
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        color: theme.titleColor,
+        layer: elements.length + 1,
+      ));
+      y += 26.0;
+    }
     final needsGeneratedKeyAction = mode == 'opening'
         ? localActions.isEmpty
         : (_modeRequiresGeneratedKeyAction(mode) &&
@@ -1489,6 +1535,29 @@ class UiAssemblyBuilder {
         _ => '确认',
       };
 
+  static String _progressLabelText(String name, String current, double max) {
+    final currentColor = _currentValueColorOf(name);
+    final maxText = _trimNumber(max);
+    if (currentColor == null) return '$name: $current/$maxText';
+    final hex = currentColor.toRadixString(16).padLeft(8, '0').substring(2);
+    return '<strong>$name:</strong> '
+        '<span style="color:#$hex;font-weight:bold">$current</span> / $maxText';
+  }
+
+  static int? _currentValueColorOf(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('生命') || lower.contains('hp') || lower.contains('health')) {
+      return 0xFFFF7F7F;
+    }
+    if (lower.contains('法力') || lower.contains('魔力') || lower.contains('mp') || lower.contains('mana')) {
+      return 0xFF87CEFA;
+    }
+    if (lower.contains('经验') || lower.contains('xp') || lower.contains('exp')) {
+      return 0xFFDAA520;
+    }
+    return null;
+  }
+
   static bool _shouldScrollTextField(
     UiPlanField field,
     String value,
@@ -1499,6 +1568,30 @@ class UiAssemblyBuilder {
     if (text.contains('\n')) return true;
     final threshold = mode == 'extra_companion' ? 28 : 56;
     return text.runes.length > threshold;
+  }
+
+  static bool _needsWideTextLayout(UiPlanField field, String value, String mode) {
+    if (mode == 'extra_companion') return false;
+    if (field.overflow == 'wrap' || field.overflow == 'scroll') return true;
+    final text = '${field.name} ${field.sourceKey} ${field.group} ${field.page}';
+    const markers = [
+      '物品',
+      'items',
+      '声望',
+      '点数',
+      '位置',
+      '关系',
+      '选项',
+      '任务',
+      '羁绊',
+      '好友',
+      '罪名',
+      '称号',
+      '当前',
+      '状态效果',
+      '说明',
+    ];
+    return markers.any(text.contains) || value.runes.length > 18 || field.name.runes.length > 10;
   }
 
   static double _scrollTextHeightFor(String value, String mode) {
@@ -1981,6 +2074,30 @@ class UiAssemblyBuilder {
         ),
       );
 
+  static Map<String, dynamic> _sectionTitle({
+    required String id,
+    required String title,
+    required double x,
+    required double y,
+    required double w,
+    required int color,
+    required int layer,
+  }) =>
+      _text(
+        id: id,
+        name: '分节_$title',
+        text: title,
+        x: x,
+        y: y,
+        w: w,
+        h: 20,
+        fontSize: 13,
+        color: color,
+        align: 'left',
+        layer: layer,
+        overflow: 'wrap',
+      );
+
   static Map<String, dynamic> _line({
     required String id,
     required String name,
@@ -2322,7 +2439,7 @@ class UiAssemblyBuilder {
     final lower = name.toLowerCase();
     if (lower.contains('生命') || lower.contains('血') || lower.contains('hp') || lower.contains('health')) return '❤️ $name';
     if (lower.contains('精神') || lower.contains('理智') || lower.contains('san') || lower.contains('mp') || lower.contains('mental')) return '🧠 $name';
-    if (lower.contains('体力') || lower.contains('体能') || lower.contains('stamina') || lower.contains('energy') || lower.contains('ap')) return '⚡ $name';
+    if (lower.contains('体力') || lower.contains('体能') || lower.contains('stamina') || lower.contains('energy')) return '⚡ $name';
     if (lower.contains('饱腹') || lower.contains('饥饿') || lower.contains('food') || lower.contains('hunger') || lower.contains('饱')) return '🍔 $name';
     if (lower.contains('称号') || lower.contains('职业') || lower.contains('身份') || lower.contains('title') || lower.contains('job')) return '👑 $name';
     if (lower.contains('编号') || lower.contains('id') || lower.contains('number')) return '🆔 $name';
@@ -2339,10 +2456,23 @@ class UiAssemblyBuilder {
 
   static int _barColorOf(String name, int fallback) {
     final lower = name.toLowerCase();
-    if (lower.contains('生命') || lower.contains('血') || lower.contains('hp') || lower.contains('health')) return 0xFFE53935; // 红色
-    if (lower.contains('精神') || lower.contains('理智') || lower.contains('san') || lower.contains('mental')) return 0xFF8E24AA; // 紫色
-    if (lower.contains('体力') || lower.contains('精力') || lower.contains('stamina') || lower.contains('energy') || lower.contains('ap')) return 0xFF4CAF50; // 绿色
-    if (lower.contains('饱腹') || lower.contains('饥饿') || lower.contains('food') || lower.contains('hunger')) return 0xFFFF9800; // 橙色
+    if (lower.contains('生命') || lower.contains('血') || lower.contains('hp') || lower.contains('health')) return 0xFFDC143C; // 原卡 HP 红
+    if (lower.contains('法力') || lower.contains('魔力') || lower.contains('mp') || lower.contains('mana')) return 0xFF1E90FF; // 原卡 MP 蓝
+    if (lower.contains('经验') || lower.contains('xp') || lower.contains('exp')) return 0xFFDAA520; // 原卡 XP 金
+    if (lower.contains('精神') || lower.contains('理智') || lower.contains('san') || lower.contains('mental')) return 0xFFD2A8FF; // 紫色
+    if (lower.contains('体力') || lower.contains('精力') || lower.contains('stamina') || lower.contains('energy')) return 0xFF7EE787; // 绿色
+    if (lower.contains('饱腹') || lower.contains('饥饿') || lower.contains('food') || lower.contains('hunger')) return 0xFFF2CC60; // 黄色
+    return fallback;
+  }
+
+  static int _barTrackColorOf(String name, int fallback) {
+    final lower = name.toLowerCase();
+    if (lower.contains('生命') || lower.contains('血') || lower.contains('hp') || lower.contains('health')) return 0xFF581818;
+    if (lower.contains('法力') || lower.contains('魔力') || lower.contains('mp') || lower.contains('mana')) return 0xFF183E58;
+    if (lower.contains('经验') || lower.contains('xp') || lower.contains('exp')) return 0xFF4F3A1B;
+    if (lower.contains('精神') || lower.contains('理智') || lower.contains('san') || lower.contains('mental')) return 0xFF2B163D;
+    if (lower.contains('体力') || lower.contains('精力') || lower.contains('stamina') || lower.contains('energy')) return 0xFF14351C;
+    if (lower.contains('饱腹') || lower.contains('饥饿') || lower.contains('food') || lower.contains('hunger')) return 0xFF4A3610;
     return fallback;
   }
 }
