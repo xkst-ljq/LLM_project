@@ -102,6 +102,41 @@ class AiUiInterpreter {
       throw FormatException('AI UI 方案未通过校验：${validation.errors.join('；')}');
     }
 
+    // ── 补齐缺失的生命周期 ──
+    // AI 对「多生命周期判断」不可靠：可能只输出 opening 漏 scene，
+    // 或只输出 scene 漏 opening。用程序确定性地检查证据，补齐缺失项。
+    // AI 输出什么就保留什么；缺失的用确定性骨架补上，不重复覆盖。
+    final existingModes = plans.map((p) => p.uiMode).toSet();
+    final toAppend = <Map<String, dynamic>>[];
+    if (_canBuildOpeningDeterministically(sourcePack) &&
+        !existingModes.contains('opening')) {
+      onLog?.call('  证据支持 opening 但 AI 未输出，用确定性骨架补齐。');
+      final detStep = traceBuilder?.beginStep(
+        stage: 'deterministic',
+        targetMode: 'opening',
+        label: '确定性补齐/opening',
+      );
+      final opening = _buildDeterministicOpeningJson(sourcePack, characterName);
+      toAppend.add(opening);
+      detStep?.complete(parsedOk: true, parsedJson: opening);
+    }
+    if (_canBuildSceneFallback(sourcePack) &&
+        !existingModes.contains('scene')) {
+      onLog?.call('  证据支持 scene 但 AI 未输出，用确定性骨架补齐。');
+      final detStep = traceBuilder?.beginStep(
+        stage: 'deterministic',
+        targetMode: 'scene',
+        label: '确定性补齐/scene',
+      );
+      final scene = _buildDeterministicSceneJson(sourcePack, characterName);
+      toAppend.add(scene);
+      detStep?.complete(parsedOk: true, parsedJson: scene);
+    }
+    if (toAppend.isNotEmpty) {
+      plans = [...plans, for (final json in toAppend) ...UiDesignPlan.listFromJson(json)];
+      onLog?.call('  已补齐 ${toAppend.length} 个缺失生命周期，共 ${plans.length} 份 UI。');
+    }
+
     return AiUiInterpretation(
       plans: plans,
       validationWarnings: validation.warnings,
