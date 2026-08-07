@@ -103,6 +103,9 @@ class UiSourcePack {
   List<String> choiceTextsForBranchIndex(int branchIndex) =>
       _choiceTextsOf(branchText(branchIndex));
 
+  Map<String, String> playerStatusForBranchIndex(int branchIndex) =>
+      _playerStatusOf(branchText(branchIndex));
+
   bool get hasNarrativeUiWrapper {
     bool scriptWrapsNarrative(UiRegexEvidence e) {
       final find = e.findRegex;
@@ -435,13 +438,34 @@ class UiSourcePack {
     for (var branch = 0; branch < total && branch < 8; branch++) {
       final quests = questSummariesForBranchIndex(branch);
       final choices = choiceTextsForBranchIndex(branch);
-      final status = branchHasPlayerStatus(branch) ? 'yes' : 'no';
+      final statusMap = playerStatusForBranchIndex(branch);
+      final status = statusMap.isEmpty
+          ? 'no'
+          : statusMap.entries
+              .map((entry) => '${entry.key}:${entry.value}')
+              .take(18)
+              .join(', ');
       final questLabel = quests.isEmpty
           ? 'none'
           : quests.map((q) => q.name).take(4).join(' / ');
       final choiceLabel = choices.isEmpty ? 'none' : choices.take(5).join(' / ');
       b.writeln('- branchIndex $branch: PlayerStatus=$status; quests=$questLabel; DQ choices=$choiceLabel');
     }
+  }
+
+  static Map<String, String> _playerStatusOf(String text) {
+    final match = RegExp(r'\{PlayerStatus\|([^}]*)\}').firstMatch(text);
+    if (match == null) return const <String, String>{};
+    final raw = match.group(1) ?? '';
+    final out = <String, String>{};
+    for (final part in raw.split('|')) {
+      final idx = part.indexOf(':');
+      if (idx <= 0) continue;
+      final key = part.substring(0, idx).trim();
+      final value = part.substring(idx + 1).trim();
+      if (key.isNotEmpty && value.isNotEmpty) out[key] = value;
+    }
+    return out;
   }
 
   static List<QuestSummary> _questSummariesOf(String text, String path) {

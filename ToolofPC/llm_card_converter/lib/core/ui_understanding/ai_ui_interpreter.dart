@@ -295,7 +295,8 @@ class AiUiInterpreter {
     final out = <int>{};
     void addWhere(bool Function(UiRegexEvidence e) test) {
       for (var i = 0; i < sourcePack.regexScripts.length; i++) {
-        if (test(sourcePack.regexScripts[i])) out.add(i);
+        final evidence = sourcePack.regexScripts[i];
+        if (evidence.enabled && test(evidence)) out.add(i);
       }
     }
 
@@ -303,7 +304,10 @@ class AiUiInterpreter {
       addWhere((e) => e.findRegex.toLowerCase().contains('alliance') ||
           e.scriptName.contains('阅读界面'));
     } else if (targetMode == 'scene') {
-      out.addAll(scoutPlan.regexIndices);
+      out.addAll(scoutPlan.regexIndices.where((index) =>
+          index >= 0 &&
+          index < sourcePack.regexScripts.length &&
+          sourcePack.regexScripts[index].enabled));
       addWhere((e) {
         final hay = '${e.scriptName}\n${e.findRegex}\n${e.replaceString}'.toLowerCase();
         return hay.contains('alliance') ||
@@ -317,9 +321,12 @@ class AiUiInterpreter {
             e.scriptName.contains('选项');
       });
     } else {
-      out.addAll(scoutPlan.regexIndices);
+      out.addAll(scoutPlan.regexIndices.where((index) =>
+          index >= 0 &&
+          index < sourcePack.regexScripts.length &&
+          sourcePack.regexScripts[index].enabled));
     }
-    return out.take(targetMode == 'opening' ? 2 : 8).toSet();
+    return out.take(targetMode == 'opening' ? 1 : 8).toSet();
   }
 
   static Set<int> _worldBookIndicesForTarget(
@@ -365,7 +372,7 @@ class AiUiInterpreter {
       pluginIndices: scoutPlan.pluginIndices.toSet(),
       htmlIndices: targetMode == 'opening' ? const <int>{} : scoutPlan.htmlIndices.toSet(),
       worldBookIndices: worldBookIndices,
-      includeFullBranches: targetMode == 'scene' || scoutPlan.includeFullBranches,
+      includeFullBranches: false,
     );
     final messages = _buildDetailerMessages(
       sourcePack: sourcePack,
@@ -378,7 +385,7 @@ class AiUiInterpreter {
     onLog?.call('  精修组件 API 大小：${componentDetails.runes.length} 字符；证据切片大小：${detailEvidence.runes.length} 字符');
     onLog?.call('  UI 精修/$targetMode prompt 总大小：${_promptSizeLabel(_messageChars(messages))}');
     if (regexIndices.isNotEmpty || worldBookIndices.isNotEmpty) {
-      onLog?.call('  精修/$targetMode 证据索引：regex=${regexIndices.join(',')} worldbook=${worldBookIndices.join(',')} branches=${targetMode == 'scene' || scoutPlan.includeFullBranches ? 'full' : 'summary'}');
+      onLog?.call('  精修/$targetMode 证据索引：regex=${regexIndices.join(',')} worldbook=${worldBookIndices.join(',')} branches=summary');
     }
     var received = 0;
     final result = await JsonAiClient.completeObjectWithTranscript(
