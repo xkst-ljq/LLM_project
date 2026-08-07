@@ -123,7 +123,7 @@ class UiSourcePack {
   String toPromptText() {
     final b = StringBuffer();
     b.writeln('# Card Basic Fields');
-    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.5');
+    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.6');
     b.writeln('name: $cardName');
     _writeOpeningBranchSummary(b);
     if (_sourceSuggestsProfilePool) {
@@ -151,7 +151,7 @@ class UiSourcePack {
     }
     if (hasNarrativeUiWrapper) {
       b.writeln('\n# Scene message_flow requirement');
-      b.writeln('The source has a narrative/message wrapper regex (for example <Alliance>/<正文>/scrollable content). If you choose uiMode=scene, you MUST declare a base layout page with role="story"/"message"/"narrative" so Dart inserts a real message_flow component. Mentioning message_flow only in notes is not enough. Put DQ choices/free input on that same story page near the message_flow; move low-frequency status/task/friends details into overlay pages when crowded.');
+      b.writeln('The source has a narrative/message wrapper regex (for example <Alliance>/<正文>/scrollable content). If you choose uiMode=scene, you MUST declare a base layout page with role="story"/"message"/"narrative" so Dart inserts a real message_flow component. Mentioning message_flow only in notes is not enough. Put DQ choices/free input on that same story page near the message_flow; move low-frequency status/task/friends details into overlay pages when crowded. Overlay pages must be large enough to contain their fields; use scroll fields for long task/friend text instead of designing a tiny popup.');
     }
     if (description.trim().isNotEmpty) {
       b.writeln('\n## description\n${_clip(description, 5000)}');

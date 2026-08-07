@@ -375,6 +375,7 @@ class UiEngineApiDictionary {
     'overlay_detail': {
       'useWhen': '低频详细信息，如档案、任务、好友列表',
       'mechanism': 'UiDesignPlan layout.pages[].type=overlay + parentPage; compiler emits page_router open_overlay buttons',
+      'sizing': 'overlay 仍在同一 PCB 内渲染；编译器会按 overlay 内容与 scene 最小高度扩展 PCB，并把 story message_flow 拉伸填充。长内容应使用 overflow=scroll。',
     },
   };
 

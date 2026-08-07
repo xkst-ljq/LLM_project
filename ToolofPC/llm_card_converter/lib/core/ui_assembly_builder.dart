@@ -473,16 +473,13 @@ class UiAssemblyBuilder {
       });
     }
 
-    final baseHeights = pageHeights
-        .where((item) => !item.isOverlay)
-        .map((item) => item.height)
-        .toList();
-    final candidateHeights = baseHeights.isNotEmpty
-        ? baseHeights
-        : pageHeights.map((item) => item.height).toList();
-    final pcbH = candidateHeights.isEmpty
+    final allHeights = pageHeights.map((item) => item.height).toList();
+    final hasOverlayPages = pageHeights.any((item) => item.isOverlay);
+    final contentPcbH = allHeights.isEmpty
         ? 96.0
-        : candidateHeights.reduce((a, b) => a > b ? a : b);
+        : allHeights.reduce((a, b) => a > b ? a : b);
+    final minPcbH = mode == 'scene' && hasOverlayPages ? 760.0 : 96.0;
+    final pcbH = contentPcbH.clamp(minPcbH, 2000.0).toDouble();
     for (final page in pages) {
       final elements = page['elements'];
       if (elements is! List) continue;

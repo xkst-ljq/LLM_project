@@ -7,7 +7,7 @@ import '../ui_engine_api/ui_engine_api_dictionary.dart';
 class UiEngineKnowledgeService {
   const UiEngineKnowledgeService._();
 
-  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-07.5';
+  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-07.6';
 
   static String compactPrompt() => '''
 # LLM Project UIEngine capabilities
@@ -48,6 +48,7 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - Reasonable interaction enhancement is allowed when it preserves gameplay: clickable choice text may become sendsMessage buttons; stable schemas may become LLM-updatable persistent panels; details may open in overlay pages. Do not add mechanics that change the original rules.
 - Do not create a sparse standalone “actions/options” tab in scene. Put current choice buttons and free input near the story/message_flow page bottom, or use an overlay/sticky action dock.
 - Use overlay pages for low-frequency detail panels in scene (full status, task board, friends album, dossier) when they would crowd the story page. In layout.pages set {"type":"overlay", "parentPage":"公会大厅"}; Dart will generate open-overlay buttons on the parent page.
+- Overlay pages are still pages inside the same PCB: they must have enough vertical space for all internal components. Use scroll fields for long task/friend text, keep status grids compact, and do not design overlays as tiny badges/popups that cannot contain their fields.
 
 # What to extract from a SillyTavern card
 - regex_scripts findRegex/replaceString may define UI fields and HTML/CSS layout.

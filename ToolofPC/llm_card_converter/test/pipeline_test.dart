@@ -271,13 +271,17 @@ void main() {
 
       final built = UiAssemblyBuilder.buildFromPlan(plan, cardName: '异世界公会');
       final assembly = jsonDecode(built.assemblies.first) as Map;
+      expect((assembly['pcbHeight'] as num).toDouble(), greaterThanOrEqualTo(760));
       final pages = jsonDecode(assembly['pages'] as String) as List;
       expect(pages.any((p) => (p as Map)['type'] == 'overlay'), isTrue);
       final base = pages.cast<Map>().firstWhere((p) => p['name'] == '公会大厅');
       final baseElements = base['elements'] as List;
+      final messageFlow = baseElements.cast<Map>().firstWhere(
+        (e) => (e['module'] as Map)['type'] == 'message_flow',
+      );
       expect(
-        baseElements.any((e) => ((e as Map)['module'] as Map)['type'] == 'message_flow'),
-        isTrue,
+        ((messageFlow['size'] as Map)['height'] as num).toDouble(),
+        greaterThan(320),
       );
       expect(
         baseElements.any((e) {
