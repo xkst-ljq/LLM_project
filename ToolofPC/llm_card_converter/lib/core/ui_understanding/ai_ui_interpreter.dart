@@ -5,6 +5,7 @@ import '../json_ai_client.dart';
 import '../conversion_models.dart';
 import '../app_settings.dart';
 import '../ui_engine_api/ui_engine_api_dictionary.dart';
+import '../ui_translate_trace.dart';
 import 'ui_design_plan.dart';
 import 'ui_plan_validator.dart';
 import 'ui_scout_plan.dart';
@@ -31,6 +32,7 @@ class AiUiInterpreter {
     required Map<String, dynamic> sourceJson,
     required CardConversionResult baseResult,
     void Function(String line)? onLog,
+    UiTranslateTraceBuilder? traceBuilder,
   }) async {
     final sourcePack = UiSourcePackBuilder.build(sourceJson);
     final characterName = baseResult.characterName;
@@ -38,10 +40,22 @@ class AiUiInterpreter {
 
     if (!aiUiRefineEnabled) {
       onLog?.call('  UI 模式：快速稳定（AI UI 精修未启用，使用确定性骨架）');
-      return _deterministicInterpretation(
+      final detStep = traceBuilder?.beginStep(
+        stage: 'deterministic',
+        targetMode: '',
+        label: '确定性骨架（快速模式）',
+      );
+      final interpretation = _deterministicInterpretation(
         sourcePack: sourcePack,
         characterName: characterName,
       );
+      detStep?.complete(
+        parsedOk: true,
+        parsedJson: interpretation.plans.isEmpty
+            ? {'hasUi': false}
+            : {'hasUi': true, 'uiMode': interpretation.plans.first.uiMode},
+      );
+      return interpretation;
     }
 
     onLog?.call('  UI 模式：AI 精修（慢速，可能等待较久）');
@@ -49,16 +63,34 @@ class AiUiInterpreter {
     // Scout 只负责“选证据/选组件”，不是设计本身。对已经能由程序
     // 判定生命周期的卡，跳过 AI Scout，避免 deepseek 等推理模型把
     // 1500 token 花在 reasoning 上导致还没输出 JSON 就 finish=length。
+    final scoutStep = traceBuilder?.beginStep(
+      stage: 'scout',
+      targetMode: '',
+      label: 'UI 侦察',
+    );
     final scoutPlan = _canInferUiTargets(sourcePack)
         ? _buildLocalScoutPlan(sourcePack, characterName)
         : await _runScout(
             sourcePack: sourcePack,
             characterName: characterName,
             onLog: onLog,
+            trace: scoutStep,
           );
     if (_canInferUiTargets(sourcePack)) {
       onLog?.call('  UI 侦察：使用本地证据索引，跳过 AI 侦察请求。');
     }
+    scoutStep?.complete(
+      parsedOk: true,
+      parsedJson: scoutPlan.hasUi
+          ? {
+              'hasUi': true,
+              'uiMode': scoutPlan.uiMode,
+              'components': scoutPlan.components,
+              'regexIndices': scoutPlan.regexIndices,
+              'includeFullBranches': scoutPlan.includeFullBranches,
+            }
+          : {'hasUi': false},
+    );
 
     if (!scoutPlan.hasUi) {
       return AiUiInterpretation(
@@ -115,13 +147,24 @@ class AiUiInterpreter {
 
       if (targetMode == 'opening' && _canBuildOpeningDeterministically(sourcePack)) {
         onLog?.call('  opening 可由证据确定生成：跳过 AI 精修请求，减少等待。');
+        final detStep = traceBuilder?.beginStep(
+          stage: 'deterministic',
+          targetMode: targetMode,
+          label: '确定性生成/opening',
+        );
         json = _buildDeterministicOpeningJson(sourcePack, characterName);
         resultTranscript = _syntheticTranscript(
           targetMode,
           'opening 由分支摘要 + 玩家资料输入机会确定生成，未请求模型。',
           json,
         );
+        detStep?.complete(parsedOk: true, parsedJson: json);
       } else {
+        final detStep = traceBuilder?.beginStep(
+          stage: 'detailer',
+          targetMode: targetMode,
+          label: 'UI 精修/$targetMode',
+        );
         try {
           final result = await _runDetailer(
             sourcePack: sourcePack,
@@ -129,11 +172,13 @@ class AiUiInterpreter {
             characterName: characterName,
             targetMode: targetMode,
             onLog: onLog,
+            trace: detStep,
           );
           json = result.json;
           resultTranscript = result.transcript;
         } catch (e) {
           if (targetMode != 'scene' || !_canBuildSceneFallback(sourcePack)) {
+            detStep?.complete(error: '$e');
             rethrow;
           }
           onLog?.call('  scene AI 精修失败：$e；使用确定性 scene 骨架兜底。');
@@ -143,6 +188,7 @@ class AiUiInterpreter {
             'scene AI 精修失败后由稳定 schema 证据生成兜底骨架：message_flow + 状态/任务/羁绊 overlay。错误：$e',
             json,
           );
+          detStep?.complete(error: '$e', parsedOk: true, parsedJson: json);
         }
       }
 
@@ -769,6 +815,7 @@ class AiUiInterpreter {
     required UiSourcePack sourcePack,
     required String characterName,
     void Function(String line)? onLog,
+    TraceStepBuilder? trace,
   }) async {
     onLog?.call('  UI 侦察（阶段 1）：扫描证据指纹…');
     final scoutPrompt = _buildScoutPrompt(
@@ -784,6 +831,7 @@ class AiUiInterpreter {
       maxTokens: 1500,
       repairAttempts: 1,
       onLog: onLog,
+      trace: trace,
       onDelta: (delta) {
         received += delta.length;
         // 实时进度点：每 ~200 字符输出一个，证明生成在进行、未被超时。
@@ -929,6 +977,7 @@ class AiUiInterpreter {
     required String characterName,
     required String targetMode,
     void Function(String line)? onLog,
+    TraceStepBuilder? trace,
   }) async {
     onLog?.call('  精修检索（阶段 2/$targetMode）：拼装组件 API + 证据切片…');
     final components = _componentsForTarget(sourcePack, scoutPlan, targetMode);
@@ -956,6 +1005,8 @@ class AiUiInterpreter {
     final promptChars = _messageChars(messages);
     onLog?.call('  精修组件 API 大小：${componentDetails.runes.length} 字符；证据切片大小：${detailEvidence.runes.length} 字符');
     onLog?.call('  UI 精修/$targetMode prompt 总大小：${_promptSizeLabel(promptChars)}');
+    trace?.addDiagnostic('prompt 总字符：$promptChars；组件API：${componentDetails.runes.length}；证据切片：${detailEvidence.runes.length}');
+    trace?.addDiagnostic('证据索引 regex=${regexIndices.join(',')} wb=${worldBookIndices.join(',')} branches=summary');
     if (targetMode == 'scene' &&
         promptChars > 16000 &&
         _canBuildSceneFallback(sourcePack)) {
@@ -975,6 +1026,7 @@ class AiUiInterpreter {
       repairAttempts: 1,
       overallAttempts: 1,
       onLog: onLog,
+      trace: trace,
       onDelta: (delta) {
         received += delta.length;
         if (received % 400 < delta.length) {
@@ -983,6 +1035,10 @@ class AiUiInterpreter {
       },
     );
     onLog?.call('  $targetMode 生成完成，已接收 $received 字符');
+    trace?.complete(
+      parsedOk: true,
+      parsedJson: result.json,
+    );
     return result;
   }
 

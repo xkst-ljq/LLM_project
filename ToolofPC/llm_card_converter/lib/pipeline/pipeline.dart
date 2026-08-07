@@ -5,6 +5,7 @@ import '../core/conversion_models.dart';
 import '../core/conversion_service.dart';
 import '../core/ui_assembly_builder.dart';
 import '../core/greeting_sanitizer.dart';
+import '../core/ui_translate_trace.dart';
 import '../core/ui_understanding/ai_ui_interpreter.dart';
 
 /// 三步转译流水线（纯 Dart，平台无关）。
@@ -64,6 +65,12 @@ class CardWorkItem {
   /// UI 理解阶段的 prompt / 知识库 / 原卡证据 / 模型输出，帮助作者追问
   /// AI 为什么这么转、缺少哪些证据。该上下文不参与复制按钮导出。
   List<ChatMessage> uiAiConversationContext = const [];
+
+  /// 第三步 AI UI 理解的完整过程记录（流程观察器用）。
+  ///
+  /// 记录每个 AI 请求的完整 prompt、参数、流式 chunk、AI 原始回复、
+  /// 解析结果、失败原因。转译完成后可供「查看转译过程」页面展示。
+  UiTranslateTrace? uiTranslateTrace;
 
   /// 第三步产出的审计问题清单（不改内容，只给建议）。
   List<RefineIssue> refineIssues = [];
@@ -282,12 +289,15 @@ class ConversionPipeline {
       // 新 UI 转译主线：整张卡证据包 → AI 理解 → UiDesignPlan → 确定性编译。
       // 不再让 RegexUiExtractor 决定“该生成什么 UI”；规则层只保留在
       // AiUiInterpreter 内部用于整理 sourceRef 证据。
+      final traceBuilder = UiTranslateTraceBuilder(cardName: card['name']?.toString() ?? '');
       final interpretation = await AiUiInterpreter.understand(
         sourceJson: src,
         baseResult: base,
         onLog: onLog,
+        traceBuilder: traceBuilder,
       );
       item.uiAiConversationContext = interpretation.conversationContext;
+      item.uiTranslateTrace = traceBuilder.build();
       final built = UiAssemblyBuilder.buildFromPlans(
         interpretation.plans,
         cardName: card['name']?.toString() ?? '',

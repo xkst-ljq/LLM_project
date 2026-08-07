@@ -18,6 +18,7 @@ import 'card_preview.dart';
 import 'compare_page.dart';
 import 'entry_editor_page.dart';
 import 'assembly_preview.dart';
+import 'ui_translate_trace_page.dart';
 
 /// 待转译文件项（主页选择 → 工作区转译）。
 class PickedCard {
@@ -409,6 +410,8 @@ class _WorkspacePageState extends State<WorkspacePage> {
           ),
           const SizedBox(height: 8),
           _aiChatButton(),
+          const SizedBox(height: 8),
+          _traceButton(),
         ],
       ),
     );
@@ -427,6 +430,30 @@ class _WorkspacePageState extends State<WorkspacePage> {
       onPressed: () => _openAiChat(item),
       icon: const Icon(Icons.forum_outlined, size: 18),
       label: const Text('与转译 AI 对话'),
+    );
+  }
+
+  /// 查看转译过程的按钮（流程观察器）。
+  Widget _traceButton() {
+    final item = _items.isNotEmpty && _expanded != null && _expanded! < _items.length
+        ? _items[_expanded!]
+        : null;
+    final trace = item?.work.uiTranslateTrace;
+    if (trace == null || trace.steps.isEmpty) {
+      return OutlinedButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.visibility_outlined, size: 18),
+        label: const Text('转译过程'),
+      );
+    }
+    return OutlinedButton.icon(
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => UiTranslateTracePage(trace: trace),
+        ),
+      ),
+      icon: const Icon(Icons.visibility_outlined, size: 18),
+      label: Text('转译过程（${trace.steps.length} 步）'),
     );
   }
 

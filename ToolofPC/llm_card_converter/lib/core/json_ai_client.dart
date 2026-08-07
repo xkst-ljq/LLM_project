@@ -2,6 +2,7 @@ import 'dart:async';
 import 'api_service.dart';
 import 'ai_json_utils.dart';
 import 'app_settings.dart';
+import 'ui_translate_trace.dart';
 
 class JsonAiResult {
   final Map<String, dynamic> json;
@@ -55,10 +56,27 @@ class JsonAiClient {
     int overallAttempts = 2,
     void Function(String delta)? onDelta,
     void Function(String line)? onLog,
+    TraceStepBuilder? trace,
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
       throw StateError('未配置 AI（请先在设置中填写 API）');
+    }
+
+    // 记录请求消息与参数到 trace。
+    final t = trace;
+    if (t != null) {
+      t.requestMessages
+        ..clear()
+        ..addAll(messages.map(TraceMessage.fromChat));
+      t.setParams(
+        maxTokens: maxTokens,
+        timeout: timeout,
+        jsonMode: true,
+        stream: true,
+      );
+      t.addDiagnostic(
+          'completeObjectWithTranscript: repairAttempts=$repairAttempts overallAttempts=$overallAttempts');
     }
 
     // 云端 API 在 json_object 模式 + 超长上下文下偶发空 content。
@@ -79,6 +97,7 @@ class JsonAiClient {
           repairAttempts: repairAttempts,
           onDelta: onDelta,
           onLog: onLog,
+          trace: trace,
         );
       } catch (e) {
         lastFormatError = [e];
@@ -91,6 +110,7 @@ class JsonAiClient {
         final canRetry = isRetryable && overall + 1 < attempts;
         if (canRetry) {
           onLog?.call('    $taskName：${_shortError(e.toString())}，准备整体重试 ${overall + 2}/$attempts…');
+          trace?.addDiagnostic('整体重试 ${overall + 2}/$attempts：${_shortError(e.toString())}');
           continue;
         }
         if (!isRetryable) rethrow;
@@ -134,10 +154,17 @@ class JsonAiClient {
     required int repairAttempts,
     void Function(String delta)? onDelta,
     void Function(String line)? onLog,
+    TraceStepBuilder? trace,
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
       throw StateError('未配置 AI（请先在设置中填写 API）');
+    }
+
+    // 让流式 onDelta 同时喂给 trace 记录器。
+    void onDeltaAndTrace(String delta) {
+      onDelta?.call(delta);
+      trace?.addStreamingChunk(delta);
     }
 
     String raw;
@@ -149,6 +176,7 @@ class JsonAiClient {
     // 到普通请求——那正是大上下文超时/空返回的高发路径。
     // JSON 解析靠 AiJsonUtils 容错 + 修复轮次兜底。
     String? streamError;
+    final started = DateTime.now();
     try {
       onLog?.call('    $taskName：开始流式请求（timeout=${timeout.inSeconds}s, maxTokens=${maxTokens ?? '默认'}）');
       raw = await _withHeartbeat(
@@ -164,7 +192,7 @@ class JsonAiClient {
             timeout: timeout,
             retryCount: 0,
           ),
-          onDelta: onDelta,
+          onDelta: onDeltaAndTrace,
           onLog: onLog,
         ),
         label: '$taskName/流式',
@@ -172,9 +200,12 @@ class JsonAiClient {
         onLog: onLog,
       );
       onLog?.call('    $taskName：流式完成，收到 ${raw.runes.length} 字符');
+      final chunksSoFar = trace?.streamingChunks.length ?? 0;
+      trace?.addDiagnostic('流式成功，收到 ${raw.runes.length} 字符，chunk 数 $chunksSoFar');
     } catch (e) {
       streamError = e.toString();
       onLog?.call('    $taskName：流式失败/空返回：${_shortError(streamError)}；回落普通请求…');
+      trace?.addDiagnostic('流式失败：${_shortError(streamError)}；回落普通请求');
       // 流式失败（服务不支持 / 网络 / 超时），回落普通请求。
       raw = await _withHeartbeat(
         ApiService.chatMessages(
@@ -196,13 +227,17 @@ class JsonAiClient {
         onLog: onLog,
       );
       onLog?.call('    $taskName：普通请求完成，收到 ${raw.runes.length} 字符');
+      trace?.addDiagnostic('普通回落成功，收到 ${raw.runes.length} 字符');
       onDelta?.call('\n[流式不可用，已回落普通请求] ${_shortError(streamError)}\n');
     }
+    trace?.addDiagnostic('首 token/总等待：${DateTime.now().difference(started).inSeconds}s');
 
     if (raw.trim().isEmpty) {
       onLog?.call('    $taskName：模型返回空文本');
+      trace?.addDiagnostic('模型返回空文本');
     }
     if (ApiService.looksLikeRefusal(raw)) {
+      trace?.addDiagnostic('模型拒绝（审核拦截）');
       throw StateError('模型拒绝执行 $taskName。请尝试更换无审核或本地模型。');
     }
 
@@ -213,10 +248,16 @@ class JsonAiClient {
     final parsed = AiJsonUtils.tryParseObject(raw);
     if (parsed != null) {
       onLog?.call('    $taskName：JSON 解析成功');
+      trace?.complete(
+        rawReply: raw,
+        parsedOk: true,
+        parsedJson: parsed,
+      );
       return JsonAiResult(json: parsed, transcript: transcript);
     }
 
     onLog?.call('    $taskName：收到 ${raw.runes.length} 字符，但不是合法 JSON，准备修复…');
+    trace?.addDiagnostic('收到 ${raw.runes.length} 字符但非合法 JSON，准备修复');
     var lastRaw = raw;
     for (var attempt = 0; attempt < repairAttempts; attempt++) {
       const repairPrompt = ChatMessage(
@@ -225,6 +266,7 @@ class JsonAiClient {
             '不要解释、不要 markdown 代码块、不要新增字段含义。',
       );
       onLog?.call('    $taskName：JSON 修复请求 ${attempt + 1}/$repairAttempts…');
+      trace?.addDiagnostic('JSON 修复请求 ${attempt + 1}/$repairAttempts');
       final repairedRaw = await _withHeartbeat(
         ApiService.chatMessages(
           baseUrl: cfg.baseUrl,
@@ -248,17 +290,31 @@ class JsonAiClient {
         ..add(repairPrompt)
         ..add(ChatMessage(role: 'assistant', content: repairedRaw));
       if (ApiService.looksLikeRefusal(repairedRaw)) {
+        trace?.addDiagnostic('修复被模型拒绝');
         throw StateError('模型拒绝修复 $taskName 的 JSON 输出。');
       }
       final repaired = AiJsonUtils.tryParseObject(repairedRaw);
       if (repaired != null) {
         onLog?.call('    $taskName：JSON 修复成功，收到 ${repairedRaw.runes.length} 字符');
+        trace?.complete(
+          rawReply: repairedRaw,
+          parsedOk: true,
+          parsedJson: repaired,
+          error: streamError,
+        );
         return JsonAiResult(json: repaired, transcript: transcript);
       }
       onLog?.call('    $taskName：JSON 修复仍不可解析，收到 ${repairedRaw.runes.length} 字符');
+      trace?.addDiagnostic('修复仍不可解析，收到 ${repairedRaw.runes.length} 字符');
       lastRaw = repairedRaw;
     }
 
+    trace?.complete(
+      rawReply: lastRaw,
+      parsedOk: false,
+      parseError: '不是合法 JSON 对象',
+      error: streamError ?? 'JSON 解析失败',
+    );
     throw FormatException(
       'AI $taskName 返回的不是合法 JSON 对象。最后一次输出：$lastRaw',
     );
