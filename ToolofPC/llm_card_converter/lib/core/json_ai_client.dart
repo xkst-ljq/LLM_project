@@ -84,11 +84,12 @@ class JsonAiClient {
             (e is Exception &&
                 (e.toString().contains('模型返回为空') ||
                     e.toString().contains('模型未返回内容')));
-        if (isRetryable) {
+        final canRetry = isRetryable && overall + 1 < 2;
+        if (canRetry) {
           onLog?.call('    $taskName：${_shortError(e.toString())}，准备整体重试 ${overall + 2}/2…');
           continue;
         }
-        rethrow;
+        if (!isRetryable) rethrow;
       }
     }
     throw lastFormatError.first!;
