@@ -11,6 +11,7 @@ import '../core/api_service.dart';
 import '../core/app_settings.dart';
 import '../core/conversion_writer.dart';
 import '../core/history_service.dart';
+import '../core/ui_understanding/ui_engine_knowledge_service.dart';
 import '../pipeline/pipeline.dart';
 import '../pipeline/pipeline_runner.dart';
 import 'card_preview.dart';
@@ -397,7 +398,10 @@ class _WorkspacePageState extends State<WorkspacePage> {
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
-      builder: (_) => _AiDebugChatDialog(item: item),
+      builder: (_) => _AiDebugChatDialog(
+        item: item,
+        onRetryUi: () => _retryAiUiStage(item),
+      ),
     );
     if (!mounted) return;
     // 对话保存在 item 内，关闭弹窗不清空；刷新一下按钮/预览状态。
@@ -710,8 +714,12 @@ class _WorkspacePageState extends State<WorkspacePage> {
 
 class _AiDebugChatDialog extends StatefulWidget {
   final _WorkItem item;
+  final Future<void> Function()? onRetryUi;
 
-  const _AiDebugChatDialog({required this.item});
+  const _AiDebugChatDialog({
+    required this.item,
+    this.onRetryUi,
+  });
 
   @override
   State<_AiDebugChatDialog> createState() => _AiDebugChatDialogState();
@@ -770,6 +778,12 @@ class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
       );
     }
   }
+
+  bool get _contextLooksCurrent => widget.item.work.uiAiConversationContext.any(
+        (message) => message.content.contains(
+          UiEngineKnowledgeService.knowledgeVersion,
+        ),
+      );
 
   List<ChatMessage> _requestMessages() {
     return [
@@ -864,10 +878,14 @@ class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
     final context = widget.item.work.uiAiConversationContext;
     if (context.isEmpty) return '（没有可显示的 UI 转译日志 / 隐藏上下文）';
     final title = widget.item.work.current?.characterName ?? widget.item.card.name;
+    final current = _contextLooksCurrent;
+    final versionState = current ? '当前' : '可能过旧（建议点击“重试UI”重新生成上下文）';
     final buffer = StringBuffer()
       ..writeln('LLM Project UI 转译日志')
       ..writeln('卡片：$title')
       ..writeln('上下文消息数：${context.length}')
+      ..writeln('当前知识库版本：${UiEngineKnowledgeService.knowledgeVersion}')
+      ..writeln('上下文版本状态：$versionState')
       ..writeln('说明：这是“与转译 AI 对话”时注入的隐藏上下文；不包含你后续追问的可见对话。')
       ..writeln(''.padLeft(60, '='));
     for (var i = 0; i < context.length; i++) {
@@ -964,14 +982,32 @@ class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
                             style: const TextStyle(
                                 fontSize: 16, fontWeight: FontWeight.bold)),
                         Text(
-                          '已载入本次 UI 转译的隐藏上下文 ${widget.item.work.uiAiConversationContext.length} 条；复制时不会包含上下文。',
-                          maxLines: 1,
+                          _contextLooksCurrent
+                              ? '已载入本次 UI 转译的隐藏上下文 ${widget.item.work.uiAiConversationContext.length} 条；复制时不会包含上下文。'
+                              : '⚠ 当前隐藏上下文可能是旧版知识库生成的；建议点“重试UI”刷新后再追问。',
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, color: Colors.black54),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _contextLooksCurrent
+                                ? Colors.black54
+                                : const Color(0xFFE65100),
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  if (widget.onRetryUi != null)
+                    IconButton(
+                      tooltip: '重试 AI UI 理解，刷新隐藏上下文',
+                      icon: const Icon(Icons.refresh),
+                      onPressed: _busy
+                          ? null
+                          : () async {
+                              await widget.onRetryUi?.call();
+                              if (mounted) setState(() {});
+                            },
+                    ),
                   IconButton(
                     tooltip: '查看 UI 转译日志（隐藏上下文）',
                     icon: const Icon(Icons.article_outlined),
