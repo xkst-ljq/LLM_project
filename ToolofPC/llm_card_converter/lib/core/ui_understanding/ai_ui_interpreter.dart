@@ -49,7 +49,7 @@ class AiUiInterpreter {
       taskName: 'UI 理解',
       messages: messages,
       temperature: 0.12,
-      maxTokens: 6000,
+      maxTokens: 16000,
       onLog: onLog,
       trace: step,
     );
@@ -78,7 +78,7 @@ class AiUiInterpreter {
         taskName: 'UI 理解方案修复',
         messages: [...transcript, repairPrompt],
         temperature: 0.0,
-        maxTokens: 6000,
+        maxTokens: 16000,
         onLog: onLog,
         trace: repairStep,
       );
@@ -530,6 +530,10 @@ class AiUiInterpreter {
 5. 如果 UI 依赖外部 JS 运行时，写入 unsupported，除非证据包中也有静态可还原的字段/动作。
 6. 优先忠实迁移原 UI 语义，再做移动端适配。不要为了好看新增原卡没有的属性。
 7. 使用提供的 columns/density/fill/span 布局意图字段控制空间分配。
+
+【重要】你是推理模型，但本任务不需要任何思考过程。
+直接根据证据输出最终 JSON，不要输出 reasoning_content / 思考链 / 分析过程。
+你的 entire 输出必须是合法 UiDesignPlan JSON，仅此而已。
 ''',
       ),
       ChatMessage(
