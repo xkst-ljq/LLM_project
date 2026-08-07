@@ -96,6 +96,7 @@ class AiUiInterpreter {
 
     // 语义校验失败时，再给模型一次“只修 JSON”的机会。
     if (!validation.ok) {
+      onLog?.call('  UI 方案校验失败：${validation.errors.length} 个错误，准备请求模型修复…');
       final repairPrompt = ChatMessage(
         role: 'user',
         content: '上面的 UiDesignPlan 没通过校验：\n'
@@ -103,9 +104,11 @@ class AiUiInterpreter {
             '请只输出修正后的 JSON 对象。不要新增原卡没有证据的 UI 字段；'
             '如果证据不足，应改为 hasUi=false。',
       );
+      final repairMessages = [...transcript, repairPrompt];
+      onLog?.call('  UI 修复 prompt 大小：${_promptSizeLabel(_messageChars(repairMessages))}');
       result = await JsonAiClient.completeObjectWithTranscript(
         taskName: 'UI 理解方案修复',
-        messages: [...transcript, repairPrompt],
+        messages: repairMessages,
         temperature: 0.0,
         maxTokens: 6000,
         repairAttempts: 1,
@@ -127,6 +130,19 @@ class AiUiInterpreter {
     );
   }
 
+  static int _messageChars(List<ChatMessage> messages) => messages.fold<int>(
+        0,
+        (sum, message) => sum + message.content.runes.length,
+      );
+
+  static String _promptSizeLabel(int chars) {
+    // 真实 token 数由模型 tokenizer 决定，这里只给一个保守范围，
+    // 用于判断“是不是超长上下文导致首 token 慢/空返回”。
+    final low = (chars / 3).ceil();
+    final high = chars;
+    return '$chars 字符（粗略 $low~$high tokens）';
+  }
+
   /// 阶段 1：Scout。输出轻量选型计划。
   static Future<UiScoutPlan> _runScout({
     required UiSourcePack sourcePack,
@@ -138,6 +154,7 @@ class AiUiInterpreter {
       sourcePack: sourcePack,
       characterName: characterName,
     );
+    onLog?.call('  UI 侦察 prompt 大小：${_promptSizeLabel(_messageChars(scoutPrompt))}');
     var received = 0;
     final result = await JsonAiClient.completeObjectWithTranscript(
       taskName: 'UI 侦察',
@@ -219,6 +236,11 @@ class AiUiInterpreter {
       componentDetails: componentDetails,
       detailEvidence: detailEvidence,
     );
+    onLog?.call('  精修组件 API 大小：${componentDetails.runes.length} 字符；证据切片大小：${detailEvidence.runes.length} 字符');
+    onLog?.call('  UI 精修 prompt 总大小：${_promptSizeLabel(_messageChars(messages))}');
+    if (scoutPlan.regexIndices.isNotEmpty || scoutPlan.worldBookIndices.isNotEmpty) {
+      onLog?.call('  精修证据索引：regex=${scoutPlan.regexIndices.join(',')} worldbook=${scoutPlan.worldBookIndices.join(',')} branches=${scoutPlan.includeFullBranches ? 'full' : 'summary'}');
+    }
     var received = 0;
     final result = await JsonAiClient.completeObjectWithTranscript(
       taskName: 'UI 理解',
