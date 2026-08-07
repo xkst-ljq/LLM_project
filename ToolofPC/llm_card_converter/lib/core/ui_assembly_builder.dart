@@ -2414,6 +2414,22 @@ class UiAssemblyBuilder {
         final scroll = f.overflow == 'scroll' || initial.contains('\n');
         final wrap = !scroll && (f.overflow == 'wrap' || initial.runes.length > 18);
         final effOverflow = scroll ? 'scroll' : (wrap ? 'wrap' : 'ellipsis');
+        // scroll 字段需要背景容器（滚动容器_ + 滚动底_），
+        // 与 _renderPlanFieldStandard 保持一致——否则 _expandScrollableContentToFillPage
+        // 拉高 text 时没有对应容器同步放大，导致「容器小、text 溢出」。
+        if (scroll) {
+          elements.add(_surface(
+            id: nextId('el'),
+            name: '滚动容器_${f.name}',
+            x: _Layout.pcbPadding,
+            y: y - _Layout.rowHeight - 2,
+            w: innerW,
+            h: _Layout.rowHeight + cellH + 10,
+            color: _softPanelColor(theme),
+            layer: elements.length + 1,
+            radius: 10,
+          ));
+        }
         elements.add(_text(
           id: nextId('el'),
           name: f.name,
@@ -2431,6 +2447,19 @@ class UiAssemblyBuilder {
           richText: scroll,
           contentPadding: scroll ? 6.0 : null,
         ));
+        if (scroll) {
+          elements.add(_surface(
+            id: nextId('el'),
+            name: '滚动底_${f.name}',
+            x: x + 2,
+            y: y + 1,
+            w: w - 4,
+            h: cellH - 2,
+            color: _innerScrollPanelColor(theme),
+            layer: elements.length + 1,
+            radius: 8,
+          ));
+        }
       }
 
       col += span;
@@ -3118,6 +3147,7 @@ class UiAssemblyBuilder {
   }) =>
       {
         'id': id,
+        'name': module['name'] ?? '', // 顶层冗余存 name：_resizeAlignedBackingSurfaces 等按 element['name'] 匹配
         'isComposite': false,
         'offset': {'x': x, 'y': y},
         'size': {'width': w, 'height': h},
