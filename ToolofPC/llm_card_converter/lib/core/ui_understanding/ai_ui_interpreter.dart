@@ -451,9 +451,9 @@ class AiUiInterpreter {
     }
 
     // XML 标签状态栏：黑曜石法外特区等卡用 <生命>84</生命> 表达状态。
-    // 从 first_mes / 分支文本按标签提取实际值，生成状态字段。
+    // 状态值可能在 first_mes 也可能在 alternate_greetings 分支里，
+    // 因此从所有分支聚合提取，首个非空值优先。
     if (status.isEmpty && sourcePack.hasXmlStatusTags) {
-      final tagValues = sourcePack.tagValuesForBranchIndex(0);
       const xmlLabel = {
         '生命': '生命值', '精神': '精神值', '体力': '体力值', '饱腹': '饱腹值',
         '势力': '势力', '关系': '关系', '声望': '声望', '点数': '点数',
@@ -461,18 +461,25 @@ class AiUiInterpreter {
         'HP': '生命值 (HP)', 'MP': '法力值 (MP)', 'XP': '经验值 (XP)',
       };
       const numericTags = {'生命', '精神', '体力', '饱腹', '声望', '点数', 'HP', 'MP', 'XP'};
-      for (final tag in tagValues.keys) {
-        final label = xmlLabel[tag];
-        if (label == null) continue;
-        final value = tagValues[tag] ?? '';
+      // 聚合所有分支的 XML 标签值。
+      final aggregated = <String, String>{};
+      final branchCount = 1 + sourcePack.alternateGreetings.length;
+      for (var branch = 0; branch < branchCount; branch++) {
+        final vals = sourcePack.tagValuesForBranchIndex(branch);
+        for (final tag in xmlLabel.keys) {
+          final v = vals[tag];
+          if (v == null || v.isEmpty) continue;
+          aggregated.putIfAbsent(tag, () => v);
+        }
+      }
+      for (final tag in aggregated.keys) {
+        final label = xmlLabel[tag]!;
+        final value = aggregated[tag] ?? '';
         if (numericTags.contains(tag)) {
           addNumberField(label, tag, '状态', value.isEmpty ? '0' : value, 'progress');
         } else {
           addTextField(label, tag, '状态', value.isEmpty ? '—' : value, statsPage);
         }
-      }
-      if (tagValues.isEmpty) {
-        // 检测到 XML 状态标签但未在开场白提取到值，仅生成标签结构。
       }
     }
 
