@@ -153,7 +153,9 @@ class AiUiInterpreter {
         messages: repairMessages,
         temperature: 0.0,
         maxTokens: 5000,
+        timeout: const Duration(seconds: 120),
         repairAttempts: 1,
+        overallAttempts: 1,
         onLog: onLog,
       );
       plans = UiDesignPlan.listFromJson(repairResult.json);
@@ -711,8 +713,15 @@ class AiUiInterpreter {
       componentDetails: componentDetails,
       detailEvidence: detailEvidence,
     );
+    final promptChars = _messageChars(messages);
     onLog?.call('  精修组件 API 大小：${componentDetails.runes.length} 字符；证据切片大小：${detailEvidence.runes.length} 字符');
-    onLog?.call('  UI 精修/$targetMode prompt 总大小：${_promptSizeLabel(_messageChars(messages))}');
+    onLog?.call('  UI 精修/$targetMode prompt 总大小：${_promptSizeLabel(promptChars)}');
+    if (targetMode == 'scene' &&
+        promptChars > 16000 &&
+        _canBuildSceneFallback(sourcePack)) {
+      onLog?.call('  scene 精修 prompt 仍超过 16000 字符；为避免长时间空返回，跳过 AI scene 精修并使用确定性骨架。');
+      throw StateError('scene prompt too large ($promptChars chars)');
+    }
     if (regexIndices.isNotEmpty || worldBookIndices.isNotEmpty) {
       onLog?.call('  精修/$targetMode 证据索引：regex=${regexIndices.join(',')} worldbook=${worldBookIndices.join(',')} branches=summary');
     }
@@ -721,9 +730,10 @@ class AiUiInterpreter {
       taskName: 'UI 理解/$targetMode',
       messages: messages,
       temperature: 0.12,
-      maxTokens: targetMode == 'opening' ? 2600 : 4200,
-      timeout: const Duration(seconds: 360),
+      maxTokens: targetMode == 'opening' ? 2200 : 3200,
+      timeout: const Duration(seconds: 90),
       repairAttempts: 1,
+      overallAttempts: 1,
       onLog: onLog,
       onDelta: (delta) {
         received += delta.length;

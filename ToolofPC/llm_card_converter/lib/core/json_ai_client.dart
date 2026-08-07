@@ -31,6 +31,7 @@ class JsonAiClient {
     int? maxTokens,
     Duration timeout = const Duration(seconds: 240),
     int repairAttempts = 1,
+    int overallAttempts = 2,
   }) async {
     return (await completeObjectWithTranscript(
       taskName: taskName,
@@ -39,6 +40,7 @@ class JsonAiClient {
       maxTokens: maxTokens,
       timeout: timeout,
       repairAttempts: repairAttempts,
+      overallAttempts: overallAttempts,
     ))
         .json;
   }
@@ -50,6 +52,7 @@ class JsonAiClient {
     int? maxTokens,
     Duration timeout = const Duration(seconds: 240),
     int repairAttempts = 1,
+    int overallAttempts = 2,
     void Function(String delta)? onDelta,
     void Function(String line)? onLog,
   }) async {
@@ -64,7 +67,8 @@ class JsonAiClient {
     //   2. 普通模式仍失败，再做一次完整重试。
     // 空返回往往是瞬时的，重试成功率很高。
     var lastFormatError = <Object?>[];
-    for (var overall = 0; overall < 2; overall++) {
+    final attempts = overallAttempts < 1 ? 1 : overallAttempts;
+    for (var overall = 0; overall < attempts; overall++) {
       try {
         return await _completeOnce(
           taskName: taskName,
@@ -84,9 +88,9 @@ class JsonAiClient {
             (e is Exception &&
                 (e.toString().contains('模型返回为空') ||
                     e.toString().contains('模型未返回内容')));
-        final canRetry = isRetryable && overall + 1 < 2;
+        final canRetry = isRetryable && overall + 1 < attempts;
         if (canRetry) {
-          onLog?.call('    $taskName：${_shortError(e.toString())}，准备整体重试 ${overall + 2}/2…');
+          onLog?.call('    $taskName：${_shortError(e.toString())}，准备整体重试 ${overall + 2}/$attempts…');
           continue;
         }
         if (!isRetryable) rethrow;
@@ -158,6 +162,7 @@ class JsonAiClient {
             maxTokens: maxTokens,
             jsonMode: false,
             timeout: timeout,
+            retryCount: 0,
           ),
           onDelta: onDelta,
         ),
@@ -181,6 +186,7 @@ class JsonAiClient {
             maxTokens: maxTokens,
             jsonMode: false,
             timeout: timeout,
+            retryCount: 0,
           ),
         ),
         label: '$taskName/普通回落',
@@ -228,6 +234,7 @@ class JsonAiClient {
             maxTokens: maxTokens,
             jsonMode: false,
             timeout: timeout,
+            retryCount: 0,
           ),
         ),
         label: '$taskName/JSON修复',
