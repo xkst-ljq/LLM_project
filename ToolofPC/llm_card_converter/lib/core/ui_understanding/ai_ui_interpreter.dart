@@ -225,6 +225,10 @@ class AiUiInterpreter {
       messages: messages,
       temperature: 0.12,
       maxTokens: 6000,
+      // 阶段 2 上下文大（组件 API + 证据切片），模型首 token 前的
+      // 处理时间长；流式靠 chunk 规避生成中超时，但首 token 等待
+      // 仍受 timeout 限制，放宽到 480s。
+      timeout: const Duration(seconds: 480),
       repairAttempts: 1,
       onDelta: (delta) {
         received += delta.length;

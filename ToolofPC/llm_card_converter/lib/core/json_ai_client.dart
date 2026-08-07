@@ -75,8 +75,13 @@ class JsonAiClient {
         );
       } catch (e) {
         lastFormatError = [e];
-        if (e is FormatException) {
-          // 解析失败：可能是 jsonMode 不兼容导致空输出，整体重试一次。
+        // 可恢复的错误：解析失败（FormatException）或模型返回空。
+        // 这两种都是瞬时的，整体重试一次往往就成功。
+        final isRetryable = e is FormatException ||
+            (e is Exception &&
+                (e.toString().contains('模型返回为空') ||
+                    e.toString().contains('模型未返回内容')));
+        if (isRetryable) {
           continue;
         }
         rethrow;
@@ -85,8 +90,14 @@ class JsonAiClient {
     throw lastFormatError.first!;
   }
 
-  static Future<JsonAiResult> _completeOnce({
-    required String taskName,
+  /// 缩短错误信息，避免把整段 Dio 异常堆栈刷进 UI 日志。
+  static String _shortError(String message) {
+    final firstLine = message.split('\n').first.trim();
+    if (firstLine.length <= 120) return firstLine;
+    return '${firstLine.substring(0, 120)}…';
+  }
+
+  static Future<JsonAiResult> _completeOnce({    required String taskName,
     required List<ChatMessage> messages,
     required double temperature,
     required int? maxTokens,
@@ -102,7 +113,12 @@ class JsonAiClient {
     String raw;
     // 优先流式：模型边生成边吐 chunk，数据包持续到达，
     // `receiveTimeout` 不会在长上下文生成期间触发。
-    // 若服务不支持流式（SSE 解析为空 / 抛异常），自动回落为普通请求。
+    //
+    // 关键：流式请求**不带 response_format**。很多云端 API 不支持
+    // 「stream + json_object」组合，带了会直接 400，导致流式一路回落
+    // 到普通请求——那正是大上下文超时/空返回的高发路径。
+    // JSON 解析靠 AiJsonUtils 容错 + 修复轮次兜底。
+    String? streamError;
     try {
       raw = await ApiService.chatMessagesStreaming(
         baseUrl: cfg.baseUrl,
@@ -112,13 +128,14 @@ class JsonAiClient {
         options: ChatCompleteOptions(
           temperature: temperature,
           maxTokens: maxTokens,
-          jsonMode: true,
+          jsonMode: false,
           timeout: timeout,
         ),
         onDelta: onDelta,
       );
-    } catch (_) {
-      // 流式失败（服务不支持 / jsonMode 不兼容 / 超时），回落普通请求。
+    } catch (e) {
+      streamError = e.toString();
+      // 流式失败（服务不支持 / 网络 / 超时），回落普通请求。
       raw = await ApiService.chatMessages(
         baseUrl: cfg.baseUrl,
         apiKey: cfg.apiKey,
@@ -131,6 +148,7 @@ class JsonAiClient {
           timeout: timeout,
         ),
       );
+      onDelta?.call('\n[流式不可用，已回落普通请求] ${_shortError(streamError)}\n');
     }
 
     if (ApiService.looksLikeRefusal(raw)) {
