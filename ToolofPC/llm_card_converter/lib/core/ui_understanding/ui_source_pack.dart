@@ -548,34 +548,35 @@ class UiSourcePack {
   static String _sanitizePromptEvidence(String raw) {
     var s = raw;
     // 大量 data URI / base64 对 UI 语义几乎没有帮助，却会让 prompt 暴涨。
+    // 注意这里不用 Dart raw string，避免把 `\s` / `\(` 双重转义成字面反斜杠。
     s = s.replaceAll(
-      RegExp(r'''url\((['"]?)data:image[\s\S]*?\1\)''', caseSensitive: false),
+      RegExp("url\\((['\"]?)data:image[\\s\\S]*?\\1\\)", caseSensitive: false),
       'url([omitted data:image])',
     );
     s = s.replaceAll(
-      RegExp(r'''data:image\/[^\s'"<>)]{80,}''', caseSensitive: false),
+      RegExp("data:image/[^\\s'\"<>)]{80,}", caseSensitive: false),
       '[omitted data:image]',
     );
     s = s.replaceAll(
-      RegExp(r'''base64,[A-Za-z0-9+/=]{80,}''', caseSensitive: false),
+      RegExp('base64,[A-Za-z0-9+/=]{80,}', caseSensitive: false),
       'base64,[omitted]',
     );
     // hover / inline JS 不能执行，只保留“有 hover 行为”的事实。
     s = s.replaceAll(
-      RegExp(r'''\s+on(?:mouse|click|input|change|touch)[a-zA-Z]*\s*=\s*"[\s\S]*?"'''),
+      RegExp('\\s+on(?:mouse|click|input|change|touch)[a-zA-Z]*\\s*=\\s*"[\\s\\S]*?"'),
       ' data-event="[omitted inline handler]"',
     );
     s = s.replaceAll(
-      RegExp(r"""\s+on(?:mouse|click|input|change|touch)[a-zA-Z]*\s*=\s*'[\s\S]*?'"""),
+      RegExp("\\s+on(?:mouse|click|input|change|touch)[a-zA-Z]*\\s*=\\s*'[\\s\\S]*?'"),
       ' data-event="[omitted inline handler]" ',
     );
     // CSS 动画关键帧只需记录不支持，正文不需要完整 keyframes。
     s = s.replaceAll(
-      RegExp(r'@keyframes[\s\S]*?}\s*}', caseSensitive: false),
+      RegExp('@keyframes[\\s\\S]*?}\\s*}', caseSensitive: false),
       '@keyframes [omitted]',
     );
     // 压缩空行，避免 HTML/CSS 缩进撑大上下文。
-    s = s.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    s = s.replaceAll(RegExp('\\n{3,}'), '\n\n');
     return s.trim();
   }
 
