@@ -1,13 +1,27 @@
 import '../api_service.dart';
 import '../json_ai_client.dart';
 import '../conversion_models.dart';
+import '../ui_engine_api/ui_engine_api_dictionary.dart';
 import 'ui_design_plan.dart';
 import 'ui_engine_knowledge_service.dart';
 import 'ui_plan_validator.dart';
+import 'ui_scout_plan.dart';
 import 'ui_source_pack.dart';
 import 'ui_source_pack_builder.dart';
 
 /// AI UI 理解阶段：读整张卡的证据包，输出 UiDesignPlan。
+///
+/// 采用两阶段渐进披露（Progressive Disclosure），控制单次请求的上下文量：
+///
+/// 1. **Scout**：只发「能力索引 + 证据指纹摘要」（token 开销远小于完整
+///    证据包），让 AI 先判断有没有 UI、用哪种模式、需要哪些组件、要看
+///    哪些证据的细节，输出轻量 `UiScoutPlan`。
+/// 2. **Detailer**：程序按 Scout 的点名，只把「被选组件的 API 详情 +
+///    被点名的证据切片」拼进第二轮，让 AI 输出完整 `UiDesignPlan`。
+///
+/// 这样首轮请求大幅缩短（解决“给定文本过多导致模型返回空”），
+/// 第二轮也只带真正需要的细节。全程向后兼容：任一阶段失败可回落
+/// 单轮全量（旧行为）。
 class AiUiInterpreter {
   const AiUiInterpreter._();
 
@@ -16,19 +30,61 @@ class AiUiInterpreter {
     required CardConversionResult baseResult,
   }) async {
     final sourcePack = UiSourcePackBuilder.build(sourceJson);
-    final knowledge = UiEngineKnowledgeService.compactPrompt();
-    final messages = _buildMessages(
+    final characterName = baseResult.characterName;
+
+    // ── 阶段 1：Scout —— 轻量选型 ──
+    final scoutPlan = await _runScout(
       sourcePack: sourcePack,
-      knowledge: knowledge,
-      characterName: baseResult.characterName,
+      characterName: characterName,
     );
 
-    var result = await JsonAiClient.completeObjectWithTranscript(
-      taskName: 'UI 理解',
-      messages: messages,
-      temperature: 0.12,
-      maxTokens: 6000,
-      repairAttempts: 1,
+    if (!scoutPlan.hasUi) {
+      return AiUiInterpretation(
+        plans: [
+          UiDesignPlan(
+            hasUi: false,
+            confidence: scoutPlan.confidence,
+            uiMode: scoutPlan.uiMode,
+            uiName: scoutPlan.uiName,
+            evidenceSummary: scoutPlan.evidenceSummary,
+            sourceRefs: const [],
+            visualStyle: const UiPlanStyle(
+              styleName: 'dark terminal',
+              pcbColor: '#15161A',
+              panelColor: '#1E2027',
+              titleColor: '#FFFFFF',
+              labelColor: '#AAB0BC',
+              valueColor: '#E8EDF5',
+              accentColor: '#4FA3D1',
+              buttonBgColor: '#2A3340',
+              barFillColor: '#4FA3D1',
+              barTrackColor: '#2A2D36',
+              borderRadius: 14.0,
+              glow: false,
+            ),
+            layout: const UiPlanLayout(
+              kind: 'single_panel',
+              navigation: 'tabs_and_swipe',
+              pages: [],
+            ),
+            fields: const [],
+            inputs: const [],
+            actions: const [],
+            unsupported: const [],
+            notes: scoutPlan.notes,
+          ),
+        ],
+        validationWarnings: const [],
+        sourcePack: sourcePack,
+        conversationContext: const [],
+      );
+    }
+
+    // ── 阶段 2：Detailer —— 按选型拼细节，输出完整 plan ──
+    var result = await _runDetailer(
+      sourcePack: sourcePack,
+      scoutPlan: scoutPlan,
+      characterName: characterName,
     );
 
     var plans = UiDesignPlan.listFromJson(result.json);
@@ -68,6 +124,194 @@ class AiUiInterpreter {
     );
   }
 
+  /// 阶段 1：Scout。输出轻量选型计划。
+  static Future<UiScoutPlan> _runScout({
+    required UiSourcePack sourcePack,
+    required String characterName,
+  }) async {
+    final scoutPrompt = _buildScoutPrompt(
+      sourcePack: sourcePack,
+      characterName: characterName,
+    );
+    final result = await JsonAiClient.completeObjectWithTranscript(
+      taskName: 'UI 侦察',
+      messages: scoutPrompt,
+      temperature: 0.15,
+      maxTokens: 1500,
+      repairAttempts: 1,
+    );
+    final json = result.json;
+    if (json.containsKey('hasUi') == false) {
+      // 兼容 AI 直接输出完整 plan 的旧行为：hasUi 缺失但有关键字段。
+      if (json.containsKey('fields') ||
+          json.containsKey('actions') ||
+          json.containsKey('inputs')) {
+        return UiScoutPlan(
+          hasUi: true,
+          confidence: 0.6,
+          uiMode: json['uiMode']?.toString() ?? 'extra_companion',
+          uiName: json['uiName']?.toString() ?? 'AI 转译 UI',
+          components: const [],
+          regexIndices: const [],
+          pluginIndices: const [],
+          htmlIndices: const [],
+          worldBookIndices: const [],
+          includeFullBranches: true,
+          evidenceSummary: json['evidenceSummary']?.toString() ?? '',
+          notes: const [],
+        );
+      }
+      return const UiScoutPlan(
+        hasUi: false,
+        confidence: 0.3,
+        uiMode: 'extra_companion',
+        uiName: '无 UI',
+        components: [],
+        regexIndices: [],
+        pluginIndices: [],
+        htmlIndices: [],
+        worldBookIndices: [],
+        evidenceSummary: 'AI 未输出选型字段',
+        notes: [],
+      );
+    }
+    return UiScoutPlan.fromJson(json);
+  }
+
+  /// 阶段 2：Detailer。按 Scout 选型拼「组件 API + 证据切片」，输出完整 plan。
+  static Future<JsonAiResult> _runDetailer({
+    required UiSourcePack sourcePack,
+    required UiScoutPlan scoutPlan,
+    required String characterName,
+  }) async {
+    // 组件 API 详情：只给 Scout 点名的组件。
+    final componentDetails = UiEngineApiDictionary.detailForComponents(
+      scoutPlan.components,
+    );
+    // 证据切片：只给 Scout 点名的正则 / 插件 / HTML / 世界书。
+    final detailEvidence = sourcePack.detailPromptFor(
+      regexIndices: scoutPlan.regexIndices.toSet(),
+      pluginIndices: scoutPlan.pluginIndices.toSet(),
+      htmlIndices: scoutPlan.htmlIndices.toSet(),
+      worldBookIndices: scoutPlan.worldBookIndices.toSet(),
+      includeFullBranches: scoutPlan.includeFullBranches,
+    );
+    final messages = _buildDetailerMessages(
+      sourcePack: sourcePack,
+      characterName: characterName,
+      scoutPlan: scoutPlan,
+      componentDetails: componentDetails,
+      detailEvidence: detailEvidence,
+    );
+    return JsonAiClient.completeObjectWithTranscript(
+      taskName: 'UI 理解',
+      messages: messages,
+      temperature: 0.12,
+      maxTokens: 6000,
+      repairAttempts: 1,
+    );
+  }
+
+  /// Scout 阶段的 prompt：能力索引 + 证据指纹，不含完整证据正文。
+  static List<ChatMessage> _buildScoutPrompt({
+    required UiSourcePack sourcePack,
+    required String characterName,
+  }) {
+    return [
+      const ChatMessage(
+        role: 'system',
+        content: '''
+你是 SillyTavern 角色卡 UI 转译侦察员。你的任务是用最小代价判断原卡是否包含
+可转译 UI，并列出需要进一步查看的证据。只输出一个 JSON 对象，不要 markdown。
+
+输出结构（所有字段都给出）：
+{
+  "hasUi": true/false,
+  "confidence": 0.0~1.0,
+  "uiMode": "opening|scene|extra_sticky|extra_companion",
+  "uiName": "简短 UI 名",
+  "components": ["surface","text","progress", ...],  // 计划使用的引擎组件
+  "regexIndices": [0,1],           // 需要看完整内容的 regex 证据下标
+  "pluginIndices": [],
+  "htmlIndices": [],
+  "worldBookIndices": [],
+  "includeFullBranches": true/false, // 需要完整开场白文本以提取字段/动作时 true
+  "evidenceSummary": "为什么有/没有 UI",
+  "notes": []
+}
+
+规则：
+1. 原卡没有明确 UI 证据时 hasUi=false。
+2. components 只列可能用到的；不确定就少列，detail 阶段会补。
+3. 证据包里有多个 regex 时，用 indices 点名要看哪几个，避免全量塞入。
+4. 只有需要精确提取字段名 / 动作文本时才 includeFullBranches=true。
+''',
+      ),
+      ChatMessage(
+        role: 'user',
+        content: '【能力索引】\n${UiEngineApiDictionary.compactIndexMarkdown()}',
+      ),
+      ChatMessage(
+        role: 'user',
+        content: '【证据指纹】\n${sourcePack.summaryPrompt()}',
+      ),
+      const ChatMessage(
+        role: 'user',
+        content: '请基于以上证据指纹输出侦察 JSON。',
+      ),
+    ];
+  }
+
+  /// Detailer 阶段的 prompt：组件 API 详情 + 按需证据切片。
+  static List<ChatMessage> _buildDetailerMessages({
+    required UiSourcePack sourcePack,
+    required String characterName,
+    required UiScoutPlan scoutPlan,
+    required String componentDetails,
+    required String detailEvidence,
+  }) {
+    return [
+      const ChatMessage(
+        role: 'system',
+        content: '''
+你是 SillyTavern 角色卡 UI 转译架构师。你已确认原卡包含可转译 UI，
+现在基于提供的组件 API 详情与证据切片，输出高层 UiDesignPlan（必要时用
+assemblies 输出多份方案），交给 Dart 编译器生成 UIEngine JSON。
+
+硬性规则：
+1. 只输出一个 JSON 对象，不要 markdown，不要解释。
+2. 不要输出内部 assembly JSON。
+3. 每个字段/动作都应有 sourceRef。没有证据不要生成。
+4. 如果 UI 依赖外部 JS 运行时，写入 unsupported，除非证据中也有静态可还原内容。
+5. 优先忠实迁移原 UI 语义，再做移动端适配。不要为了好看新增原卡没有的属性。
+6. 使用提供的 columns/density/fill/span 布局意图字段控制空间分配。
+''',
+      ),
+      ChatMessage(
+        role: 'user',
+        content: '【选型结果】\n'
+            'uiMode: ${scoutPlan.uiMode}\n'
+            'uiName: ${scoutPlan.uiName}\n'
+            '计划组件: ${scoutPlan.components.join(', ')}\n'
+            '侦察摘要: ${scoutPlan.evidenceSummary}\n'
+            '侦察备注: ${scoutPlan.notes.join('; ')}',
+      ),
+      ChatMessage(
+        role: 'user',
+        content: '【组件 API 详情】\n$componentDetails',
+      ),
+      ChatMessage(
+        role: 'user',
+        content: '【精选证据】\n$detailEvidence',
+      ),
+      ChatMessage(
+        role: 'user',
+        content: '请输出 UiDesignPlan JSON。UiDesignPlan schema 见下方：\n'
+            '${UiEngineKnowledgeService.compactPrompt()}',
+      ),
+    ];
+  }
+
   static UiPlanValidationResult _validatePlans(
     List<UiDesignPlan> plans,
     UiSourcePack sourcePack,
@@ -91,43 +335,6 @@ class AiUiInterpreter {
       errors: errors,
       warnings: warnings,
     );
-  }
-
-  static List<ChatMessage> _buildMessages({
-    required UiSourcePack sourcePack,
-    required String knowledge,
-    required String characterName,
-  }) {
-    return [
-      const ChatMessage(
-        role: 'system',
-        content: '''
-你是 SillyTavern 角色卡 UI 转译架构师。你的任务不是凭空设计 UI，
-而是阅读原卡证据，判断原卡是否确实包含 UI / 状态栏 / 点击选项 / 插件界面，
-再输出高层 UiDesignPlan（必要时用 assemblies 输出多份方案），交给 Dart 编译器生成 LLM Project UIEngine JSON。
-
-硬性规则：
-1. 只输出一个 JSON 对象，不要 markdown，不要解释。
-2. 不要输出内部 assembly JSON。
-3. 原卡没有明确 UI 证据时，必须返回 hasUi=false。
-4. 每个字段/动作都应有 sourceRef。没有证据不要生成。
-5. 如果 UI 依赖外部 JS 运行时，写入 unsupported，除非证据包中也有静态可还原的字段/动作。
-6. 优先忠实迁移原 UI 语义，再做移动端适配。不要为了好看新增原卡没有的属性。
-''',
-      ),
-      ChatMessage(
-        role: 'user',
-        content: '【UIEngine 知识库】\n$knowledge',
-      ),
-      ChatMessage(
-        role: 'user',
-        content: '【待分析角色卡：$characterName】\n${sourcePack.toPromptText()}',
-      ),
-      const ChatMessage(
-        role: 'user',
-        content: '请基于以上证据输出 UiDesignPlan JSON。再次强调：只能输出 JSON 对象。',
-      ),
-    ];
   }
 }
 

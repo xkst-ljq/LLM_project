@@ -492,4 +492,82 @@ Use dictionary paths like `components.text`, `components.progress`, `modes.scene
     for (final item in limitations) b.writeln('- $item');
     return b.toString();
   }
+
+  /// 阶段 2（Detailer）用的组件详情：只输出点名组件的 API。
+  ///
+  /// 比 [compactReferenceForTranslator] 更省——不把 12 个组件全塞给 AI，
+  /// 只给 Scout 阶段挑中的那几类的完整属性 / 指引 / 陷阱。
+  static String detailForComponents(
+    List<String> names, {
+    bool includeModes = true,
+    bool includeLinkerGroups = true,
+  }) {
+    final b = StringBuffer();
+    if (includeModes) {
+      b.writeln('# Mode details');
+      modes.forEach((key, value) {
+        final v = value as Map;
+        b.writeln('- $key: ${v['purpose']} keyAction=${v['keyActionMeaning'] ?? 'none'}');
+      });
+    }
+
+    b.writeln('\n# Component details');
+    final wanted = <String>{};
+    for (final raw in names) {
+      final name = raw.trim();
+      if (name.isEmpty) continue;
+      final direct = components[name];
+      if (direct is Map) {
+        wanted.add(name);
+        continue;
+      }
+      // alias 解析（如 base_box → surface）
+      for (final entry in components.entries) {
+        final value = entry.value;
+        if (value is Map &&
+            (value['aliases'] as List? ?? const []).contains(name)) {
+          wanted.add(entry.key);
+          break;
+        }
+      }
+    }
+    if (wanted.isEmpty) {
+      wanted.addAll(const [
+        'surface',
+        'text',
+        'progress',
+        'button',
+        'input',
+      ]);
+    }
+    for (final key in wanted) {
+      final c = components[key] as Map?;
+      if (c == null) continue;
+      b.writeln('## $key');
+      b.writeln('- purpose: ${c['purpose']}');
+      final props = c['properties'];
+      if (props is Map) b.writeln('- properties: ${props.keys.join(', ')}');
+      final guidance = c['aiGuidance'];
+      if (guidance is List) b.writeln('- aiGuidance: ${guidance.join(' / ')}');
+      final pitfalls = c['pitfalls'];
+      if (pitfalls is List) b.writeln('- pitfalls: ${pitfalls.join(' / ')}');
+      final defaults = c['defaults'];
+      if (defaults is Map) {
+        final lines = defaults.entries
+            .map((e) => '${e.key}=${e.value}')
+            .join(', ');
+        b.writeln('- defaults: $lines');
+      }
+    }
+
+    if (includeLinkerGroups) {
+      b.writeln('\n# Linker scheme groups');
+      linkerSchemes.forEach((key, value) {
+        b.writeln('- $key: ${(value as List).join(', ')}');
+      });
+      b.writeln('\n# Limitations');
+      for (final item in limitations) b.writeln('- $item');
+    }
+    return b.toString();
+  }
 }

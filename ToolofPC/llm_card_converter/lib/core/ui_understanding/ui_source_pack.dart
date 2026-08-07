@@ -260,6 +260,148 @@ class UiSourcePack {
     return b.toString();
   }
 
+  /// 阶段 1（Scout）用的证据摘要：远小于 [toPromptText]。
+  ///
+  /// 只给出每个证据源的“指纹”——路径、名称、布局 hint、长度——
+  /// 让 AI 判断原卡是否有 UI、大致是什么，并点名要看哪些证据的细节。
+  /// 完整内容由 [detailPromptFor] 按需切片，避免一次性全量塞入。
+  String summaryPrompt() {
+    final b = StringBuffer();
+    b.writeln('# Card Evidence Summary (index only)');
+    b.writeln('name: $cardName');
+    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.7');
+    _writeOpeningBranchSummary(b);
+    _writeBranchRuntimeDataSummary(b);
+
+    if (_sourceSuggestsProfilePool) {
+      b.writeln('\n# Player profile input opportunity');
+      b.writeln('Source allows player-specified traits. If opening UI generated, consider profile input fields (name/age/gender/appearance/personality) bound to status_field.');
+    }
+    if (hasQuestSchema || hasChoiceBoxSchema || hasFriendsAlbumSchema) {
+      b.writeln('\n# Stable UI schemas');
+      if (hasQuestSchema) {
+        b.writeln('- quest schema: ${questSummaries.length} quests found. First: ${questSummaries.isEmpty ? 'none' : questSummaries.first.toPromptLine()}');
+      }
+      if (hasChoiceBoxSchema) b.writeln('- DQ_ChoiceBox schema present');
+      if (hasFriendsAlbumSchema) b.writeln('- FriendsAlbumPage schema present');
+    }
+    if (hasNarrativeUiWrapper) b.writeln('\n# Narrative/message wrapper present (scene message_flow candidate)');
+
+    b.writeln('\n# Evidence fingerprints');
+    if (description.trim().isNotEmpty) {
+      b.writeln('- description: ${description.runes.length} chars');
+    }
+    if (firstMes.trim().isNotEmpty) {
+      b.writeln('- first_mes: ${firstMes.runes.length} chars');
+    }
+    if (alternateGreetings.isNotEmpty) {
+      b.writeln('- alternate_greetings: ${alternateGreetings.length} entries');
+    }
+    if (systemPrompt.trim().isNotEmpty) {
+      b.writeln('- system_prompt: ${systemPrompt.runes.length} chars');
+    }
+    for (var i = 0; i < regexScripts.length; i++) {
+      final e = regexScripts[i];
+      final hint = _layoutHintOf(e.replaceString);
+      b.writeln('- regex[$i] ${e.scriptName} enabled=${e.enabled} find=${e.findRegex.runes.length}c replace=${e.replaceString.runes.length}c${hint.isEmpty ? '' : ' | hints: $hint'}');
+    }
+    for (var i = 0; i < pluginScripts.length; i++) {
+      final e = pluginScripts[i];
+      b.writeln('- plugin[$i] enabled=${e.enabled} ${e.content.runes.length}c${e.urls.isEmpty ? '' : ' urls=${e.urls.join(',')}'}');
+    }
+    for (var i = 0; i < htmlSnippets.length; i++) {
+      final e = htmlSnippets[i];
+      b.writeln('- html[$i] ${e.text.runes.length}c');
+    }
+    for (var i = 0; i < actionSnippets.length; i++) {
+      final e = actionSnippets[i];
+      b.writeln('- action[$i] ${e.text}');
+    }
+    for (var i = 0; i < worldBookEvidence.length; i++) {
+      final e = worldBookEvidence[i];
+      b.writeln('- worldbook[$i] ${e.title} ${e.content.runes.length}c');
+    }
+    if (!hasEvidence) b.writeln('\n# UI evidence\nNo explicit UI evidence. Return hasUi=false unless card text clearly describes an interface.');
+    return b.toString();
+  }
+
+  /// 阶段 2（Detailer）用的按需切片。
+  ///
+  /// [regexIndices] / [pluginIndices] / [htmlIndices] / [worldBookIndices] 由
+  /// 阶段 1 的选型指定，只把这些索引对应的完整证据拼进来，其余忽略。
+  /// [includeFullBranches] 为 true 时给出完整开场白文本（选型确认需要
+  /// 精确提取字段/动作时才开）。
+  String detailPromptFor({
+    Set<int> regexIndices = const {},
+    Set<int> pluginIndices = const {},
+    Set<int> htmlIndices = const {},
+    Set<int> worldBookIndices = const {},
+    bool includeFullBranches = false,
+  }) {
+    final b = StringBuffer();
+    b.writeln('# Card Detail Evidence (selected slices)');
+
+    if (includeFullBranches) {
+      b.writeln('\n## first_mes\n${_clip(firstMes, 7000)}');
+      if (alternateGreetings.isNotEmpty) {
+        b.writeln('\n## alternate_greetings');
+        for (var i = 0; i < alternateGreetings.length && i < 8; i++) {
+          b.writeln('\n[$i]\n${_clip(alternateGreetings[i], 2500)}');
+        }
+      }
+    } else {
+      _writeOpeningBranchSummary(b);
+      _writeBranchRuntimeDataSummary(b);
+    }
+
+    if (description.trim().isNotEmpty) {
+      b.writeln('\n## description\n${_clip(description, 3000)}');
+    }
+    if (personality.trim().isNotEmpty) {
+      b.writeln('\n## personality\n${_clip(personality, 1500)}');
+    }
+    if (scenario.trim().isNotEmpty) {
+      b.writeln('\n## scenario\n${_clip(scenario, 1500)}');
+    }
+    if (systemPrompt.trim().isNotEmpty) {
+      b.writeln('\n## system_prompt\n${_clip(systemPrompt, 3000)}');
+    }
+
+    for (final i in regexIndices) {
+      if (i < 0 || i >= regexScripts.length) continue;
+      final e = regexScripts[i];
+      b.writeln('\n## regex[$i] ${e.path} ${e.scriptName} enabled=${e.enabled}');
+      final hint = _layoutHintOf(e.replaceString);
+      if (hint.isNotEmpty) b.writeln('layout hints: $hint');
+      b.writeln('findRegex:\n${_clip(e.findRegex, 2500)}');
+      b.writeln('replaceString:\n${_clip(e.replaceString, 6000)}');
+    }
+    for (final i in pluginIndices) {
+      if (i < 0 || i >= pluginScripts.length) continue;
+      final e = pluginScripts[i];
+      b.writeln('\n## plugin[$i] ${e.path} enabled=${e.enabled}');
+      if (e.urls.isNotEmpty) b.writeln('urls: ${e.urls.join(', ')}');
+      b.writeln(_clip(e.content, 3500));
+    }
+    for (final i in htmlIndices) {
+      if (i < 0 || i >= htmlSnippets.length) continue;
+      final e = htmlSnippets[i];
+      b.writeln('\n## html[$i] ${e.path}\n${_clip(e.text, 3000)}');
+    }
+    for (final i in worldBookIndices) {
+      if (i < 0 || i >= worldBookEvidence.length) continue;
+      final e = worldBookEvidence[i];
+      b.writeln('\n## worldbook[$i] ${e.path} ${e.title}\n${_clip(e.content, 2500)}');
+    }
+    if (actionSnippets.isNotEmpty) {
+      b.writeln('\n# onclick/send actions');
+      for (final e in actionSnippets) {
+        b.writeln('- ${e.path}: ${e.text}');
+      }
+    }
+    return b.toString();
+  }
+
   void _writeOpeningBranchSummary(StringBuffer b) {
     b.writeln('\n# Opening greeting branches (branchIndex mapping)');
     b.writeln('IMPORTANT: opening UI, if generated, should choose among these branch directions.');
