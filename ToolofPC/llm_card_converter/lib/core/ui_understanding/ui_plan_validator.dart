@@ -91,6 +91,8 @@ class UiPlanValidator {
         if (baseDetailPages.isNotEmpty) {
           errors.add('scene 中以下低频详情页不应作为稀疏 base tab 撑大 PCB：${baseDetailPages.join('、')}。请在 layout.pages 中设置 type="overlay" 并指定 parentPage 为正文/message_flow 页面。');
         }
+        final branchDataErrors = _branchRuntimeDataErrors(plan, sourcePack);
+        errors.addAll(branchDataErrors);
       }
       if (plan.uiMode == 'scene' && _hasStandaloneActionPage(plan)) {
         errors.add('scene 不应把行动/选项做成稀疏独立 tab。请把当前选项按钮/自由输入放在故事/message_flow 页面底部，或做成 overlay/sticky 行动坞。');
@@ -351,6 +353,43 @@ class UiPlanValidator {
       if (isLowFrequencyDetail) out.add(title);
     }
     return out;
+  }
+
+  static List<String> _branchRuntimeDataErrors(
+    UiDesignPlan plan,
+    UiSourcePack sourcePack,
+  ) {
+    if (sourcePack.alternateGreetings.isEmpty) return const [];
+    final branch0Quests = sourcePack.questSummariesForBranchIndex(0);
+    if (branch0Quests.isEmpty) return const [];
+
+    final branchesWithoutQuest = <int>[];
+    for (var branch = 1; branch <= sourcePack.alternateGreetings.length; branch++) {
+      if (sourcePack.questSummariesForBranchIndex(branch).isEmpty) {
+        branchesWithoutQuest.add(branch);
+      }
+    }
+    if (branchesWithoutQuest.isEmpty) return const [];
+
+    final taskFields = plan.fields.where((field) {
+      final text = '${field.name} ${field.sourceKey} ${field.group} ${field.page}'.toLowerCase();
+      return text.contains('quest') || text.contains('task') || text.contains('任务');
+    }).toList();
+    if (taskFields.isEmpty) return const [];
+
+    final missing = <String>[];
+    for (final field in taskFields) {
+      final missingBranches = branchesWithoutQuest
+          .where((branch) => !field.branchInitialValues.containsKey('$branch'))
+          .toList();
+      if (missingBranches.isNotEmpty) {
+        missing.add('${field.name}(缺少 branchInitialValues: ${missingBranches.join('/')})');
+      }
+    }
+    if (missing.isEmpty) return const [];
+    return [
+      '多开场分支的任务数据不对称：branch 0 有初始任务，${branchesWithoutQuest.map((b) => 'branch $b').join('、')}没有任务 schema。任务板字段必须用 branchInitialValues 标出无任务/待剧情更新，避免选择第二开场后仍显示第一开场的公会任务：${missing.join('、')}。',
+    ];
   }
 
   static bool _hasStandaloneActionPage(UiDesignPlan plan) {

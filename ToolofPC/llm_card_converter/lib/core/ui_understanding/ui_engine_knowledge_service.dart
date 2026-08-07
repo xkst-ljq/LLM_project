@@ -7,7 +7,7 @@ import '../ui_engine_api/ui_engine_api_dictionary.dart';
 class UiEngineKnowledgeService {
   const UiEngineKnowledgeService._();
 
-  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-07.6';
+  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-07.7';
 
   static String compactPrompt() => '''
 # LLM Project UIEngine capabilities
@@ -49,6 +49,8 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - Do not create a sparse standalone “actions/options” tab in scene. Put current choice buttons and free input near the story/message_flow page bottom, or use an overlay/sticky action dock.
 - Use overlay pages for low-frequency detail panels in scene (full status, task board, friends album, dossier) when they would crowd the story page. In layout.pages set {"type":"overlay", "parentPage":"公会大厅"}; Dart will generate open-overlay buttons on the parent page.
 - Overlay pages are still pages inside the same PCB: they must have enough vertical space for all internal components. Use scroll fields for long task/friend text, keep status grids compact, and do not design overlays as tiny badges/popups that cannot contain their fields.
+- TaskBoard/FriendsAlbum text fields are compiled as status_field dataChannels with LLM write policy, so they can be continuously updated by the LLM. Keep them as scroll fields for dynamic content; do not describe them as dead static text unless the source explicitly forbids updates.
+- For multi-opening cards with asymmetric runtime data, express available data differences with branchInitialValues where possible. Example: if branch 0 has three quest cards but branch 1 has no quest schema, TaskBoard.branchInitialValues["1"] should be “暂无公会任务，待剧情更新”, not a copy of branch 0 tasks.
 
 # What to extract from a SillyTavern card
 - regex_scripts findRegex/replaceString may define UI fields and HTML/CSS layout.

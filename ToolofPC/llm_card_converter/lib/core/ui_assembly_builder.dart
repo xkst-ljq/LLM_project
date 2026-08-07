@@ -1214,7 +1214,9 @@ class UiAssemblyBuilder {
           .toDouble();
       if (delta > 8) {
         final size = candidate['size'];
-        if (size is Map) size['height'] = currentH + delta;
+        final nextH = currentH + delta;
+        if (size is Map) size['height'] = nextH;
+        _resizeAlignedBackingSurfaces(elements, candidate, currentH, nextH);
         for (final index in below) {
           _shiftElementY(elements[index], delta);
         }
@@ -1227,6 +1229,7 @@ class UiAssemblyBuilder {
     if (nextH > currentH + 8) {
       final size = candidate['size'];
       if (size is Map) size['height'] = nextH;
+      _resizeAlignedBackingSurfaces(elements, candidate, currentH, nextH);
     }
   }
 
@@ -1235,6 +1238,40 @@ class UiAssemblyBuilder {
     if (offset is Map) {
       final y = (offset['y'] as num?)?.toDouble() ?? 0.0;
       offset['y'] = y + delta;
+    }
+  }
+
+  static void _resizeAlignedBackingSurfaces(
+    List<Map<String, dynamic>> elements,
+    Map<String, dynamic> candidate,
+    double oldHeight,
+    double newHeight,
+  ) {
+    final candidateOffset = candidate['offset'];
+    final candidateSize = candidate['size'];
+    if (candidateOffset is! Map || candidateSize is! Map) return;
+    final x = (candidateOffset['x'] as num?)?.toDouble() ?? 0.0;
+    final y = (candidateOffset['y'] as num?)?.toDouble() ?? 0.0;
+    final w = (candidateSize['width'] as num?)?.toDouble() ?? 0.0;
+    for (final element in elements) {
+      if (identical(element, candidate)) continue;
+      final module = element['module'];
+      if (module is! Map || module['type']?.toString() != 'surface') continue;
+      final name = element['name']?.toString() ?? '';
+      if (!name.startsWith('滚动底_')) continue;
+      final offset = element['offset'];
+      final size = element['size'];
+      if (offset is! Map || size is! Map) continue;
+      final sx = (offset['x'] as num?)?.toDouble() ?? 0.0;
+      final sy = (offset['y'] as num?)?.toDouble() ?? 0.0;
+      final sw = (size['width'] as num?)?.toDouble() ?? 0.0;
+      final sh = (size['height'] as num?)?.toDouble() ?? 0.0;
+      if ((sx - x).abs() < 0.5 &&
+          (sy - y).abs() < 0.5 &&
+          (sw - w).abs() < 0.5 &&
+          (sh - oldHeight).abs() < 1.0) {
+        size['height'] = newHeight;
+      }
     }
   }
 
@@ -1776,7 +1813,7 @@ class UiAssemblyBuilder {
         sendsMessage: shouldSendMessage,
         keyAction: _shouldMarkKeyAction(mode, a),
         message: shouldSendMessage ? a.sendText.trim() : '',
-        targetBranchIndex: a.branchIndex,
+        targetBranchIndex: mode == 'opening' ? a.branchIndex : null,
         color: theme.accentColor,
       ));
       pressPairs.add((surface: surfaceId, button: buttonId));
@@ -1937,23 +1974,42 @@ class UiAssemblyBuilder {
         current: initialNumber.clamp(min, max).toDouble(),
       ));
     } else {
+      final valueX = (shouldScrollText || needsWideText)
+          ? _Layout.pcbPadding
+          : _Layout.pcbPadding + labelW + 6;
+      final valueY = (shouldScrollText || needsWideText) ? y + _Layout.rowHeight : y;
+      final valueW = (shouldScrollText || needsWideText) ? innerW : innerW - labelW - 6;
+      if (shouldScrollText) {
+        elements.add(_surface(
+          id: nextId('el'),
+          name: '滚动底_${field.name}',
+          x: valueX,
+          y: valueY,
+          w: valueW,
+          h: valueHeight,
+          color: _softPanelColor(theme),
+          layer: elements.length + 1,
+          radius: 9,
+        ));
+      }
       elements.add(_text(
         id: nextId('el'),
         name: field.name,
         text: initial.isEmpty ? '—' : initial,
-        x: (shouldScrollText || needsWideText)
-            ? _Layout.pcbPadding
-            : _Layout.pcbPadding + labelW + 6,
-        y: (shouldScrollText || needsWideText) ? y + _Layout.rowHeight : y,
-        w: (shouldScrollText || needsWideText) ? innerW : innerW - labelW - 6,
+        x: valueX,
+        y: valueY,
+        w: valueW,
         h: valueHeight,
-        fontSize: mode == 'extra_companion' ? 11 : 12,
+        fontSize: shouldScrollText
+            ? _scrollTextFontSizeFor(field, initial, mode)
+            : (mode == 'extra_companion' ? 11 : 12),
         color: theme.valueColor,
         align: field.textAlign,
         layer: elements.length + 1,
         statusFieldId: fieldId,
         overflow: effectiveOverflow,
         richText: shouldScrollText,
+        contentPadding: shouldScrollText ? 8.0 : null,
       ));
     }
     return y +
@@ -2263,6 +2319,31 @@ class UiAssemblyBuilder {
       '说明',
     ];
     return markers.any(text.contains) || value.runes.length > 18 || field.name.runes.length > 10;
+  }
+
+  static int _softPanelColor(UiVisualTheme theme) {
+    // 半透明底色在 JSON 里仍是 ARGB；运行时叠在 PCB/底板上，给任务板等
+    // 长文本一个明确容器面，避免看起来像漂浮文字。
+    return (theme.panelColor & 0x00FFFFFF) | 0xCC000000;
+  }
+
+  static bool _isTaskBoardField(UiPlanField field) {
+    final text = '${field.name} ${field.sourceKey} ${field.group} ${field.page}'.toLowerCase();
+    return text.contains('quest') || text.contains('task') || text.contains('任务');
+  }
+
+  static double _scrollTextFontSizeFor(
+    UiPlanField field,
+    String value,
+    String mode,
+  ) {
+    if (mode == 'extra_companion') return 10.5;
+    if (_isTaskBoardField(field)) return value.runes.length > 240 ? 10.8 : 11.2;
+    final text = '${field.name} ${field.sourceKey} ${field.group}'.toLowerCase();
+    if (text.contains('friends') || text.contains('album') || text.contains('羁绊') || text.contains('好友')) {
+      return 11.0;
+    }
+    return 11.5;
   }
 
   static double _scrollTextHeightFor(String value, String mode) {
@@ -2670,6 +2751,7 @@ class UiAssemblyBuilder {
     String? statusFieldId,
     String overflow = 'ellipsis',
     bool richText = false,
+    double? contentPadding,
   }) =>
       _element(
         id: id,
@@ -2690,6 +2772,7 @@ class UiAssemblyBuilder {
             'textAlign': align,
             'overflow': overflow,
             'richText': richText,
+            if (contentPadding != null) 'contentPadding': contentPadding,
             if (statusFieldId != null)
               'dataChannel': _channel(
                 label: name,

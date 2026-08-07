@@ -69,6 +69,35 @@ class UiSourcePack {
         .toList();
   }
 
+  String branchText(int branchIndex) {
+    if (branchIndex == 0) return firstMes;
+    final altIndex = branchIndex - 1;
+    if (altIndex >= 0 && altIndex < alternateGreetings.length) {
+      return alternateGreetings[altIndex];
+    }
+    return '';
+  }
+
+  bool branchHasPlayerStatus(int branchIndex) {
+    final text = branchText(branchIndex);
+    return text.contains('{PlayerStatus|') ||
+        RegExp(r'<\s*status\s+bar\s*>', caseSensitive: false).hasMatch(text);
+  }
+
+  List<QuestSummary> questSummariesForBranchIndex(int branchIndex) {
+    final path = branchIndex == 0
+        ? 'data.first_mes'
+        : 'data.alternate_greetings[${branchIndex - 1}]';
+    final seen = <String>{};
+    return _questSummariesOf(branchText(branchIndex), path)
+        .where((q) => !q.isTemplatePlaceholder)
+        .where((q) => seen.add('${q.name}|${q.description}'))
+        .toList();
+  }
+
+  List<String> choiceTextsForBranchIndex(int branchIndex) =>
+      _choiceTextsOf(branchText(branchIndex));
+
   bool get hasNarrativeUiWrapper {
     bool scriptWrapsNarrative(UiRegexEvidence e) {
       final find = e.findRegex;
@@ -123,9 +152,10 @@ class UiSourcePack {
   String toPromptText() {
     final b = StringBuffer();
     b.writeln('# Card Basic Fields');
-    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.6');
+    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.7');
     b.writeln('name: $cardName');
     _writeOpeningBranchSummary(b);
+    _writeBranchRuntimeDataSummary(b);
     if (_sourceSuggestsProfilePool) {
       b.writeln('\n# Player profile input opportunity');
       b.writeln('The source says player traits may be specified or randomly generated. If opening UI is generated, add multiple profile input fields bound to status_field, e.g. 姓名/年龄/性别/外貌/性格/身份职业倾向/补充设定. Leave them optional; blank means the original random-generation rule still applies.');
@@ -151,7 +181,7 @@ class UiSourcePack {
     }
     if (hasNarrativeUiWrapper) {
       b.writeln('\n# Scene message_flow requirement');
-      b.writeln('The source has a narrative/message wrapper regex (for example <Alliance>/<正文>/scrollable content). If you choose uiMode=scene, you MUST declare a base layout page with role="story"/"message"/"narrative" so Dart inserts a real message_flow component. Mentioning message_flow only in notes is not enough. Put DQ choices/free input on that same story page near the message_flow; move low-frequency status/task/friends details into overlay pages when crowded. Overlay pages must be large enough to contain their fields; use scroll fields for long task/friend text instead of designing a tiny popup.');
+      b.writeln('The source has a narrative/message wrapper regex (for example <Alliance>/<正文>/scrollable content). If you choose uiMode=scene, you MUST declare a base layout page with role="story"/"message"/"narrative" so Dart inserts a real message_flow component. Mentioning message_flow only in notes is not enough. Put DQ choices/free input on that same story page near the message_flow; move low-frequency status/task/friends details into overlay pages when crowded. Overlay pages must be large enough to contain their fields; use scroll fields for long task/friend text instead of designing a tiny popup. TaskBoard/FriendsAlbum text fields are compiled with status_field dataChannel, so they are LLM-updatable persistent streams, not dead static labels.');
     }
     if (description.trim().isNotEmpty) {
       b.writeln('\n## description\n${_clip(description, 5000)}');
@@ -248,6 +278,23 @@ class UiSourcePack {
       }
     }
     if (all.length > 8) b.writeln('- ... omitted ${all.length - 8} extra branches');
+  }
+
+  void _writeBranchRuntimeDataSummary(StringBuffer b) {
+    if (alternateGreetings.isEmpty) return;
+    b.writeln('\n# Branch-specific runtime UI data availability');
+    b.writeln('Use this to avoid silently reusing branch 0 task/status data for all openings. If a persistent scene field is initialized from branch 0 but another branch lacks or differs in that schema, set fields[].branchInitialValues for that branch (for example TaskBoard branch 1 = 暂无公会任务/待剧情更新), or explain the unsupported difference.');
+    final total = 1 + alternateGreetings.length;
+    for (var branch = 0; branch < total && branch < 8; branch++) {
+      final quests = questSummariesForBranchIndex(branch);
+      final choices = choiceTextsForBranchIndex(branch);
+      final status = branchHasPlayerStatus(branch) ? 'yes' : 'no';
+      final questLabel = quests.isEmpty
+          ? 'none'
+          : quests.map((q) => q.name).take(4).join(' / ');
+      final choiceLabel = choices.isEmpty ? 'none' : choices.take(5).join(' / ');
+      b.writeln('- branchIndex $branch: PlayerStatus=$status; quests=$questLabel; DQ choices=$choiceLabel');
+    }
   }
 
   static List<QuestSummary> _questSummariesOf(String text, String path) {

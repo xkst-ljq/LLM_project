@@ -89,6 +89,7 @@ UiEngineApiDictionary.compactReferenceForTranslator()
 - 只在 `notes` 里写“建议使用 message_flow”不会生成组件。
 - 低频详情页可用：`{"title":"任务板", "role":"tasks", "type":"overlay", "parentPage":"公会大厅"}`。编译器会在父页面生成打开叠加页的入口按钮。
 - overlay 仍然在同一 PCB 内渲染，不能设计成放不下内部字段的小浮窗；编译器会用 overlay 内容高度和 scene 最小高度扩展 PCB，并把 story 页的 `message_flow` 拉伸填满，长任务/好友文本应继续用 `overflow=scroll`。
+- `TaskBoard` / `FriendsAlbum` 这类 scroll text 会编译为 `status_field` dataChannel，可由 LLM 持续替换更新；多开场分支数据不对称时应用 `branchInitialValues` 表达“暂无任务/待剧情更新”等分支初始差异。
 - 正文页应保留 `message_flow`、当前选项按钮和自由输入；完整状态栏、任务板、羁绊名录等拥挤内容应优先放入 overlay。
 
 ## 后续扩展方式
