@@ -216,7 +216,7 @@ class UiSourcePack {
       b.writeln('\n## mes_example\n${_clip(mesExample, 3000)}');
     }
     if (systemPrompt.trim().isNotEmpty) {
-      b.writeln('\n## system_prompt\n${_clip(systemPrompt, 3000)}');
+      b.writeln('\n## system_prompt\n${_clip(systemPrompt, 1200)}');
     }
 
     if (regexScripts.isNotEmpty) {
@@ -363,16 +363,16 @@ class UiSourcePack {
     }
 
     if (description.trim().isNotEmpty) {
-      b.writeln('\n## description\n${_clip(description, 3000)}');
+      b.writeln('\n## description\n${_clip(description, 1600)}');
     }
     if (personality.trim().isNotEmpty) {
-      b.writeln('\n## personality\n${_clip(personality, 1500)}');
+      b.writeln('\n## personality\n${_clip(personality, 800)}');
     }
     if (scenario.trim().isNotEmpty) {
-      b.writeln('\n## scenario\n${_clip(scenario, 1500)}');
+      b.writeln('\n## scenario\n${_clip(scenario, 800)}');
     }
     if (systemPrompt.trim().isNotEmpty) {
-      b.writeln('\n## system_prompt\n${_clip(systemPrompt, 3000)}');
+      b.writeln('\n## system_prompt\n${_clip(systemPrompt, 1200)}');
     }
 
     for (final i in regexIndices) {
@@ -381,8 +381,8 @@ class UiSourcePack {
       b.writeln('\n## regex[$i] ${e.path} ${e.scriptName} enabled=${e.enabled}');
       final hint = _layoutHintOf(e.replaceString);
       if (hint.isNotEmpty) b.writeln('layout hints: $hint');
-      b.writeln('findRegex:\n${_clip(_sanitizePromptEvidence(e.findRegex), 1800)}');
-      b.writeln('replaceString:\n${_clip(_sanitizePromptEvidence(e.replaceString), 2600)}');
+      b.writeln('findRegex:\n${_clip(_sanitizePromptEvidence(e.findRegex), 1000)}');
+      b.writeln('replaceString:\n${_clip(_sanitizePromptEvidence(e.replaceString), 1400)}');
     }
     for (final i in pluginIndices) {
       if (i < 0 || i >= pluginScripts.length) continue;
@@ -394,12 +394,12 @@ class UiSourcePack {
     for (final i in htmlIndices) {
       if (i < 0 || i >= htmlSnippets.length) continue;
       final e = htmlSnippets[i];
-      b.writeln('\n## html[$i] ${e.path}\n${_clip(_sanitizePromptEvidence(e.text), 1800)}');
+      b.writeln('\n## html[$i] ${e.path}\n${_clip(_sanitizePromptEvidence(e.text), 1000)}');
     }
     for (final i in worldBookIndices) {
       if (i < 0 || i >= worldBookEvidence.length) continue;
       final e = worldBookEvidence[i];
-      b.writeln('\n## worldbook[$i] ${e.path} ${e.title}\n${_clip(_sanitizePromptEvidence(e.content), 1800)}');
+      b.writeln('\n## worldbook[$i] ${e.path} ${e.title}\n${_clip(_sanitizePromptEvidence(e.content), 1000)}');
     }
     if (actionSnippets.isNotEmpty) {
       b.writeln('\n# onclick/send actions');

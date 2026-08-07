@@ -293,40 +293,48 @@ class AiUiInterpreter {
     String targetMode,
   ) {
     final out = <int>{};
-    void addWhere(bool Function(UiRegexEvidence e) test) {
+
+    int? firstEnabledWhere(bool Function(UiRegexEvidence e) test) {
       for (var i = 0; i < sourcePack.regexScripts.length; i++) {
         final evidence = sourcePack.regexScripts[i];
-        if (evidence.enabled && test(evidence)) out.add(i);
+        if (evidence.enabled && test(evidence)) return i;
       }
+      return null;
+    }
+
+    void addFirst(bool Function(UiRegexEvidence e) test) {
+      final index = firstEnabledWhere(test);
+      if (index != null) out.add(index);
+    }
+
+    bool hasAny(UiRegexEvidence e, List<String> needles) {
+      final hay = '${e.scriptName}\n${e.findRegex}\n${e.replaceString}'.toLowerCase();
+      return needles.any((needle) => hay.contains(needle.toLowerCase()));
     }
 
     if (targetMode == 'opening') {
-      addWhere((e) => e.findRegex.toLowerCase().contains('alliance') ||
-          e.scriptName.contains('阅读界面'));
-    } else if (targetMode == 'scene') {
-      out.addAll(scoutPlan.regexIndices.where((index) =>
-          index >= 0 &&
-          index < sourcePack.regexScripts.length &&
-          sourcePack.regexScripts[index].enabled));
-      addWhere((e) {
-        final hay = '${e.scriptName}\n${e.findRegex}\n${e.replaceString}'.toLowerCase();
-        return hay.contains('alliance') ||
-            hay.contains('playerstatus') ||
-            hay.contains('dq_choicebox') ||
-            hay.contains('friendsalbumpage') ||
-            hay.contains('quest:') ||
-            e.scriptName.contains('任务') ||
-            e.scriptName.contains('状态栏') ||
-            e.scriptName.contains('好友') ||
-            e.scriptName.contains('选项');
-      });
-    } else {
-      out.addAll(scoutPlan.regexIndices.where((index) =>
-          index >= 0 &&
-          index < sourcePack.regexScripts.length &&
-          sourcePack.regexScripts[index].enabled));
+      addFirst((e) => hasAny(e, const ['<Alliance>', 'alliance', '阅读界面']));
+      return out.take(1).toSet();
     }
-    return out.take(targetMode == 'opening' ? 1 : 8).toSet();
+
+    if (targetMode == 'scene') {
+      // 每类证据只取一个代表脚本，避免 quest 皮肤 1/2/3、多个视觉变体同时塞入。
+      addFirst((e) => hasAny(e, const ['<Alliance>', 'alliance', '阅读界面']));
+      addFirst((e) => hasAny(e, const ['PlayerStatus', '玩家状态栏', '状态栏']));
+      addFirst((e) => hasAny(e, const ['{quest:', r'\{quest:', '任务界面']));
+      addFirst((e) => hasAny(e, const ['DQ_ChoiceBox', '玩家选项栏', '选项栏']));
+      addFirst((e) => hasAny(e, const ['FriendsAlbumPage', '好友列表', '羁绊']));
+      return out.take(5).toSet();
+    }
+
+    for (final index in scoutPlan.regexIndices) {
+      if (index >= 0 &&
+          index < sourcePack.regexScripts.length &&
+          sourcePack.regexScripts[index].enabled) {
+        out.add(index);
+      }
+    }
+    return out.take(5).toSet();
   }
 
   static Set<int> _worldBookIndicesForTarget(
@@ -335,20 +343,24 @@ class AiUiInterpreter {
     String targetMode,
   ) {
     if (targetMode == 'opening') return const {};
-    final out = <int>{...scoutPlan.worldBookIndices};
-    for (var i = 0; i < sourcePack.worldBookEvidence.length; i++) {
-      final e = sourcePack.worldBookEvidence[i];
-      final hay = '${e.title}\n${e.content}'.toLowerCase();
-      if (hay.contains('quest:') ||
-          hay.contains('playerstatus') ||
-          hay.contains('friendsalbumpage') ||
-          e.title.contains('任务') ||
-          e.title.contains('状态') ||
-          e.title.contains('羁绊')) {
-        out.add(i);
+    final out = <int>{};
+
+    int? firstWhere(bool Function(WorldBookEvidence e) test) {
+      for (var i = 0; i < sourcePack.worldBookEvidence.length; i++) {
+        if (test(sourcePack.worldBookEvidence[i])) return i;
       }
+      return null;
     }
-    return out.take(8).toSet();
+
+    void addFirst(bool Function(WorldBookEvidence e) test) {
+      final index = firstWhere(test);
+      if (index != null) out.add(index);
+    }
+
+    addFirst((e) => e.content.contains('{quest:') || e.title.contains('任务界面'));
+    addFirst((e) => e.content.contains('PlayerStatus') || e.title.contains('玩家状态'));
+    addFirst((e) => e.content.contains('FriendsAlbumPage') || e.title.contains('羁绊'));
+    return out.take(3).toSet();
   }
 
   /// 阶段 2：Detailer。按生命周期目标拼「组件 API + 证据切片」，输出单个 plan。
