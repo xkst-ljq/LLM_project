@@ -249,7 +249,11 @@ class ApiService {
     }
 
     final buffer = StringBuffer();
+    // ResponseBody.stream 是 Stream<Uint8List>，而 utf8.decoder 是
+    // StreamTransformer<List<int>, String>。Dio 5.x 的泛型收窄会让
+    // 直接 transform(utf8.decoder) 报类型不匹配，先 cast<List<int>>()。
     final lines = responseBody.stream
+        .cast<List<int>>()
         .transform(utf8.decoder)
         .transform(const LineSplitter());
     await for (final line in lines) {

@@ -839,11 +839,10 @@ class _AiDebugChatDialogState extends State<_AiDebugChatDialog> {
         role: 'assistant',
         content: '请求失败：$e',
       ));
-    } finally {
-      if (!mounted) return;
-      setState(() => _busy = false);
-      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
     }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
   }
 
   Future<void> _copyVisibleConversation() async {

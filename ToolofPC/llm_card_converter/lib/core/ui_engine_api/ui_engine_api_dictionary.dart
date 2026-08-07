@@ -489,7 +489,9 @@ Use dictionary paths like `components.text`, `components.progress`, `modes.scene
       b.writeln('- $key: ${(value as List).join(', ')}');
     });
     b.writeln('\n# Limitations');
-    for (final item in limitations) b.writeln('- $item');
+    for (final item in limitations) {
+      b.writeln('- $item');
+    }
     return b.toString();
   }
 
@@ -566,7 +568,9 @@ Use dictionary paths like `components.text`, `components.progress`, `modes.scene
         b.writeln('- $key: ${(value as List).join(', ')}');
       });
       b.writeln('\n# Limitations');
-      for (final item in limitations) b.writeln('- $item');
+      for (final item in limitations) {
+        b.writeln('- $item');
+      }
     }
     return b.toString();
   }

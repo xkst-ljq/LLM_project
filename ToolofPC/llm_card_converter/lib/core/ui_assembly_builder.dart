@@ -1873,7 +1873,7 @@ class UiAssemblyBuilder {
       final inputLabel = input.name.trim().isEmpty ? '输入 ${i + 1}' : input.name.trim();
       elements.add(_text(
         id: nextId('el'),
-        name: '${inputLabel}标签',
+        name: '$inputLabel标签',
         text: inputLabel,
         x: _Layout.pcbPadding,
         y: y,
@@ -3119,7 +3119,7 @@ class UiAssemblyBuilder {
             'textAlign': align,
             'overflow': overflow,
             'richText': richText,
-            if (contentPadding != null) 'contentPadding': contentPadding,
+            'contentPadding': ?contentPadding,
             if (statusFieldId != null)
               'dataChannel': _channel(
                 label: name,
@@ -3306,7 +3306,7 @@ class UiAssemblyBuilder {
             'visualMode': 'filled',
             'multiline': false,
             if (sendsMessage) 'sendsMessage': true,
-            if (dataChannel != null) 'dataChannel': dataChannel,
+            'dataChannel': ?dataChannel,
           },
         ),
       );

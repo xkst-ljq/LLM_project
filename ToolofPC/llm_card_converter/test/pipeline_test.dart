@@ -343,7 +343,7 @@ void main() {
 
   group('Layout regression - no overflow / no big blank', () {
     /// 编译 plan 并返回 (pcbW, pcbH, pages)。
-    (double, double, List<Map>) _compile(Map<String, dynamic> planJson) {
+    (double, double, List<Map>) compilePlan(Map<String, dynamic> planJson) {
       final plan = UiDesignPlan.fromJson(planJson);
       final built = UiAssemblyBuilder.buildFromPlan(plan, cardName: '测试卡');
       final asm = jsonDecode(built.assemblies.first) as Map;
@@ -354,7 +354,7 @@ void main() {
     }
 
     /// 统计可见元素中超出 PCB 边界的数量。
-    int _overflowCount(List<Map> pages, double pcbW, double pcbH) {
+    int overflowCount(List<Map> pages, double pcbW, double pcbH) {
       var n = 0;
       for (final page in pages) {
         for (final e in (page['elements'] as List).cast<Map>()) {
@@ -379,7 +379,7 @@ void main() {
     }
 
     /// 每页底部空白占比（百分比）。
-    List<double> _blankRatios(List<Map> pages, double pcbH) {
+    List<double> blankRatios(List<Map> pages, double pcbH) {
       final out = <double>[];
       for (final page in pages) {
         double maxBottom = 0;
@@ -403,7 +403,7 @@ void main() {
     }
 
     test('two-column attribute grid does not overflow and fills page', () {
-      final (pcbW, pcbH, pages) = _compile({
+      final (pcbW, pcbH, pages) = compilePlan({
         'hasUi': true,
         'confidence': 0.9,
         'uiMode': 'scene',
@@ -463,9 +463,9 @@ void main() {
         'notes': [],
       });
       expect(pcbW, 360);
-      expect(_overflowCount(pages, pcbW, pcbH), 0,
+      expect(overflowCount(pages, pcbW, pcbH), 0,
           reason: '两列属性网格不应有任何元素溢出 PCB');
-      final blanks = _blankRatios(pages, pcbH);
+      final blanks = blankRatios(pages, pcbH);
       for (final blank in blanks) {
         expect(blank, lessThan(25),
             reason: '页面底部空白应小于 25%（此前可达 60%+）');
@@ -473,7 +473,7 @@ void main() {
     });
 
     test('companion panel compacts instead of leaving huge blank', () {
-      final (pcbW, pcbH, pages) = _compile({
+      final (pcbW, pcbH, pages) = compilePlan({
         'hasUi': true,
         'confidence': 0.9,
         'uiMode': 'extra_companion',
@@ -581,8 +581,8 @@ void main() {
       // 内容驱动高度：不再为矮页拔高 PCB，整体应明显低于旧版 490。
       expect(pcbH, lessThan(400),
           reason: '伴生面板高度应由内容决定，不应被拔高到接近 490');
-      expect(_overflowCount(pages, pcbW, pcbH), 0);
-      for (final blank in _blankRatios(pages, pcbH)) {
+      expect(overflowCount(pages, pcbW, pcbH), 0);
+      for (final blank in blankRatios(pages, pcbH)) {
         expect(blank, lessThan(25));
       }
     });
