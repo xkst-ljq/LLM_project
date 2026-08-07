@@ -569,6 +569,7 @@ class UiAssemblyBuilder {
       _expandScrollableContentToFillPage(
         elements.cast<Map<String, dynamic>>(),
         pcbH: pcbH,
+        pcbW: pcbW,
       );
       // 几何自检：把所有元素收敛到 PCB 内边距内，超宽文本转 wrap / 补高。
       _sanitizeElementGeometry(
@@ -1318,6 +1319,7 @@ class UiAssemblyBuilder {
   static void _expandScrollableContentToFillPage(
     List<Map<String, dynamic>> elements, {
     required double pcbH,
+    required double pcbW,
   }) {
     var candidateIndex = -1;
     var candidateY = -1.0;
@@ -1332,9 +1334,9 @@ class UiAssemblyBuilder {
       }
     }
     if (candidateIndex < 0) {
-      // 无 scroll / message_flow：把最后一个可见内容块拉伸到接近底部，
+      // 无 scroll / message_flow：把最后一个全宽容器 surface 拉伸到接近底部，
       // 消灭「内容到一半、下方整段空白」。
-      _stretchLastContentBlock(elements, pcbH: pcbH);
+      _stretchLastContentBlock(elements, pcbH: pcbH, pcbW: pcbW);
       return;
     }
 
@@ -1383,16 +1385,18 @@ class UiAssemblyBuilder {
     }
   }
 
-  /// 无可滚动内容时，把最后一个可见「容器 surface」拉伸到接近 PCB 底部。
+  /// 无可滚动内容时，把最后一个「全宽容器 surface」拉伸到接近 PCB 底部。
   ///
-  /// 只拉伸 surface（面板/底板这类容器），它们被拉高后是正常的空白扩展。
-  /// 文本 / 进度条 / 按钮 / 分组标题不拉伸——拉伸文本会变成巨大的空文本框。
-  /// 若页面末尾没有可拉伸的容器（如纯状态页），保持原样——
-  /// overlay 详情页内容完整即可，不必强行填满 PCB。
+  /// 只拉伸宽度接近 PCB 内宽的 surface（整页底板、大面板容器），
+  /// 避免把属性网格的小格子（如「感知格底」164x32）拉成高条。
+  /// 若页面末尾没有全宽容器，保持原样（overlay 详情页内容完整即可）。
   static void _stretchLastContentBlock(
     List<Map<String, dynamic>> elements, {
     required double pcbH,
+    required double pcbW,
   }) {
+    const pad = _Layout.pcbPadding;
+    final innerW = pcbW - pad * 2;
     int? lastIndex;
     double lastBottom = -1;
     for (var i = 0; i < elements.length; i++) {
@@ -1405,6 +1409,9 @@ class UiAssemblyBuilder {
       if (name.contains('底板') || name.contains('关闭') || name.contains('标签底')) {
         continue;
       }
+      final w = _elementW(element);
+      // 只考虑「全宽容器」：宽度 >= 内宽 - 4（允许小内边距）。
+      if (w < innerW - 4) continue;
       final bottom = _elementY(element) + _elementH(element);
       if (bottom > lastBottom) {
         lastBottom = bottom;
@@ -1508,6 +1515,11 @@ class UiAssemblyBuilder {
   static double _elementY(Map<String, dynamic> element) {
     final offset = element['offset'];
     return offset is Map ? ((offset['y'] as num?)?.toDouble() ?? 0.0) : 0.0;
+  }
+
+  static double _elementW(Map<String, dynamic> element) {
+    final size = element['size'];
+    return size is Map ? ((size['width'] as num?)?.toDouble() ?? 0.0) : 0.0;
   }
 
   static double _elementH(Map<String, dynamic> element) {
