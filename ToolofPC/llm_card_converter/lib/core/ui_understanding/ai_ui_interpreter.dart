@@ -46,12 +46,19 @@ class AiUiInterpreter {
 
     onLog?.call('  UI 模式：AI 精修（慢速，可能等待较久）');
 
-    // ── 阶段 1：Scout —— 轻量选型 ──
-    final scoutPlan = await _runScout(
-      sourcePack: sourcePack,
-      characterName: characterName,
-      onLog: onLog,
-    );
+    // Scout 只负责“选证据/选组件”，不是设计本身。对已经能由程序
+    // 判定生命周期的卡，跳过 AI Scout，避免 deepseek 等推理模型把
+    // 1500 token 花在 reasoning 上导致还没输出 JSON 就 finish=length。
+    final scoutPlan = _canInferUiTargets(sourcePack)
+        ? _buildLocalScoutPlan(sourcePack, characterName)
+        : await _runScout(
+            sourcePack: sourcePack,
+            characterName: characterName,
+            onLog: onLog,
+          );
+    if (_canInferUiTargets(sourcePack)) {
+      onLog?.call('  UI 侦察：使用本地证据索引，跳过 AI 侦察请求。');
+    }
 
     if (!scoutPlan.hasUi) {
       return AiUiInterpretation(
@@ -283,6 +290,50 @@ class AiUiInterpreter {
     return '$chars 字符（粗略 $low~$high tokens）';
   }
 
+  static bool _canInferUiTargets(UiSourcePack sourcePack) =>
+      sourcePack.alternateGreetings.isNotEmpty ||
+      sourcePack.suggestsProfilePool ||
+      sourcePack.hasNarrativeUiWrapper ||
+      sourcePack.hasQuestSchema ||
+      sourcePack.hasChoiceBoxSchema ||
+      sourcePack.hasFriendsAlbumSchema ||
+      sourcePack.hasPlayerStatusSchema ||
+      sourcePack.hasGenericTagSchema;
+
+  static UiScoutPlan _buildLocalScoutPlan(
+    UiSourcePack sourcePack,
+    String characterName,
+  ) {
+    final components = <String>{'surface', 'text', 'button', 'input'};
+    var mode = 'extra_companion';
+    if (sourcePack.hasNarrativeUiWrapper ||
+        sourcePack.hasQuestSchema ||
+        sourcePack.hasChoiceBoxSchema ||
+        sourcePack.hasFriendsAlbumSchema ||
+        sourcePack.hasPlayerStatusSchema) {
+      mode = 'scene';
+      components.addAll(const ['message_flow', 'progress', 'line']);
+    } else if (sourcePack.alternateGreetings.isNotEmpty ||
+        sourcePack.suggestsProfilePool) {
+      mode = 'opening';
+    }
+    if (sourcePack.hasFriendsAlbumSchema) components.add('indicator');
+    return UiScoutPlan(
+      hasUi: _canInferUiTargets(sourcePack),
+      confidence: 0.75,
+      uiMode: mode,
+      uiName: characterName.isEmpty ? 'AI 转译 UI' : '$characterName UI',
+      components: components.toList(),
+      regexIndices: const [],
+      pluginIndices: const [],
+      htmlIndices: const [],
+      worldBookIndices: const [],
+      includeFullBranches: false,
+      evidenceSummary: '本地证据索引：根据 opening 分支、message wrapper、PlayerStatus、quest、DQ_ChoiceBox、FriendsAlbumPage 等稳定 schema 判定 UI 生命周期。',
+      notes: const ['跳过 AI Scout，降低请求量并避免推理模型在侦察阶段空返回。'],
+    );
+  }
+
   static bool _canBuildOpeningDeterministically(UiSourcePack sourcePack) =>
       sourcePack.alternateGreetings.isNotEmpty || sourcePack.suggestsProfilePool;
 
@@ -291,7 +342,8 @@ class AiUiInterpreter {
       sourcePack.hasQuestSchema ||
       sourcePack.hasChoiceBoxSchema ||
       sourcePack.hasFriendsAlbumSchema ||
-      sourcePack.hasPlayerStatusSchema;
+      sourcePack.hasPlayerStatusSchema ||
+      sourcePack.hasGenericTagSchema;
 
   static List<ChatMessage> _syntheticTranscript(
     String targetMode,
@@ -407,6 +459,96 @@ class AiUiInterpreter {
     return text.substring(0, end);
   }
 
+  static List<Map<String, dynamic>> _genericTagFieldsForScene(
+    UiSourcePack sourcePack,
+    String statsPage,
+  ) {
+    const ignoredTags = {
+      '正文',
+      '档案',
+      '生存',
+      '社会',
+      '环境',
+      '选项',
+      '选项列表',
+      'Alliance',
+      'OutputText',
+      'status',
+      'statusbar',
+      '终端状态',
+      '当前位置',
+      '当前时间',
+    };
+    final branchCount = 1 + sourcePack.alternateGreetings.length;
+    final out = <Map<String, dynamic>>[];
+    for (final tag in sourcePack.stableTagNames) {
+      if (ignoredTags.contains(tag)) continue;
+      final branchValues = <String, String>{};
+      for (var branch = 0; branch < branchCount; branch++) {
+        final value = sourcePack.tagValuesForBranchIndex(branch)[tag]?.trim() ?? '';
+        if (value.isNotEmpty) branchValues['$branch'] = value;
+      }
+      if (branchValues.isEmpty) continue;
+      final initial = branchValues['0'] ?? branchValues.values.first;
+      final isProgress = _looksProgressTag(tag, initial);
+      out.add({
+        'name': _displayNameForTag(tag),
+        'sourceKey': tag,
+        'group': _groupForTag(tag),
+        'type': isProgress ? 'number' : 'text',
+        'display': isProgress ? 'progress' : 'text',
+        'textAlign': isProgress ? 'center' : 'left',
+        'overflow': isProgress
+            ? 'ellipsis'
+            : (initial.runes.length > 32 ? 'wrap' : 'ellipsis'),
+        'initialValue': initial,
+        if (branchValues.length > 1) 'branchInitialValues': branchValues,
+        if (isProgress) 'min': 0,
+        if (isProgress) 'max': 100,
+        'owner': 'player',
+        'page': statsPage,
+        'sourceRef': 'source tags <$tag> across first_mes/alternate_greetings',
+      });
+    }
+    return out;
+  }
+
+  static bool _looksProgressTag(String tag, String value) {
+    final t = tag.toLowerCase();
+    if (t.contains('hp') ||
+        t.contains('mp') ||
+        tag.contains('生命') ||
+        tag.contains('精神') ||
+        tag.contains('体力') ||
+        tag.contains('饱腹')) {
+      return RegExp(r'\d').hasMatch(value);
+    }
+    return false;
+  }
+
+  static String _displayNameForTag(String tag) {
+    switch (tag) {
+      case '生命':
+        return '生命值';
+      case '精神':
+        return '精神';
+      case '体力':
+        return '体力';
+      case '饱腹':
+        return '饱腹';
+      default:
+        return tag;
+    }
+  }
+
+  static String _groupForTag(String tag) {
+    if (const {'称号', '编号', '罪名'}.contains(tag)) return '档案';
+    if (const {'生命', '精神', '体力', '饱腹'}.contains(tag)) return '生存状态';
+    if (const {'势力', '关系', '声望', '点数'}.contains(tag)) return '社会关系';
+    if (const {'物品', '位置', '日期', '时间'}.contains(tag)) return '环境记录';
+    return '状态';
+  }
+
   static Map<String, dynamic> _buildDeterministicSceneJson(
     UiSourcePack sourcePack,
     String characterName,
@@ -476,6 +618,8 @@ class AiUiInterpreter {
       addTextField('状态效果', 'Status', '装备与状态', status['Status'] ?? '无', statsPage);
       addTextField('当前武器', 'Weapon', '装备与状态', status['Weapon'] ?? '—', statsPage);
       addTextField('当前护甲', 'Armor', '装备与状态', status['Armor'] ?? '—', statsPage);
+    } else {
+      fields.addAll(_genericTagFieldsForScene(sourcePack, statsPage));
     }
 
     if (sourcePack.hasQuestSchema) {
@@ -582,7 +726,8 @@ class AiUiInterpreter {
         sourcePack.hasQuestSchema ||
         sourcePack.hasChoiceBoxSchema ||
         sourcePack.hasFriendsAlbumSchema ||
-        sourcePack.hasPlayerStatusSchema;
+        sourcePack.hasPlayerStatusSchema ||
+        sourcePack.hasGenericTagSchema;
     if (needsOpening) out.add('opening');
     if (needsScene) out.add('scene');
     if (out.isEmpty && scoutPlan.hasUi) out.add(scoutPlan.uiMode);

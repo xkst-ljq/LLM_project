@@ -100,11 +100,53 @@ class UiSourcePack {
         .toList();
   }
 
-  List<String> choiceTextsForBranchIndex(int branchIndex) =>
-      _choiceTextsOf(branchText(branchIndex));
+  List<String> choiceTextsForBranchIndex(int branchIndex) {
+    final text = branchText(branchIndex);
+    final choices = _choiceTextsOf(text);
+    if (choices.isNotEmpty) return choices;
+    return _optionTagChoicesOf(text);
+  }
 
   Map<String, String> playerStatusForBranchIndex(int branchIndex) =>
       _playerStatusOf(branchText(branchIndex));
+
+  List<String> get stableTagNames {
+    final out = <String>[];
+    final seen = <String>{};
+    void add(String value) {
+      final v = value.trim();
+      if (v.isEmpty || v.length > 16) return;
+      if (seen.add(v)) out.add(v);
+    }
+
+    final tagPattern = RegExp(r'<\/?\s*([\w\u4e00-\u9fff]+)');
+    for (final script in regexScripts.where((e) => e.enabled)) {
+      for (final match in tagPattern.allMatches(script.findRegex)) {
+        add(match.group(1) ?? '');
+      }
+    }
+    return out;
+  }
+
+  bool get hasGenericTagSchema => stableTagNames.any((tag) =>
+      !const {'正文', 'Alliance', 'OutputText', 'status', 'statusbar'}
+          .contains(tag));
+
+  Map<String, String> tagValuesForBranchIndex(int branchIndex) {
+    final text = branchText(branchIndex);
+    if (text.isEmpty) return const <String, String>{};
+    final out = <String, String>{};
+    for (final tag in stableTagNames) {
+      final escaped = RegExp.escape(tag);
+      final match = RegExp(
+        '<\s*$escaped\s*>([\s\S]*?)<\/\s*$escaped\s*>',
+        caseSensitive: false,
+      ).firstMatch(text);
+      final value = match?.group(1)?.trim() ?? '';
+      if (value.isNotEmpty) out[tag] = value;
+    }
+    return out;
+  }
 
   bool get hasNarrativeUiWrapper {
     bool scriptWrapsNarrative(UiRegexEvidence e) {
@@ -552,6 +594,33 @@ class UiSourcePack {
     if (t.isEmpty) return '(empty)';
     if (t.length > 120) t = '${t.substring(0, 120)}...';
     return t;
+  }
+
+  static List<String> _optionTagChoicesOf(String text) {
+    final match = RegExp(
+      r'<\s*(?:选项|选项列表)\s*>([\s\S]*?)<\/\s*(?:选项|选项列表)\s*>',
+      caseSensitive: false,
+    ).firstMatch(text);
+    final raw = match?.group(1)?.trim() ?? '';
+    if (raw.isEmpty) return const [];
+    final out = <String>[];
+    final sendRe = RegExp(r"""send\(\s*['"](.+?)['"]\s*\)""");
+    for (final m in sendRe.allMatches(raw)) {
+      final value = m.group(1)?.trim() ?? '';
+      if (value.isNotEmpty) out.add(value);
+      if (out.length >= 5) return out;
+    }
+    for (final line in raw.split(RegExp(r'\r?\n'))) {
+      var value = line
+          .replaceAll(RegExp(r'<[^>]+>'), ' ')
+          .replaceAll(RegExp(r'^\s*\d+[\.、)]\s*'), '')
+          .trim();
+      if (value.isEmpty) continue;
+      if (value.length > 48) value = value.substring(0, 48);
+      out.add(value);
+      if (out.length >= 5) break;
+    }
+    return out;
   }
 
   static List<String> _choiceTextsOf(String text) {
