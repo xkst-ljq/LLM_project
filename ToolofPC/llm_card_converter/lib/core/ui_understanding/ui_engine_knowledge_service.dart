@@ -201,4 +201,51 @@ Single UiDesignPlan object shape:
 
 If hasUi=false, still return evidenceSummary, sourceRefs, unsupported and notes; fields/actions may be empty.
 ''';
+
+  /// 精简版知识库：只保留让 AI 输出合法 UiDesignPlan 的最小必需信息。
+  ///
+  /// 用于「单轮全量注入」——prompt 太大是空返回的根因（黑曜石卡实测
+  /// 知识库 23k 字符 + 证据包 57k 字符 ≈ 40k tokens，模型直接空回复）。
+  /// 这个版本砍掉大部分散文规则，只留：
+  ///   - 硬性输出规则
+  ///   - UiDesignPlan schema（字段级）
+  ///   - 少量关键指引（mode 语义 / 布局意图 / 常见陷阱）
+  ///
+  /// 完整版本见 [compactPrompt]（调试/精修时可用）。
+  static String compactPromptSlim() => '''
+# LLM Project UIEngine — 精简知识库
+Knowledge version: $knowledgeVersion
+
+你只输出高层 UiDesignPlan JSON（不要内部 assembly JSON，不要 markdown，不要解释）。
+可以输出单个对象，或用顶层 {"assemblies": [...]} 表达多个生命周期（如 opening + scene）。
+
+# UiDesignPlan schema
+{
+  "hasUi": true/false,
+  "confidence": 0.0~1.0,
+  "uiMode": "opening|scene|extra_sticky|extra_companion",
+  "uiName": "简短名称",
+  "evidenceSummary": "为什么有/没有 UI",
+  "sourceRefs": ["data..."],
+  "visualStyle": {"styleName":"...","pcbColor":"#111318","panelColor":"#1E232B","titleColor":"#FFFFFF","labelColor":"#AAB0BC","valueColor":"#E8EDF5","accentColor":"#4FA3D1","buttonBgColor":"#2A3340","barFillColor":"#4FA3D1","barTrackColor":"#2A2D36","borderRadius":14,"glow":false},
+  "layout": {"kind":"opening_choices|scene_dashboard|single_panel","navigation":"tabs|swipe|tabs_and_swipe|none","columns":1,"pages":[{"title":"页面","role":"story|stats|tasks|form","type":"base|overlay","parentPage":"父页","columns":1,"density":"compact|normal|spacious","fill":true}]},
+  "fields": [{"name":"字段名","sourceKey":"Key","group":"精确分组","type":"number|text|bool","display":"progress|text|badge","overflow":"ellipsis|wrap|scroll","initialValue":"...","branchInitialValues":{"1":"..."},"min":0,"max":100,"owner":"player|char|neutral","span":1,"page":"页面","sourceRef":"证据路径"}],
+  "inputs": [{"name":"输入名","sourceKey":"UserProfile_Name","placeholder":"...","initialValue":"","sendOnSubmit":false,"targetKind":"status_field|none","page":"页面","sourceRef":"证据路径"}],
+  "actions": [{"label":"按钮文案","sendText":"发送文本；opening 分支按钮通常留空","keyAction":false,"branchIndex":0,"page":"页面","sourceRef":"证据路径"}],
+  "unsupported": [{"kind":"...","reason":"...","sourceRef":"..."}],
+  "notes": []
+}
+
+# 关键规则
+- 原卡没有明确 UI 证据时 hasUi=false。
+- 每个字段/动作/输入必须有 sourceRef；没有证据不要生成。
+- 不要凭空设计 UI；优先忠实迁移原卡 UI 语义，再做移动端适配。
+- opening：只做开场方向选择与少量资料输入；不要放完整状态栏/任务板。
+- scene：必须有 role=story 的 base 页以插入 message_flow；任务/状态/羁绊等
+  低频详情用 overlay 页。长任务板/好友列表 initialValue 可用
+  "__AUTO_QUEST_BOARD__" / "__AUTO_FRIENDS_ALBUM_EMPTY__" 让 Dart 填充。
+- 用 columns/density/fill/span 控制空间分配；meaningful text 不要 ellipsis。
+- UI 依赖外部 JS 运行时写入 unsupported，除非证据中有静态可还原内容。
+- 保持相关内容物理邻近；避免一字段一行的稀疏布局浪费 PCB。
+''';
 }

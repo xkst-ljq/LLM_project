@@ -312,6 +312,128 @@ class UiSourcePack {
     return b.toString();
   }
 
+  /// 精简版证据包：大幅裁剪每个字段，供「单轮全量注入」使用。
+  ///
+  /// 黑曜石卡实测完整版 57k 字符（≈33k tokens），加上知识库后 prompt
+  /// 高达 80k 字符，模型直接空回复。这个版本把各项 clip 上限砍到
+  /// 能保留关键信息的最小值，目标整包降到 ~15k 字符。
+  String toPromptTextSlim() {
+    final b = StringBuffer();
+    b.writeln('# Card Basic Fields');
+    b.writeln('sourcePackVersion: ui_source_pack_v2026-08-07.7');
+    b.writeln('name: $cardName');
+    _writeOpeningBranchSummary(b);
+    _writeBranchRuntimeDataSummary(b);
+    if (_sourceSuggestsProfilePool) {
+      b.writeln('\n# Player profile input opportunity');
+      b.writeln('Source allows player-specified traits. If opening UI generated, add profile input fields (name/age/gender/appearance/personality) bound to status_field, optional.');
+    }
+    if (hasQuestSchema || hasChoiceBoxSchema || hasFriendsAlbumSchema) {
+      b.writeln('\n# Stable UI schemas');
+      if (hasQuestSchema) {
+        b.writeln('- quest schema: prefer a task_board scroll field that LLM can update; format quests into readable cards, not raw `{quest:...}`.');
+        final quests = questSummaries;
+        if (quests.isNotEmpty) {
+          b.writeln('  initial quests:');
+          for (final quest in quests.take(4)) {
+            b.writeln('  - ${quest.toPromptLine()}');
+          }
+        }
+      }
+      if (hasChoiceBoxSchema) {
+        b.writeln('- DQ_ChoiceBox schema: usable choices become sendsMessage actions; input_prompt may become an input in scene/opening.');
+      }
+      if (hasFriendsAlbumSchema) {
+        b.writeln('- FriendsAlbumPage schema: consider a friends_album scroll field that LLM can update.');
+      }
+    }
+    if (hasNarrativeUiWrapper) {
+      b.writeln('\n# Scene message_flow requirement');
+      b.writeln('Narrative wrapper detected. If uiMode=scene, declare a base layout page role="story"/"message"/"narrative" so Dart inserts message_flow. Put DQ choices/free input on that same page; move status/task/friends details to overlay pages.');
+    }
+    if (description.trim().isNotEmpty) {
+      b.writeln('\n## description\n${_clip(description, 1500)}');
+    }
+    if (personality.trim().isNotEmpty) {
+      b.writeln('\n## personality\n${_clip(personality, 800)}');
+    }
+    if (scenario.trim().isNotEmpty) {
+      b.writeln('\n## scenario\n${_clip(scenario, 800)}');
+    }
+    if (firstMes.trim().isNotEmpty) {
+      b.writeln('\n## first_mes\n${_clip(firstMes, 2000)}');
+    }
+    if (alternateGreetings.isNotEmpty) {
+      b.writeln('\n## alternate_greetings');
+      for (var i = 0; i < alternateGreetings.length && i < 6; i++) {
+        b.writeln('\n[$i]\n${_clip(alternateGreetings[i], 600)}');
+      }
+      if (alternateGreetings.length > 6) {
+        b.writeln('\n... omitted ${alternateGreetings.length - 6} branches');
+      }
+    }
+    if (mesExample.trim().isNotEmpty) {
+      b.writeln('\n## mes_example\n${_clip(mesExample, 1200)}');
+    }
+    if (systemPrompt.trim().isNotEmpty) {
+      b.writeln('\n## system_prompt\n${_clip(systemPrompt, 800)}');
+    }
+
+    if (regexScripts.isNotEmpty) {
+      b.writeln('\n# extensions.regex_scripts');
+      for (final e in regexScripts) {
+        b.writeln('\n## ${e.path} ${e.scriptName} enabled=${e.enabled}');
+        final hint = _layoutHintOf(e.replaceString);
+        if (hint.isNotEmpty) b.writeln('layout hints: $hint');
+        b.writeln('findRegex:\n${_clip(e.findRegex, 600)}');
+        b.writeln('replaceString excerpt:\n${_clip(e.replaceString, 1500)}');
+      }
+    }
+
+    if (pluginScripts.isNotEmpty) {
+      b.writeln('\n# extensions.tavern_helper script snippets');
+      for (final e in pluginScripts) {
+        b.writeln('\n## ${e.path} enabled=${e.enabled}');
+        if (e.urls.isNotEmpty) b.writeln('urls: ${e.urls.join(', ')}');
+        b.writeln(_clip(e.content, 1200));
+      }
+    }
+
+    if (actionSnippets.isNotEmpty) {
+      b.writeln('\n# onclick/send actions');
+      for (final e in actionSnippets) {
+        b.writeln('- ${e.path}: ${e.text}');
+      }
+    }
+
+    if (htmlSnippets.isNotEmpty) {
+      b.writeln('\n# Inline HTML/CSS snippets');
+      for (final e in htmlSnippets) {
+        b.writeln('\n## ${e.path}\n${_clip(e.text, 1200)}');
+      }
+    }
+
+    if (worldBookEvidence.isNotEmpty) {
+      b.writeln('\n# Suspected UI/variable world book entries');
+      var shown = 0;
+      for (final e in worldBookEvidence) {
+        if (shown >= 6) break;
+        b.writeln('\n## ${e.path} ${e.title}');
+        b.writeln(_clip(e.content, 800));
+        shown++;
+      }
+      if (worldBookEvidence.length > shown) {
+        b.writeln('\n... omitted ${worldBookEvidence.length - shown} more entries');
+      }
+    }
+
+    if (!hasEvidence) {
+      b.writeln('\n# UI evidence\nNo explicit UI evidence extracted. Return hasUi=false.');
+    }
+
+    return b.toString();
+  }
+
   /// 阶段 1（Scout）用的证据摘要：远小于 [toPromptText]。
   ///
   /// 只给出每个证据源的“指纹”——路径、名称、布局 hint、长度——

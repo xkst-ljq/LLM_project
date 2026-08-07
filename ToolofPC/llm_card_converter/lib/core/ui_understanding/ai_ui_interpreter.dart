@@ -28,7 +28,7 @@ class AiUiInterpreter {
   }) async {
     final sourcePack = UiSourcePackBuilder.build(sourceJson);
     final characterName = baseResult.characterName;
-    final knowledge = UiEngineKnowledgeService.compactPrompt();
+    final knowledge = UiEngineKnowledgeService.compactPromptSlim();
 
     onLog?.call('  UI 理解：一次性注入知识库 + 完整证据包，请求模型输出 UiDesignPlan…');
 
@@ -538,7 +538,7 @@ class AiUiInterpreter {
       ),
       ChatMessage(
         role: 'user',
-        content: '【待分析角色卡：$characterName】\n${sourcePack.toPromptText()}',
+        content: '【待分析角色卡：$characterName】\n${sourcePack.toPromptTextSlim()}',
       ),
       const ChatMessage(
         role: 'user',

@@ -330,6 +330,7 @@ class ApiService {
     var nonContentFrameCount = 0;
     var doneSeen = false;
     var lastFrameKeys = '';
+    var firstChoiceSample = '';
     // ResponseBody.stream 是 Stream<Uint8List>，而 utf8.decoder 是
     // StreamTransformer<List<int>, String>。Dio 5.x 的泛型收窄会让
     // 直接 transform(utf8.decoder) 报类型不匹配，先 cast<List<int>>()。
@@ -355,6 +356,9 @@ class ApiService {
         final stat = _appendStreamingPayload(payload, buffer, onDelta);
         if (stat.parsed) jsonFrameCount++;
         if (stat.keys.isNotEmpty) lastFrameKeys = stat.keys;
+        if (firstChoiceSample.isEmpty && stat.choiceSample.isNotEmpty) {
+          firstChoiceSample = stat.choiceSample;
+        }
         if (stat.content) {
           contentChunkCount++;
         } else if (stat.parsed) {
@@ -371,6 +375,9 @@ class ApiService {
         final stat = _appendStreamingPayload(trimmed, buffer, onDelta);
         if (stat.parsed) jsonFrameCount++;
         if (stat.keys.isNotEmpty) lastFrameKeys = stat.keys;
+        if (firstChoiceSample.isEmpty && stat.choiceSample.isNotEmpty) {
+          firstChoiceSample = stat.choiceSample;
+        }
         if (stat.content) {
           contentChunkCount++;
         } else if (stat.parsed) {
@@ -389,6 +396,7 @@ class ApiService {
       'nonContentFrames': nonContentFrameCount,
       'done': doneSeen,
       'lastFrameKeys': lastFrameKeys,
+      'firstChoiceSample': firstChoiceSample,
     });
     if (full.trim().isEmpty) {
       throw Exception('模型返回为空');
@@ -396,29 +404,42 @@ class ApiService {
     return full;
   }
 
-  static ({bool parsed, bool content, String keys}) _appendStreamingPayload(
+  static ({bool parsed, bool content, String keys, String choiceSample})
+      _appendStreamingPayload(
     String payload,
     StringBuffer buffer,
     void Function(String delta)? onDelta,
   ) {
     try {
       final decoded = jsonDecode(payload);
-      if (decoded is! Map) return (parsed: false, content: false, keys: '');
+      if (decoded is! Map) {
+        return (parsed: false, content: false, keys: '', choiceSample: '');
+      }
       final keys = decoded.keys.map((e) => e.toString()).join(',');
       final choices = decoded['choices'];
       if (choices is! List || choices.isEmpty) {
-        return (parsed: true, content: false, keys: keys);
+        return (parsed: true, content: false, keys: keys, choiceSample: '');
       }
       final first = choices.first;
-      if (first is! Map) return (parsed: true, content: false, keys: keys);
+      if (first is! Map) {
+        return (parsed: true, content: false, keys: keys, choiceSample: '');
+      }
+      // 记录第一个 choices[0] 的结构快照（截断），用于诊断 content 在哪。
+      String? sample;
+      try {
+        final sampleStr = jsonEncode(first);
+        sample = sampleStr.length > 400 ? sampleStr.substring(0, 400) : sampleStr;
+      } catch (_) {}
       final text = _choiceText(first);
-      if (text.isEmpty) return (parsed: true, content: false, keys: keys);
+      if (text.isEmpty) {
+        return (parsed: true, content: false, keys: keys, choiceSample: sample ?? '');
+      }
       buffer.write(text);
       onDelta?.call(text);
-      return (parsed: true, content: true, keys: keys);
+      return (parsed: true, content: true, keys: keys, choiceSample: sample ?? '');
     } catch (_) {
       // 单个 chunk 解析失败不影响整体；continue 等下一个。
-      return (parsed: false, content: false, keys: 'parse_error');
+      return (parsed: false, content: false, keys: 'parse_error', choiceSample: '');
     }
   }
 
