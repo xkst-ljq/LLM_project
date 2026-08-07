@@ -189,7 +189,8 @@ class ApiService {
     }
     final first = choices.first;
     final finishReason = first is Map ? first['finish_reason']?.toString() ?? '' : '';
-    final content = first is Map ? first['message']?['content'] : null;
+    final message = first is Map ? first['message'] : null;
+    final content = message is Map ? message['content'] : null;
     final contentLen = content is String ? content.runes.length : 0;
     onLog?.call('      普通响应：HTTP ${response.statusCode} choices=${choices.length} contentType=${content.runtimeType} contentLen=$contentLen finish=$finishReason');
     if (content is! String || content.trim().isEmpty) {
