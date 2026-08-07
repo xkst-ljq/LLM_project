@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'api_service.dart';
 import 'ai_json_utils.dart';
 import 'app_settings.dart';
@@ -50,6 +51,7 @@ class JsonAiClient {
     Duration timeout = const Duration(seconds: 240),
     int repairAttempts = 1,
     void Function(String delta)? onDelta,
+    void Function(String line)? onLog,
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
@@ -72,6 +74,7 @@ class JsonAiClient {
           timeout: timeout,
           repairAttempts: repairAttempts,
           onDelta: onDelta,
+          onLog: onLog,
         );
       } catch (e) {
         lastFormatError = [e];
@@ -82,6 +85,7 @@ class JsonAiClient {
                 (e.toString().contains('模型返回为空') ||
                     e.toString().contains('模型未返回内容')));
         if (isRetryable) {
+          onLog?.call('    $taskName：${_shortError(e.toString())}，准备整体重试 ${overall + 2}/2…');
           continue;
         }
         rethrow;
@@ -97,13 +101,34 @@ class JsonAiClient {
     return '${firstLine.substring(0, 120)}…';
   }
 
-  static Future<JsonAiResult> _completeOnce({    required String taskName,
+  static Future<T> _withHeartbeat<T>(
+    Future<T> future, {
+    required String label,
+    required Duration every,
+    void Function(String line)? onLog,
+  }) async {
+    if (onLog == null) return future;
+    var elapsed = 0;
+    final timer = Timer.periodic(every, (_) {
+      elapsed += every.inSeconds;
+      onLog('    $label：仍在等待模型响应（${elapsed}s）…');
+    });
+    try {
+      return await future;
+    } finally {
+      timer.cancel();
+    }
+  }
+
+  static Future<JsonAiResult> _completeOnce({
+    required String taskName,
     required List<ChatMessage> messages,
     required double temperature,
     required int? maxTokens,
     required Duration timeout,
     required int repairAttempts,
     void Function(String delta)? onDelta,
+    void Function(String line)? onLog,
   }) async {
     final cfg = await AppSettings.getApiConfig();
     if (!cfg.isComplete) {
@@ -120,37 +145,54 @@ class JsonAiClient {
     // JSON 解析靠 AiJsonUtils 容错 + 修复轮次兜底。
     String? streamError;
     try {
-      raw = await ApiService.chatMessagesStreaming(
-        baseUrl: cfg.baseUrl,
-        apiKey: cfg.apiKey,
-        model: cfg.model,
-        messages: messages,
-        options: ChatCompleteOptions(
-          temperature: temperature,
-          maxTokens: maxTokens,
-          jsonMode: false,
-          timeout: timeout,
+      onLog?.call('    $taskName：开始流式请求（timeout=${timeout.inSeconds}s, maxTokens=${maxTokens ?? '默认'}）');
+      raw = await _withHeartbeat(
+        ApiService.chatMessagesStreaming(
+          baseUrl: cfg.baseUrl,
+          apiKey: cfg.apiKey,
+          model: cfg.model,
+          messages: messages,
+          options: ChatCompleteOptions(
+            temperature: temperature,
+            maxTokens: maxTokens,
+            jsonMode: false,
+            timeout: timeout,
+          ),
+          onDelta: onDelta,
         ),
-        onDelta: onDelta,
+        label: '$taskName/流式',
+        every: const Duration(seconds: 30),
+        onLog: onLog,
       );
+      onLog?.call('    $taskName：流式完成，收到 ${raw.runes.length} 字符');
     } catch (e) {
       streamError = e.toString();
+      onLog?.call('    $taskName：流式失败/空返回：${_shortError(streamError)}；回落普通请求…');
       // 流式失败（服务不支持 / 网络 / 超时），回落普通请求。
-      raw = await ApiService.chatMessages(
-        baseUrl: cfg.baseUrl,
-        apiKey: cfg.apiKey,
-        model: cfg.model,
-        messages: messages,
-        options: ChatCompleteOptions(
-          temperature: temperature,
-          maxTokens: maxTokens,
-          jsonMode: false,
-          timeout: timeout,
+      raw = await _withHeartbeat(
+        ApiService.chatMessages(
+          baseUrl: cfg.baseUrl,
+          apiKey: cfg.apiKey,
+          model: cfg.model,
+          messages: messages,
+          options: ChatCompleteOptions(
+            temperature: temperature,
+            maxTokens: maxTokens,
+            jsonMode: false,
+            timeout: timeout,
+          ),
         ),
+        label: '$taskName/普通回落',
+        every: const Duration(seconds: 30),
+        onLog: onLog,
       );
+      onLog?.call('    $taskName：普通请求完成，收到 ${raw.runes.length} 字符');
       onDelta?.call('\n[流式不可用，已回落普通请求] ${_shortError(streamError)}\n');
     }
 
+    if (raw.trim().isEmpty) {
+      onLog?.call('    $taskName：模型返回空文本');
+    }
     if (ApiService.looksLikeRefusal(raw)) {
       throw StateError('模型拒绝执行 $taskName。请尝试更换无审核或本地模型。');
     }
@@ -161,9 +203,11 @@ class JsonAiClient {
     ];
     final parsed = AiJsonUtils.tryParseObject(raw);
     if (parsed != null) {
+      onLog?.call('    $taskName：JSON 解析成功');
       return JsonAiResult(json: parsed, transcript: transcript);
     }
 
+    onLog?.call('    $taskName：收到 ${raw.runes.length} 字符，但不是合法 JSON，准备修复…');
     var lastRaw = raw;
     for (var attempt = 0; attempt < repairAttempts; attempt++) {
       const repairPrompt = ChatMessage(
@@ -171,17 +215,23 @@ class JsonAiClient {
         content: '上一次回复不是合法 JSON 对象。请只输出修复后的 JSON 对象，'
             '不要解释、不要 markdown 代码块、不要新增字段含义。',
       );
-      final repairedRaw = await ApiService.chatMessages(
-        baseUrl: cfg.baseUrl,
-        apiKey: cfg.apiKey,
-        model: cfg.model,
-        messages: [...transcript, repairPrompt],
-        options: ChatCompleteOptions(
-          temperature: 0.0,
-          maxTokens: maxTokens,
-          jsonMode: false,
-          timeout: timeout,
+      onLog?.call('    $taskName：JSON 修复请求 ${attempt + 1}/$repairAttempts…');
+      final repairedRaw = await _withHeartbeat(
+        ApiService.chatMessages(
+          baseUrl: cfg.baseUrl,
+          apiKey: cfg.apiKey,
+          model: cfg.model,
+          messages: [...transcript, repairPrompt],
+          options: ChatCompleteOptions(
+            temperature: 0.0,
+            maxTokens: maxTokens,
+            jsonMode: false,
+            timeout: timeout,
+          ),
         ),
+        label: '$taskName/JSON修复',
+        every: const Duration(seconds: 30),
+        onLog: onLog,
       );
       transcript
         ..add(repairPrompt)
@@ -191,8 +241,10 @@ class JsonAiClient {
       }
       final repaired = AiJsonUtils.tryParseObject(repairedRaw);
       if (repaired != null) {
+        onLog?.call('    $taskName：JSON 修复成功，收到 ${repairedRaw.runes.length} 字符');
         return JsonAiResult(json: repaired, transcript: transcript);
       }
+      onLog?.call('    $taskName：JSON 修复仍不可解析，收到 ${repairedRaw.runes.length} 字符');
       lastRaw = repairedRaw;
     }
 

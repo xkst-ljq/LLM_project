@@ -125,6 +125,7 @@ class AiUiInterpreter {
         temperature: 0.0,
         maxTokens: 5000,
         repairAttempts: 1,
+        onLog: onLog,
       );
       plans = UiDesignPlan.listFromJson(repairResult.json);
       validation = _validatePlans(plans, sourcePack);
@@ -223,6 +224,7 @@ class AiUiInterpreter {
       temperature: 0.15,
       maxTokens: 1500,
       repairAttempts: 1,
+      onLog: onLog,
       onDelta: (delta) {
         received += delta.length;
         // 实时进度点：每 ~200 字符输出一个，证明生成在进行、未被超时。
@@ -386,6 +388,7 @@ class AiUiInterpreter {
       maxTokens: targetMode == 'opening' ? 2600 : 4200,
       timeout: const Duration(seconds: 360),
       repairAttempts: 1,
+      onLog: onLog,
       onDelta: (delta) {
         received += delta.length;
         if (received % 400 < delta.length) {

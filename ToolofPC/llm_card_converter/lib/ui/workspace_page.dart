@@ -157,6 +157,30 @@ class _WorkspacePageState extends State<WorkspacePage> {
     setState(() => _log.add(line));
   }
 
+  String _shortLogText() {
+    final buffer = StringBuffer()
+      ..writeln('LLM Project 简短转译日志')
+      ..writeln('卡片数：${_items.length}')
+      ..writeln('成功：$_successCount / ${_items.length}')
+      ..writeln(''.padLeft(48, '='));
+    for (var i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      buffer.writeln('[${i + 1}] ${item.card.name} status=${item.status.name} progress=${(item.progress * 100).toStringAsFixed(0)}%${item.error == null ? '' : ' error=${item.error}'}');
+    }
+    buffer
+      ..writeln(''.padLeft(48, '='))
+      ..writeln(_log.isEmpty ? '（暂无日志）' : _log.join('\n'));
+    return buffer.toString();
+  }
+
+  Future<void> _copyShortLog() async {
+    await Clipboard.setData(ClipboardData(text: _shortLogText()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制简短日志')),
+    );
+  }
+
   int get _successCount =>
       _items.where((e) => e.status == _WorkStatus.done).length;
 
@@ -357,9 +381,21 @@ class _WorkspacePageState extends State<WorkspacePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('简短日志：',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text('简短日志：',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                        IconButton(
+                          tooltip: '复制简短日志',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.copy_all_outlined, size: 18),
+                          onPressed: _copyShortLog,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
                     for (final line in _log)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 2),
@@ -618,7 +654,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
     });
 
     try {
-      await _pipeline.runBuildUiStage(item.work);
+      await _pipeline.runBuildUiStage(item.work, onLog: _addLog);
       final after = item.work.current?.characterData;
       final count = _countAssemblies(after);
       _addLog(count == 0 ? '  未生成（AI 判断无 UI）' : '  已重新生成 $count 份 UI');
