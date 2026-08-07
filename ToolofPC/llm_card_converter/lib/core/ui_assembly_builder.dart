@@ -1312,6 +1312,9 @@ class UiAssemblyBuilder {
   /// 多页 UI 的高度会按最高页统一。若某页只有一个滚动文本 / message_flow，
   /// 统一高度后就会在下方留下大片空白。这里把页面内最后一个可滚动内容块
   /// 拉伸到接近底部，让任务板、羁绊名录、日志页真正吃满 PCB。
+  ///
+  /// 若页面没有可滚动内容（如纯状态/属性页），则把最后一个可见内容块
+  /// 拉伸到接近底部，避免 PCB 被其它页撑高时底部空白。
   static void _expandScrollableContentToFillPage(
     List<Map<String, dynamic>> elements, {
     required double pcbH,
@@ -1328,7 +1331,12 @@ class UiAssemblyBuilder {
         candidateIndex = i;
       }
     }
-    if (candidateIndex < 0) return;
+    if (candidateIndex < 0) {
+      // 无 scroll / message_flow：把最后一个可见内容块拉伸到接近底部，
+      // 消灭「内容到一半、下方整段空白」。
+      _stretchLastContentBlock(elements, pcbH: pcbH);
+      return;
+    }
 
     final candidate = elements[candidateIndex];
     final y = _elementY(candidate);
@@ -1373,6 +1381,49 @@ class UiAssemblyBuilder {
       if (size is Map) size['height'] = nextH;
       _resizeAlignedBackingSurfaces(elements, candidate, currentH, nextH);
     }
+  }
+
+  /// 无可滚动内容时，把最后一个可见「容器 surface」拉伸到接近 PCB 底部。
+  ///
+  /// 只拉伸 surface（面板/底板这类容器），它们被拉高后是正常的空白扩展。
+  /// 文本 / 进度条 / 按钮 / 分组标题不拉伸——拉伸文本会变成巨大的空文本框。
+  /// 若页面末尾没有可拉伸的容器（如纯状态页），保持原样——
+  /// overlay 详情页内容完整即可，不必强行填满 PCB。
+  static void _stretchLastContentBlock(
+    List<Map<String, dynamic>> elements, {
+    required double pcbH,
+  }) {
+    int? lastIndex;
+    double lastBottom = -1;
+    for (var i = 0; i < elements.length; i++) {
+      final element = elements[i];
+      if (!_isVisibleContentElement(element)) continue;
+      final module = element['module'];
+      final type = module is Map ? module['type']?.toString() ?? '' : '';
+      if (type != 'surface') continue;
+      final name = element['name']?.toString() ?? '';
+      if (name.contains('底板') || name.contains('关闭') || name.contains('标签底')) {
+        continue;
+      }
+      final bottom = _elementY(element) + _elementH(element);
+      if (bottom > lastBottom) {
+        lastBottom = bottom;
+        lastIndex = i;
+      }
+    }
+    if (lastIndex == null) return;
+
+    final candidate = elements[lastIndex];
+    final y = _elementY(candidate);
+    final currentH = _elementH(candidate);
+    final limit = pcbH - _Layout.pcbPadding;
+    final nextH = (limit - y).clamp(currentH, 2000.0).toDouble();
+    if (nextH <= currentH + 8) return;
+
+    final size = candidate['size'];
+    if (size is Map) size['height'] = nextH;
+    // 若这个 surface 是某个滚动字段的背景容器，同步其背后的滚动底。
+    _resizeAlignedBackingSurfaces(elements, candidate, currentH, nextH);
   }
 
   static void _shiftElementY(Map<String, dynamic> element, double delta) {
