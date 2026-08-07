@@ -291,6 +291,7 @@ class ConversionPipeline {
       final built = UiAssemblyBuilder.buildFromPlans(
         interpretation.plans,
         cardName: card['name']?.toString() ?? '',
+        sourcePack: interpretation.sourcePack,
       );
 
       // ── 剥离开场白里的渲染标记 ──

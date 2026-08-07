@@ -1,9 +1,10 @@
+import 'dart:convert';
+
 import '../api_service.dart';
 import '../json_ai_client.dart';
 import '../conversion_models.dart';
 import '../ui_engine_api/ui_engine_api_dictionary.dart';
 import 'ui_design_plan.dart';
-import 'ui_engine_knowledge_service.dart';
 import 'ui_plan_validator.dart';
 import 'ui_scout_plan.dart';
 import 'ui_source_pack.dart';
@@ -82,40 +83,52 @@ class AiUiInterpreter {
       );
     }
 
-    // ── 阶段 2：Detailer —— 按选型拼细节，输出完整 plan ──
-    var result = await _runDetailer(
-      sourcePack: sourcePack,
-      scoutPlan: scoutPlan,
-      characterName: characterName,
-      onLog: onLog,
-    );
+    // ── 阶段 2：Detailer —— 程序确定生命周期，按 mode 分拆生成 ──
+    final targetModes = _targetModes(sourcePack, scoutPlan);
+    onLog?.call('  UI 生命周期目标：${targetModes.join(' + ')}（Scout mode=${scoutPlan.uiMode} 仅作证据参考）');
 
-    var plans = UiDesignPlan.listFromJson(result.json);
+    final detailJsons = <Map<String, dynamic>>[];
+    final allPlans = <UiDesignPlan>[];
+    final transcript = <ChatMessage>[];
+    for (final targetMode in targetModes) {
+      final result = await _runDetailer(
+        sourcePack: sourcePack,
+        scoutPlan: scoutPlan,
+        characterName: characterName,
+        targetMode: targetMode,
+        onLog: onLog,
+      );
+      detailJsons.add(result.json);
+      transcript.addAll(result.transcript);
+      final parsed = UiDesignPlan.listFromJson(result.json);
+      final selected = parsed.where((plan) => plan.uiMode == targetMode).toList();
+      allPlans.addAll(selected.isEmpty ? parsed : selected);
+    }
+
+    var plans = allPlans;
     var validation = _validatePlans(plans, sourcePack);
-    var transcript = result.transcript;
 
-    // 语义校验失败时，再给模型一次“只修 JSON”的机会。
+    // 语义校验失败时，用“瘦身修复 prompt”：只发错误 + 当前 JSON + 证据摘要，
+    // 不再把完整证据切片和组件 API 全量塞回去，避免修复轮爆炸。
     if (!validation.ok) {
       onLog?.call('  UI 方案校验失败：${validation.errors.length} 个错误，准备请求模型修复…');
-      final repairPrompt = ChatMessage(
-        role: 'user',
-        content: '上面的 UiDesignPlan 没通过校验：\n'
-            '${validation.errors.map((e) => '- $e').join('\n')}\n\n'
-            '请只输出修正后的 JSON 对象。不要新增原卡没有证据的 UI 字段；'
-            '如果证据不足，应改为 hasUi=false。',
+      final repairMessages = _buildSlimRepairMessages(
+        sourcePack: sourcePack,
+        targetModes: targetModes,
+        currentJson: _wrapDetailJsons(detailJsons),
+        errors: validation.errors,
       );
-      final repairMessages = [...transcript, repairPrompt];
       onLog?.call('  UI 修复 prompt 大小：${_promptSizeLabel(_messageChars(repairMessages))}');
-      result = await JsonAiClient.completeObjectWithTranscript(
+      final repairResult = await JsonAiClient.completeObjectWithTranscript(
         taskName: 'UI 理解方案修复',
         messages: repairMessages,
         temperature: 0.0,
-        maxTokens: 6000,
+        maxTokens: 5000,
         repairAttempts: 1,
       );
-      plans = UiDesignPlan.listFromJson(result.json);
+      plans = UiDesignPlan.listFromJson(repairResult.json);
       validation = _validatePlans(plans, sourcePack);
-      transcript = result.transcript;
+      transcript.addAll(repairResult.transcript);
     }
 
     if (!validation.ok) {
@@ -141,6 +154,54 @@ class AiUiInterpreter {
     final low = (chars / 3).ceil();
     final high = chars;
     return '$chars 字符（粗略 $low~$high tokens）';
+  }
+
+  static List<String> _targetModes(
+    UiSourcePack sourcePack,
+    UiScoutPlan scoutPlan,
+  ) {
+    final out = <String>[];
+    final needsOpening =
+        sourcePack.alternateGreetings.isNotEmpty || sourcePack.suggestsProfilePool;
+    final needsScene = sourcePack.hasNarrativeUiWrapper ||
+        sourcePack.hasQuestSchema ||
+        sourcePack.hasChoiceBoxSchema ||
+        sourcePack.hasFriendsAlbumSchema ||
+        sourcePack.hasPlayerStatusSchema;
+    if (needsOpening) out.add('opening');
+    if (needsScene) out.add('scene');
+    if (out.isEmpty && scoutPlan.hasUi) out.add(scoutPlan.uiMode);
+    if (out.isEmpty) out.add('extra_companion');
+    return out.toSet().toList();
+  }
+
+  static Map<String, dynamic> _wrapDetailJsons(
+    List<Map<String, dynamic>> detailJsons,
+  ) {
+    if (detailJsons.length == 1) return detailJsons.first;
+    return {'hasUi': true, 'assemblies': detailJsons};
+  }
+
+  static List<ChatMessage> _buildSlimRepairMessages({
+    required UiSourcePack sourcePack,
+    required List<String> targetModes,
+    required Map<String, dynamic> currentJson,
+    required List<String> errors,
+  }) {
+    return [
+      const ChatMessage(
+        role: 'system',
+        content: '你是 UiDesignPlan JSON 修复器。只输出修正后的 JSON 对象，不要 markdown，不要解释，不要新增无证据字段。',
+      ),
+      ChatMessage(
+        role: 'user',
+        content: '【目标生命周期】${targetModes.join(' + ')}\n'
+            '【证据摘要】\n${sourcePack.summaryPrompt()}\n\n'
+            '【当前 JSON】\n${jsonEncode(currentJson)}\n\n'
+            '【校验错误】\n${errors.map((e) => '- $e').join('\n')}\n\n'
+            '请只修复这些错误。若多生命周期存在，继续使用 assemblies。',
+      ),
+    ];
   }
 
   /// 阶段 1：Scout。输出轻量选型计划。
@@ -209,57 +270,130 @@ class AiUiInterpreter {
     return UiScoutPlan.fromJson(json);
   }
 
-  /// 阶段 2：Detailer。按 Scout 选型拼「组件 API + 证据切片」，输出完整 plan。
+  static List<String> _componentsForTarget(
+    UiSourcePack sourcePack,
+    UiScoutPlan scoutPlan,
+    String targetMode,
+  ) {
+    final out = <String>{...scoutPlan.components};
+    if (targetMode == 'opening') {
+      out.addAll(const ['surface', 'text', 'button', 'input']);
+    } else if (targetMode == 'scene') {
+      out.addAll(const ['surface', 'text', 'progress', 'button', 'input', 'message_flow', 'line']);
+      if (sourcePack.hasFriendsAlbumSchema) out.add('indicator');
+    }
+    return out.toList();
+  }
+
+  static Set<int> _regexIndicesForTarget(
+    UiSourcePack sourcePack,
+    UiScoutPlan scoutPlan,
+    String targetMode,
+  ) {
+    final out = <int>{};
+    void addWhere(bool Function(UiRegexEvidence e) test) {
+      for (var i = 0; i < sourcePack.regexScripts.length; i++) {
+        if (test(sourcePack.regexScripts[i])) out.add(i);
+      }
+    }
+
+    if (targetMode == 'opening') {
+      addWhere((e) => e.findRegex.toLowerCase().contains('alliance') ||
+          e.scriptName.contains('阅读界面'));
+    } else if (targetMode == 'scene') {
+      out.addAll(scoutPlan.regexIndices);
+      addWhere((e) {
+        final hay = '${e.scriptName}\n${e.findRegex}\n${e.replaceString}'.toLowerCase();
+        return hay.contains('alliance') ||
+            hay.contains('playerstatus') ||
+            hay.contains('dq_choicebox') ||
+            hay.contains('friendsalbumpage') ||
+            hay.contains('quest:') ||
+            e.scriptName.contains('任务') ||
+            e.scriptName.contains('状态栏') ||
+            e.scriptName.contains('好友') ||
+            e.scriptName.contains('选项');
+      });
+    } else {
+      out.addAll(scoutPlan.regexIndices);
+    }
+    return out.take(targetMode == 'opening' ? 2 : 8).toSet();
+  }
+
+  static Set<int> _worldBookIndicesForTarget(
+    UiSourcePack sourcePack,
+    UiScoutPlan scoutPlan,
+    String targetMode,
+  ) {
+    if (targetMode == 'opening') return const {};
+    final out = <int>{...scoutPlan.worldBookIndices};
+    for (var i = 0; i < sourcePack.worldBookEvidence.length; i++) {
+      final e = sourcePack.worldBookEvidence[i];
+      final hay = '${e.title}\n${e.content}'.toLowerCase();
+      if (hay.contains('quest:') ||
+          hay.contains('playerstatus') ||
+          hay.contains('friendsalbumpage') ||
+          e.title.contains('任务') ||
+          e.title.contains('状态') ||
+          e.title.contains('羁绊')) {
+        out.add(i);
+      }
+    }
+    return out.take(8).toSet();
+  }
+
+  /// 阶段 2：Detailer。按生命周期目标拼「组件 API + 证据切片」，输出单个 plan。
   static Future<JsonAiResult> _runDetailer({
     required UiSourcePack sourcePack,
     required UiScoutPlan scoutPlan,
     required String characterName,
+    required String targetMode,
     void Function(String line)? onLog,
   }) async {
-    onLog?.call('  精修检索（阶段 2）：拼装组件 API + 证据切片…');
-    // 组件 API 详情：只给 Scout 点名的组件。
+    onLog?.call('  精修检索（阶段 2/$targetMode）：拼装组件 API + 证据切片…');
+    final components = _componentsForTarget(sourcePack, scoutPlan, targetMode);
+    final regexIndices = _regexIndicesForTarget(sourcePack, scoutPlan, targetMode);
+    final worldBookIndices = _worldBookIndicesForTarget(sourcePack, scoutPlan, targetMode);
     final componentDetails = UiEngineApiDictionary.detailForComponents(
-      scoutPlan.components,
+      components,
+      includeLinkerGroups: false,
     );
-    // 证据切片：只给 Scout 点名的正则 / 插件 / HTML / 世界书。
     final detailEvidence = sourcePack.detailPromptFor(
-      regexIndices: scoutPlan.regexIndices.toSet(),
+      regexIndices: regexIndices,
       pluginIndices: scoutPlan.pluginIndices.toSet(),
-      htmlIndices: scoutPlan.htmlIndices.toSet(),
-      worldBookIndices: scoutPlan.worldBookIndices.toSet(),
-      includeFullBranches: scoutPlan.includeFullBranches,
+      htmlIndices: targetMode == 'opening' ? const <int>{} : scoutPlan.htmlIndices.toSet(),
+      worldBookIndices: worldBookIndices,
+      includeFullBranches: targetMode == 'scene' || scoutPlan.includeFullBranches,
     );
     final messages = _buildDetailerMessages(
       sourcePack: sourcePack,
       characterName: characterName,
       scoutPlan: scoutPlan,
+      targetMode: targetMode,
       componentDetails: componentDetails,
       detailEvidence: detailEvidence,
     );
     onLog?.call('  精修组件 API 大小：${componentDetails.runes.length} 字符；证据切片大小：${detailEvidence.runes.length} 字符');
-    onLog?.call('  UI 精修 prompt 总大小：${_promptSizeLabel(_messageChars(messages))}');
-    if (scoutPlan.regexIndices.isNotEmpty || scoutPlan.worldBookIndices.isNotEmpty) {
-      onLog?.call('  精修证据索引：regex=${scoutPlan.regexIndices.join(',')} worldbook=${scoutPlan.worldBookIndices.join(',')} branches=${scoutPlan.includeFullBranches ? 'full' : 'summary'}');
+    onLog?.call('  UI 精修/$targetMode prompt 总大小：${_promptSizeLabel(_messageChars(messages))}');
+    if (regexIndices.isNotEmpty || worldBookIndices.isNotEmpty) {
+      onLog?.call('  精修/$targetMode 证据索引：regex=${regexIndices.join(',')} worldbook=${worldBookIndices.join(',')} branches=${targetMode == 'scene' || scoutPlan.includeFullBranches ? 'full' : 'summary'}');
     }
     var received = 0;
     final result = await JsonAiClient.completeObjectWithTranscript(
-      taskName: 'UI 理解',
+      taskName: 'UI 理解/$targetMode',
       messages: messages,
       temperature: 0.12,
-      maxTokens: 6000,
-      // 阶段 2 上下文大（组件 API + 证据切片），模型首 token 前的
-      // 处理时间长；流式靠 chunk 规避生成中超时，但首 token 等待
-      // 仍受 timeout 限制，放宽到 480s。
-      timeout: const Duration(seconds: 480),
+      maxTokens: targetMode == 'opening' ? 2600 : 4200,
+      timeout: const Duration(seconds: 360),
       repairAttempts: 1,
       onDelta: (delta) {
         received += delta.length;
         if (received % 400 < delta.length) {
-          onLog?.call('  生成中…（已接收 $received 字符）');
+          onLog?.call('  生成 $targetMode 中…（已接收 $received 字符）');
         }
       },
     );
-    onLog?.call('  生成完成，已接收 $received 字符');
+    onLog?.call('  $targetMode 生成完成，已接收 $received 字符');
     return result;
   }
 
@@ -318,6 +452,7 @@ class AiUiInterpreter {
     required UiSourcePack sourcePack,
     required String characterName,
     required UiScoutPlan scoutPlan,
+    required String targetMode,
     required String componentDetails,
     required String detailEvidence,
   }) {
@@ -326,8 +461,8 @@ class AiUiInterpreter {
         role: 'system',
         content: '''
 你是 SillyTavern 角色卡 UI 转译架构师。你已确认原卡包含可转译 UI，
-现在基于提供的组件 API 详情与证据切片，输出高层 UiDesignPlan（必要时用
-assemblies 输出多份方案），交给 Dart 编译器生成 UIEngine JSON。
+现在基于提供的组件 API 详情与证据切片，只输出目标生命周期的一份 UiDesignPlan，
+交给 Dart 编译器生成 UIEngine JSON。不要输出 assemblies；程序会合并多个生命周期。
 
 硬性规则：
 1. 只输出一个 JSON 对象，不要 markdown，不要解释。
@@ -340,8 +475,7 @@ assemblies 输出多份方案），交给 Dart 编译器生成 UIEngine JSON。
       ),
       ChatMessage(
         role: 'user',
-        content: '【选型结果】\n'
-            'uiMode: ${scoutPlan.uiMode}\n'
+        content: '【目标生命周期】$targetMode（程序强制；Scout uiMode=${scoutPlan.uiMode} 仅供参考）\n'
             'uiName: ${scoutPlan.uiName}\n'
             '计划组件: ${scoutPlan.components.join(', ')}\n'
             '侦察摘要: ${scoutPlan.evidenceSummary}\n'
@@ -357,11 +491,35 @@ assemblies 输出多份方案），交给 Dart 编译器生成 UIEngine JSON。
       ),
       ChatMessage(
         role: 'user',
-        content: '请输出 UiDesignPlan JSON。UiDesignPlan schema 见下方：\n'
-            '${UiEngineKnowledgeService.compactPrompt()}',
+        content: '请输出单个 UiDesignPlan JSON（uiMode 必须为 $targetMode）。最小 schema 与规则如下：\n'
+            '${_minimalSchemaPrompt(targetMode)}',
       ),
     ];
   }
+
+  static String _minimalSchemaPrompt(String targetMode) => """
+{
+  "hasUi": true,
+  "confidence": 0.0,
+  "uiMode": "$targetMode",
+  "uiName": "简短名称",
+  "evidenceSummary": "证据摘要",
+  "sourceRefs": ["data..."],
+  "visualStyle": {"styleName":"...","pcbColor":"#111318","panelColor":"#1E232B","titleColor":"#FFFFFF","labelColor":"#AAB0BC","valueColor":"#E8EDF5","accentColor":"#4FA3D1","buttonBgColor":"#2A3340","barFillColor":"#4FA3D1","barTrackColor":"#2A2D36","borderRadius":14,"glow":false},
+  "layout": {"kind":"opening_choices|scene_dashboard|single_panel","navigation":"tabs|swipe|tabs_and_swipe|none","columns":1,"pages":[{"title":"页面","role":"story|stats|tasks|form","type":"base|overlay","parentPage":"父页","columns":1,"density":"compact|normal|spacious","fill":true}]},
+  "fields": [{"name":"字段名","sourceKey":"Key","group":"精确分组","type":"number|text|bool","display":"progress|text|badge","overflow":"ellipsis|wrap|scroll","initialValue":"...","branchInitialValues":{"1":"..."},"min":0,"max":100,"owner":"player|char|neutral","span":1,"layout":"","page":"页面","sourceRef":"证据路径"}],
+  "inputs": [{"name":"输入名","sourceKey":"UserProfile_Name","placeholder":"...","initialValue":"","sendOnSubmit":false,"targetKind":"status_field|none","page":"页面","sourceRef":"证据路径"}],
+  "actions": [{"label":"按钮文案","sendText":"发送文本；opening 分支按钮通常留空","keyAction":false,"branchIndex":0,"page":"页面","sourceRef":"证据路径"}],
+  "unsupported": [{"kind":"...","reason":"...","sourceRef":"..."}],
+  "notes": []
+}
+规则：
+- 只输出这个 mode 的单个 UiDesignPlan，不要 assemblies。
+- opening：只做开场方向选择与少量资料输入；不要放完整 PlayerStatus/任务板。
+- scene：必须有 role=story 的 base 页以插入 message_flow；任务/状态/羁绊等低频详情用 overlay。
+- 长任务板/好友列表可用 initialValue="__AUTO_QUEST_BOARD__" / "__AUTO_FRIENDS_ALBUM_EMPTY__" 让 Dart 自动填充，减少输出长度；TaskBoard 在 branch 1 无任务时写 branchInitialValues["1"]="暂无公会任务，待剧情更新"。
+- 所有字段/动作/输入必须有 sourceRef；meaningful text 不要 ellipsis。
+""";
 
   static UiPlanValidationResult _validatePlans(
     List<UiDesignPlan> plans,

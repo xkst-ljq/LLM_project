@@ -40,6 +40,7 @@ library;
 import 'dart:convert';
 import 'regex_ui_extractor.dart';
 import 'ui_understanding/ui_design_plan.dart';
+import 'ui_understanding/ui_source_pack.dart';
 
 /// 构建时的布局常量。
 ///
@@ -286,6 +287,7 @@ class UiAssemblyBuilder {
   static BuiltAssembly buildFromPlans(
     List<UiDesignPlan> plans, {
     String cardName = '',
+    UiSourcePack? sourcePack,
   }) {
     final assemblies = <String>[];
     final statusFields = <Map<String, dynamic>>[];
@@ -301,7 +303,7 @@ class UiAssemblyBuilder {
     }
 
     for (final plan in plans) {
-      final built = buildFromPlan(plan, cardName: cardName);
+      final built = buildFromPlan(plan, cardName: cardName, sourcePack: sourcePack);
       assemblies.addAll(built.assemblies);
       for (final field in built.statusFields) {
         final id = field['id']?.toString() ?? '';
@@ -326,6 +328,7 @@ class UiAssemblyBuilder {
   static BuiltAssembly buildFromPlan(
     UiDesignPlan plan, {
     String cardName = '',
+    UiSourcePack? sourcePack,
   }) {
     final notes = <String>[];
     if (!plan.hasUi) {
@@ -372,7 +375,10 @@ class UiAssemblyBuilder {
     final actionsByPage = <String, List<UiPlanAction>>{
       for (final title in pageTitles) title: <UiPlanAction>[],
     };
-    for (final f in _dedupePlanFields(plan.fields)) {
+    final resolvedFields = _dedupePlanFields(plan.fields)
+        .map((field) => _resolveAutoField(field, sourcePack))
+        .toList();
+    for (final f in resolvedFields) {
       final page = _resolvePlanPage(f.page, pageTitles, f.isNumber ? '属性' : '档案');
       fieldsByPage.putIfAbsent(page, () => <UiPlanField>[]).add(f);
     }
@@ -1085,6 +1091,75 @@ class UiAssemblyBuilder {
   }
 
   // ─────────────────────── AI Plan 编译辅助 ───────────────────────
+
+  static UiPlanField _resolveAutoField(
+    UiPlanField field,
+    UiSourcePack? sourcePack,
+  ) {
+    if (sourcePack == null) return field;
+    final initial = field.initialValue.trim();
+    if (initial != '__AUTO_QUEST_BOARD__' &&
+        initial != '__AUTO_FRIENDS_ALBUM_EMPTY__') {
+      return field;
+    }
+
+    var nextInitial = field.initialValue;
+    var nextBranchValues = field.branchInitialValues;
+    if (initial == '__AUTO_QUEST_BOARD__') {
+      nextInitial = _formatQuestBoard(sourcePack.questSummariesForBranchIndex(0));
+      final branches = <String, String>{...field.branchInitialValues};
+      for (var branch = 1; branch <= sourcePack.alternateGreetings.length; branch++) {
+        branches.putIfAbsent(
+          '$branch',
+          () {
+            final quests = sourcePack.questSummariesForBranchIndex(branch);
+            return quests.isEmpty ? '暂无公会任务，待剧情更新。' : _formatQuestBoard(quests);
+          },
+        );
+      }
+      nextBranchValues = branches;
+    } else if (initial == '__AUTO_FRIENDS_ALBUM_EMPTY__') {
+      nextInitial = '暂无记录。与角色建立羁绊或组队后，LLM 可在此更新四个伙伴槽位。';
+    }
+
+    return UiPlanField(
+      name: field.name,
+      sourceKey: field.sourceKey,
+      group: field.group,
+      type: field.type,
+      display: field.display,
+      textAlign: field.textAlign,
+      overflow: field.overflow,
+      initialValue: nextInitial,
+      branchInitialValues: nextBranchValues,
+      min: field.min,
+      max: field.max,
+      owner: field.owner,
+      page: field.page,
+      sourceRef: field.sourceRef,
+      span: field.span,
+      layout: field.layout,
+    );
+  }
+
+  static String _formatQuestBoard(List<QuestSummary> quests) {
+    if (quests.isEmpty) return '暂无公会任务，待剧情更新。';
+    final b = StringBuffer('📜 公会任务板');
+    for (var i = 0; i < quests.length; i++) {
+      final q = quests[i];
+      b.writeln('\n\n【${q.name}】${q.type.isEmpty && q.difficulty.isEmpty ? '' : '（${[q.type, q.difficulty].where((e) => e.isNotEmpty).join(' · ')}）'}');
+      if (q.client.isNotEmpty || q.reward.isNotEmpty) {
+        b.writeln('委托人：${q.client.isEmpty ? '—' : q.client}｜报酬：${q.reward.isEmpty ? '—' : q.reward}');
+      }
+      if (q.location.isNotEmpty || q.time.isNotEmpty || q.equipment.isNotEmpty) {
+        b.writeln('地点：${q.location.isEmpty ? '—' : q.location}｜时间：${q.time.isEmpty ? '—' : q.time}｜装备：${q.equipment.isEmpty ? '—' : q.equipment}');
+      }
+      if (q.description.isNotEmpty) b.writeln('描述：${q.description}');
+      if (q.risk.isNotEmpty) b.writeln('风险：${q.risk}');
+      if (q.note.isNotEmpty) b.writeln('说明：${q.note}');
+    }
+    return b.toString();
+  }
 
   static List<String> _planPageTitles(UiDesignPlan plan) {
     final titles = <String>[];

@@ -273,6 +273,8 @@ class UiPlanValidator {
       for (final f in taskFields) ...f.branchInitialValues.values,
     ].where((v) => v.trim().isNotEmpty).toList();
     final joined = values.join('\n');
+    final usesAutoQuestBoard = values.any((v) => v.trim() == '__AUTO_QUEST_BOARD__');
+    if (usesAutoQuestBoard) return const [];
     final errors = <String>[];
     if (RegExp(r'\{\s*quest\s*:|\|desc\s*:|\|reward\s*:|\|risk\s*:')
         .hasMatch(joined)) {
@@ -408,6 +410,7 @@ class UiPlanValidator {
 
     final missing = <String>[];
     for (final field in taskFields) {
+      if (field.initialValue.trim() == '__AUTO_QUEST_BOARD__') continue;
       final missingBranches = branchesWithoutQuest
           .where((branch) => !field.branchInitialValues.containsKey('$branch'))
           .toList();

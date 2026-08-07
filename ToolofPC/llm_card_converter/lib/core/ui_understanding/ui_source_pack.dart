@@ -49,6 +49,11 @@ class UiSourcePack {
   bool get hasFriendsAlbumSchema => _hasSchemaToken('FriendsAlbumPage') ||
       worldBookEvidence.any((e) => e.content.contains('FriendsAlbumPage'));
 
+  bool get hasPlayerStatusSchema => _hasSchemaToken('PlayerStatus') ||
+      worldBookEvidence.any((e) => e.content.contains('PlayerStatus'));
+
+  bool get suggestsProfilePool => _sourceSuggestsProfilePool;
+
   List<QuestSummary> get questSummaries {
     final out = <QuestSummary>[];
     void collect(String text, String path) {
@@ -373,25 +378,25 @@ class UiSourcePack {
       b.writeln('\n## regex[$i] ${e.path} ${e.scriptName} enabled=${e.enabled}');
       final hint = _layoutHintOf(e.replaceString);
       if (hint.isNotEmpty) b.writeln('layout hints: $hint');
-      b.writeln('findRegex:\n${_clip(e.findRegex, 2500)}');
-      b.writeln('replaceString:\n${_clip(e.replaceString, 6000)}');
+      b.writeln('findRegex:\n${_clip(_sanitizePromptEvidence(e.findRegex), 1800)}');
+      b.writeln('replaceString:\n${_clip(_sanitizePromptEvidence(e.replaceString), 2600)}');
     }
     for (final i in pluginIndices) {
       if (i < 0 || i >= pluginScripts.length) continue;
       final e = pluginScripts[i];
       b.writeln('\n## plugin[$i] ${e.path} enabled=${e.enabled}');
       if (e.urls.isNotEmpty) b.writeln('urls: ${e.urls.join(', ')}');
-      b.writeln(_clip(e.content, 3500));
+      b.writeln(_clip(_sanitizePromptEvidence(e.content), 2200));
     }
     for (final i in htmlIndices) {
       if (i < 0 || i >= htmlSnippets.length) continue;
       final e = htmlSnippets[i];
-      b.writeln('\n## html[$i] ${e.path}\n${_clip(e.text, 3000)}');
+      b.writeln('\n## html[$i] ${e.path}\n${_clip(_sanitizePromptEvidence(e.text), 1800)}');
     }
     for (final i in worldBookIndices) {
       if (i < 0 || i >= worldBookEvidence.length) continue;
       final e = worldBookEvidence[i];
-      b.writeln('\n## worldbook[$i] ${e.path} ${e.title}\n${_clip(e.content, 2500)}');
+      b.writeln('\n## worldbook[$i] ${e.path} ${e.title}\n${_clip(_sanitizePromptEvidence(e.content), 1800)}');
     }
     if (actionSnippets.isNotEmpty) {
       b.writeln('\n# onclick/send actions');
@@ -514,6 +519,40 @@ class UiSourcePack {
       if (out.length >= 5) break;
     }
     return out;
+  }
+
+  static String _sanitizePromptEvidence(String raw) {
+    var s = raw;
+    // 大量 data URI / base64 对 UI 语义几乎没有帮助，却会让 prompt 暴涨。
+    s = s.replaceAll(
+      RegExp(r'''url\((['"]?)data:image[\s\S]*?\1\)''', caseSensitive: false),
+      'url([omitted data:image])',
+    );
+    s = s.replaceAll(
+      RegExp(r'''data:image\/[^\s'"<>)]{80,}''', caseSensitive: false),
+      '[omitted data:image]',
+    );
+    s = s.replaceAll(
+      RegExp(r'''base64,[A-Za-z0-9+/=]{80,}''', caseSensitive: false),
+      'base64,[omitted]',
+    );
+    // hover / inline JS 不能执行，只保留“有 hover 行为”的事实。
+    s = s.replaceAll(
+      RegExp(r'''\s+on(?:mouse|click|input|change|touch)[a-zA-Z]*\s*=\s*"[\s\S]*?"'''),
+      ' data-event="[omitted inline handler]"',
+    );
+    s = s.replaceAll(
+      RegExp(r"""\s+on(?:mouse|click|input|change|touch)[a-zA-Z]*\s*=\s*'[\s\S]*?'"""),
+      ' data-event="[omitted inline handler]" ',
+    );
+    // CSS 动画关键帧只需记录不支持，正文不需要完整 keyframes。
+    s = s.replaceAll(
+      RegExp(r'@keyframes[\s\S]*?}\s*}', caseSensitive: false),
+      '@keyframes [omitted]',
+    );
+    // 压缩空行，避免 HTML/CSS 缩进撑大上下文。
+    s = s.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    return s.trim();
   }
 
   static String _clip(String s, int max) {
