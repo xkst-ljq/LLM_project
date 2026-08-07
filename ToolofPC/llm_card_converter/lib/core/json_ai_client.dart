@@ -55,6 +55,47 @@ class JsonAiClient {
       throw StateError('未配置 AI（请先在设置中填写 API）');
     }
 
+    // 云端 API 在 json_object 模式 + 超长上下文下偶发空 content。
+    // 这里做两层兜底：
+    //   1. 解析失败且修复轮次耗尽后，用普通模式整体重跑一次任务；
+    //   2. 普通模式仍失败，再做一次完整重试。
+    // 空返回往往是瞬时的，重试成功率很高。
+    var lastFormatError = <Object?>[];
+    for (var overall = 0; overall < 2; overall++) {
+      try {
+        return await _completeOnce(
+          taskName: taskName,
+          messages: messages,
+          temperature: temperature,
+          maxTokens: maxTokens,
+          timeout: timeout,
+          repairAttempts: repairAttempts,
+        );
+      } catch (e) {
+        lastFormatError = [e];
+        if (e is FormatException) {
+          // 解析失败：可能是 jsonMode 不兼容导致空输出，整体重试一次。
+          continue;
+        }
+        rethrow;
+      }
+    }
+    throw lastFormatError.first!;
+  }
+
+  static Future<JsonAiResult> _completeOnce({
+    required String taskName,
+    required List<ChatMessage> messages,
+    required double temperature,
+    required int? maxTokens,
+    required Duration timeout,
+    required int repairAttempts,
+  }) async {
+    final cfg = await AppSettings.getApiConfig();
+    if (!cfg.isComplete) {
+      throw StateError('未配置 AI（请先在设置中填写 API）');
+    }
+
     String raw;
     try {
       raw = await ApiService.chatMessages(

@@ -27,6 +27,7 @@ class AiUiInterpreter {
       taskName: 'UI 理解',
       messages: messages,
       temperature: 0.12,
+      maxTokens: 6000,
       repairAttempts: 1,
     );
 
@@ -47,6 +48,7 @@ class AiUiInterpreter {
         taskName: 'UI 理解方案修复',
         messages: [...transcript, repairPrompt],
         temperature: 0.0,
+        maxTokens: 6000,
         repairAttempts: 1,
       );
       plans = UiDesignPlan.listFromJson(result.json);

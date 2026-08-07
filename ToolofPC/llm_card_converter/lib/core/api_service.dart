@@ -185,6 +185,14 @@ class ApiService {
           return false;
       }
     }
+    // 「模型返回为空 / 未返回内容」是可恢复的：常见于云端 API 在
+    // json_object 模式 + 超长上下文下偶发空 content，重试往往就成功。
+    if (error is FormatException ||
+        (error is Exception &&
+            (error.toString().contains('模型返回为空') ||
+                error.toString().contains('模型未返回内容')))) {
+      return true;
+    }
     return error is SocketException || error is HandshakeException;
   }
 
