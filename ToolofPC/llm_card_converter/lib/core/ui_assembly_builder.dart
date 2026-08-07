@@ -1258,7 +1258,7 @@ class UiAssemblyBuilder {
       final module = element['module'];
       if (module is! Map || module['type']?.toString() != 'surface') continue;
       final name = element['name']?.toString() ?? '';
-      if (!name.startsWith('滚动底_')) continue;
+      if (!name.startsWith('滚动底_') && !name.startsWith('滚动容器_')) continue;
       final offset = element['offset'];
       final size = element['size'];
       if (offset is! Map || size is! Map) continue;
@@ -1266,11 +1266,23 @@ class UiAssemblyBuilder {
       final sy = (offset['y'] as num?)?.toDouble() ?? 0.0;
       final sw = (size['width'] as num?)?.toDouble() ?? 0.0;
       final sh = (size['height'] as num?)?.toDouble() ?? 0.0;
-      if ((sx - x).abs() < 0.5 &&
-          (sy - y).abs() < 0.5 &&
-          (sw - w).abs() < 0.5 &&
-          (sh - oldHeight).abs() < 1.0) {
-        size['height'] = newHeight;
+      if (name.startsWith('滚动底_')) {
+        final oldBackingH = oldHeight + 4.0;
+        if ((sx - (x - 2)).abs() < 8 &&
+            (sy - (y - 1)).abs() < 4 &&
+            (sw - (w + 4)).abs() < 16 &&
+            (sh - oldBackingH).abs() < 8) {
+          size['height'] = newHeight + 4.0;
+        }
+      } else if (name.startsWith('滚动容器_')) {
+        final containerY = y - _Layout.rowHeight - 2.0;
+        final oldContainerH = _Layout.rowHeight + oldHeight + 10.0;
+        if ((sx - _Layout.pcbPadding).abs() < 1 &&
+            (sy - containerY).abs() < 8 &&
+            (sw - (w + 12)).abs() < 16 &&
+            (sh - oldContainerH).abs() < 12) {
+          size['height'] = _Layout.rowHeight + newHeight + 10.0;
+        }
       }
     }
   }
@@ -1941,6 +1953,20 @@ class UiAssemblyBuilder {
         ? _progressLabelText(field.name, initial, max)
         : field.name;
 
+    if (shouldScrollText) {
+      elements.add(_surface(
+        id: nextId('el'),
+        name: '滚动容器_${field.name}',
+        x: _Layout.pcbPadding,
+        y: y,
+        w: innerW,
+        h: _Layout.rowHeight + valueHeight + 4,
+        color: _softPanelColor(theme),
+        layer: elements.length + 1,
+        radius: 10,
+      ));
+    }
+
     elements.add(_text(
       id: nextId('el'),
       name: '${field.name}标签',
@@ -1979,27 +2005,34 @@ class UiAssemblyBuilder {
           : _Layout.pcbPadding + labelW + 6;
       final valueY = (shouldScrollText || needsWideText) ? y + _Layout.rowHeight : y;
       final valueW = (shouldScrollText || needsWideText) ? innerW : innerW - labelW - 6;
+      final scrollInset = shouldScrollText ? 6.0 : 0.0;
+      final textX = valueX + scrollInset;
+      final textY = valueY + (shouldScrollText ? 2.0 : 0.0);
+      final textW = (valueW - scrollInset * 2).clamp(24.0, valueW).toDouble();
+      final textH = (valueHeight - (shouldScrollText ? 6.0 : 0.0))
+          .clamp(_Layout.rowHeight, valueHeight)
+          .toDouble();
       if (shouldScrollText) {
         elements.add(_surface(
           id: nextId('el'),
           name: '滚动底_${field.name}',
-          x: valueX,
-          y: valueY,
-          w: valueW,
-          h: valueHeight,
-          color: _softPanelColor(theme),
+          x: valueX + 4,
+          y: valueY + 1,
+          w: (valueW - 8).clamp(24.0, valueW).toDouble(),
+          h: (valueHeight - 2).clamp(_Layout.rowHeight, valueHeight).toDouble(),
+          color: _innerScrollPanelColor(theme),
           layer: elements.length + 1,
-          radius: 9,
+          radius: 8,
         ));
       }
       elements.add(_text(
         id: nextId('el'),
         name: field.name,
         text: initial.isEmpty ? '—' : initial,
-        x: valueX,
-        y: valueY,
-        w: valueW,
-        h: valueHeight,
+        x: textX,
+        y: textY,
+        w: textW,
+        h: textH,
         fontSize: shouldScrollText
             ? _scrollTextFontSizeFor(field, initial, mode)
             : (mode == 'extra_companion' ? 11 : 12),
@@ -2325,6 +2358,11 @@ class UiAssemblyBuilder {
     // 半透明底色在 JSON 里仍是 ARGB；运行时叠在 PCB/底板上，给任务板等
     // 长文本一个明确容器面，避免看起来像漂浮文字。
     return (theme.panelColor & 0x00FFFFFF) | 0xCC000000;
+  }
+
+  static int _innerScrollPanelColor(UiVisualTheme theme) {
+    // 内层滚动面稍淡，保证能看出“外容器 + 内滚动区”的边界。
+    return (theme.panelColor & 0x00FFFFFF) | 0x99000000;
   }
 
   static bool _isTaskBoardField(UiPlanField field) {
