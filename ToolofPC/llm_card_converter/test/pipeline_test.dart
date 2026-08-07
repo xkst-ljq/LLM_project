@@ -341,6 +341,253 @@ void main() {
     });
   });
 
+  group('Layout regression - no overflow / no big blank', () {
+    /// 编译 plan 并返回 (pcbW, pcbH, pages)。
+    (double, double, List<Map>) _compile(Map<String, dynamic> planJson) {
+      final plan = UiDesignPlan.fromJson(planJson);
+      final built = UiAssemblyBuilder.buildFromPlan(plan, cardName: '测试卡');
+      final asm = jsonDecode(built.assemblies.first) as Map;
+      final pcbW = (asm['pcbWidth'] as num).toDouble();
+      final pcbH = (asm['pcbHeight'] as num).toDouble();
+      final pages = (jsonDecode(asm['pages'] as String) as List).cast<Map>();
+      return (pcbW, pcbH, pages);
+    }
+
+    /// 统计可见元素中超出 PCB 边界的数量。
+    int _overflowCount(List<Map> pages, double pcbW, double pcbH) {
+      var n = 0;
+      for (final page in pages) {
+        for (final e in (page['elements'] as List).cast<Map>()) {
+          final module = e['module'] as Map;
+          final type = module['type']?.toString() ?? '';
+          if (const {'linker', 'page_router', 'math_node', 'timer'}
+              .contains(type)) {
+            continue;
+          }
+          if (e['name'] == '底板') continue;
+          final off = e['offset'] as Map;
+          final sz = e['size'] as Map;
+          final x = (off['x'] as num).toDouble();
+          final y = (off['y'] as num).toDouble();
+          final w = (sz['width'] as num).toDouble();
+          final h = (sz['height'] as num).toDouble();
+          if (x < 0 || y < 0) continue;
+          if (x + w > pcbW + 0.5 || y + h > pcbH + 0.5) n++;
+        }
+      }
+      return n;
+    }
+
+    /// 每页底部空白占比（百分比）。
+    List<double> _blankRatios(List<Map> pages, double pcbH) {
+      final out = <double>[];
+      for (final page in pages) {
+        double maxBottom = 0;
+        for (final e in (page['elements'] as List).cast<Map>()) {
+          final module = e['module'] as Map;
+          final type = module['type']?.toString() ?? '';
+          if (const {'linker', 'page_router', 'math_node', 'timer'}
+              .contains(type)) {
+            continue;
+          }
+          if (e['name'] == '底板') continue;
+          final off = e['offset'] as Map;
+          final sz = e['size'] as Map;
+          final y = (off['y'] as num).toDouble();
+          final h = (sz['height'] as num).toDouble();
+          if (y >= 0 && y + h > maxBottom) maxBottom = y + h;
+        }
+        out.add(((pcbH - maxBottom) / pcbH * 100).clamp(0, 100).toDouble());
+      }
+      return out;
+    }
+
+    test('two-column attribute grid does not overflow and fills page', () {
+      final (pcbW, pcbH, pages) = _compile({
+        'hasUi': true,
+        'confidence': 0.9,
+        'uiMode': 'scene',
+        'uiName': '测试面板',
+        'visualStyle': {'pcbColor': '#111318', 'panelColor': '#1E232B'},
+        'layout': {
+          'kind': 'scene_dashboard',
+          'pages': [
+            {'title': '正文', 'role': 'story', 'type': 'base', 'columns': 1},
+            {
+              'title': '属性',
+              'role': 'stats',
+              'type': 'base',
+              'columns': 2,
+              'density': 'compact',
+            },
+          ],
+        },
+        'fields': [
+          for (var i = 1; i <= 10; i++)
+            {
+              'name': '属性$i',
+              'sourceKey': 'STAT$i',
+              'group': '核心属性',
+              'type': 'number',
+              'display': 'progress',
+              'initialValue': '${50 + i}',
+              'min': 0,
+              'max': 100,
+              'owner': 'player',
+              'page': '属性',
+              'span': 1,
+              'sourceRef': 'data STAT$i',
+            },
+          {
+            'name': '物品栏',
+            'sourceKey': 'ITEMS',
+            'group': '核心属性',
+            'type': 'text',
+            'display': 'text',
+            'overflow': 'scroll',
+            'initialValue': '铁剑、药水、护符、地图碎片、金币若干',
+            'page': '属性',
+            'span': 2,
+            'sourceRef': 'data ITEMS',
+          },
+        ],
+        'actions': [
+          {
+            'label': '行动',
+            'sendText': '行动',
+            'page': '正文',
+            'sourceRef': 'x',
+          },
+        ],
+        'unsupported': [],
+        'notes': [],
+      });
+      expect(pcbW, 360);
+      expect(_overflowCount(pages, pcbW, pcbH), 0,
+          reason: '两列属性网格不应有任何元素溢出 PCB');
+      final blanks = _blankRatios(pages, pcbH);
+      for (final blank in blanks) {
+        expect(blank, lessThan(25),
+            reason: '页面底部空白应小于 25%（此前可达 60%+）');
+      }
+    });
+
+    test('companion panel compacts instead of leaving huge blank', () {
+      final (pcbW, pcbH, pages) = _compile({
+        'hasUi': true,
+        'confidence': 0.9,
+        'uiMode': 'extra_companion',
+        'uiName': '冒险者状态面板',
+        'visualStyle': {'pcbColor': '#111318', 'panelColor': '#1E232B'},
+        'layout': {
+          'kind': 'tabbed_companion_panel',
+          'navigation': 'tabs',
+          'pages': [
+            {'title': '状态', 'role': 'stats', 'columns': 1},
+            {'title': '选项', 'role': 'actions', 'columns': 1},
+          ],
+        },
+        'fields': [
+          {
+            'name': '生命值',
+            'sourceKey': 'HP',
+            'group': '核心状态',
+            'type': 'number',
+            'display': 'progress',
+            'initialValue': '84',
+            'min': 0,
+            'max': 100,
+            'owner': 'char',
+            'page': '状态',
+            'sourceRef': 'HP',
+          },
+          {
+            'name': '法力',
+            'sourceKey': 'MP',
+            'group': '核心状态',
+            'type': 'number',
+            'display': 'progress',
+            'initialValue': '42',
+            'min': 0,
+            'max': 100,
+            'owner': 'char',
+            'page': '状态',
+            'sourceRef': 'MP',
+          },
+          {
+            'name': '经验',
+            'sourceKey': 'XP',
+            'group': '核心状态',
+            'type': 'number',
+            'display': 'progress',
+            'initialValue': '30',
+            'min': 0,
+            'max': 100,
+            'owner': 'player',
+            'page': '状态',
+            'sourceRef': 'XP',
+          },
+          {
+            'name': '金币',
+            'sourceKey': 'GOLD',
+            'group': '资产',
+            'type': 'number',
+            'display': 'text',
+            'initialValue': '520',
+            'page': '状态',
+            'sourceRef': 'GOLD',
+          },
+          {
+            'name': '地点',
+            'sourceKey': 'LOC',
+            'group': '资产',
+            'type': 'text',
+            'display': 'text',
+            'initialValue': '黑曜石港',
+            'page': '状态',
+            'sourceRef': 'LOC',
+          },
+        ],
+        'actions': [
+          {
+            'label': '接取任务',
+            'sendText': '接取任务',
+            'page': '选项',
+            'sourceRef': 'a1',
+          },
+          {
+            'label': '前往市场',
+            'sendText': '前往市场',
+            'page': '选项',
+            'sourceRef': 'a2',
+          },
+          {
+            'label': '查看委托板',
+            'sendText': '查看委托板',
+            'page': '选项',
+            'sourceRef': 'a3',
+          },
+          {
+            'label': '休息一晚',
+            'sendText': '休息一晚',
+            'page': '选项',
+            'sourceRef': 'a4',
+          },
+        ],
+        'unsupported': [],
+        'notes': [],
+      });
+      expect(pcbW, 212);
+      // 内容驱动高度：不再为矮页拔高 PCB，整体应明显低于旧版 490。
+      expect(pcbH, lessThan(400),
+          reason: '伴生面板高度应由内容决定，不应被拔高到接近 490');
+      expect(_overflowCount(pages, pcbW, pcbH), 0);
+      for (final blank in _blankRatios(pages, pcbH)) {
+        expect(blank, lessThan(25));
+      }
+    });
+  });
+
   group('CardWorkItem - manual override', () {
     test('overrideStageOutput marks editedByUser', () {
       final pipeline = ConversionPipeline();

@@ -52,6 +52,25 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - TaskBoard/FriendsAlbum text fields are compiled as status_field dataChannels with LLM write policy, so they can be continuously updated by the LLM. Keep them as scroll fields for dynamic content; do not describe them as dead static text unless the source explicitly forbids updates.
 - For multi-opening cards with asymmetric runtime data, express available data differences with branchInitialValues where possible. Example: if branch 0 has three quest cards but branch 1 has no quest schema, TaskBoard.branchInitialValues["1"] should be “暂无公会任务，待剧情更新”, not a copy of branch 0 tasks.
 
+# Layout intent fields (AI-driven space allocation)
+You can influence how the compiler lays out the PCB by setting layout hints. These are optional; the compiler falls back to heuristics when absent, but explicit intent produces denser, better-filled layouts.
+
+Page-level (in layout.pages[]):
+- "columns": integer 1-6. Number of columns for the page's field grid. 1 = single-column rows, 2 = two-column grid, 3 = three-column compact grid. Set 2 or 3 for attribute/stat grids that originally were multi-column. Leave 0/unset to let the compiler decide from field count.
+- "density": "compact" | "normal" | "spacious". Row vertical spacing. compact for dense stat boards, spacious for readable dossier pages.
+- "fill": true | false. Whether this page should stretch its scrollable content to fill the PCB height. Default true for scene story pages; set false for short action pages that should stay compact.
+
+Field-level (in fields[]):
+- "span": 1 | 2. Column span within a multi-column page. 2 = occupy the full row. Use 2 for long text fields, task boards, item lists, relationship descriptions. Ignored when the page is single-column.
+- "layout": "standard" | "grid" | "progress" | "badge". Optional per-field layout override. "progress" renders a number field as a progress bar; "grid" renders it as a compact grid cell. Empty/unset lets the compiler decide from display/type.
+
+Guidelines for good space allocation:
+- Attribute/stat groups (STR/AGI/INT or 力量/敏捷/智力) that were 2-column in the original should set layout.pages[] columns:2 (or 3 for very dense grids). Do NOT force one-field-per-row on multi-column sources.
+- Long text fields (task boards, item lists, dossiers) should set "span":2 and overflow:"scroll" so they own a full row and expand to fill remaining PCB height.
+- Do NOT put 1-2 small fields alone on a page; merge them or move to overlay. The compiler auto-detects sparse pages and reports them.
+- Keep total content height reasonable: the compiler clamps PCB height to 2000. Extremely dense cards should split into overlay pages rather than one towering PCB.
+- Progress clusters (HP/MP/XP) already render as a special compact cluster; you do not need columns for them, but setting "density":"compact" tightens spacing.
+
 # What to extract from a SillyTavern card
 - regex_scripts findRegex/replaceString may define UI fields and HTML/CSS layout.
 - IMPORTANT: use the human-facing labels from replaceString / rendered HTML as field.name. If the transport key is English (HP/MP/STR) but the rendered label is Chinese (生命值 (HP)), use the Chinese display label as name and put the raw key in sourceKey. Do not throw away the original display translation.
@@ -117,9 +136,10 @@ Single UiDesignPlan object shape:
   "layout": {
     "kind": "tabbed_companion_panel|single_panel|opening_choices|scene_dashboard",
     "navigation": "tabs|swipe|tabs_and_swipe",
+    "columns": 2,
     "pages": [
-      {"title": "公会大厅", "role": "story", "type": "base"},
-      {"title": "冒险者档案", "role": "stats", "type": "overlay", "parentPage": "公会大厅"},
+      {"title": "公会大厅", "role": "story", "type": "base", "columns": 1, "density": "normal", "fill": true},
+      {"title": "冒险者档案", "role": "stats", "type": "overlay", "parentPage": "公会大厅", "columns": 2, "density": "compact"},
       {"title": "任务板", "role": "tasks", "type": "overlay", "parentPage": "公会大厅"}
     ]
   },
@@ -137,6 +157,8 @@ Single UiDesignPlan object shape:
       "min": 0,
       "max": 100,
       "owner": "player|char|neutral",
+      "span": 1,
+      "layout": "",
       "page": "属性",
       "sourceRef": "data.first_mes:<生命>84%</生命>"
     }

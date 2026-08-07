@@ -119,6 +119,7 @@ class UiPlanValidator {
     if (sparsePages.isNotEmpty) {
       errors.add("以下页面内容过少，容易导致 PCB 大面积空白：${sparsePages.join('、')}。请合并到相关页面、改为 overlay，或放入大规格 scroll/message_flow 内容区。");
     }
+    errors.addAll(_layoutIntentErrors(plan));
     if (plan.inputs.length > 4) {
       warnings.add('输入框较多（${plan.inputs.length}），编译时会压缩布局。');
     }
@@ -206,6 +207,34 @@ class UiPlanValidator {
       }
     }
     return result;
+  }
+
+  /// 校验 AI 布局意图字段的合法性（columns / density / fill）。
+  static List<String> _layoutIntentErrors(UiDesignPlan plan) {
+    final errors = <String>[];
+    for (final page in plan.layout.pages) {
+      final title = page.title.trim();
+      if (title.isEmpty) continue;
+      final columns = page.columns;
+      if (columns > 6) {
+        errors.add('页面「$title」columns 超出上限 6。');
+      }
+      final density = page.density;
+      if (density.isNotEmpty &&
+          !const {'compact', 'normal', 'spacious'}.contains(density)) {
+        errors.add('页面「$title」density 非法：$density（应为 compact/normal/spacious）。');
+      }
+    }
+    for (final field in plan.fields) {
+      if (field.span > 2) {
+        errors.add('字段「${field.name}」span 超出上限 2。');
+      }
+      if (field.layout.isNotEmpty &&
+          !const {'standard', 'grid', 'progress', 'badge'}.contains(field.layout)) {
+        errors.add('字段「${field.name}」layout 非法：${field.layout}。');
+      }
+    }
+    return errors;
   }
 
   static List<String> _groupsSplitAcrossPages(UiDesignPlan plan) {

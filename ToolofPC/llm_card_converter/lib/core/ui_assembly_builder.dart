@@ -59,6 +59,48 @@ class _Layout {
   static const int maxFields = 14;
 }
 
+/// 单页的布局意图（来自 AI 的 layout.pages[].columns/density/fill，或启发式）。
+class _PageLayoutIntent {
+  /// 网格列数。0 = 未指定，用启发式。
+  final int columns;
+
+  /// 'compact' | 'normal' | 'spacious' | ''。'' = 未指定。
+  final String density;
+
+  /// 是否尽量占满 PCB 高度。
+  final bool fill;
+
+  const _PageLayoutIntent({
+    this.columns = 0,
+    this.density = '',
+    this.fill = false,
+  });
+
+  /// 实际生效的列数：AI 指定 > 0 用 AI 的，否则按字段数量启发式。
+  int effectiveColumns(int fieldCount, String mode) {
+    if (columns > 0) return columns;
+    if (mode == 'extra_companion') return 1;
+    if (fieldCount >= 8) return 2;
+    if (fieldCount >= 4) {
+      // 4~7 个字段：若都是数值属性（适合网格）则两列，否则单列。
+      return 1;
+    }
+    return 1;
+  }
+
+  /// 行高缩放：compact 压紧、spacious 放宽。
+  double rowScale() {
+    switch (density) {
+      case 'compact':
+        return 0.85;
+      case 'spacious':
+        return 1.25;
+      default:
+        return 1.0;
+    }
+  }
+}
+
 /// 配色。取自引擎示例卡的深色系，保证文字对比度达标。
 ///
 /// 小字（<14px）按 WCAG **AAA 7:1** 要求，不是 4.5:1
@@ -377,6 +419,24 @@ class UiAssemblyBuilder {
       notes.add('AI 只输出了 overlay 页面，已将「$promoted」提升为 base 页面作为叠加页父级。');
     }
 
+    // A: 布局意图解析：每页的列数 / 密度 / 是否占满。
+    // AI 可在 layout.pages 里声明 columns / density / fill，未声明时
+    // 由编译器按字段数量启发式决定（见 _resolvePageLayoutIntent）。
+    final pageLayoutIntents = <String, _PageLayoutIntent>{};
+    for (final spec in plan.layout.pages) {
+      final title = spec.title.trim();
+      if (title.isEmpty) continue;
+      pageLayoutIntents[title] = _PageLayoutIntent(
+        columns: spec.columns,
+        density: spec.density,
+        fill: spec.fill,
+      );
+    }
+    // 补充 AI 可能只放在 fields.page 里的页面：它们没有 spec，用默认意图。
+    for (final title in pageTitles) {
+      pageLayoutIntents.putIfAbsent(title, () => const _PageLayoutIntent());
+    }
+
     final declaredMessagePage = pageTitles.any(
       (title) => _isSceneMessagePage(mode, title, pageRoles[title]),
     );
@@ -448,6 +508,7 @@ class UiAssemblyBuilder {
         mode: mode,
         pcbW: pcbW,
         innerW: innerW,
+        pageIntent: pageLayoutIntents[title] ?? const _PageLayoutIntent(),
         showMessageFlow: title == fallbackMessagePage ||
             _isSceneMessagePage(mode, title, pageRoles[title]),
       );
@@ -501,6 +562,12 @@ class UiAssemblyBuilder {
       }
       _expandScrollableContentToFillPage(
         elements.cast<Map<String, dynamic>>(),
+        pcbH: pcbH,
+      );
+      // 几何自检：把所有元素收敛到 PCB 内边距内，超宽文本转 wrap / 补高。
+      _sanitizeElementGeometry(
+        elements.cast<Map<String, dynamic>>(),
+        pcbW: pcbW,
         pcbH: pcbH,
       );
     }
@@ -1322,6 +1389,97 @@ class UiAssemblyBuilder {
     return size is Map ? ((size['height'] as num?)?.toDouble() ?? 0.0) : 0.0;
   }
 
+  /// 编译后几何自检：把每个可见元素收敛到 PCB 内边距内。
+  ///
+  /// 解决两类布局病：
+  /// 1. **组件溢出**：元素右/下边缘超出 PCB 内边距时，clamp 宽高与位置；
+  ///    `text` 超宽自动转 `wrap`，超高自动补足（scroll 字段除外）。
+  /// 2. **横向越界**：`x + w` 超过 `pcbW - padding` 时缩窄到边界内。
+  ///
+  /// 后台逻辑件（linker / page_router / math_node / timer）与底板不参与——
+  /// 它们本来就放在 PCB 外部逻辑区（x < 0）或整页铺满。
+  static void _sanitizeElementGeometry(
+    List<Map<String, dynamic>> elements, {
+    required double pcbW,
+    required double pcbH,
+  }) {
+    const pad = _Layout.pcbPadding;
+    final maxRight = (pcbW - pad).clamp(pad, pcbW).toDouble();
+    final maxBottom = (pcbH - pad).clamp(pad, pcbH).toDouble();
+    const minSize = 16.0;
+
+    for (final element in elements) {
+      final module = element['module'];
+      final type = module is Map ? module['type']?.toString() ?? '' : '';
+      if (const {'linker', 'page_router', 'math_node', 'timer'}.contains(type)) {
+        continue;
+      }
+      final name = element['name']?.toString() ?? '';
+      if (name == '底板') continue;
+      final offset = element['offset'];
+      final size = element['size'];
+      if (offset is! Map || size is! Map) continue;
+
+      var x = (offset['x'] as num?)?.toDouble() ?? 0.0;
+      var y = (offset['y'] as num?)?.toDouble() ?? 0.0;
+      var w = (size['width'] as num?)?.toDouble() ?? 0.0;
+      var h = (size['height'] as num?)?.toDouble() ?? 0.0;
+      if (w <= 0 || h <= 0) continue;
+
+      final isScroll = type == 'text' &&
+          module['properties'] is Map &&
+          module['properties']['overflow']?.toString() == 'scroll';
+
+      // ── 横向越界收敛 ──
+      if (x < pad) {
+        final delta = pad - x;
+        x = pad;
+        w = (w - delta).clamp(minSize, maxRight - pad).toDouble();
+      }
+      if (x + w > maxRight) {
+        w = (maxRight - x).clamp(minSize, maxRight - pad).toDouble();
+      }
+
+      // ── 纵向越界收敛 ──
+      // scroll 字段顶部对齐是刻意的，不上移；其余越顶元素拉回边界。
+      if (y < pad && !isScroll) {
+        y = pad;
+      }
+      if (y + h > maxBottom) {
+        if (!isScroll) {
+          h = (maxBottom - y).clamp(minSize, maxBottom - pad).toDouble();
+        }
+      }
+
+      // ── 超宽文本转 wrap（估算一行放不下就换行并补高）──
+      if (type == 'text' && w > 0 && h > 0) {
+        final props = module['properties'];
+        if (props is Map) {
+          final overflow = props['overflow']?.toString() ?? 'ellipsis';
+          final text = props['text']?.toString() ?? '';
+          final fontSize = props['fontSize'] is num
+              ? (props['fontSize'] as num).toDouble()
+              : 12.0;
+          // 粗估：CJK 字符 ≈ fontSize 宽，ASCII ≈ 0.55 × fontSize。
+          var estimatedWidth = 0.0;
+          for (final rune in text.runes) {
+            estimatedWidth += (rune > 0x2E80) ? fontSize : fontSize * 0.55;
+          }
+          if (overflow == 'ellipsis' && estimatedWidth > w * 1.15) {
+            props['overflow'] = 'wrap';
+            final needed = _Layout.rowHeight * 2;
+            if (h < needed) h = needed.clamp(minSize, 80.0).toDouble();
+          }
+        }
+      }
+
+      offset['x'] = x;
+      offset['y'] = y;
+      size['width'] = w;
+      size['height'] = h;
+    }
+  }
+
   static double _addOverlayToolbar({
     required List<Map<String, dynamic>> elements,
     required List<({String surface, String button})> pressPairs,
@@ -1418,10 +1576,14 @@ class UiAssemblyBuilder {
     required String mode,
     required double pcbW,
     required double innerW,
+    _PageLayoutIntent? pageIntent,
     required bool showMessageFlow,
   }) {
     final elements = <Map<String, dynamic>>[];
     final pressPairs = <({String surface, String button})>[];
+    final intent = pageIntent ?? const _PageLayoutIntent();
+    final columns = intent.effectiveColumns(fields.length, mode);
+    final rowScale = intent.rowScale();
     var y = _Layout.pcbPadding;
 
     if (navigationTitles.length > 1 && !isOverlayPage) {
@@ -1661,6 +1823,21 @@ class UiAssemblyBuilder {
           innerW: innerW,
           labelW: labelW,
         );
+      } else if (columns >= 2 && groupFields.length >= 2) {
+        // 列数 > 1 时，普通字段组也走网格：每行放 columns 个字段，
+        // 长文本字段自动占满整行（span 2）。
+        y = _renderFieldGrid(
+          elements: elements,
+          fields: groupFields,
+          nextId: nextId,
+          statusFields: statusFields,
+          theme: theme,
+          mode: mode,
+          y: y,
+          innerW: innerW,
+          columns: columns,
+          rowScale: rowScale,
+        );
       } else {
         for (final f in groupFields) {
           y = _renderPlanFieldStandard(
@@ -1673,6 +1850,7 @@ class UiAssemblyBuilder {
             y: y,
             innerW: innerW,
             labelW: labelW,
+            rowScale: rowScale,
           );
         }
       }
@@ -1922,6 +2100,7 @@ class UiAssemblyBuilder {
     required double y,
     required double innerW,
     required double labelW,
+    double rowScale = 1.0,
   }) {
     final fieldId = _planFieldId(field);
     final isProgress = field.isNumber && field.display == 'progress';
@@ -2045,13 +2224,143 @@ class UiAssemblyBuilder {
         contentPadding: shouldScrollText ? 8.0 : null,
       ));
     }
-    return y +
-        (isProgress
-                ? (fullProgress ? 20 + _Layout.barHeight : _Layout.rowHeight)
-                : ((shouldScrollText || needsWideText)
-                    ? _Layout.rowHeight + valueHeight
-                    : valueHeight)) +
-            _Layout.rowGap;
+    final usedH = (isProgress
+            ? (fullProgress ? 20 + _Layout.barHeight : _Layout.rowHeight)
+            : ((shouldScrollText || needsWideText)
+                ? _Layout.rowHeight + valueHeight
+                : valueHeight)) +
+        _Layout.rowGap;
+    // 密度缩放：compact 压紧到 85%，spacious 放宽到 125%。
+    final scaled = usedH * rowScale;
+    return y + scaled.clamp(usedH * 0.85, usedH * 1.25).toDouble();
+  }
+
+  /// 列数感知的字段网格：每行放 [columns] 个字段，长文本自动占满整行。
+  ///
+  /// 相比 `_renderPlanFieldStandard` 的单列排布，网格能显著压缩属性面板高度，
+  /// 避免「一字段一行」在窄 PCB 上撑出大量纵向空白。
+  static double _renderFieldGrid({
+    required List<Map<String, dynamic>> elements,
+    required List<UiPlanField> fields,
+    required String Function(String) nextId,
+    required List<Map<String, dynamic>> statusFields,
+    required UiVisualTheme theme,
+    required String mode,
+    required double y,
+    required double innerW,
+    required int columns,
+    double rowScale = 1.0,
+  }) {
+    const gap = 8.0;
+    final cellW = (innerW - (columns - 1) * gap) / columns;
+    final colCount = columns.clamp(2, 3);
+
+    // 先计算每个字段需要的行高：数值短值单行，长文本按内容估算。
+    double fieldRowHeight(UiPlanField f) {
+      if (f.isNumber && f.display == 'progress') return 26.0;
+      final v = f.initialValue.trim();
+      if (f.overflow == 'scroll' || v.contains('\n')) {
+        final h = _scrollTextHeightFor(v, mode);
+        return (h * rowScale).clamp(26.0, 200.0).toDouble();
+      }
+      if (v.runes.length > 18 || f.name.runes.length > 8) {
+        final h = _wrapTextHeightFor(v, mode);
+        return (h * rowScale).clamp(22.0, 80.0).toDouble();
+      }
+      return (22.0 * rowScale).clamp(18.0, 30.0).toDouble();
+    }
+
+    var col = 0;
+    double rowMaxH = 0.0;
+    for (var i = 0; i < fields.length; i++) {
+      final f = fields[i];
+      final fieldId = _planFieldId(f);
+      final min = f.min ?? 0.0;
+      final max = f.max ?? 100.0;
+      final initialNumber = _numberOf(f.initialValue) ?? min;
+      final initial = f.isNumber ? _trimNumber(initialNumber) : f.initialValue;
+      _addStatusFieldForPlanField(
+        statusFields,
+        f,
+        fieldId: fieldId,
+        initial: initial,
+        min: f.isNumber ? min : null,
+        max: f.isNumber ? max : null,
+      );
+
+      // span 2 = 占满整行；长文本也自动占满。
+      final span = (f.span == 2 || f.overflow == 'scroll' || initial.runes.length > 18)
+          ? colCount
+          : 1;
+      if (col + span > colCount) {
+        y += rowMaxH + gap;
+        col = 0;
+        rowMaxH = 0.0;
+      }
+
+      final x = _Layout.pcbPadding + col * (cellW + gap);
+      final w = cellW * span + (span - 1) * gap;
+      final cellH = fieldRowHeight(f);
+      if (cellH > rowMaxH) rowMaxH = cellH;
+
+      final isProgress = f.isNumber && f.display == 'progress';
+      if (isProgress) {
+        elements.add(_text(
+          id: nextId('el'),
+          name: '${f.name}标签',
+          text: _progressLabelText(f.name, initial, max),
+          x: x,
+          y: y,
+          w: w,
+          h: 16,
+          fontSize: mode == 'extra_companion' ? 10 : 11,
+          color: theme.labelColor,
+          align: 'left',
+          layer: elements.length + 1,
+          overflow: 'wrap',
+          richText: true,
+        ));
+        elements.add(_progress(
+          id: nextId('el'),
+          name: f.name,
+          x: x,
+          y: y + 18,
+          w: w,
+          h: _Layout.barHeight,
+          statusFieldId: fieldId,
+          layer: elements.length + 1,
+          barFillColor: _barColorOf(f.name, theme.barFillColor),
+          barTrackColor: _barTrackColorOf(f.name, theme.barTrackColor),
+          min: min,
+          max: max,
+          current: initialNumber.clamp(min, max).toDouble(),
+        ));
+      } else {
+        final scroll = f.overflow == 'scroll' || initial.contains('\n');
+        final wrap = !scroll && (f.overflow == 'wrap' || initial.runes.length > 18);
+        final effOverflow = scroll ? 'scroll' : (wrap ? 'wrap' : 'ellipsis');
+        elements.add(_text(
+          id: nextId('el'),
+          name: f.name,
+          text: initial.isEmpty ? '—' : initial,
+          x: x,
+          y: y,
+          w: w,
+          h: cellH,
+          fontSize: mode == 'extra_companion' ? 10.5 : 11,
+          color: theme.valueColor,
+          align: f.textAlign,
+          layer: elements.length + 1,
+          statusFieldId: fieldId,
+          overflow: effOverflow,
+          richText: scroll,
+          contentPadding: scroll ? 6.0 : null,
+        ));
+      }
+
+      col += span;
+    }
+    return y + rowMaxH + _Layout.rowGap;
   }
 
   static double _renderAttributeGridFields({

@@ -184,11 +184,20 @@ class UiPlanStyle {
 class UiPlanLayout {
   final String kind;
   final String navigation;
+
+  /// 页面默认列数（AI 可表达「两列属性网格」等意图）。
+  ///
+  /// 编译为每页的默认网格列数；字段级 [UiPlanField.span] 可在此基础上加宽。
+  /// 1 = 单列（标准行），2 = 两列网格，3 = 三列紧凑网格。
+  /// 未提供时由编译器按字段数量启发式决定。
+  final int columns;
+
   final List<UiPlanPageSpec> pages;
 
   const UiPlanLayout({
     required this.kind,
     required this.navigation,
+    this.columns = 0,
     required this.pages,
   });
 
@@ -196,6 +205,7 @@ class UiPlanLayout {
     return UiPlanLayout(
       kind: _fallback(_str(json['kind']), 'tabbed_companion_panel'),
       navigation: _navigationOf(json['navigation']),
+      columns: _positiveIntOf(json['columns']),
       pages: _listOf(json['pages']).map(UiPlanPageSpec.fromJson).toList(),
     );
   }
@@ -215,11 +225,25 @@ class UiPlanPageSpec {
   /// 如果留空，编译器会回退到第一个 base 页面。
   final String parentPage;
 
+  /// 页面级列数覆写。0 = 未指定，跟随 layout.columns / 编译器启发式。
+  final int columns;
+
+  /// 页面密度：'compact' | 'normal' | 'spacious'。
+  /// 未指定时编译器按字段数量启发式决定。
+  final String density;
+
+  /// 是否尽量占满 PCB 高度（避免底部大片空白）。
+  /// 未指定时编译器会尽量拉伸 scroll / message_flow 占满。
+  final bool fill;
+
   const UiPlanPageSpec({
     required this.title,
     required this.role,
     required this.type,
     required this.parentPage,
+    this.columns = 0,
+    this.density = '',
+    this.fill = false,
   });
 
   factory UiPlanPageSpec.fromJson(Map<String, dynamic> json) {
@@ -228,6 +252,9 @@ class UiPlanPageSpec {
       role: _str(json['role']),
       type: _pageTypeOf(json['type'] ?? json['presentation'] ?? json['pageType']),
       parentPage: _str(json['parentPage'] ?? json['parent'] ?? json['parentPageId']).trim(),
+      columns: _positiveIntOf(json['columns'] ?? json['cols']),
+      density: _densityOf(json['density']),
+      fill: _boolOf(json['fill']),
     );
   }
 }
@@ -248,6 +275,14 @@ class UiPlanField {
   final String page;
   final String sourceRef;
 
+  /// 网格跨度：1 = 占 1 列，2 = 占满整行。仅列数 > 1 时生效。
+  /// 未指定时按内容（长文本 → 占满）启发式决定。
+  final int span;
+
+  /// 字段布局意图：'' | 'standard' | 'grid' | 'progress' | 'badge'。
+  /// '' = 让编译器按类型/分组启发式决定。
+  final String layout;
+
   const UiPlanField({
     required this.name,
     required this.sourceKey,
@@ -263,6 +298,8 @@ class UiPlanField {
     required this.owner,
     required this.page,
     required this.sourceRef,
+    this.span = 0,
+    this.layout = '',
   });
 
   factory UiPlanField.fromJson(Map<String, dynamic> json) {
@@ -284,10 +321,18 @@ class UiPlanField {
       owner: _ownerOf(json['owner']),
       page: _str(json['page']).trim(),
       sourceRef: _str(json['sourceRef']).trim(),
+      span: _positiveIntOf(json['span']),
+      layout: _fieldLayoutOf(json['layout']),
     );
   }
 
   bool get isNumber => type == 'number';
+}
+
+String _fieldLayoutOf(dynamic raw) {
+  final v = _str(raw).toLowerCase().trim();
+  const allowed = {'standard', 'grid', 'progress', 'badge'};
+  return allowed.contains(v) ? v : '';
 }
 
 class UiPlanInput {
@@ -441,6 +486,19 @@ int? _intOf(dynamic v) {
   if (v is num) return v.toInt();
   if (v is String) return int.tryParse(v.trim());
   return null;
+}
+
+/// 解析正整数（列数 / 跨度）。0 / 非法返回 0（表示未指定）。
+int _positiveIntOf(dynamic v) {
+  final n = _intOf(v);
+  if (n == null || n <= 0) return 0;
+  return n > 6 ? 6 : n; // 列数上限 6，防止 AI 输出荒谬值撑爆布局
+}
+
+String _densityOf(dynamic raw) {
+  final v = _str(raw).toLowerCase().trim();
+  const allowed = {'compact', 'normal', 'spacious'};
+  return allowed.contains(v) ? v : '';
 }
 
 String _hex(dynamic raw, String fallback) {
