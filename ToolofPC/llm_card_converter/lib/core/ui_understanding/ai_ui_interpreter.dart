@@ -258,6 +258,28 @@ class AiUiInterpreter {
   static bool _canBuildOpeningDeterministically(UiSourcePack sourcePack) =>
       sourcePack.alternateGreetings.isNotEmpty || sourcePack.suggestsProfilePool;
 
+  /// 判断一个 DQ 选项是否属于「开场选择」。
+  ///
+  /// 黑曜石 first_mes 的选项是「选择开场1：新人入狱」这类——它们是
+  /// opening 生命周期的分支选择，不应混进 scene 的剧情动作里。
+  static bool _isOpeningChoice(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return false;
+    return t.contains('选择开场') ||
+        t.contains('开场1') ||
+        t.contains('开场2') ||
+        t.contains('开场3') ||
+        t.contains('开场4') ||
+        t.contains('开场5') ||
+        t.contains('开局') ||
+        t.startsWith('[0') ||
+        t.startsWith('[1') ||
+        t.startsWith('[2') ||
+        t.startsWith('[3') ||
+        t.startsWith('[4') ||
+        t.startsWith('[5');
+  }
+
   static bool _canBuildSceneFallback(UiSourcePack sourcePack) =>
       sourcePack.hasNarrativeUiWrapper ||
       sourcePack.hasQuestSchema ||
@@ -516,15 +538,20 @@ class AiUiInterpreter {
       });
     }
 
-    final actions = [
-      for (final choice in sourcePack.choiceTextsForBranchIndex(0))
-        {
-          'label': choice,
-          'sendText': choice,
-          'keyAction': false,
-          'page': storyPage,
-          'sourceRef': 'data.first_mes DQ_ChoiceBox',
-        },
+    // scene 的 actions 只放「分支内部的剧情选择」，不放「开场选择」。
+    // 黑曜石 first_mes 的 DQ 选项是「选择开场1：新人入狱」——那属于
+    // opening 生命周期，不该出现在 scene 里。
+    final branch0Choices = sourcePack.choiceTextsForBranchIndex(0);
+    final actions = <Map<String, dynamic>>[
+      for (final choice in branch0Choices)
+        if (!_isOpeningChoice(choice))
+          {
+            'label': choice,
+            'sendText': choice,
+            'keyAction': false,
+            'page': storyPage,
+            'sourceRef': 'data.first_mes DQ_ChoiceBox',
+          },
     ];
 
     return {
