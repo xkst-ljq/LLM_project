@@ -1,0 +1,572 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:dio/dio.dart';
+
+/// 一条聊天消息。
+class ChatMessage {
+  final String role;
+  final String content;
+
+  const ChatMessage({required this.role, required this.content});
+
+  Map<String, dynamic> toJson() => {
+        'role': role,
+        'content': content,
+      };
+}
+
+/// 聊天补全调用参数。
+class ChatCompleteOptions {
+  final double temperature;
+  final int? maxTokens;
+  final bool jsonMode;
+  final Duration timeout;
+
+  /// 网络瞬断 / 握手失败 / 5xx / 429 的自动重试次数。
+  ///
+  /// 注意：400 这类请求结构错误不会重试——例如某些服务不支持
+  /// `response_format` 时，上层会直接降级为普通请求。
+  final int retryCount;
+
+  /// 首次重试等待时间；后续按 2x 简单退避。
+  final Duration retryDelay;
+
+  /// 预留扩展：不同 OpenAI 兼容服务的自定义字段。
+  ///
+  /// 例如部分服务支持 `top_p` / `presence_penalty` / `seed` 等，
+  /// 调用方可在不改底层 API 的情况下传入。
+  final Map<String, dynamic> extraBody;
+
+  const ChatCompleteOptions({
+    this.temperature = 0.2,
+    this.maxTokens,
+    this.jsonMode = false,
+    this.timeout = const Duration(seconds: 120),
+    this.retryCount = 2,
+    this.retryDelay = const Duration(milliseconds: 900),
+    this.extraBody = const {},
+  });
+}
+
+/// OpenAI 兼容 API 调用（获取模型列表 / 聊天补全）。
+class ApiService {
+  /// 规范化 Base URL：去掉结尾斜杠与多余的 /v1，返回不含 /v1 的根地址。
+  static String normalizeBase(String baseUrl) {
+    var u = baseUrl.trim();
+    while (u.endsWith('/')) {
+      u = u.substring(0, u.length - 1);
+    }
+    if (u.toLowerCase().endsWith('/v1')) {
+      u = u.substring(0, u.length - 3);
+    }
+    return u;
+  }
+
+  /// 拉取可用模型列表。失败抛异常。
+  static Future<List<String>> fetchModels(String baseUrl, String apiKey) async {
+    final base = normalizeBase(baseUrl);
+    final dio = Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
+    ));
+    final response = await dio.get(
+      '$base/v1/models',
+      options: Options(headers: {'Authorization': 'Bearer $apiKey'}),
+    );
+    if (response.statusCode == 200) {
+      final data = response.data['data'] as List;
+      final ids = data
+          .map<String>((m) => (m['id'] ?? '').toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      ids.sort();
+      return ids;
+    }
+    throw Exception('请求失败：HTTP ${response.statusCode}');
+  }
+
+  static String _diagError(Object error) {
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      final body = _bodyPreview(error.response?.data);
+      return 'DioException.type=${error.type.name}${status == null ? '' : ' HTTP=$status'}${body.isEmpty ? '' : ' body=$body'}';
+    }
+    final text = error.toString();
+    return text.length > 180 ? '${text.substring(0, 180)}…' : text;
+  }
+
+  static String _bodyPreview(dynamic data) {
+    if (data == null) return '';
+    String text;
+    try {
+      text = data is String ? data : jsonEncode(data);
+    } catch (_) {
+      text = data.toString();
+    }
+    text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.length > 180) text = '${text.substring(0, 180)}…';
+    return text;
+  }
+
+  /// 聊天补全（非流式）。返回模型输出的文本内容。
+  ///
+  /// 新的 UI 理解链路需要多段消息、JSON mode 与额外 body 字段，
+  /// 因此后续任务层应优先调用本方法；旧的 [chatComplete] 只是兼容包装。
+  static Future<String> chatMessages({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required List<ChatMessage> messages,
+    ChatCompleteOptions options = const ChatCompleteOptions(),
+    void Function(String line)? onLog,
+  }) async {
+    Object? lastError;
+    final attempts = options.retryCount < 0 ? 1 : options.retryCount + 1;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        return await _chatMessagesOnce(
+          baseUrl: baseUrl,
+          apiKey: apiKey,
+          model: model,
+          messages: messages,
+          options: options,
+          onLog: onLog,
+        );
+      } catch (e) {
+        lastError = e;
+        onLog?.call('      普通请求失败：${_diagError(e)}');
+        final canRetry = attempt + 1 < attempts && _isRetryableError(e);
+        if (!canRetry) rethrow;
+        final multiplier = 1 << attempt;
+        await Future<void>.delayed(
+          Duration(milliseconds: options.retryDelay.inMilliseconds * multiplier),
+        );
+      }
+    }
+    throw lastError ?? Exception('请求失败：未知错误');
+  }
+
+  static Future<String> _chatMessagesOnce({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required List<ChatMessage> messages,
+    required ChatCompleteOptions options,
+    void Function(String line)? onLog,
+  }) async {
+    final base = normalizeBase(baseUrl);
+    final dio = Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: options.timeout,
+    ));
+
+    final body = <String, dynamic>{
+      'model': model,
+      'temperature': options.temperature,
+      'messages': messages.map((e) => e.toJson()).toList(),
+      if (options.maxTokens != null) 'max_tokens': options.maxTokens,
+      if (options.jsonMode) 'response_format': {'type': 'json_object'},
+      ...options.extraBody,
+    };
+
+    final response = await dio.post(
+      '$base/v1/chat/completions',
+      options: Options(headers: {
+        'Authorization': 'Bearer $apiKey',
+        'Content-Type': 'application/json',
+      }),
+      data: body,
+    );
+    if (response.statusCode != 200) {
+      throw Exception('请求失败：HTTP ${response.statusCode}');
+    }
+    final data = response.data;
+    final choices = data['choices'] as List?;
+    if (choices == null || choices.isEmpty) {
+      onLog?.call('      普通响应：HTTP ${response.statusCode} choices=0 body=${_bodyPreview(data)}');
+      throw Exception('模型未返回内容');
+    }
+    final first = choices.first;
+    final finishReason = first is Map ? first['finish_reason']?.toString() ?? '' : '';
+    final message = first is Map ? first['message'] : null;
+    final content = message is Map ? message['content'] : null;
+    final contentLen = content is String ? content.runes.length : 0;
+    // 诊断推理模型：content 为空但 reasoning_content 有内容时，
+    // 说明模型把 token 全花在思考链上，未轮到写正文（finish=length）。
+    final msgKeys = message is Map
+        ? message.keys.map((k) => k.toString()).join(',')
+        : 'not_map';
+    final reasoning = message is Map ? message['reasoning_content'] : null;
+    final reasoningLen = reasoning is String ? reasoning.runes.length : 0;
+    onLog?.call('      普通响应：HTTP ${response.statusCode} choices=${choices.length} contentType=${content.runtimeType} contentLen=$contentLen finish=$finishReason msgKeys=$msgKeys reasoningLen=$reasoningLen');
+    if (content is! String || content.trim().isEmpty) {
+      // 若 message 里没有 content 字段但有 reasoning_content，提示可能是推理模型。
+      if (reasoningLen > 0) {
+        onLog?.call('      提示：模型输出了 $reasoningLen 字符思考链但正文为空——'
+            '可能是推理模型把 max_tokens 全花在思考上，或需读取 reasoning_content。');
+      }
+      throw Exception('模型返回为空');
+    }
+    return content;
+  }
+
+  static bool _isRetryableError(Object error) {
+    if (error is DioException) {
+      switch (error.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.connectionError:
+          return true;
+        case DioExceptionType.badResponse:
+          final code = error.response?.statusCode ?? 0;
+          return code == 408 || code == 409 || code == 425 || code == 429 ||
+              (code >= 500 && code <= 599);
+        case DioExceptionType.unknown:
+          final inner = error.error;
+          return inner is SocketException || inner is HandshakeException;
+        case DioExceptionType.cancel:
+        case DioExceptionType.badCertificate:
+          return false;
+      }
+    }
+    // 「模型返回为空 / 未返回内容」是可恢复的：常见于云端 API 在
+    // json_object 模式 + 超长上下文下偶发空 content，重试往往就成功。
+    if (error is FormatException ||
+        (error is Exception &&
+            (error.toString().contains('模型返回为空') ||
+                error.toString().contains('模型未返回内容')))) {
+      return true;
+    }
+    return error is SocketException || error is HandshakeException;
+  }
+
+  /// 流式聊天补全（SSE）。
+  ///
+  /// 与 [chatMessages] 不同：模型边生成边吐 chunk，数据包持续到达，
+  /// `receiveTimeout` 不会在长上下文生成期间触发。每个完整 chunk 通过
+  /// [onDelta] 回调（线程安全：用 addPostFrameCallback 或直接抛给 UI）。
+  ///
+  /// 返回累积的完整文本。若服务不支持流式（返回非 SSE），会尽量解析
+  /// 非流式 JSON；网络/空返回等可恢复错误按 [retryCount] 重试。
+  static Future<String> chatMessagesStreaming({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required List<ChatMessage> messages,
+    ChatCompleteOptions options = const ChatCompleteOptions(),
+    void Function(String delta)? onDelta,
+    void Function(String line)? onLog,
+    void Function(Map<String, dynamic> stat)? onStat,
+  }) async {
+    Object? lastError;
+    final attempts = options.retryCount < 0 ? 1 : options.retryCount + 1;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        return await _chatMessagesStreamingOnce(
+          baseUrl: baseUrl,
+          apiKey: apiKey,
+          model: model,
+          messages: messages,
+          options: options,
+          onDelta: onDelta,
+          onLog: onLog,
+          onStat: onStat,
+        );
+      } catch (e) {
+        lastError = e;
+        onLog?.call('      流式请求失败：${_diagError(e)}');
+        final canRetry = attempt + 1 < attempts && _isRetryableError(e);
+        if (!canRetry) rethrow;
+        final multiplier = 1 << attempt;
+        await Future<void>.delayed(
+          Duration(milliseconds: options.retryDelay.inMilliseconds * multiplier),
+        );
+      }
+    }
+    throw lastError ?? Exception('请求失败：未知错误');
+  }
+
+  static Future<String> _chatMessagesStreamingOnce({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required List<ChatMessage> messages,
+    required ChatCompleteOptions options,
+    void Function(String delta)? onDelta,
+    void Function(String line)? onLog,
+    void Function(Map<String, dynamic> stat)? onStat,
+  }) async {
+    final base = normalizeBase(baseUrl);
+    final body = <String, dynamic>{
+      'model': model,
+      'temperature': options.temperature,
+      'messages': messages.map((e) => e.toJson()).toList(),
+      'stream': true,
+      if (options.maxTokens != null) 'max_tokens': options.maxTokens,
+      if (options.jsonMode) 'response_format': {'type': 'json_object'},
+      ...options.extraBody,
+    };
+
+    final dio = Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: options.timeout,
+    ));
+    final response = await dio.post<ResponseBody>(
+      '$base/v1/chat/completions',
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+        responseType: ResponseType.stream,
+      ),
+      data: body,
+    );
+    if (response.statusCode != 200) {
+      throw Exception('请求失败：HTTP ${response.statusCode}');
+    }
+    final responseBody = response.data;
+    if (responseBody == null) {
+      throw Exception('模型未返回内容');
+    }
+
+    final buffer = StringBuffer();
+    var sawSseFrame = false;
+    var rawLineCount = 0;
+    var dataFrameCount = 0;
+    var jsonFrameCount = 0;
+    var contentChunkCount = 0;
+    var nonContentFrameCount = 0;
+    var doneSeen = false;
+    var lastFrameKeys = '';
+    var firstChoiceSample = '';
+    var sawReasoning = false;
+    // ResponseBody.stream 是 Stream<Uint8List>，而 utf8.decoder 是
+    // StreamTransformer<List<int>, String>。Dio 5.x 的泛型收窄会让
+    // 直接 transform(utf8.decoder) 报类型不匹配，先 cast<List<int>>()。
+    final lines = responseBody.stream
+        .cast<List<int>>()
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    await for (final line in lines) {
+      rawLineCount++;
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      if (trimmed == 'data: [DONE]') {
+        doneSeen = true;
+        break;
+      }
+
+      // 标准 SSE: data: { ... }
+      if (trimmed.startsWith('data:')) {
+        sawSseFrame = true;
+        dataFrameCount++;
+        final payload = trimmed.substring(5).trim();
+        if (payload.isEmpty) continue;
+        final stat = _appendStreamingPayload(payload, buffer, onDelta);
+        if (stat.parsed) jsonFrameCount++;
+        if (stat.keys.isNotEmpty) lastFrameKeys = stat.keys;
+        if (firstChoiceSample.isEmpty && stat.choiceSample.isNotEmpty) {
+          firstChoiceSample = stat.choiceSample;
+        }
+        if (stat.content) {
+          contentChunkCount++;
+        } else if (stat.parsed) {
+          nonContentFrameCount++;
+        }
+        // 推理模型诊断：detect reasoning_content in this frame.
+        if (!sawReasoning) {
+          try {
+            final dec = jsonDecode(payload);
+            if (dec is Map) {
+              final choices = dec['choices'];
+              if (choices is List && choices.isNotEmpty && choices.first is Map) {
+                final delta = (choices.first as Map)['delta'];
+                if (delta is Map && delta['reasoning_content'] is String &&
+                    (delta['reasoning_content'] as String).isNotEmpty) {
+                  sawReasoning = true;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        continue;
+      }
+
+      // 兼容：部分“OpenAI 兼容”服务会忽略 stream=true，仍返回一整段
+      // JSON；由于 responseType=stream，这里会按普通行读到。不要直接丢弃，
+      // 否则最后会误报“模型返回为空”。
+      if (!sawSseFrame && trimmed.startsWith('{')) {
+        dataFrameCount++;
+        final stat = _appendStreamingPayload(trimmed, buffer, onDelta);
+        if (stat.parsed) jsonFrameCount++;
+        if (stat.keys.isNotEmpty) lastFrameKeys = stat.keys;
+        if (firstChoiceSample.isEmpty && stat.choiceSample.isNotEmpty) {
+          firstChoiceSample = stat.choiceSample;
+        }
+        if (stat.content) {
+          contentChunkCount++;
+        } else if (stat.parsed) {
+          nonContentFrameCount++;
+        }
+      }
+    }
+    final full = buffer.toString();
+    onLog?.call('      SSE统计：lines=$rawLineCount data=$dataFrameCount json=$jsonFrameCount contentChunks=$contentChunkCount contentChars=${full.runes.length} nonContent=$nonContentFrameCount done=$doneSeen lastKeys=$lastFrameKeys');
+    onStat?.call({
+      'lines': rawLineCount,
+      'dataFrames': dataFrameCount,
+      'jsonFrames': jsonFrameCount,
+      'contentChunks': contentChunkCount,
+      'contentChars': full.runes.length,
+      'nonContentFrames': nonContentFrameCount,
+      'done': doneSeen,
+      'sawReasoning': sawReasoning,
+      'lastFrameKeys': lastFrameKeys,
+      'firstChoiceSample': firstChoiceSample,
+    });
+    if (full.trim().isEmpty) {
+      throw Exception('模型返回为空');
+    }
+    return full;
+  }
+
+  static ({bool parsed, bool content, String keys, String choiceSample})
+      _appendStreamingPayload(
+    String payload,
+    StringBuffer buffer,
+    void Function(String delta)? onDelta,
+  ) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is! Map) {
+        return (parsed: false, content: false, keys: '', choiceSample: '');
+      }
+      final keys = decoded.keys.map((e) => e.toString()).join(',');
+      final choices = decoded['choices'];
+      if (choices is! List || choices.isEmpty) {
+        return (parsed: true, content: false, keys: keys, choiceSample: '');
+      }
+      final first = choices.first;
+      if (first is! Map) {
+        return (parsed: true, content: false, keys: keys, choiceSample: '');
+      }
+      // 记录第一个 choices[0] 的结构快照（截断），用于诊断 content 在哪。
+      String? sample;
+      try {
+        final sampleStr = jsonEncode(first);
+        sample = sampleStr.length > 400 ? sampleStr.substring(0, 400) : sampleStr;
+      } catch (_) {}
+      final text = _choiceText(first);
+      if (text.isEmpty) {
+        return (parsed: true, content: false, keys: keys, choiceSample: sample ?? '');
+      }
+      buffer.write(text);
+      onDelta?.call(text);
+      return (parsed: true, content: true, keys: keys, choiceSample: sample ?? '');
+    } catch (_) {
+      // 单个 chunk 解析失败不影响整体；continue 等下一个。
+      return (parsed: false, content: false, keys: 'parse_error', choiceSample: '');
+    }
+  }
+
+  /// 流式侧诊断：统计 reasoning_content 是否在产出（推理模型假设验证）。
+  static String reasoningStatOfFirstFrame(Map<dynamic, dynamic> choice) {
+    final delta = choice['delta'];
+    if (delta is Map) {
+      final reasoning = delta['reasoning_content'];
+      if (reasoning is String && reasoning.isNotEmpty) {
+        return 'delta.reasoning_content 有 ${reasoning.runes.length} 字符';
+      }
+    }
+    return '';
+  }
+
+  static String _choiceText(Map<dynamic, dynamic> choice) {
+    final delta = choice['delta'];
+    if (delta is Map) {
+      final content = _contentToText(delta['content']);
+      if (content.isNotEmpty) return content;
+      // 部分服务把增量放在 choices[].delta.text。
+      final text = _contentToText(delta['text']);
+      if (text.isNotEmpty) return text;
+    }
+
+    // 非流式 JSON 兜底：choices[].message.content
+    final message = choice['message'];
+    if (message is Map) {
+      final content = _contentToText(message['content']);
+      if (content.isNotEmpty) return content;
+    }
+
+    // 一些兼容服务沿用 completions 格式：choices[].text
+    return _contentToText(choice['text']);
+  }
+
+  static String _contentToText(dynamic content) {
+    if (content is String) return content;
+    if (content is List) {
+      final b = StringBuffer();
+      for (final item in content) {
+        if (item is String) {
+          b.write(item);
+        } else if (item is Map) {
+          final text = item['text'];
+          if (text is String) b.write(text);
+        }
+      }
+      return b.toString();
+    }
+    return '';
+  }
+
+  /// 聊天补全（非流式）。返回模型输出的文本内容。
+  ///
+  /// [systemPrompt] 系统指令；[userPrompt] 用户内容。
+  /// [temperature] 默认较低，便于结构化稳定输出。
+  static Future<String> chatComplete({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.2,
+    Duration timeout = const Duration(seconds: 120),
+  }) {
+    return chatMessages(
+      baseUrl: baseUrl,
+      apiKey: apiKey,
+      model: model,
+      messages: [
+        ChatMessage(role: 'system', content: systemPrompt),
+        ChatMessage(role: 'user', content: userPrompt),
+      ],
+      options: ChatCompleteOptions(
+        temperature: temperature,
+        timeout: timeout,
+      ),
+    );
+  }
+
+  /// 粗略判断模型返回是否为"拒绝/审核拦截"（常见于 NSFW 内容触发内容政策）。
+  /// 用于让 AI 步骤在被拒时优雅跳过，而不是当成普通失败。
+  static bool looksLikeRefusal(String text) {
+    final t = text.toLowerCase();
+    const markers = [
+      "i can't", "i cannot", "i can not", "i'm unable", "i am unable",
+      "i won't", "i will not",
+      "can't assist", "cannot assist", "can't help with", "cannot help with",
+      "not able to help", "unable to help",
+      "against my", "content policy", "usage policies", "violates",
+      "i'm sorry, but", "i am sorry, but", "as an ai",
+      '无法协助', '无法帮助', '无法提供', '不能提供', '抱歉，我不能', '抱歉，我无法',
+      '违反', '内容政策', '不适当', '不当内容', '无法处理该请求',
+    ];
+    // 只在文本较短（典型拒绝信）时才判定，避免长正文里偶含关键词被误杀
+    if (text.trim().length > 400) return false;
+    return markers.any(t.contains);
+  }
+}

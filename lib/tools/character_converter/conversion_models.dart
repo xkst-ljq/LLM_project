@@ -104,6 +104,10 @@ class CardConversionResult {
   /// 提示信息。
   final List<ConversionNote> notes;
 
+  /// 开场白等文本里下载内嵌的图片：卡内资产路径(assets/embedded/xxx) -> 图片字节。
+  /// 写卡时打包进 assets/，导入时落地为本地文件。
+  final Map<String, List<int>> embeddedImages;
+
   const CardConversionResult({
     required this.sourceName,
     required this.format,
@@ -115,6 +119,7 @@ class CardConversionResult {
     this.convertedFields = const [],
     this.unsupportedFields = const [],
     this.notes = const [],
+    this.embeddedImages = const {},
   });
 
   factory CardConversionResult.failure(
@@ -130,10 +135,43 @@ class CardConversionResult {
     );
   }
 
+  CardConversionResult copyWith({
+    Map<String, dynamic>? characterData,
+    List<Map<String, dynamic>>? worldBooks,
+    List<String>? convertedFields,
+    List<String>? unsupportedFields,
+    List<ConversionNote>? notes,
+    Map<String, List<int>>? embeddedImages,
+  }) {
+    return CardConversionResult(
+      sourceName: sourceName,
+      format: format,
+      success: success,
+      partial: partial,
+      characterData: characterData ?? this.characterData,
+      worldBooks: worldBooks ?? this.worldBooks,
+      imageBytes: imageBytes,
+      convertedFields: convertedFields ?? this.convertedFields,
+      unsupportedFields: unsupportedFields ?? this.unsupportedFields,
+      notes: notes ?? this.notes,
+      embeddedImages: embeddedImages ?? this.embeddedImages,
+    );
+  }
+
   String get characterName =>
       (characterData?['name'] as String?)?.trim().isNotEmpty == true
           ? characterData!['name'] as String
           : '未命名角色';
+
+  /// 输出文件名主干：沿用原始文件名（去掉扩展名），
+  /// 这样 小灰.png 转出 小灰.llmchar.png，不受 AI 改名影响。
+  String get outputBaseName {
+    var n = sourceName.trim();
+    // 去掉最后一个扩展名（.png / .json）
+    final dot = n.lastIndexOf('.');
+    if (dot > 0) n = n.substring(0, dot);
+    return n.trim().isEmpty ? '未命名角色卡' : n;
+  }
 
   Map<String, dynamic> toReportJson() => {
         'source': sourceName,

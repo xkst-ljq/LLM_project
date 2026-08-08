@@ -20,6 +20,7 @@ class CharacterCardMapper {
     required ThirdPartyCardFormat format,
     required String sourceName,
     List<int>? imageBytes,
+    String cardType = 'character', // 'character' 人物卡 / 'system' 系统卡
   }) {
     // 统一取出「数据体」：V2 在 data 下，V1 在顶层。
     final data = (outerJson['data'] is Map)
@@ -57,7 +58,8 @@ class CharacterCardMapper {
     final spec = outerJson['spec']?.toString() ?? '';
     final specVersion = outerJson['spec_version']?.toString() ?? '';
 
-    // -------- 固定条目（人物卡）--------
+    // -------- 固定条目（按卡类型）--------
+    final isSystem = cardType == 'system';
     final entries = <Map<String, dynamic>>[];
     var order = 0;
 
@@ -66,74 +68,147 @@ class CharacterCardMapper {
       entries.add(e);
     }
 
-    // 名称条目
-    addEntry({
-      'id': 'name_entry',
-      'title': '名称',
-      'content': jsonEncode({'last_name': '', 'first_name': name, 'other': ''}),
-      'enabled': true,
-      'is_custom': false,
-    });
-
-    // 与用户关系（V1/V2 无对应，留空启用）
-    addEntry({
-      'id': 'relationship',
-      'title': '与用户关系',
-      'content': '',
-      'enabled': true,
-      'is_custom': false,
-    });
-
-    // 身体数据（无对应字段，留空禁用）
-    addEntry({
-      'id': 'body',
-      'title': '身体数据',
-      'content': jsonEncode({
-        'race': '',
-        'gender': '',
-        'age': '',
-        'height': '',
-        'weight': '',
-        'measurements': '',
-        'other': '',
-      }),
-      'enabled': false,
-      'is_custom': false,
-    });
-
-    // 心理数据 <- personality
-    addEntry({
-      'id': 'psychology',
-      'title': '心理数据',
-      'content': jsonEncode({
-        'personality': personality,
-        'thoughts': '',
-        'interests': '',
-      }),
-      'enabled': personality.isNotEmpty,
-      'is_custom': false,
-    });
-    if (personality.isNotEmpty) converted.add('性格(personality)');
-
-    // 背景数据 <- description（作为出身/背景信息保留）
-    addEntry({
-      'id': 'background',
-      'title': '背景数据',
-      'content': jsonEncode({
-        'origin': description,
-        'experiences': '',
-        'current': '',
-      }),
-      'enabled': description.isNotEmpty,
-      'is_custom': false,
-    });
-    if (description.isNotEmpty) converted.add('简介/描述(description)');
-
-    // -------- 自定义条目 --------
     String customId(String suffix) =>
         'tp_$suffix'; // third-party，稳定可读，避免与时间戳冲突
 
-    if (scenario.isNotEmpty) {
+    if (isSystem) {
+      // 系统卡固定条目（系统名称 / 概要 / 详情 / 主角设定 / 剧情）。
+      // 规则阶段只整段搬运：description 先粗塞进系统详情的世界观，
+      // 精细拆分（世界设定 / 世界观 / 系统机制）交给第二步 AI 归类。
+      addEntry({
+        'id': 'system_name',
+        'title': '系统名称',
+        'content': name,
+        'enabled': true,
+        'is_custom': false,
+      });
+      addEntry({
+        'id': 'system_summary',
+        'title': '系统概要',
+        'content': '',
+        'enabled': true,
+        'is_custom': false,
+      });
+      addEntry({
+        'id': 'system_details',
+        'title': '系统详情',
+        'content': jsonEncode({
+          'world_setting': '',
+          'worldview': description,
+          'system_mechanism': '',
+        }),
+        'enabled': description.isNotEmpty,
+        'is_custom': false,
+      });
+      if (description.isNotEmpty) converted.add('简介/描述(description)');
+      addEntry({
+        'id': 'protagonist',
+        'title': '主角设定',
+        'content': jsonEncode({
+          'name': '',
+          'detail': {
+            'race': '',
+            'gender': '',
+            'age': '',
+            'body': '',
+            'background': '',
+          },
+        }),
+        'enabled': false,
+        'is_custom': false,
+      });
+      addEntry({
+        'id': 'plot',
+        'title': '剧情',
+        'content': jsonEncode({
+          'cause': scenario,
+          'events': '',
+          'goal': '',
+          'possible_endings': '',
+        }),
+        'enabled': scenario.isNotEmpty,
+        'is_custom': false,
+      });
+      if (personality.isNotEmpty) {
+        // 系统卡无心理数据，personality 先并入世界观备查
+        addEntry({
+          'id': customId('personality'),
+          'title': '附加设定 (personality)',
+          'content': personality,
+          'enabled': true,
+          'is_custom': true,
+        });
+        converted.add('性格(personality)');
+      }
+    } else {
+      // 名称条目
+      addEntry({
+        'id': 'name_entry',
+        'title': '名称',
+        'content':
+            jsonEncode({'last_name': '', 'first_name': name, 'other': ''}),
+        'enabled': true,
+        'is_custom': false,
+      });
+
+      // 与用户关系（V1/V2 无对应，留空启用）
+      addEntry({
+        'id': 'relationship',
+        'title': '与用户关系',
+        'content': '',
+        'enabled': true,
+        'is_custom': false,
+      });
+
+      // 身体数据（无对应字段，留空禁用）
+      addEntry({
+        'id': 'body',
+        'title': '身体数据',
+        'content': jsonEncode({
+          'race': '',
+          'gender': '',
+          'age': '',
+          'height': '',
+          'weight': '',
+          'measurements': '',
+          'other': '',
+        }),
+        'enabled': false,
+        'is_custom': false,
+      });
+
+      // 心理数据 <- personality
+      addEntry({
+        'id': 'psychology',
+        'title': '心理数据',
+        'content': jsonEncode({
+          'personality': personality,
+          'thoughts': '',
+          'interests': '',
+        }),
+        'enabled': personality.isNotEmpty,
+        'is_custom': false,
+      });
+      if (personality.isNotEmpty) converted.add('性格(personality)');
+
+      // 背景数据 <- description（作为出身/背景信息保留）
+      addEntry({
+        'id': 'background',
+        'title': '背景数据',
+        'content': jsonEncode({
+          'origin': description,
+          'experiences': '',
+          'current': '',
+        }),
+        'enabled': description.isNotEmpty,
+        'is_custom': false,
+      });
+      if (description.isNotEmpty) converted.add('简介/描述(description)');
+    }
+
+    // -------- 自定义条目 --------
+    // 系统卡的 scenario 已并入「剧情.cause」，此处只对人物卡补"当前场景"。
+    if (!isSystem && scenario.isNotEmpty) {
       addEntry({
         'id': customId('scenario'),
         'title': '当前场景',
@@ -160,13 +235,12 @@ class CharacterCardMapper {
         'id': customId('post_history'),
         'title': '后置指令 (post_history_instructions)',
         'content': postHistory,
-        'enabled': false,
+        'enabled': true,
         'is_custom': true,
       });
       converted.add('后置指令(post_history_instructions)');
       notes.add(ConversionNote.info(
-          '已导入 post_history_instructions 为「后置指令」条目，默认未启用，'
-          '可在角色编辑页确认后开启。'));
+          '已导入 post_history_instructions 为「后置指令」条目。'));
     }
 
     // 元信息（默认不注入 Prompt）
@@ -281,7 +355,7 @@ class CharacterCardMapper {
       'system_prompt': systemPrompt,
       'world_book_id': worldBookId,
       'background_id': '',
-      'card_type': 'character',
+      'card_type': cardType,
       'entries_json': jsonEncode(entries),
       'opening_greetings': jsonEncode(greetings),
       'meta_json': jsonEncode(meta),
@@ -349,8 +423,7 @@ class CharacterCardMapper {
       // insertion_order（注入优先级）：兼容 priority 字段。
       final order = _readInt(m['insertion_order']) ?? _readInt(m['priority']);
 
-      // position（插入位置）：酒馆 0/before_char -> before_char；
-      // 其余（after_char / 数值 4 等）统一归为 after_char。
+      // position（插入位置）：酒馆 0/before_char -> before_char；其余 -> after_char。
       final position = _mapPosition(m['position']);
 
       // 仍无法表达的高级字段（深度 / 概率 / selective / 大小写）记为降级。
@@ -418,7 +491,7 @@ class CharacterCardMapper {
   }
 
   /// 把酒馆的 position 映射到本项目的 before_char / after_char。
-  /// 酒馆数值：0=角色定义之前 -> before_char；其余（如 4=作者注 after）-> after_char。
+  /// 酒馆数值：0=角色定义之前 -> before_char；其余 -> after_char。
   /// 字符串：包含 'after' -> after_char；其余 -> before_char。
   static String _mapPosition(dynamic v) {
     if (v is int) return v == 0 ? 'before_char' : 'after_char';

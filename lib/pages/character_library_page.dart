@@ -4,13 +4,21 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/character_card.dart';
+import '../services/api_config_service.dart';
 import '../services/character_card_asset_service.dart';
 import '../services/character_card_png_asset_service.dart';
 import '../services/database_service.dart';
+import '../tools/character_converter/ai_classifier.dart';
+import '../tools/character_converter/ai_refiner.dart';
+import '../tools/character_converter/app_settings.dart';
+import '../tools/character_converter/converted_card_inserter.dart';
+import '../tools/character_converter/pipeline/pipeline.dart';
+import '../tools/character_converter/pipeline/pipeline_runner.dart';
 import '../utils/app_feedback.dart';
 import '../utils/default_image.dart';
 import '../utils/id_utils.dart';
@@ -301,6 +309,203 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
         message: '角色卡数据读取成功，但写入本地数据库时失败。',
         suggestion: '可以尝试重新导入，或先导出完整备份后重启应用再试。',
       );
+    }
+  }
+
+  /// AI 智能转译：选第三方角色卡（PNG / JSON）→ 选转译 AI → 转译 → 直接入库。
+  Future<void> _aiConvertCharacterCard() async {
+    final picked = await FilePicker.platform.pickFiles(
+      dialogTitle: '选择要转译的第三方角色卡',
+      type: FileType.custom,
+      allowedExtensions: ['png', 'json'],
+      allowMultiple: false,
+    );
+
+    if (picked == null || picked.files.isEmpty) return;
+
+    final filePath = picked.files.single.path;
+    if (filePath == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法读取该文件')),
+      );
+      return;
+    }
+
+    final file = File(filePath);
+    final fileName = p.basename(filePath);
+
+    // 收集可选 AI 配置，默认选中当前启用配置。
+    final configs = await ApiConfigService.getAllConfigs();
+    final activeId = await ApiConfigService.getActiveConfigId();
+    var selectedIndex = configs.indexWhere((c) => c.id == activeId);
+    if (selectedIndex < 0) selectedIndex = configs.isEmpty ? -1 : 0;
+    var useAi = configs.isNotEmpty;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            title: const Text('AI 智能转译'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('文件：$fileName'),
+                const SizedBox(height: 4),
+                Text(
+                  '将自动完成 规则转译 → AI 智能归类 → AI UI 理解 → 检查精修，'
+                  '转译完成后直接加入角色库。',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                if (configs.isEmpty) ...[
+                  const Text('当前没有已保存的 AI 配置，将以「仅规则转译」进行。',
+                      style: TextStyle(color: Colors.orange)),
+                ] else ...[
+                  DropdownButtonFormField<int>(
+                    initialValue: selectedIndex,
+                    decoration: const InputDecoration(
+                      labelText: '转译 AI',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: -1,
+                        child: Text('使用当前启用配置'),
+                      ),
+                      for (var i = 0; i < configs.length; i++)
+                        DropdownMenuItem(
+                          value: i,
+                          child: Text(
+                            '${configs[i].name}（${configs[i].model}）',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (v) {
+                      setDialogState(() {
+                        selectedIndex = v ?? 0;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    value: useAi,
+                    title: const Text('启用 AI 转译'),
+                    subtitle: const Text('关闭后仅做规则转译（更快，不调用模型）'),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (v) => setDialogState(() => useAi = v),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('开始转译'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // 设置本次转译的 AI 覆盖配置（默认项 / 关闭时走 null → 当前启用配置）。
+    AppSettings.conversionAiOverride =
+        (useAi && selectedIndex >= 0 && selectedIndex < configs.length)
+            ? configs[selectedIndex]
+            : null;
+
+    if (!mounted) return;
+
+    // 转译进度框（不可取消）。用 ValueNotifier 让日志行实时刷新。
+    final progressLine = ValueNotifier<String>('');
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('正在转译…'),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Expanded(
+              child: ValueListenableBuilder<String>(
+                valueListenable: progressLine,
+                builder: (_, line, _) => Text(
+                  line.isEmpty ? '准备中…' : line,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        throw Exception('文件内容为空，无法转译。');
+      }
+
+      final pipeline = ConversionPipeline(
+        aiClassify: AiClassifier.classify,
+        aiRefine: AiRefiner.refine,
+      );
+      final item = pipeline.createItem(fileName, bytes);
+
+      final runner = PipelineRunner(
+        pipeline: pipeline,
+        useAi: useAi,
+        onLog: (line) => progressLine.value = line,
+        onProgress: (_) {},
+      );
+
+      final ok = await runner.run(item);
+      if (!ok) {
+        final note = item.current?.notes.isNotEmpty == true
+            ? item.current!.notes.first.message
+            : '未知错误';
+        throw Exception('规则转译失败：$note');
+      }
+
+      final current = item.current;
+      if (current == null || current.characterData == null) {
+        throw Exception('转译未产生可用结果。');
+      }
+
+      await ConvertedCardInserter.insert(current);
+      await _loadCharacters();
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // 关闭进度框
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('转译完成：${current.characterName} 已加入角色库')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop(); // 关闭进度框
+      await AppFeedback.showErrorDialog(
+        context,
+        title: '转译失败',
+        error: e,
+        message: '未能完成转译并写入角色库。',
+        suggestion: '可尝试重新选择文件，或在弹窗中关闭 AI 后仅做规则转译。',
+      );
+    } finally {
+      AppSettings.conversionAiOverride = null;
     }
   }
 
@@ -679,6 +884,15 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
               onTap: () {
                 Navigator.pop(ctx);
                 _importCharacterCardWithPreview();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('AI 智能转译角色卡'),
+              subtitle: const Text('自动转译第三方角色卡并直接加入角色库'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _aiConvertCharacterCard();
               },
             ),
           ],

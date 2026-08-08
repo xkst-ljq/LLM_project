@@ -11,9 +11,10 @@ class CharacterConversionService {
   ///
   /// [sourceName] 仅用于显示与命名（例如原文件名）。
   static CardConversionResult convertBytes(
-    List<int> bytes, {
-    required String sourceName,
-  }) {
+      List<int> bytes, {
+        required String sourceName,
+        String cardType = 'character', // 'character' / 'system'，默认人物卡
+      }) {
     if (bytes.isEmpty) {
       return CardConversionResult.failure(
         sourceName,
@@ -57,6 +58,7 @@ class CharacterConversionService {
                 : innerFormat,
             sourceName: sourceName,
             imageBytes: detection.pngBytes,
+            cardType: cardType,
           );
         }
 
@@ -75,6 +77,7 @@ class CharacterConversionService {
             outerJson: json,
             format: detection.format,
             sourceName: sourceName,
+            cardType: cardType,
           );
         }
     }
@@ -82,8 +85,8 @@ class CharacterConversionService {
 
   /// 批量转换，返回汇总报告。
   static BatchConversionReport convertBatch(
-    Iterable<({String name, List<int> bytes})> inputs,
-  ) {
+      Iterable<({String name, List<int> bytes})> inputs,
+      ) {
     final results = <CardConversionResult>[];
     for (final input in inputs) {
       try {

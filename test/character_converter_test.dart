@@ -76,6 +76,8 @@ Map<String, dynamic> _ariaV2() => {
               'enabled': true,
               'insertion_order': 10,
               'priority': 100,
+              // 新 mapper 仍无法表达的字段（概率触发），应记为降级
+              'probability': 80,
             },
             {
               'keys': ['废弃车站'],
@@ -166,9 +168,11 @@ void main() {
     });
 
     test('flags advanced world book fields as downgraded', () {
+      // insertion_order / priority 已被新 mapper 支持（不再降级）；
+      // probability（概率触发）仍无法表达，应记为降级。
       expect(result.partial, isTrue);
       expect(
-        result.unsupportedFields.any((f) => f.contains('世界书高级触发规则')),
+        result.unsupportedFields.any((f) => f.contains('世界书部分高级触发字段')),
         isTrue,
       );
     });

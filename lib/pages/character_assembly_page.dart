@@ -1575,14 +1575,16 @@ class _CharacterAssemblyPageState extends State<CharacterAssemblyPage>
                 ],
               ),
               const SizedBox(height: 4),
-              Text(
-                _pageRouterSubtitle(el.module!),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF33695F),
-                  fontSize: 9,
-                  height: 1.2,
+              Flexible(
+                child: Text(
+                  _pageRouterSubtitle(el.module!),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF33695F),
+                    fontSize: 9,
+                    height: 1.2,
+                  ),
                 ),
               ),
             ],

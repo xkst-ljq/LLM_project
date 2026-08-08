@@ -25,9 +25,9 @@ class ConversionWriter {
 
   // 与 CharacterCardPngAssetService 完全一致的图片角色卡标记
   static final List<int> _pngStartMarker =
-  utf8.encode('\n---LLM_PROJECT_ASSET_START---\n');
+      utf8.encode('\n---LLM_PROJECT_ASSET_START---\n');
   static final List<int> _pngEndMarker =
-  utf8.encode('\n---LLM_PROJECT_ASSET_END---\n');
+      utf8.encode('\n---LLM_PROJECT_ASSET_END---\n');
 
   static String safeFileName(String input) {
     final value = input.trim().isEmpty ? '未命名角色卡' : input.trim();
@@ -51,9 +51,9 @@ class ConversionWriter {
 
   /// 将单个转换结果写为 .llmcard 文件。返回写入的文件。
   static Future<File> writeLlmCard(
-      CardConversionResult result, {
-        required Directory outputDir,
-      }) async {
+    CardConversionResult result, {
+    required Directory outputDir,
+  }) async {
     if (!result.success || result.characterData == null) {
       throw StateError('该结果不可导出（转换失败）。');
     }
@@ -99,12 +99,19 @@ class ConversionWriter {
       character['avatar'] = '';
     }
 
+    // 开场白 / 描述里下载内嵌的图片（assets/embedded/xxx），打包进卡。
+    // 开场白文本里的 src 已在转换后处理时改写为这些 assets 路径，
+    // 导入时主项目会把 assets 引用重写成本地文件路径。
+    result.embeddedImages.forEach((assetPath, data) {
+      archive.addFile(ArchiveFile(assetPath, data.length, data));
+    });
+
     // 世界书依赖
     if (hasWorldBook) {
       final wbs = result.worldBooks
           .map((e) => Map<String, dynamic>.from(e)
-        ..['cover_image_path'] = ''
-        ..['is_preset'] = 0)
+            ..['cover_image_path'] = ''
+            ..['is_preset'] = 0)
           .toList();
       _addJson(archive, 'data/dependencies/world_books.json', wbs);
       // 角色绑定第一本世界书（导入流程会重映射 id）
@@ -118,7 +125,7 @@ class ConversionWriter {
     final bytes = ZipEncoder().encode(archive);
     if (bytes == null) throw Exception('角色卡压缩失败');
 
-    final fileName = '${safeFileName(result.characterName)}.llmcard';
+    final fileName = '${safeFileName(result.outputBaseName)}.llmcard';
     final file = File(p.join(outputDir.path, _uniqueName(outputDir, fileName)));
     await file.writeAsBytes(bytes, flush: true);
     return file;
@@ -131,9 +138,9 @@ class ConversionWriter {
   /// 优点：在文件管理器里能直接看到角色立绘缩略图，比 .llmcard 直观。
   /// 仅当结果带有封面图（imageBytes）时可用。
   static Future<File> writeLlmCharPng(
-      CardConversionResult result, {
-        required Directory outputDir,
-      }) async {
+    CardConversionResult result, {
+    required Directory outputDir,
+  }) async {
     if (!result.success || result.characterData == null) {
       throw StateError('该结果不可导出（转换失败）。');
     }
@@ -152,21 +159,30 @@ class ConversionWriter {
     }
     final pngBytes = img.encodePng(decoded);
 
-    final character = Map<String, dynamic>.from(result.characterData!);
+    var character = Map<String, dynamic>.from(result.characterData!);
     // 图片卡本身即封面，导入时会重建路径
     character['card_image_path'] = '';
     character['avatar'] = '';
 
+    // .llmchar.png 的载荷是纯 JSON，无法像 .llmcard 那样另存 asset 文件。
+    // 因此把内嵌图片转成 data URI 直接写进开场白 / 描述文本（自包含，App 可直接渲染）。
+    if (result.embeddedImages.isNotEmpty) {
+      character = _inlineEmbeddedImagesAsDataUri(
+        character,
+        result.embeddedImages,
+      );
+    }
+
     final hasWorldBook = result.worldBooks.isNotEmpty;
     final worldBooks = hasWorldBook
         ? result.worldBooks
-        .map((e) => Map<String, dynamic>.from(e)
-      ..['cover_image_path'] = ''
-      ..['is_preset'] = 0)
-        .toList()
+            .map((e) => Map<String, dynamic>.from(e)
+              ..['cover_image_path'] = ''
+              ..['is_preset'] = 0)
+            .toList()
         : <Map<String, dynamic>>[];
     character['world_book_id'] =
-    hasWorldBook ? worldBooks.first['id'] : '';
+        hasWorldBook ? worldBooks.first['id'] : '';
 
     final root = {
       'magic': magic,
@@ -195,7 +211,7 @@ class ConversionWriter {
       ..._pngEndMarker,
     ];
 
-    final fileName = '${safeFileName(result.characterName)}.llmchar.png';
+    final fileName = '${safeFileName(result.outputBaseName)}.llmchar.png';
     final file = File(p.join(outputDir.path, _uniqueName(outputDir, fileName)));
     await file.writeAsBytes(outputBytes, flush: true);
     return file;
@@ -204,9 +220,9 @@ class ConversionWriter {
   /// 批量写入：在 [baseDir] 下新建时间戳子目录，写入所有成功结果 + 报告。
   /// 返回创建的输出目录。
   static Future<Directory> writeBatch(
-      BatchConversionReport report, {
-        required Directory baseDir,
-      }) async {
+    BatchConversionReport report, {
+    required Directory baseDir,
+  }) async {
     final outDir = Directory(
       p.join(baseDir.path, 'Converted Cards', timestampForDir()),
     );
@@ -254,5 +270,55 @@ class ConversionWriter {
       i++;
     }
     return candidate;
+  }
+
+  /// 把 character 文本里对 assets/embedded/xxx 的引用，替换为 data URI（自包含）。
+  /// 用于 .llmchar.png（纯 JSON 载荷无法另存 asset 文件）。
+  static Map<String, dynamic> _inlineEmbeddedImagesAsDataUri(
+    Map<String, dynamic> character,
+    Map<String, List<int>> embedded,
+  ) {
+    final c = Map<String, dynamic>.from(character);
+
+    String toDataUri(String assetPath, List<int> bytes) {
+      final lower = assetPath.toLowerCase();
+      String mime = 'image/png';
+      if (lower.endsWith('.gif')) {
+        mime = 'image/gif';
+      } else if (lower.endsWith('.webp')) {
+        mime = 'image/webp';
+      } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+        mime = 'image/jpeg';
+      }
+      return 'data:$mime;base64,${base64Encode(bytes)}';
+    }
+
+    String replaceAll(String text) {
+      var t = text;
+      embedded.forEach((assetPath, bytes) {
+        t = t.replaceAll(assetPath, toDataUri(assetPath, bytes));
+      });
+      return t;
+    }
+
+    // 描述
+    if (c['description'] is String) {
+      c['description'] = replaceAll(c['description'] as String);
+    }
+    // 开场白
+    final greetingsRaw = c['opening_greetings'] as String? ?? '[]';
+    try {
+      final list = jsonDecode(greetingsRaw) as List<dynamic>;
+      final newList = [
+        for (final g in list)
+          if (g is Map && g['content'] is String)
+            {...g, 'content': replaceAll(g['content'] as String)}
+          else
+            g,
+      ];
+      c['opening_greetings'] = jsonEncode(newList);
+    } catch (_) {}
+
+    return c;
   }
 }
