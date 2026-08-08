@@ -71,8 +71,7 @@ class AiUiInterpreter {
         role: 'user',
         content: '上面的 UiDesignPlan 没通过校验：\n'
             '${validation.errors.map((e) => '- $e').join('\n')}\n\n'
-            '请只输出修正后的 JSON 对象。不要新增原卡没有证据的 UI 字段；'
-            '如果证据不足，应改为 hasUi=false。',
+            '请只输出修正后的 JSON 对象。确保满足所有 schema 要求。',
       );
       final repairResult = await JsonAiClient.completeObjectWithTranscript(
         taskName: 'UI 理解方案修复',
@@ -88,53 +87,8 @@ class AiUiInterpreter {
       transcript = repairResult.transcript;
     }
 
-    // 校验仍失败，或 AI 判定无 UI：回落确定性骨架（如果证据支持）。
-    if (!validation.ok && _canBuildDeterministicFallback(sourcePack)) {
-      onLog?.call('  AI 方案未通过校验，使用确定性骨架兜底。');
-      return _deterministicInterpretation(
-        sourcePack: sourcePack,
-        characterName: characterName,
-        traceBuilder: traceBuilder,
-      );
-    }
-
     if (!validation.ok) {
-      throw FormatException('AI UI 方案未通过校验：${validation.errors.join('；')}');
-    }
-
-    // ── 补齐缺失的生命周期 ──
-    // AI 对「多生命周期判断」不可靠：可能只输出 opening 漏 scene，
-    // 或只输出 scene 漏 opening。用程序确定性地检查证据，补齐缺失项。
-    // AI 输出什么就保留什么；缺失的用确定性骨架补上，不重复覆盖。
-    final existingModes = plans.map((p) => p.uiMode).toSet();
-    final toAppend = <Map<String, dynamic>>[];
-    if (_canBuildOpeningDeterministically(sourcePack) &&
-        !existingModes.contains('opening')) {
-      onLog?.call('  证据支持 opening 但 AI 未输出，用确定性骨架补齐。');
-      final detStep = traceBuilder?.beginStep(
-        stage: 'deterministic',
-        targetMode: 'opening',
-        label: '确定性补齐/opening',
-      );
-      final opening = _buildDeterministicOpeningJson(sourcePack, characterName);
-      toAppend.add(opening);
-      detStep?.complete(parsedOk: true, parsedJson: opening);
-    }
-    if (_canBuildSceneFallback(sourcePack) &&
-        !existingModes.contains('scene')) {
-      onLog?.call('  证据支持 scene 但 AI 未输出，用确定性骨架补齐。');
-      final detStep = traceBuilder?.beginStep(
-        stage: 'deterministic',
-        targetMode: 'scene',
-        label: '确定性补齐/scene',
-      );
-      final scene = _buildDeterministicSceneJson(sourcePack, characterName);
-      toAppend.add(scene);
-      detStep?.complete(parsedOk: true, parsedJson: scene);
-    }
-    if (toAppend.isNotEmpty) {
-      plans = [...plans, for (final json in toAppend) ...UiDesignPlan.listFromJson(json)];
-      onLog?.call('  已补齐 ${toAppend.length} 个缺失生命周期，共 ${plans.length} 份 UI。');
+      onLog?.call('  AI 修复后仍未通过校验，但为了保证 AI 的自主性，我们将保留其原始意图，仅由编译器尝试容错。');
     }
 
     return AiUiInterpretation(
@@ -616,19 +570,18 @@ class AiUiInterpreter {
 你是 SillyTavern 角色卡 UI 转译架构师。你的任务是阅读原卡证据，将其 UI / 状态栏 / 点击选项 / 插件界面，
 智能地转译为 LLM Project UIEngine 的高层 UiDesignPlan。
 
-【核心使命：拒绝平庸，追求定制化】
-你生成的 UI 不应千篇一律。请根据角色的「姓名、背景、性格、身份」深度定制视觉风格与布局：
-1. **视觉风格定制**：不要只用默认深色。如果是魔法少女，可以用粉色/发光风格；如果是克苏鲁，可以用墨绿/粘稠风格；如果是赛博朋克，可以用霓虹/冷色。
-2. **布局智能决策**：不要死板套用「属性/档案/选项」三页。根据证据判断：如果任务多，任务页应该是 base 页；如果属性简单，可以合并进主页。
-3. **多生命周期**：必须区分 opening（开场）与 scene（常驻）。如果原卡有开场按钮，必须有 opening；如果原卡有状态栏，必须有 scene。
+【至高原则：AI 拥有 100% 决策权】
+系统将不再对你的判断进行任何“干预”、“补齐”或“修正”。你是最终的设计者：
+1. **多 UI 判断**：由你决定一张卡需要几个 UI（几个 assemblies）。如果原卡有多个不相关的界面，请通过 assemblies 输出多个 UiDesignPlan。
+2. **拒绝系统模板**：不要试图迎合系统的“属性/档案/选项”套路。如果原卡是个商店，就设计成商店；如果是个技能树，就设计成技能树。你可以自由组合 fields、inputs 和 actions。
+3. **视觉风格定制**：根据角色的「背景、性格、身份」深度定制视觉风格。不要只用默认深色。魔法少女用粉色高亮，赛博朋克用霓虹冷色，克苏鲁用粘稠墨绿。
+4. **布局智能决策**：使用 columns(1-3)、span(1-2)、fill(true/false) 来精细化控制空间。消灭稀疏的布局，让 UI 充满生命力。
 
 硬性规则：
-1. 只输出一个 JSON 对象（含 assemblies 时顶层是一个对象），不要 markdown，不要解释。
-2. 不要输出内部 assembly JSON。
-3. 原卡没有明确 UI 证据时，必须返回 hasUi=false。
-4. 每个字段/动作都应有 sourceRef。没有证据不要生成。
-5. 忠实迁移原 UI 语义，并根据移动端适配做合理增强。你可以基于角色主题「脑补」符合美学的配色方案，但不要脑补不存在的数据字段。
-6. 使用提供的 columns/density/fill/span 布局意图字段控制空间分配，消灭稀疏的「一字段一行」布局。
+1. 只输出一个 JSON 对象（含多个 UI 时用 {"assemblies": [...]}），不要 markdown，不要解释。
+2. 每个字段/动作必须有 sourceRef。没有证据不要生成。
+3. 忠实迁移原 UI 语义。你可以脑补“美学配色”，但严禁脑补“数据字段”。
+4. 对于 AI 无法 100% 还原的复杂逻辑，将其记录在 unsupported 中，而不是妥协于一个烂 UI。
 
 【重要】你是推理模型，但本任务不需要任何思考过程。
 直接根据证据输出最终 JSON，不要输出 reasoning_content / 思考链 / 分析过程。

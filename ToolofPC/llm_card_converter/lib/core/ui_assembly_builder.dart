@@ -379,19 +379,19 @@ class UiAssemblyBuilder {
         .map((field) => _resolveAutoField(field, sourcePack))
         .toList();
     for (final f in resolvedFields) {
-      final page = _resolvePlanPage(f.page, pageTitles, f.isNumber ? '属性' : '档案');
+      final page = _resolvePlanPage(f.page, pageTitles, pageTitles.first);
       fieldsByPage.putIfAbsent(page, () => <UiPlanField>[]).add(f);
     }
     if (mode == 'extra_companion' && plan.inputs.isNotEmpty) {
       notes.add('已跳过原卡 input_prompt：伴生 UI 内可直接使用聊天页主输入框，避免重复输入入口。');
     } else {
       for (final input in plan.inputs) {
-        final page = _resolvePlanPage(input.page, pageTitles, '选项');
+        final page = _resolvePlanPage(input.page, pageTitles, pageTitles.first);
         inputsByPage.putIfAbsent(page, () => <UiPlanInput>[]).add(input);
       }
     }
     for (final a in plan.actions) {
-      final page = _resolvePlanPage(a.page, pageTitles, '选项');
+      final page = _resolvePlanPage(a.page, pageTitles, pageTitles.first);
       actionsByPage.putIfAbsent(page, () => <UiPlanAction>[]).add(a);
     }
 
