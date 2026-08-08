@@ -546,7 +546,7 @@ class UiAssemblyBuilder {
     final contentPcbH = allHeights.isEmpty
         ? 96.0
         : allHeights.reduce((a, b) => a > b ? a : b);
-    final minPcbH = mode == 'scene' && hasOverlayPages ? 480.0 : 96.0;
+    final minPcbH = mode == 'scene' && hasOverlayPages ? 320.0 : 64.0;
     final pcbH = contentPcbH.clamp(minPcbH, 2000.0).toDouble();
     for (final page in pages) {
       final elements = page['elements'];
@@ -1186,12 +1186,7 @@ class UiAssemblyBuilder {
       add(a.page);
     }
     if (titles.isEmpty) {
-      final hasNumber = plan.fields.any((f) => f.isNumber);
-      final hasText = plan.fields.any((f) => !f.isNumber);
-      if (hasNumber) titles.add('属性');
-      if (hasText) titles.add('档案');
-      if (plan.inputs.isNotEmpty || plan.actions.isNotEmpty) titles.add('选项');
-      if (titles.isEmpty) titles.add('主界面');
+      titles.add('主界面');
     }
     return titles.take(5).toList();
   }
