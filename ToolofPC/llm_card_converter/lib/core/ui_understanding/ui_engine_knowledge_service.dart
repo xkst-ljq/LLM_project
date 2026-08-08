@@ -223,12 +223,23 @@ Knowledge version: $knowledgeVersion
    - 原卡有常驻状态栏/面板/正文包裹 → 必须包含 `uiMode=scene`。
    - 识别 scene 信号：`<生命>` 等标签、`{PlayerStatus|...}`、`<正文>` 包裹、regex 仪表盘。
 
+# UI 生命周期模式 (uiMode) 核心指南
+1. **opening** (开场登记)：仅用于对话开始前的身份选择、资料填写。
+2. **scene** (沉浸终端)：**接管整个聊天屏幕**。适合 RPG 大作、全屏游戏终端。必须包含 `role=story` 的页面以承载 `message_flow`。
+3. **extra_companion** (常驻伴生栏)：**在聊天框侧边显示的持久面板**（宽 212px）。这是 SillyTavern 绝大多数“常驻状态栏”的最佳转译目标。
+4. **extra_sticky** (悬浮工具栏)：顶部/底部的窄条。
+
+# 组合策略 (多 UI 决策)
+- 如果原卡有开场按钮 + 常驻状态栏：**必须**输出 `assemblies: [opening方案, extra_companion方案]`。
+- 如果原卡是沉浸式 RPG：**必须**输出 `assemblies: [opening方案, scene方案]`。
+- **不要把开场按钮和常驻状态混在一个 UI 里**，那不符合 UIEngine 的物理生命周期。
+
 # UiDesignPlan schema
 {
   "hasUi": true/false,
   "confidence": 0.0~1.0,
   "uiMode": "opening|scene|extra_sticky|extra_companion",
-  "uiName": "主题名 (如: 冒险者终端)",
+  "uiName": "主题名",
   "evidenceSummary": "...",
   "sourceRefs": ["data..."],
   "visualStyle": {"styleName":"主题风格名","pcbColor":"#RRGGBB","panelColor":"#RRGGBB","titleColor":"#FFFFFF","labelColor":"#AAB0BC","valueColor":"#E8EDF5","accentColor":"#RRGGBB","buttonBgColor":"#RRGGBB","barFillColor":"#RRGGBB","barTrackColor":"#RRGGBB","borderRadius":14,"glow":false},
