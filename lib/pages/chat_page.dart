@@ -1956,7 +1956,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     //
     // 于是只在 0.1 / 0.5 这两个阈值被跨过时才 setState：
     // 一次 300ms 的抽屉动画约 18 帧，原本 18 次全树重建，
-    // 现在最多 4 次（进出各跨两个阈值）。
+    // 现在最多 4 次（进出各跨两个阈值）。scene 自己的水平位置
+    // 由 `_buildSceneAssembly` 内部的 AnimatedBuilder 每帧更新，
+    // 不依赖这里的整树重建。
     _animController.addListener(() {
       if (!mounted) return;
       final v = _animController.value;
@@ -3495,8 +3497,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
     final character = _currentCharacter!;
 
-    final panelW = panelWidth;
-
     // 键盘弹出时不压缩场景 UI。
     //
     // scene 是全屏接管的 UI：Scaffold body 一收缩，
@@ -3514,32 +3514,22 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 直接读 viewInsetsOf 会拿到被消费后的 0。
     final keyboardInset = _rawKeyboardInset;
 
-    // 与聊天主体同步左移：设置页从右侧滑入时，scene 要一起让开，
-    // 否则面板会被压在 scene 之下（scene 层排在主体之后）。
-    return Positioned(
-      left: -panelW * _animController.value,
-      top: 0,
-      bottom: 0,
-      width: screen.width,
-      child: IgnorePointer(
-        // 设置页滑出过半后不再接收触摸，避免隔着面板误触场景。
-        ignoring: _showFanPanel || _animController.value > 0.5,
-        // 整个 scene 区吞掉横向拖动：滑出聊天设置的手势与 PCB 的
-        // 翻页手势方向完全相同，同时存在必然误触。设置页的唯一入口
-        // 收敛为作者标记的「打开聊天设置」按钮。
-        //
-        // 这里用 GestureDetector 而非 Listener：竞技场里子级的
-        // HorizontalDrag 会赢过根部的同类识别器，从而截断冒泡；
-        // 而 PCB 内部翻页走的是 Listener（不参与竞技场），不受影响。
-        child: GestureDetector(
-          behavior: HitTestBehavior.deferToChild,
-          onHorizontalDragStart: (_) {},
-          onHorizontalDragUpdate: (_) {},
-          onHorizontalDragEnd: (_) {},
-          child: KeyboardAvoidingStage(
-            stageHeight: screen.height,
-            keyboardInset: keyboardInset,
-            child: Stack(
+    final sceneContent = GestureDetector(
+      behavior: HitTestBehavior.deferToChild,
+      // 整个 scene 区吞掉横向拖动：滑出聊天设置的手势与 PCB 的
+      // 翻页手势方向完全相同，同时存在必然误触。设置页的唯一入口
+      // 收敛为作者标记的「打开聊天设置」按钮。
+      //
+      // 这里用 GestureDetector 而非 Listener：竞技场里子级的
+      // HorizontalDrag 会赢过根部的同类识别器，从而截断冒泡；
+      // 而 PCB 内部翻页走的是 Listener（不参与竞技场），不受影响。
+      onHorizontalDragStart: (_) {},
+      onHorizontalDragUpdate: (_) {},
+      onHorizontalDragEnd: (_) {},
+      child: KeyboardAvoidingStage(
+        stageHeight: screen.height,
+        keyboardInset: keyboardInset,
+        child: Stack(
           children: [
             // 背景蒙版：压暗聊天背景，让 PCB 缩放留出的信箱区不至于
             // 和场景内容抢视线。保持半透明——作者选的聊天背景图仍是
@@ -3575,9 +3565,40 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               ),
             ),
           ],
-          ),
-          ),
         ),
+      ),
+    );
+
+    // 这里不能直接在 `_buildSceneAssembly` 里读取一次
+    // `_animController.value`：聊天主体的抽屉壳为了性能只在 0.1 / 0.5
+    // 阈值重建整棵树，若 scene 也跟着捕获那个值，动画结束时它会停在
+    // 最后一个阈值的位置（关闭时通常约为 -0.1 * panelWidth），于是
+    // 返回聊天页后 scene 和蒙版会一起向左偏移。
+    // 用独立的 AnimatedBuilder 每帧更新真实布局位置，既保持同步，
+    // 又不需要恢复整棵聊天树的逐帧 setState。
+    return Positioned.fill(
+      child: AnimatedBuilder(
+        animation: _animController,
+        child: sceneContent,
+        builder: (context, child) {
+          final panelW = panelWidth;
+          final v = _animController.value;
+          return Stack(
+            children: [
+              Positioned(
+                left: -panelW * v,
+                top: 0,
+                bottom: 0,
+                width: screen.width,
+                child: IgnorePointer(
+                  // 设置页滑出过半后不再接收触摸，避免隔着面板误触场景。
+                  ignoring: _showFanPanel || v > 0.5,
+                  child: child!,
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
