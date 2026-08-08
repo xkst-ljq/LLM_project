@@ -5,8 +5,12 @@ import 'package:llm_card_converter/core/conversion_models.dart';
 import 'package:llm_card_converter/core/greeting_sanitizer.dart';
 import 'package:llm_card_converter/core/ui_assembly_builder.dart';
 import 'package:llm_card_converter/core/ui_engine_api/ui_engine_api_dictionary.dart';
+import 'package:llm_card_converter/core/ui_understanding/ai_ui_interpreter.dart';
 import 'package:llm_card_converter/core/ui_understanding/ui_design_plan.dart';
+import 'package:llm_card_converter/core/ui_understanding/ui_engine_knowledge_service.dart';
 import 'package:llm_card_converter/core/ui_understanding/ui_plan_validator.dart';
+import 'package:llm_card_converter/core/ui_understanding/ui_scout_result.dart';
+import 'package:llm_card_converter/core/ui_understanding/ui_source_pack.dart';
 import 'package:llm_card_converter/core/ui_understanding/ui_source_pack_builder.dart';
 import 'package:llm_card_converter/core/ui_understanding/ui_visual_profile_service.dart';
 import 'package:llm_card_converter/pipeline/pipeline.dart';
@@ -1209,6 +1213,520 @@ void main() {
       });
       final slim = pack.toPromptTextSlim();
       expect(slim, contains('omitted'), reason: '超过展示上限应提示省略');
+    });
+  });
+
+  group('AI mode decision - density & multi-greeting', () {
+    test('multi-greeting without buttons still requires opening', () {
+      final pack = UiSourcePackBuilder.build({
+        'data': {
+          'name': '多开场卡',
+          'first_mes': '开场A',
+          'alternate_greetings': ['开场B', '开场C'],
+          'description': '一个角色',
+        },
+      });
+      expect(pack.needsOpeningBranchChoice, isTrue,
+          reason: '多开场白本身即构成 opening 需求，不依赖 send() 按钮');
+      final suggestion = pack.modeSuggestion();
+      expect(suggestion, contains('[opening]'));
+      expect(suggestion, contains('分支差异化'));
+    });
+
+    test('high density card suggests scene', () {
+      final pack = UiSourcePackBuilder.build({
+        'data': {
+          'name': '高密度卡',
+          'description': '角色',
+          'first_mes':
+              '<生命>84</生命><精神>70</精神><体力>60</体力><饱腹>50</饱腹>'
+              '<势力>1</势力><关系>2</关系><声望>3</声望><点数>4</点数>'
+              '<物品>刀</物品><位置>监狱</位置><正文>你醒来了</正文>',
+          'extensions': {
+            'regex_scripts': [
+              {
+                'scriptName': '状态栏',
+                'findRegex': '<生命>(.*?)</生命>.*?<正文>(.*?)</正文>',
+                'replaceString':
+                    '<div style="width:100%;overflow:auto;color:#fff;'
+                    '${List.filled(60, 'background-color:#111;').join()}'
+                    '">正文容器</div>',
+              },
+            ],
+          },
+        },
+      });
+      final density = pack.densityAssessment();
+      expect(density.isHigh, isTrue,
+          reason: '≥8 状态字段 + 正文包裹应判为高密度');
+      expect(pack.modeSuggestion(), contains('[scene]'));
+    });
+
+    test('focused single-purpose card suggests companion not scene', () {
+      final pack = UiSourcePackBuilder.build({
+        'data': {
+          'name': '专项卡',
+          'description': '角色',
+          'first_mes': '<生命>84</生命>正文',
+        },
+      });
+      expect(pack.densityAssessment().isHigh, isFalse);
+      expect(pack.modeSuggestion(), contains('[extra_companion]'));
+      expect(pack.modeSuggestion(), isNot(contains('[scene]')));
+    });
+
+    test('slim prompt includes density assessment', () {
+      final pack = UiSourcePackBuilder.build({
+        'data': {
+          'name': '高密度卡',
+          'description': '角色',
+          'first_mes':
+              '<生命>84</生命><精神>70</精神><体力>60</体力><饱腹>50</饱腹>'
+              '<势力>1</势力><关系>2</关系><声望>3</声望><点数>4</点数>'
+              '<物品>刀</物品><位置>监狱</位置><正文>正文</正文>',
+        },
+      });
+      final slim = pack.toPromptTextSlim();
+      expect(slim, contains('UI density assessment'));
+      expect(slim, contains('信息密度'));
+    });
+  });
+
+  group('AI validateAssemblies - multi-greeting & density rules', () {
+    Map<String, dynamic> greetingPackJson({bool withStatus = false}) => {
+          'data': {
+            'name': '多开场卡',
+            'description': '角色',
+            'first_mes': withStatus
+                ? '<生命>84</生命><精神>70</精神><体力>60</体力><饱腹>50</饱腹>'
+                    '<势力>1</势力><关系>2</关系><声望>3</声望><点数>4</点数>'
+                    '<物品>刀</物品><位置>监狱</位置><正文>A</正文>'
+                : '开场A',
+            'alternate_greetings': ['开场B'],
+          },
+        };
+
+    test('missing opening errors when multiple greetings', () {
+      final pack = UiSourcePackBuilder.build(greetingPackJson());
+      final plan = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'extra_companion',
+        'uiName': '伴生栏',
+        'layout': {'pages': [{'title': '面板', 'role': 'stats'}]},
+        'fields': [
+          {'name': '生命', 'type': 'number', 'initialValue': '84', 'sourceRef': 'x'},
+        ],
+      });
+      final result = UiPlanValidator.validateAssemblies([plan], pack);
+      expect(result.ok, isFalse,
+          reason: '多开场白必须包含 opening assembly');
+      expect(result.errors.join(), contains('uiMode=opening'));
+    });
+
+    test('opening without branchIndex errors', () {
+      final pack = UiSourcePackBuilder.build(greetingPackJson());
+      final plan = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'opening',
+        'uiName': '开场选择',
+        'layout': {'pages': [{'title': '开场', 'role': 'form'}]},
+        'actions': [
+          {'label': '继续', 'sendText': '继续', 'sourceRef': 'x'},
+        ],
+      });
+      final result = UiPlanValidator.validateAssemblies([plan], pack);
+      expect(result.ok, isFalse,
+          reason: '多开场白 opening 必须用 branchIndex 对应每个方向');
+      expect(result.errors.join(), contains('branchIndex'));
+    });
+
+    test('opening with branchInitialValues passes', () {
+      final pack = UiSourcePackBuilder.build(greetingPackJson());
+      final plan = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'opening',
+        'uiName': '开场选择',
+        'layout': {'pages': [{'title': '开场', 'role': 'form'}]},
+        'actions': [
+          {'label': '方向A', 'branchIndex': 0, 'sourceRef': 'x'},
+          {'label': '方向B', 'branchIndex': 1, 'sourceRef': 'x'},
+        ],
+        'fields': [
+          {
+            'name': '生命',
+            'type': 'number',
+            'initialValue': '84',
+            'branchInitialValues': {'0': '84', '1': '70'},
+            'sourceRef': 'x',
+          },
+        ],
+      });
+      final result = UiPlanValidator.validateAssemblies([plan], pack);
+      expect(result.ok, isTrue, reason: 'branchIndex 全覆盖 + branchInitialValues 应通过');
+    });
+
+    test('status differs across branches but no differentiation errors', () {
+      final pack = UiSourcePackBuilder.build({
+        'data': {
+          'name': '差异化卡',
+          'description': '角色',
+          'first_mes': '{PlayerStatus|HP:100/100|MP:50/50}正文A',
+          'alternate_greetings': ['{PlayerStatus|HP:80/100|MP:30/50}正文B'],
+        },
+      });
+      final plan = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'opening',
+        'uiName': '开场选择',
+        'layout': {'pages': [{'title': '开场', 'role': 'form'}]},
+        'actions': [
+          {'label': '方向A', 'branchIndex': 0, 'sourceRef': 'x'},
+          {'label': '方向B', 'branchIndex': 1, 'sourceRef': 'x'},
+        ],
+      });
+      final result = UiPlanValidator.validateAssemblies([plan], pack);
+      expect(result.ok, isFalse,
+          reason: '分支 HP/MP 初值不同，必须用 branchInitialValues 差异化');
+      expect(result.errors.join(), contains('branchInitialValues'));
+    });
+
+    test('high density companion-only warns about scene', () {
+      final pack = UiSourcePackBuilder.build(greetingPackJson(withStatus: true));
+      final plan = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'extra_companion',
+        'uiName': '伴生栏',
+        'layout': {'pages': [{'title': '面板', 'role': 'stats'}]},
+        'fields': [
+          {'name': '生命', 'type': 'number', 'initialValue': '84', 'sourceRef': 'x'},
+        ],
+      });
+      final result = UiPlanValidator.validateAssemblies([plan], pack);
+      expect(result.ok, isFalse, reason: '多开场白缺 opening 仍是 error');
+      expect(result.warnings.join(), contains('extra_companion'),
+          reason: '高密度只用伴生栏应有 scene 建议警告');
+    });
+
+    test('duplicate uiMode errors (two companions)', () {
+      final pack = UiSourcePackBuilder.build(greetingPackJson());
+      UiDesignPlan companion() => UiDesignPlan.fromJson({
+            'hasUi': true,
+            'uiMode': 'extra_companion',
+            'uiName': '伴生栏',
+            'layout': {'pages': [{'title': '面板', 'role': 'stats'}]},
+            'fields': [
+              {'name': '生命', 'type': 'number', 'initialValue': '84', 'sourceRef': 'x'},
+            ],
+          });
+      final result = UiPlanValidator.validateAssemblies([companion(), companion()], pack);
+      expect(result.ok, isFalse,
+          reason: '同一 uiMode 重复出现应报错（防止编译出两份重复 UI）');
+      expect(result.errors.join(), contains('重复'));
+    });
+
+    test('scene plus extra_companion errors as mutually exclusive', () {
+      final pack = UiSourcePackBuilder.build(greetingPackJson());
+      final scene = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'scene',
+        'uiName': '终端',
+        'layout': {
+          'pages': [
+            {'title': '正文', 'role': 'story', 'type': 'base'},
+            {'title': '状态', 'role': 'stats', 'type': 'overlay', 'parentPage': '正文'},
+          ],
+        },
+        'fields': [
+          {'name': '生命', 'type': 'number', 'initialValue': '84', 'sourceRef': 'x'},
+        ],
+      });
+      final companion = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'extra_companion',
+        'uiName': '伴生栏',
+        'layout': {'pages': [{'title': '面板', 'role': 'stats'}]},
+        'fields': [
+          {'name': '精神', 'type': 'number', 'initialValue': '70', 'sourceRef': 'x'},
+        ],
+      });
+      final result = UiPlanValidator.validateAssemblies([scene, companion], pack);
+      expect(result.ok, isFalse,
+          reason: 'scene 与 extra_companion 互斥，不应并存');
+      expect(result.errors.join(), contains('互斥'));
+    });
+
+    test('invalid uiMode is preserved for validator to reject', () {
+      final pack = UiSourcePackBuilder.build(greetingPackJson());
+      final plan = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'not_a_real_mode',
+        'uiName': '幻觉 UI',
+        'layout': {'pages': [{'title': '面板', 'role': 'stats'}]},
+        'fields': [
+          {'name': '生命', 'type': 'number', 'initialValue': '84', 'sourceRef': 'x'},
+        ],
+      });
+      expect(plan.uiMode, 'not_a_real_mode',
+          reason: '未知 uiMode 不应被静默归一成 extra_companion');
+      final result = UiPlanValidator.validate(plan, pack);
+      expect(result.ok, isFalse, reason: '非法 uiMode 应被 validator 拦截');
+      expect(result.errors.join(), contains('非法 uiMode'));
+    });
+  });
+
+  group('UI engine knowledge - decision guidance', () {
+    test('slim knowledge mandates opening for multi-greeting', () {
+      final slim = UiEngineKnowledgeService.compactPromptSlim();
+      expect(slim, contains('多开场白'), reason: '应明确多开场白规则');
+      expect(slim, contains('必须'), reason: '应使用强约束措辞');
+      expect(slim, contains('信息密度'));
+      expect(slim, contains('extra_companion / extra_sticky'));
+    });
+
+    test('full knowledge covers density and branch differentiation', () {
+      final full = UiEngineKnowledgeService.compactPrompt();
+      expect(full, contains('Mode selection by information density'));
+      expect(full, contains('Opening branch differentiation (mandatory)'));
+      expect(full, contains('Multiple greetings always require opening'));
+    });
+  });
+
+  group('UiScoutResult - staged pipeline step 0', () {
+    test('parses assemblies and neededDetail indices', () {
+      final scout = UiScoutResult.fromJson({
+        'hasUi': true,
+        'evidenceSummary': '多开场白 + 状态栏',
+        'sourceRefs': ['data.extensions.regex_scripts[0]'],
+        'assemblies': [
+          {
+            'uiMode': 'opening',
+            'uiName': '开场登记',
+            'reasons': ['多开场白 → 必须 opening'],
+            'evidenceSummary': '让玩家选择开场方向',
+            'sourceRefs': ['data.alternate_greetings[0]'],
+            'neededDetail': {'regex': [1, 2], 'worldbook': [0], 'includeFullBranches': true},
+          },
+          {
+            'uiMode': 'scene',
+            'uiName': '运行终端',
+            'evidenceSummary': '正文被 UI 包裹',
+            'neededDetail': {'regex': [0], 'plugin': [0, 1]},
+          },
+        ],
+      });
+      expect(scout.hasUi, isTrue);
+      expect(scout.assemblies, hasLength(2));
+      final opening = scout.assemblies.first;
+      expect(opening.uiMode, 'opening');
+      expect(opening.neededDetail.regexIndices, {1, 2});
+      expect(opening.neededDetail.worldBookIndices, {0});
+      expect(opening.neededDetail.includeFullBranches, isTrue);
+      expect(opening.neededDetail.pluginIndices, isEmpty);
+      final scene = scout.assemblies[1];
+      expect(scene.uiMode, 'scene');
+      expect(scene.neededDetail.regexIndices, {0});
+      expect(scene.neededDetail.pluginIndices, {0, 1});
+      expect(scene.neededDetail.includeFullBranches, isFalse);
+    });
+
+    test('normalizes alias uiModes and drops invalid entries', () {
+      final scout = UiScoutResult.fromJson({
+        'hasUi': true,
+        'evidenceSummary': 'x',
+        'assemblies': [
+          {'uiMode': 'status', 'neededDetail': {}},
+          {'uiMode': 'companion', 'neededDetail': {}},
+          {'uiMode': 'sticky', 'neededDetail': {}},
+          {'uiMode': 'not_a_mode', 'neededDetail': {}},
+        ],
+      });
+      expect(scout.assemblies, hasLength(3));
+      expect(scout.assemblies.map((a) => a.uiMode).toList(),
+          ['extra_companion', 'extra_companion', 'extra_sticky']);
+    });
+
+    test('empty assemblies means no valid selection', () {
+      final scout = UiScoutResult.fromJson({'hasUi': true, 'evidenceSummary': 'x'});
+      expect(scout.hasUi, isTrue);
+      expect(scout.assemblies, isEmpty);
+    });
+  });
+
+  group('Scout detail slicing - detailPromptFor honors neededDetail', () {
+    UiSourcePack pack() => UiSourcePackBuilder.build({
+          'data': {
+            'name': '切片卡',
+            'description': '角色',
+            'first_mes': 'A',
+            'alternate_greetings': ['B', 'C'],
+            'extensions': {
+              'regex_scripts': [
+                {'scriptName': 'R0', 'findRegex': 'x', 'replaceString': 'x0'},
+                {'scriptName': 'R1', 'findRegex': 'y', 'replaceString': 'y1'},
+              ],
+            },
+          },
+        });
+
+    test('only requested indices are included', () {
+      final prompt = pack().detailPromptFor(regexIndices: {1});
+      expect(prompt, contains('regex[1]'));
+      expect(prompt, isNot(contains('regex[0]')));
+    });
+
+    test('includeFullBranches exposes full branch text, otherwise summary only', () {
+      final full = pack().detailPromptFor(includeFullBranches: true);
+      expect(full, contains('## first_mes'));
+      expect(full, contains('[0]'));
+      final summaryOnly = pack().detailPromptFor(includeFullBranches: false);
+      expect(summaryOnly, isNot(contains('## first_mes')));
+      expect(summaryOnly, contains('Opening greeting branches'));
+    });
+  });
+
+  group('Staged pipeline - merged plans still validate as assemblies', () {
+    test('opening + companion plans pass validateAssemblies for multi-greeting', () {
+      final pack = UiSourcePackBuilder.build({
+        'data': {
+          'name': '多开场卡',
+          'description': '角色',
+          'first_mes': '开场A',
+          'alternate_greetings': ['开场B'],
+        },
+      });
+      final opening = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'opening',
+        'uiName': '开场选择',
+        'layout': {'pages': [{'title': '开场', 'role': 'form'}]},
+        'actions': [
+          {'label': '方向A', 'branchIndex': 0, 'sourceRef': 'x'},
+          {'label': '方向B', 'branchIndex': 1, 'sourceRef': 'x'},
+        ],
+      });
+      final companion = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'extra_companion',
+        'uiName': '伴生栏',
+        'layout': {'pages': [{'title': '面板', 'role': 'stats'}]},
+        'fields': [
+          {'name': '生命', 'type': 'number', 'initialValue': '84', 'sourceRef': 'x'},
+        ],
+      });
+      final result = UiPlanValidator.validateAssemblies([opening, companion], pack);
+      expect(result.ok, isTrue, reason: 'opening 覆盖全分支 + companion 应通过组合校验');
+    });
+
+    test('merged plans missing opening still fail', () {
+      final pack = UiSourcePackBuilder.build({
+        'data': {
+          'name': '多开场卡',
+          'description': '角色',
+          'first_mes': '开场A',
+          'alternate_greetings': ['开场B'],
+        },
+      });
+      final companion = UiDesignPlan.fromJson({
+        'hasUi': true,
+        'uiMode': 'extra_companion',
+        'uiName': '伴生栏',
+        'layout': {'pages': [{'title': '面板', 'role': 'stats'}]},
+        'fields': [
+          {'name': '生命', 'type': 'number', 'initialValue': '84', 'sourceRef': 'x'},
+        ],
+      });
+      final result = UiPlanValidator.validateAssemblies([companion], pack);
+      expect(result.ok, isFalse, reason: '多开场白缺 opening 仍是跨套校验错误');
+    });
+  });
+
+  group('Repair coverage - designed UI never dropped by repair', () {
+    UiDesignPlan openingPlan() => UiDesignPlan.fromJson({
+          'hasUi': true,
+          'uiMode': 'opening',
+          'uiName': '冒险者注册',
+          'layout': {'pages': [{'title': '注册', 'role': 'form'}]},
+          'actions': [
+            {'label': '方向A', 'branchIndex': 0, 'sourceRef': 'x'},
+            {'label': '方向B', 'branchIndex': 1, 'sourceRef': 'x'},
+          ],
+        });
+
+    UiDesignPlan scenePlan() => UiDesignPlan.fromJson({
+          'hasUi': true,
+          'uiMode': 'scene',
+          'uiName': '异世界公会终端',
+          'layout': {
+            'pages': [
+              {'title': '公会大厅', 'role': 'story', 'type': 'base'},
+              {'title': '任务板', 'role': 'tasks', 'type': 'overlay', 'parentPage': '公会大厅'},
+            ],
+          },
+          'fields': [
+            {
+              'name': '生命',
+              'sourceKey': 'HP',
+              'group': '核心状态',
+              'type': 'number',
+              'display': 'progress',
+              'overflow': 'text',
+              'initialValue': '84',
+              'page': '公会大厅',
+              'sourceRef': 'data.first_mes <生命>84%</生命>',
+            },
+          ],
+        });
+
+    test('opening dropped by repair round is restored from original', () {
+      final originals = [openingPlan(), scenePlan()];
+      // 修复模型只回吐 scene —— 模拟"opening 已设计但被修复轮丢掉"。
+      final repaired = [scenePlan()];
+      final logs = <String>[];
+      final restored =
+          AiUiInterpreter.restoreDroppedModes(repaired, originals, logs.add);
+      final modes = restored.map((p) => p.uiMode).toSet();
+      expect(modes, {'opening', 'scene'},
+          reason: '被修复轮漏掉的 opening 必须用原方案补回');
+      expect(restored.firstWhere((p) => p.uiMode == 'opening').uiName, '冒险者注册');
+      expect(logs.join(), contains('uiMode=opening'));
+    });
+
+    test('repair that keeps all modes stays untouched', () {
+      final originals = [openingPlan(), scenePlan()];
+      final repaired = List<UiDesignPlan>.of(originals);
+      final restored =
+          AiUiInterpreter.restoreDroppedModes(repaired, originals, (_) {});
+      expect(restored.length, 2);
+      expect(restored.map((p) => p.uiMode).toSet(), {'opening', 'scene'});
+    });
+
+    test('structural repair replaces same-mode plan instead of appending', () {
+      // 复现「为什么 4 份 UI」：2 套 plan（opening, scene）结构校验都失败，
+      // 逐套修复后如果原方案 + 修复版同存，就会变成 4 个 plan。
+      final originals = [openingPlan(), scenePlan()];
+      var merged = <UiDesignPlan>[];
+      for (final plan in originals) {
+        if (!merged.any((p) => p.uiMode == plan.uiMode)) merged.add(plan);
+      }
+      // 模拟 opening 修复成功、scene 修复成功：各自产出修复版 plan。
+      final fixedOpening = openingPlan(); // 修复版（这里用同结构代替）
+      final fixedScene = scenePlan();
+      merged = AiUiInterpreter.mergeFixedPlans(merged, fixedOpening);
+      merged = AiUiInterpreter.mergeFixedPlans(merged, fixedScene);
+      expect(merged.length, 2,
+          reason: '修复结果必须顶替同 uiMode 的原 plan，不能 append 出重复');
+      expect(merged.map((p) => p.uiMode).toSet(), {'opening', 'scene'});
+    });
+
+    test('2 designed plans still compile to exactly 2 assemblies', () {
+      // 端到端：opening + scene 两套 plan 经编译管线应只产出 2 份 assembly，
+      // 而不是 4 份。
+      final built = UiAssemblyBuilder.buildFromPlans(
+        [openingPlan(), scenePlan()],
+        cardName: '异世界公会',
+      );
+      expect(built.assemblies, hasLength(2),
+          reason: '每套 UiDesignPlan 只编译一份 assembly，不得因修复/合并而翻倍');
     });
   });
 

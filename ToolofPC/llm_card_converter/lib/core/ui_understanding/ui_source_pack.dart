@@ -60,16 +60,52 @@ class UiSourcePack {
   /// 表达状态（黑曜石法外特区：`<生命>` `<精神>` `<体力>` `<饱腹>`
   /// `<势力>` `<关系>` `<声望>` `<点数>` `<物品>` `<位置>`）。
   /// 这类标签从 regex findRegex 或 first_mes 里可识别。
-  bool get hasXmlStatusTags {
-    const known = {
-      '生命', '精神', '体力', '饱腹', '势力', '声望', '点数',
-      '物品', '位置', '称号', '编号', '罪名', '关系', 'HP', 'MP', 'XP',
-    };
+  /// 已知的 XML 标签格式状态字段名（黑曜石等卡用 `<生命>x</生命>` 表达状态）。
+  static const Set<String> knownXmlStatusTags = {
+    '生命', '精神', '体力', '饱腹', '势力', '声望', '点数',
+    '物品', '位置', '称号', '编号', '罪名', '关系', 'HP', 'MP', 'XP',
+  };
+
+  /// 直接扫描所有开场分支文本里出现的已知 XML 状态标签，不依赖 regex findRegex。
+  ///
+  /// [hasXmlStatusTags] 只查 first_mes；这里全分支扫描，供密度评估更鲁棒地
+  /// 统计"即使标签没进 regex 也能识别"。
+  Set<String> xmlStatusTagsInBranches() {
+    final out = <String>{};
+    final total = 1 + alternateGreetings.length;
+    for (var branch = 0; branch < total; branch++) {
+      final text = branchText(branch);
+      for (final name in knownXmlStatusTags) {
+        if (text.contains('<$name>')) out.add(name);
+      }
+    }
+    // 从 regex findRegex 的稳定标签里也收集（覆盖未出现在开场白但出现在
+    // 运行时消息里的情况）。
     for (final tag in stableTagNames) {
-      if (known.contains(tag)) return true;
+      if (knownXmlStatusTags.contains(tag)) out.add(tag);
+    }
+    return out;
+  }
+
+  /// 直接扫描所有开场分支文本，是否出现正文被 UI 包裹的标记（`<正文>`/`<Alliance>`）。
+  bool get _branchHasNarrativeWrapper {
+    final total = 1 + alternateGreetings.length;
+    final pattern = RegExp(
+      r'<\s*(?:正文|alliance|outputtext|story)[^>]*>',
+      caseSensitive: false,
+    );
+    for (var branch = 0; branch < total; branch++) {
+      if (pattern.hasMatch(branchText(branch))) return true;
+    }
+    return false;
+  }
+
+  bool get hasXmlStatusTags {
+    for (final tag in stableTagNames) {
+      if (knownXmlStatusTags.contains(tag)) return true;
     }
     // 直接查 first_mes 里的 <生命> 等标签。
-    for (final name in known) {
+    for (final name in knownXmlStatusTags) {
       if (branchText(0).contains('<$name>')) return true;
     }
     return false;
@@ -198,21 +234,114 @@ class UiSourcePack {
       a.path.startsWith('data.alternate_greetings') ||
       a.path.startsWith('data.first_mes'));
 
+  /// 是否存在"开场方向选择"需求。
+  ///
+  /// 多开场白（alternate_greetings 非空）本身就构成 opening 需求——玩家需要
+  /// 在多个开场方向中做选择，即使原卡没有 onclick/send 按钮。因此信号
+  /// = alternateGreetings 存在 || 有 first_mes/alts 内的 send() 动作。
+  bool get needsOpeningBranchChoice =>
+      alternateGreetings.isNotEmpty || hasOpeningBranchActions;
+
+  /// 评估原卡的 UI 信息密度，供 AI 决策 mode 与证据包注入。
+  ///
+  /// 高密度卡（大量持久状态字段 + 正文被 UI 包裹 + 多套稳定 schema +
+  /// 复杂多区 regex）适合全屏 scene；低密度"专项单一"卡（一两个字段、
+  /// 单一面板）应落在 extra_companion/extra_sticky，而不是过度设计成 scene。
+  UiDensityAssessment densityAssessment() {
+    final reasons = <String>[];
+    var score = 0;
+
+    // 1) 检测到的持久状态字段数（优先直接扫描开场分支，兼顾 regex 提取）。
+    final statusCount =
+        xmlStatusTagsInBranches().isNotEmpty
+            ? xmlStatusTagsInBranches().length
+            : _detectedStatusFields().length;
+    if (statusCount >= 8) {
+      score += 3;
+      reasons.add('$statusCount 个持久状态字段');
+    } else if (statusCount >= 5) {
+      score += 2;
+      reasons.add('$statusCount 个持久状态字段');
+    } else if (statusCount >= 3) {
+      score += 1;
+      reasons.add('$statusCount 个持久状态字段');
+    }
+
+    // 2) 正文被 UI 包裹（<正文>/<Alliance>/scrollable content，regex 或分支文本）。
+    final hasNarrative = hasNarrativeUiWrapper || _branchHasNarrativeWrapper;
+    if (hasNarrative) {
+      score += 2;
+      reasons.add('正文被 UI 包裹');
+    }
+
+    // 3) 稳定 schema 数量（quest / DQ_ChoiceBox / FriendsAlbumPage）。
+    var schemaCount = 0;
+    if (hasQuestSchema) schemaCount++;
+    if (hasChoiceBoxSchema) schemaCount++;
+    if (hasFriendsAlbumSchema) schemaCount++;
+    if (schemaCount >= 2) {
+      score += 2;
+      reasons.add('$schemaCount 套稳定 UI schema');
+    }
+
+    // 4) 复杂 regex 脚本（大 replaceString / findRegex）条数。
+    final complexRegex = regexScripts
+        .where((e) => e.enabled && (e.replaceString.runes.length > 1500 || e.findRegex.runes.length > 600))
+        .length;
+    if (complexRegex >= 2) {
+      score += 2;
+      reasons.add('$complexRegex 个复杂多区 regex');
+    } else if (complexRegex == 1) {
+      score += 1;
+      reasons.add('1 个复杂多区 regex');
+    }
+
+    // 5) 组合信号：大量持久状态字段 + 正文被 UI 包裹本身即构成全屏沉浸场景
+    //    的强证据（无 regex 的 XML 状态栏卡也能识别），补足到 high。
+    if (statusCount >= 5 && hasNarrative && score < 6) {
+      score += 2;
+      reasons.add('状态字段密集 + 正文被 UI 包裹');
+    }
+
+    final level = score >= 6
+        ? UiDensity.high
+        : (score >= 3 ? UiDensity.medium : UiDensity.low);
+    return UiDensityAssessment(level: level, reasons: reasons);
+  }
+
   /// 汇总给 AI 的「该输出几套 UI」建议。返回 '' 表示无强信号。
   ///
   /// 帮助 AI 决定 assemblies 的数量与 mode，避免「只有状态栏却硬造 opening」
   /// 或「只有开场按钮却硬造 scene」这类多造/遗漏。
   String modeSuggestion() {
-    final hasOpening = hasOpeningBranchActions;
+    final hasOpening = needsOpeningBranchChoice;
     final hasPersistent = hasPlayerStatusSchema ||
         hasXmlStatusTags ||
         hasNarrativeUiWrapper;
+    final density = densityAssessment();
+    final immersive = density.level == UiDensity.high ||
+        hasNarrativeUiWrapper ||
+        _branchHasNarrativeWrapper;
+
     if (hasOpening && hasPersistent) {
-      return '建议 assemblies=[opening, extra_companion]（若原卡是沉浸式终端/档案卡，'
-          '用 scene 代替 extra_companion）。';
+      if (immersive) {
+        return '建议 assemblies=[opening, scene]（高信息密度/正文被 UI 包裹，适合全屏沉浸终端）。';
+      }
+      return '建议 assemblies=[opening, extra_companion]（专项信息密度不高，伴生栏足够承载）。';
     }
-    if (hasOpening) return '建议 assemblies=[opening]。';
-    if (hasPersistent) return '建议 assemblies=[extra_companion]（若原卡有正文包裹则用 scene）。';
+    if (hasOpening) {
+      final diff = alternateGreetings.isNotEmpty
+          ? '多开场白必须做分支差异化（branchIndex 映射 + branchInitialValues/branchPlans）。'
+          : '';
+      return '建议 assemblies=[opening]。$diff';
+    }
+    if (hasPersistent) {
+      if (immersive) {
+        return '建议 assemblies=[scene]（高信息密度/正文被 UI 包裹，全屏沉浸终端）。';
+      }
+      return '建议 assemblies=[extra_companion]（专项单一信息用伴生栏即可，不要过度设计成 scene；'
+          '若是顶层/底部轻量工具条则用 extra_sticky）。';
+    }
     return '';
   }
 
@@ -374,6 +503,13 @@ class UiSourcePack {
       b.writeln('\n# UI assembly count suggestion');
       b.writeln('$suggestion 不要多造：没有对应证据就不要多输出一套 UI；'
           '也不要遗漏：有证据就必须包含对应 mode。');
+    }
+    final density = densityAssessment();
+    if (density.level != UiDensity.low || suggestion.isNotEmpty) {
+      b.writeln('\n# UI density assessment');
+      b.writeln('信息密度: ${density.level.name}${density.reasons.isEmpty ? '' : '（${density.reasons.join('; ')}）'}');
+      b.writeln('决策判据：高密度/正文被 UI 包裹 → scene 全屏沉浸；'
+          '专项单一信息 → extra_companion/extra_sticky，不要过度用 scene。');
     }
     if (_sourceSuggestsProfilePool) {
       b.writeln('\n# Player profile input opportunity');
@@ -1167,4 +1303,17 @@ class QuestSummary {
     ];
     return "$name (${parts.join('；')}) [$path]";
   }
+}
+
+/// UI 信息密度分档，供 AI 决策 mode 与跨 assembly 校验使用。
+enum UiDensity { low, medium, high }
+
+/// [UiSourcePack.densityAssessment] 的评估结果。
+class UiDensityAssessment {
+  final UiDensity level;
+  final List<String> reasons;
+
+  const UiDensityAssessment({required this.level, required this.reasons});
+
+  bool get isHigh => level == UiDensity.high;
 }

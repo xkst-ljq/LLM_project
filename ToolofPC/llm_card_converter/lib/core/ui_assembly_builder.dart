@@ -673,7 +673,9 @@ class UiAssemblyBuilder {
     final contentPcbH = allHeights.isEmpty
         ? 96.0
         : allHeights.reduce((a, b) => a > b ? a : b);
-    final minPcbH = mode == 'scene' && hasOverlayPages ? 320.0 : 64.0;
+    // scene 接管聊天屏幕：带 overlay 详情页时保底全屏高度，让 message_flow
+    // 有空间拉伸填充；无 overlay 时允许精简 UI（内容驱动，不拔高）。
+    final minPcbH = mode == 'scene' && hasOverlayPages ? 760.0 : 64.0;
     final pcbH = contentPcbH.clamp(minPcbH, 2000.0).toDouble();
     for (final page in pages) {
       final elements = page['elements'];
@@ -1315,7 +1317,10 @@ class UiAssemblyBuilder {
     if (titles.isEmpty) {
       titles.add('主界面');
     }
-    return titles.take(9).toList();
+    // 不在此 take(9)：第 10+ 页的字段若被截掉，_resolvePlanPage 会回退塞进
+    // 第一页造成静默错位。页数超限属于 validator 的 error（AI 修复轮会
+    // 压缩/合并），编译器忠实编译全部页面。
+    return titles;
   }
 
   static Map<String, String> _planPageRoles(UiDesignPlan plan) {

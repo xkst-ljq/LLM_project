@@ -325,55 +325,56 @@ class ConversionPipeline {
 
       // ── 剥离开场白里的渲染标记 ──
       //
-      // 这一步不再依赖正则规则判断 UI，而是使用 AI plan 中已经确认的
-      // 字段名作为 knownTags。AI 没确认的标签不会被删，避免误删正文。
-      // knownTags 从**全部 assemblies + 各分支变体**的字段（name + sourceKey）
-      // 收集——多 assembly 时第 2+ 个方案的字段也要参与剥离，且标签
-      // 只写在 sourceKey 时同样能匹配。
-      final knownTags = <String>{};
-      void collectPlanTags(UiDesignPlan p) {
-        for (final f in p.fields) {
-          if (f.name.trim().isNotEmpty) knownTags.add(f.name);
-          if (f.sourceKey.trim().isNotEmpty) knownTags.add(f.sourceKey);
-        }
-        for (final vp in p.branchPlans.values) {
-          collectPlanTags(vp);
-        }
-      }
-
-      for (final p in interpretation.plans) {
-        collectPlanTags(p);
-      }
+      // 只在**确有 UI 承载这些字段**时才剥离：knownTags 里的字段已编译进
+      // assembly/status_fields，正文里再留一份既重复又难看。若 AI 判断
+      // hasUi=false 或没有可编译的 UI（built.isEmpty），剥掉标签等于让
+      // 开场信息静默丢失——此时保留原文。
       final sanitizeNotes = <String>[];
-      final rawGreetings = card['opening_greetings'];
-      if (knownTags.isNotEmpty && rawGreetings is String && rawGreetings.isNotEmpty) {
-        try {
-          final list = jsonDecode(rawGreetings);
-          if (list is List) {
-            var changed = 0;
-            final out = <Map<String, dynamic>>[];
-            for (final g in list) {
-              if (g is! Map) continue;
-              final item = Map<String, dynamic>.from(g);
-              final before = item['content']?.toString() ?? '';
-              final after = GreetingSanitizer.sanitize(
-                before,
-                knownTags: knownTags,
-                knownTagNames: interpretation.sourcePack.stableTagNames
-                    .toSet()
-                    ..addAll(knownTags),
-              );
-              if (after != before) changed++;
-              item['content'] = after;
-              out.add(item);
-            }
-            if (changed > 0) {
-              card['opening_greetings'] = jsonEncode(out);
-              sanitizeNotes.add('$changed 条开场白已根据 AI UI 字段剥离渲染标记。');
-            }
+      if (!built.isEmpty) {
+        final knownTags = <String>{};
+        void collectPlanTags(UiDesignPlan p) {
+          for (final f in p.fields) {
+            if (f.name.trim().isNotEmpty) knownTags.add(f.name);
+            if (f.sourceKey.trim().isNotEmpty) knownTags.add(f.sourceKey);
           }
-        } catch (_) {
-          // 解析失败就原样保留——宁可留标记，不要弄坏开场白。
+          for (final vp in p.branchPlans.values) {
+            collectPlanTags(vp);
+          }
+        }
+
+        for (final p in interpretation.plans.where((p) => p.hasUi)) {
+          collectPlanTags(p);
+        }
+        final rawGreetings = card['opening_greetings'];
+        if (knownTags.isNotEmpty && rawGreetings is String && rawGreetings.isNotEmpty) {
+          try {
+            final list = jsonDecode(rawGreetings);
+            if (list is List) {
+              var changed = 0;
+              final out = <Map<String, dynamic>>[];
+              for (final g in list) {
+                if (g is! Map) continue;
+                final item = Map<String, dynamic>.from(g);
+                final before = item['content']?.toString() ?? '';
+                final after = GreetingSanitizer.sanitize(
+                  before,
+                  knownTags: knownTags,
+                  knownTagNames: interpretation.sourcePack.stableTagNames
+                      .toSet()
+                      ..addAll(knownTags),
+                );
+                if (after != before) changed++;
+                item['content'] = after;
+                out.add(item);
+              }
+              if (changed > 0) {
+                card['opening_greetings'] = jsonEncode(out);
+                sanitizeNotes.add('$changed 条开场白已根据 AI UI 字段剥离渲染标记。');
+              }
+            }
+          } catch (_) {
+            // 解析失败就原样保留——宁可留标记，不要弄坏开场白。
+          }
         }
       }
 

@@ -170,7 +170,10 @@ class UiDesignPlan {
       case 'sticky':
         return 'extra_sticky';
       default:
-        return 'extra_companion';
+        // 保留原始值交给 UiPlanValidator 拦截（防幻觉），编译器对未知
+        // mode 走 pcbW 默认分支也不会崩溃。切勿归一成 extra_companion——
+        // 那样会让"非法 uiMode"error 永远不触发。
+        return v;
     }
   }
 }

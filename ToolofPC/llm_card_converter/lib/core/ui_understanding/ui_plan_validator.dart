@@ -206,6 +206,130 @@ class UiPlanValidator {
     );
   }
 
+  /// 跨 assembly 的强制校验：多套 UI 之间的组合关系必须成立。
+  ///
+  /// 与 [validate]（单 plan 结构校验）互补，由 AiUiInterpreter 在收集完各
+  /// plan 的校验结果后调用一次。涵盖：
+  /// 1. 多开场白（alternate_greetings 非空）时**必须**存在 uiMode=opening。
+  /// 2. 多开场白时 opening 必须做分支差异化（branchIndex 映射 +
+  ///    branchInitialValues/branchPlans），不能是空壳按钮。
+  /// 3. 高信息密度卡只用 extra_companion 而无 scene 时给出 warning
+  ///    （companion 212px 多页签仍可承载，故不强杀）。
+  static UiPlanValidationResult validateAssemblies(
+    List<UiDesignPlan> plans,
+    UiSourcePack sourcePack,
+  ) {
+    final errors = <String>[];
+    final warnings = <String>[];
+    final hasMultiGreeting = sourcePack.alternateGreetings.isNotEmpty;
+    final openings = plans.where((p) => p.uiMode == 'opening').toList();
+    final hasScene = plans.any((p) => p.uiMode == 'scene');
+    final hasCompanion = plans.any((p) => p.uiMode == 'extra_companion');
+
+    // 同一 uiMode 不应重复出现：两张伴生栏 / 两个 scene 会让玩家看到重复 UI，
+    // 且无法判断哪套是作者想要的。这是修复轮绝不能"补回"的错误。
+    final modeCounts = <String, int>{};
+    for (final p in plans) {
+      final mode = p.uiMode;
+      if (mode.isEmpty) continue;
+      modeCounts[mode] = (modeCounts[mode] ?? 0) + 1;
+    }
+    for (final entry in modeCounts.entries) {
+      if (entry.value > 1) {
+        errors.add('uiMode=${entry.key} 重复出现 ${entry.value} 次：同一生命周期只应编译一份 UI，请合并或删除多余的方案。');
+      }
+    }
+
+    // scene 与 extra_companion 互斥：scene 接管整个聊天屏幕，会抑制
+    // 原生伴生栏；两者并存时玩家会同时看到两套常驻 UI。
+    if (hasScene && hasCompanion) {
+      errors.add('scene 与 extra_companion 互斥——scene 全屏接管聊天页并抑制原生伴生栏；'
+          '一张卡不应同时输出两个常驻生命周期。请把低频详情合并进 scene 的 overlay 页，删除 extra_companion。');
+    }
+
+    if (hasMultiGreeting && openings.isEmpty) {
+      errors.add('角色卡存在多个开场白（alternate_greetings 共 ${sourcePack.alternateGreetings.length} 条），'
+          'assemblies 必须包含 uiMode=opening 供玩家选择开场方向；只给伴生/场景 UI 会让玩家错过开场白。');
+    } else if (openings.isNotEmpty) {
+      for (var i = 0; i < openings.length; i++) {
+        final openingErrors =
+            _openingBranchDifferentiationErrors(openings[i], sourcePack);
+        for (final e in openingErrors) {
+          errors.add('[opening#$i] $e');
+        }
+      }
+    }
+
+    if (hasMultiGreeting && !hasScene && hasCompanion) {
+      // 多开场白 + 高密度但只给了 companion：场景信息密度足以支撑 scene，
+      // 但 212px 多页签伴生栏也能承载，降级为提示性警告。
+      final density = sourcePack.densityAssessment();
+      if (density.isHigh) {
+        warnings.add('原卡信息密度高（${density.reasons.join('; ')}），但转译结果只用 extra_companion。'
+            '若原卡是沉浸式终端/正文被 UI 包裹，建议改用 scene 全屏承载，'
+            '否则请确认 212px 伴生栏多页签足够承载全部信息。');
+      }
+    }
+
+    return UiPlanValidationResult(
+      ok: errors.isEmpty,
+      errors: errors,
+      warnings: warnings,
+    );
+  }
+
+  /// 单个 opening 在"多开场白"场景下的差异化校验。
+  static List<String> _openingBranchDifferentiationErrors(
+    UiDesignPlan opening,
+    UiSourcePack sourcePack,
+  ) {
+    final errors = <String>[];
+    final branchCount = 1 + sourcePack.alternateGreetings.length;
+    final branchIndices = <int>{
+      for (final a in opening.actions)
+        if (a.branchIndex != null) a.branchIndex!,
+    };
+    if (branchIndices.isEmpty) {
+      errors.add('多开场白时 opening 的 actions 必须用 branchIndex 对应每个开场方向'
+          '（0=first_mes，1..N-1=alternate_greetings），不能只给空壳按钮。');
+      return errors;
+    }
+    for (var branch = 0; branch < branchCount; branch++) {
+      if (!branchIndices.contains(branch)) {
+        errors.add('opening 缺少开场白方向 branchIndex=$branch（first_mes=0，'
+            'alternate_greetings 依次为 1..${branchCount - 1}）对应的按钮。');
+      }
+    }
+    // 差异化：branchPlans 或 branchInitialValues 至少出现一种，才算真的
+    // 对多开场白做了分支适配。仅当各分支初始状态确实存在数值差异时才强制。
+    final hasBranchPlans = opening.branchPlans.isNotEmpty;
+    final hasBranchValues = opening.fields.any((f) => f.branchInitialValues.isNotEmpty);
+    if (!hasBranchPlans && !hasBranchValues && _anyBranchStatusDiffers(sourcePack)) {
+      errors.add('多开场白各分支的初始状态数据不同，opening 必须用 '
+          'fields[].branchInitialValues 表达分支差异（或 branchPlans 表达结构差异），'
+          '否则选择不同开场白后状态栏仍显示同一套初始值。');
+    }
+    return errors;
+  }
+
+  /// 各开场分支的持久状态（PlayerStatus 格式）是否存在可证的数值差异。
+  static bool _anyBranchStatusDiffers(UiSourcePack sourcePack) {
+    final branchCount = 1 + sourcePack.alternateGreetings.length;
+    if (branchCount < 2) return false;
+    final branch0 = sourcePack.playerStatusForBranchIndex(0);
+    if (branch0.isEmpty) return false;
+    for (var branch = 1; branch < branchCount; branch++) {
+      final b = sourcePack.playerStatusForBranchIndex(branch);
+      if (b.isEmpty) continue;
+      for (final entry in branch0.entries) {
+        final v0 = entry.value;
+        final vb = b[entry.key];
+        if (vb != null && vb != v0) return true;
+      }
+    }
+    return false;
+  }
+
   static List<String> _sparsePages(UiDesignPlan plan) {
     if (plan.layout.pages.length <= 1) return const [];
     final result = <String>[];

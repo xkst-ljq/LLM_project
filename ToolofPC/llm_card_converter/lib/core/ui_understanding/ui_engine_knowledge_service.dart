@@ -99,6 +99,23 @@ Guidelines for good space allocation:
 - If the source says the player may specify name/age/gender/appearance/personality/background or otherwise be randomly generated, opening should include multiple profile input fields. Use inputs[] with targetKind="status_field", sendOnSubmit=false, sourceKey like UserProfile_Name/UserProfile_Age/UserProfile_Gender/UserProfile_Appearance/UserProfile_Personality/UserProfile_Background/UserProfile_Extra.
 - Runtime status fields like HP/MP/XP/STR belong in scene/companion/sticky, not in opening. Opening may collect/edit profile fields, but should not duplicate a full PlayerStatus dashboard.
 
+# Mode selection by information density
+- **High density → scene**: any of these → full-screen immersive terminal —
+  - >= 5 persistent status fields (many progress bars/attribute panels);
+  - narrative wrapped by `<正文>`/`<Alliance>`/scrollable content (the original embeds the chat stream inside the UI);
+  - >= 2 stable schemas coexisting (quest / DQ_ChoiceBox / FriendsAlbumPage);
+  - multiple complex multi-region regex (status bar + front-end terminal).
+- **Focused single-purpose → extra_companion / extra_sticky**: a card with only 1-2 status fields, a single panel, or a lightweight status bar fits the companion panel (212px); a top/bottom thin tool bar fits extra_sticky. Do NOT over-design a low-density focused card into scene — without a narrative wrapper and with few fields, scene only leaves large blank areas.
+- **Multiple greetings always require opening**: if alternate_greetings is non-empty (>= 2 greetings), you MUST output uiMode=opening so the player can pick a direction — regardless of whether the source wrote onclick/send buttons.
+
+# Opening branch differentiation (mandatory)
+With multiple greetings, the opening UI must NOT be a shell of empty buttons; differentiate the branches:
+1. Emit one action per greeting direction with branchIndex (0 = first_mes, 1..N-1 = alternate_greetings).
+2. Different initial state/data per branch → fields[].branchInitialValues (same layout, different values).
+3. A branch with a genuinely different structure (different fields/pages/groups) → branchPlans (one independent layout per branch).
+4. Asymmetric branch data (e.g. branch 0 has a quest board, branch 1 does not) → the data-less branch must use branchInitialValues with an empty/awaiting-update marker, never reuse branch 0 data.
+5. Even when initial values are identical across branches, map every greeting direction with branchIndex.
+
 # UiDesignPlan schema
 Return exactly one JSON object. For a simple card, return a single plan. For opening + scene or opening + companion, prefer:
 {
@@ -244,14 +261,36 @@ Knowledge version: $knowledgeVersion
 3. **extra_companion** (常驻伴生栏)：**在聊天框侧边显示的持久面板**（宽 212px）。这是 SillyTavern 绝大多数“常驻状态栏”的最佳转译目标。
 4. **extra_sticky** (悬浮工具栏)：顶部/底部的窄条。
 
+# 信息密度判据 (scene vs companion/sticky 的硬判据)
+- **高密度 → scene**：满足任一即倾向全屏沉浸终端——
+  - 持久状态字段 ≥ 5（大量进度条/属性面板）；
+  - 正文被 `<正文>`/`<Alliance>`/scrollable content 包裹（原卡把聊天流嵌进 UI）；
+  - 含 ≥ 2 套稳定 schema（quest / DQ_ChoiceBox / FriendsAlbumPage 并存）；
+  - 多个复杂多区 regex（状态栏 + 前端终端并存）。
+- **专项且单一 → extra_companion / extra_sticky**：只有 1~2 个状态字段、单一面板、
+  轻量状态条时，用伴生栏（212px）即可；若它是顶层/底部窄工具条用 extra_sticky。
+  **严禁**把低密度"专项单一"卡过度设计成全屏 scene——没有正文包裹、字段很少时 scene 只会留下大片空白。
+
 # 多 UI 决策树 (证据 → 输出哪几套)
-- 有开场分支按钮 onclick/send（first_mes/alternate_greetings 内）→ **必须** output opening。
-- 有 `<生命>` 等 XML 标签 / `{PlayerStatus|...}` / regex 仪表盘 / `<正文>` 包裹 → extra_companion（窄面板）或 scene（全屏沉浸，仅当原卡是终端/档案卡）。
-- 开场 + 状态栏都有 → `assemblies:[opening, extra_companion]`；沉浸 RPG 且正文包裹 → `assemblies:[opening, scene]`。
-- 只有状态栏 → 单 assembly extra_companion。
-- 只有开场按钮 → 单 assembly opening。
-- 严禁：证据只有状态栏时硬造 opening；或只有开场按钮时硬造 scene。
+- **多开场白（alternate_greetings 存在，即开场白 ≥ 2 条）→ 必须 output opening**，
+  用于让玩家选择开场方向，不依赖原卡是否写了 onclick/send 按钮。
+- 有 `<生命>` 等 XML 标签 / `{PlayerStatus|...}` / regex 仪表盘 / `<正文>` 包裹 → 持久 UI。
+  - 高密度/正文包裹 → scene（全屏沉浸）；低密度专项单一 → extra_companion（窄面板）。
+- 开场 + 持久 UI 都有 → `assemblies:[opening, scene]`（高密度/正文包裹）或
+  `assemblies:[opening, extra_companion]`（专项信息密度不高）。
+- 只有持久 UI → 单 assembly scene（高密度）或 extra_companion（专项单一）。
+- 只有多开场白 → 单 assembly opening。
+- 严禁：证据只有状态栏时硬造 opening；或只有低密度状态栏时硬造 scene。
 - scene 与 extra_companion 互斥——一张卡不两个常驻生命周期并存。
+
+# 多开场白差异化（必须执行）
+多开场白时 opening **不能只是空壳按钮**，必须做分支差异化：
+1. 为每个开场白方向输出 branchIndex（0=first_mes，1..N-1=alternate_greetings）对应的按钮。
+2. 各分支初始状态/数据不同 → `fields[].branchInitialValues`（同一布局，数值不同）。
+3. 某分支界面结构完全不同（不同字段/页面/分组）→ `branchPlans`（每分支独立布局）。
+4. 多分支数据不对称（如 branch 0 有任务板、branch 1 无）时，无数据分支必须
+   用 branchInitialValues 标注空态/待更新，不能沿用 branch 0 的数据。
+5. 即使各分支初值相同，也要用 branchIndex 明确映射所有开场方向。
 
 # 多开场分支差异化 (branchVariants)
 - 多开场白（alternate_greetings 非空）时，两种差异化方式，**按差异类型选择**：
