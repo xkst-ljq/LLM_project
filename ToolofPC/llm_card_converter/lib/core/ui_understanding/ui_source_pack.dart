@@ -194,6 +194,28 @@ class UiSourcePack {
     return regexScripts.any(scriptWrapsNarrative);
   }
 
+  bool get hasOpeningBranchActions => actionSnippets.any((a) =>
+      a.path.startsWith('data.alternate_greetings') ||
+      a.path.startsWith('data.first_mes'));
+
+  /// 汇总给 AI 的「该输出几套 UI」建议。返回 '' 表示无强信号。
+  ///
+  /// 帮助 AI 决定 assemblies 的数量与 mode，避免「只有状态栏却硬造 opening」
+  /// 或「只有开场按钮却硬造 scene」这类多造/遗漏。
+  String modeSuggestion() {
+    final hasOpening = hasOpeningBranchActions;
+    final hasPersistent = hasPlayerStatusSchema ||
+        hasXmlStatusTags ||
+        hasNarrativeUiWrapper;
+    if (hasOpening && hasPersistent) {
+      return '建议 assemblies=[opening, extra_companion]（若原卡是沉浸式终端/档案卡，'
+          '用 scene 代替 extra_companion）。';
+    }
+    if (hasOpening) return '建议 assemblies=[opening]。';
+    if (hasPersistent) return '建议 assemblies=[extra_companion]（若原卡有正文包裹则用 scene）。';
+    return '';
+  }
+
   bool _hasSchemaToken(String token) {
     if (firstMes.contains(token)) return true;
     if (alternateGreetings.any((e) => e.contains(token))) return true;
@@ -347,6 +369,12 @@ class UiSourcePack {
     b.writeln('name: $cardName');
     _writeOpeningBranchSummary(b);
     _writeBranchRuntimeDataSummary(b);
+    final suggestion = modeSuggestion();
+    if (suggestion.isNotEmpty) {
+      b.writeln('\n# UI assembly count suggestion');
+      b.writeln('$suggestion 不要多造：没有对应证据就不要多输出一套 UI；'
+          '也不要遗漏：有证据就必须包含对应 mode。');
+    }
     if (_sourceSuggestsProfilePool) {
       b.writeln('\n# Player profile input opportunity');
       b.writeln('Source allows player-specified traits. If opening UI generated, add profile input fields (name/age/gender/appearance/personality) bound to status_field, optional.');
@@ -409,8 +437,9 @@ class UiSourcePack {
         final hint = _layoutHintOf(e.replaceString);
         if (hint.isNotEmpty) b.writeln('layout hints: $hint');
         b.writeln('findRegex:\n${_clip(e.findRegex, 600)}');
-        b.writeln('replaceString excerpt:\n${_clip(e.replaceString, 1500)}');
+        b.writeln('replaceString excerpt:\n${_clip(_sanitizeVisualCss(e.replaceString), 1500)}');
       }
+      _writeOmittedNote(b, 'regex_scripts', regexScripts.length, 18);
     }
 
     // ── 视觉语义提示（给 AI 参考，不强制）──
@@ -426,6 +455,9 @@ class UiSourcePack {
       for (final line in visualHints) {
         b.writeln('- $line');
       }
+      b.writeln('Map these CSS cues to visualStyle fields when confident: '
+          'gradientTo / surfaceMaterial / strokeColor / glowColor / glowIntensity / '
+          'userBubbleColor / assistantBubbleColor. Leave them empty otherwise (defaults apply).');
     }
 
     if (pluginScripts.isNotEmpty) {
@@ -435,6 +467,7 @@ class UiSourcePack {
         if (e.urls.isNotEmpty) b.writeln('urls: ${e.urls.join(', ')}');
         b.writeln(_clip(e.content, 1200));
       }
+      _writeOmittedNote(b, 'tavern_helper scripts', pluginScripts.length, 12);
     }
 
     if (actionSnippets.isNotEmpty) {
@@ -442,13 +475,15 @@ class UiSourcePack {
       for (final e in actionSnippets) {
         b.writeln('- ${e.path}: ${e.text}');
       }
+      _writeOmittedNote(b, 'onclick/send actions', actionSnippets.length, 20);
     }
 
     if (htmlSnippets.isNotEmpty) {
       b.writeln('\n# Inline HTML/CSS snippets');
       for (final e in htmlSnippets) {
-        b.writeln('\n## ${e.path}\n${_clip(e.text, 1200)}');
+        b.writeln('\n## ${e.path}\n${_clip(_sanitizeVisualCss(e.text), 1200)}');
       }
+      _writeOmittedNote(b, 'inline HTML snippets', htmlSnippets.length, 8);
     }
 
     if (worldBookEvidence.isNotEmpty) {
@@ -550,8 +585,59 @@ class UiSourcePack {
       if (hint.isNotEmpty && seen.add('hint:$hint')) {
         lines.add('layout hint: $hint');
       }
+      // 3. 视觉特征（渐变 / 描边 / 发光 / 两列网格）——直接告诉 AI
+      //    原卡用了哪些视觉手法，方便映射到 visualStyle。
+      final css = _sanitizeVisualCss(script.replaceString);
+      if (RegExp(r'linear-gradient', caseSensitive: false).hasMatch(css) &&
+          seen.add('gradient')) {
+        lines.add('visual: linear-gradient surfaces (map to gradientTo / surfaceMaterial="gradient")');
+      }
+      if (RegExp(r'box-shadow\s*:\s*[^;]*\d+', caseSensitive: false).hasMatch(css) &&
+          seen.add('glow')) {
+        lines.add('visual: box-shadow glow (map to glowColor + glowIntensity>0)');
+      }
+      if (RegExp(r'border\s*:\s*[^;]*(solid|1px|2px)', caseSensitive: false)
+              .hasMatch(css) &&
+          seen.add('stroke')) {
+        lines.add('visual: bordered panels (map to strokeColor / surfaceMaterial="outline")');
+      }
+      if (RegExp(r'width\s*:\s*48%|grid-template-columns\s*:\s*1fr\s+1fr',
+              caseSensitive: false)
+          .hasMatch(css) &&
+          seen.add('two-col')) {
+        lines.add('visual: two-column layout (map to layout columns:2)');
+      }
+    }
+
+    // 4. 原卡出现的颜色候选（不强制，仅参考）。
+    final colors = _colorCandidates();
+    if (colors.isNotEmpty && seen.add('colors')) {
+      lines.add('original palette samples: ${colors.join(' ')}');
     }
     return lines;
+  }
+
+  /// 从 replaceString 里抓出现过的 hex 颜色，作为 AI 配色参考。
+  ///
+  /// 只取前 N 个去重结果，避免被渐变/阴影里的大量相近色刷屏。
+  List<String> _colorCandidates() {
+    final seen = <String>{};
+    final out = <String>[];
+    void collect(String css) {
+      for (final m in RegExp(r'#[0-9a-fA-F]{6}\b').allMatches(css)) {
+        final v = m.group(0)!.toUpperCase();
+        if (seen.add(v)) {
+          out.add(v);
+          if (out.length >= 8) return;
+        }
+      }
+    }
+
+    for (final e in regexScripts.where((e) => e.enabled)) {
+      collect(e.replaceString);
+      if (out.length >= 8) break;
+    }
+    return out;
   }
 
   /// 阶段 1（Scout）用的证据摘要：远小于 [toPromptText]。
@@ -880,20 +966,7 @@ class UiSourcePack {
 
   static String _sanitizePromptEvidence(String raw) {
     var s = raw;
-    // 大量 data URI / base64 对 UI 语义几乎没有帮助，却会让 prompt 暴涨。
-    // 注意这里不用 Dart raw string，避免把 `\s` / `\(` 双重转义成字面反斜杠。
-    s = s.replaceAll(
-      RegExp("url\\((['\"]?)data:image[\\s\\S]*?\\1\\)", caseSensitive: false),
-      'url([omitted data:image])',
-    );
-    s = s.replaceAll(
-      RegExp("data:image/[^\\s'\"<>)]{80,}", caseSensitive: false),
-      '[omitted data:image]',
-    );
-    s = s.replaceAll(
-      RegExp('base64,[A-Za-z0-9+/=]{80,}', caseSensitive: false),
-      'base64,[omitted]',
-    );
+    s = _stripDataUris(s);
     // hover / inline JS 不能执行，只保留“有 hover 行为”的事实。
     s = s.replaceAll(
       RegExp('\\s+on(?:mouse|click|input|change|touch)[a-zA-Z]*\\s*=\\s*"[\\s\\S]*?"'),
@@ -913,10 +986,48 @@ class UiSourcePack {
     return s.trim();
   }
 
+  /// 轻量净化活路径的 CSS 证据：只去掉会爆 token 的 data URI / base64，
+  /// **保留颜色、边框、渐变、发光等视觉属性**，让 AI 能读到原卡外观。
+  ///
+  /// 与 [_sanitizePromptEvidence] 的区别：不动内联 on* 事件与 keyframes
+  /// （那些是行为提示不是 token 大头），只清掉 base64 图片数据。
+  static String _sanitizeVisualCss(String raw) => _stripDataUris(raw).trim();
+
+  /// 抽掉 `data:image/...;base64,...` 与长 base64 块。
+  ///
+  /// 注意这里不用 Dart raw string，避免把 `\s` / `\(` 双重转义成字面反斜杠。
+  static String _stripDataUris(String s) {
+    s = s.replaceAll(
+      RegExp("url\\((['\"]?)data:image[\\s\\S]*?\\1\\)", caseSensitive: false),
+      'url([omitted data:image])',
+    );
+    s = s.replaceAll(
+      RegExp("data:image/[^\\s'\"<>)]{80,}", caseSensitive: false),
+      '[omitted data:image]',
+    );
+    s = s.replaceAll(
+      RegExp('base64,[A-Za-z0-9+/=]{80,}', caseSensitive: false),
+      'base64,[omitted]',
+    );
+    return s;
+  }
+
   static String _clip(String s, int max) {
     final t = s.trim();
     if (t.length <= max) return t;
     return '${t.substring(0, max)}\n...[truncated ${t.length - max} chars]';
+  }
+
+  /// 证据包超出展示上限时，明确告诉 AI「有东西被截断但没进 prompt」。
+  ///
+  /// 让 AI 知道它看到的是前 [shown] 条，其余被省略——若被省略的证据里
+  /// 可能有 UI，应在 notes 标注「可能遗漏」，而不是默认没看到。
+  static void _writeOmittedNote(StringBuffer b, String label, int total, int shown) {
+    if (total > shown) {
+      b.writeln(
+          '\n... $label：原卡共有 $total 条，证据包只保留前 $shown 条，'
+          '已省略 ${total - shown} 条（未进入本次分析）。若省略部分可能含 UI，请在 notes 标注可能遗漏。');
+    }
   }
 }
 

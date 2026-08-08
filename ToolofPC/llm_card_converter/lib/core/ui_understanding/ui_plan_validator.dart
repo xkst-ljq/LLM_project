@@ -112,7 +112,7 @@ class UiPlanValidator {
     if (plan.fields.length > 40) {
       errors.add('字段过多（${plan.fields.length}），可能把正文/世界书误识别成 UI。');
     }
-    if (plan.uiMode == 'scene' && plan.layout.pages.length > 5) {
+    if (plan.uiMode == 'scene' && plan.layout.pages.length > 9) {
       errors.add('scene 页面过多（${plan.layout.pages.length} 页），容易形成稀疏空页。请优先参考原卡长卡/网格结构，合并为主正文页 + 状态/任务/羁绊等少量页面，或使用 overlay 承载低频详情。');
     }
     final sparsePages = _sparsePages(plan);
@@ -176,6 +176,26 @@ class UiPlanValidator {
       }
       if (a.sourceRef.trim().isEmpty) {
         warnings.add('动作「${a.label.isEmpty ? a.sendText : a.label}」缺少 sourceRef。');
+      }
+    }
+
+    // ── 分支变体（branchPlans）递归校验 ──
+    // 变体是完整 UiDesignPlan，复用同一套校验；额外约束：
+    // uiMode 必须与主支路一致（引擎一个 assembly 只有一个 mode）；
+    // 不允许嵌套 branchPlans（不支持递归变体）。
+    for (final entry in plan.branchPlans.entries) {
+      final branch = entry.key;
+      final vp = entry.value;
+      if (vp.uiMode != plan.uiMode) {
+        errors.add('branchPlans[$branch] 的 uiMode（${vp.uiMode}）与主支路（${plan.uiMode}）不一致；同一 assembly 只能有一个 mode。');
+      }
+      if (vp.branchPlans.isNotEmpty) {
+        errors.add('branchPlans[$branch] 不允许再嵌套 branchPlans（不支持递归变体）。');
+      }
+      if (vp.hasUi) {
+        final sub = validate(vp, sourcePack);
+        errors.addAll(sub.errors.map((e) => '[branch$branch] $e'));
+        warnings.addAll(sub.warnings.map((e) => '[branch$branch] $e'));
       }
     }
 

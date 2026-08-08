@@ -16,6 +16,17 @@ class UiDesignPlan {
   final List<UiPlanUnsupported> unsupported;
   final List<String> notes;
 
+  /// 各开场分支的布局/数据变体：分支下标 -> 该分支的完整 UiDesignPlan。
+  ///
+  /// 分支 0 是主支路（plan 本体）；branchPlans 只存差异分支（下标 >= 1）。
+  /// 空 = 所有分支共用主支路布局（数据差异用 fields[].branchInitialValues
+  /// 表达，零额外布局成本）。
+  ///
+  /// 引擎侧对应 `UIAssemblyInfo.branchVariants`：每个变体分支编译成一份
+  /// pagesJson，运行时按 `sessionState.branchIndex` 切换（未登记分支回落
+  /// 主支路）。
+  final Map<int, UiDesignPlan> branchPlans;
+
   const UiDesignPlan({
     required this.hasUi,
     required this.confidence,
@@ -30,7 +41,11 @@ class UiDesignPlan {
     required this.actions,
     required this.unsupported,
     required this.notes,
+    this.branchPlans = const <int, UiDesignPlan>{},
   });
+
+  /// 该 assembly 有分支变体的分支下标（升序）。
+  List<int> get branchIndices => branchPlans.keys.toList()..sort();
 
   static List<UiDesignPlan> listFromJson(Map<String, dynamic> json) {
     final rawAssemblies = json['assemblies'];
@@ -87,10 +102,11 @@ class UiDesignPlan {
       }
     }
 
-    return UiDesignPlan(
+    final mode = _modeOf(json['uiMode']);
+    final plan = UiDesignPlan(
       hasUi: _boolOf(json['hasUi']),
       confidence: _doubleOf(json['confidence'], 0.0).clamp(0.0, 1.0).toDouble(),
-      uiMode: _modeOf(json['uiMode']),
+      uiMode: mode,
       uiName: _fallback(_str(json['uiName']), 'AI 转译 UI'),
       evidenceSummary: _str(json['evidenceSummary']),
       sourceRefs: _strings(json['sourceRefs']),
@@ -102,7 +118,32 @@ class UiDesignPlan {
       unsupported:
           _listOf(json['unsupported']).map(UiPlanUnsupported.fromJson).toList(),
       notes: _strings(json['notes']),
+      branchPlans: _branchPlansOf(json['branchPlans'] ?? json['branch_variants'], json, mode),
     );
+    return plan;
+  }
+
+  /// 解析各分支变体。子分支继承主支路的 visualStyle / layout / uiMode，
+  /// 只允许覆盖差异（引擎一个 assembly 只有一个 mode，所以 uiMode 强制继承）。
+  static Map<int, UiDesignPlan> _branchPlansOf(
+    dynamic raw,
+    Map<String, dynamic> parent,
+    String parentMode,
+  ) {
+    if (raw is! Map) return const {};
+    final out = <int, UiDesignPlan>{};
+    raw.forEach((key, value) {
+      final idx = int.tryParse(key.toString());
+      if (idx == null || idx < 1 || value is! Map) return;
+      final child = Map<String, dynamic>.from(value);
+      child.putIfAbsent('hasUi', () => true);
+      child.putIfAbsent('visualStyle', () => parent['visualStyle']);
+      child.putIfAbsent('style', () => parent['style'] ?? parent['visualStyle']);
+      child.putIfAbsent('layout', () => parent['layout']);
+      child.putIfAbsent('uiMode', () => parentMode);
+      out[idx] = UiDesignPlan.fromJson(child);
+    });
+    return out;
   }
 
   static String _defaultNameForMode(String mode) => switch (mode) {
@@ -148,6 +189,31 @@ class UiPlanStyle {
   final double borderRadius;
   final bool glow;
 
+  /// 渐变第二色（hex）。空 = 不做渐变。
+  final String gradientTo;
+
+  /// 底板材质：'auto' | 'solid' | 'gradient' | 'outline' | 'glass'。
+  /// 'auto' 由编译器按 [gradientTo] / [strokeColor] 启发式决定。
+  final String surfaceMaterial;
+
+  /// 描边色（hex）。空 = 无描边。
+  final String strokeColor;
+
+  /// 描边宽度（预留；引擎 outline 材质固定 2px，0 表示不额外处理）。
+  final double strokeWidth;
+
+  /// 发光色（hex）。空 = 回落 accentColor。
+  final String glowColor;
+
+  /// 发光强度 0~1。0 = 无发光。
+  final double glowIntensity;
+
+  /// 消息流用户气泡色（hex）。空 = 引擎默认 0xFFDCF8C6。
+  final String userBubbleColor;
+
+  /// 消息流 AI 气泡色（hex）。空 = 引擎默认 0xFFF1F1F4。
+  final String assistantBubbleColor;
+
   const UiPlanStyle({
     required this.styleName,
     required this.pcbColor,
@@ -161,6 +227,14 @@ class UiPlanStyle {
     required this.barTrackColor,
     required this.borderRadius,
     required this.glow,
+    this.gradientTo = '',
+    this.surfaceMaterial = 'auto',
+    this.strokeColor = '',
+    this.strokeWidth = 0,
+    this.glowColor = '',
+    this.glowIntensity = 0,
+    this.userBubbleColor = '',
+    this.assistantBubbleColor = '',
   });
 
   factory UiPlanStyle.fromJson(Map<String, dynamic> json) {
@@ -177,8 +251,23 @@ class UiPlanStyle {
       barTrackColor: _hex(json['barTrackColor'], '#2A2D36'),
       borderRadius: _doubleOf(json['borderRadius'], 14.0).clamp(0.0, 32.0).toDouble(),
       glow: _boolOf(json['glow']),
+      gradientTo: _str(json['gradientTo'] ?? json['gradientColor']).trim(),
+      surfaceMaterial: _surfaceMaterialOf(json['surfaceMaterial'] ?? json['material']),
+      strokeColor: _str(json['strokeColor']).trim(),
+      strokeWidth: _doubleOf(json['strokeWidth'], 0).clamp(0.0, 8.0).toDouble(),
+      glowColor: _str(json['glowColor']).trim(),
+      glowIntensity: _doubleOf(json['glowIntensity'], 0).clamp(0.0, 1.0).toDouble(),
+      userBubbleColor: _str(json['userBubbleColor']).trim(),
+      assistantBubbleColor: _str(json['assistantBubbleColor']).trim(),
     );
   }
+}
+
+/// 解析底板材质白名单；非法值回落 'auto'。
+String _surfaceMaterialOf(dynamic raw) {
+  final v = _str(raw).toLowerCase().trim();
+  const allowed = {'auto', 'solid', 'gradient', 'outline', 'glass'};
+  return allowed.contains(v) ? v : 'auto';
 }
 
 class UiPlanLayout {

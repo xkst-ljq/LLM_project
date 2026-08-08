@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../api_service.dart';
 import '../json_ai_client.dart';
 import '../conversion_models.dart';
@@ -9,6 +7,7 @@ import 'ui_engine_knowledge_service.dart';
 import 'ui_plan_validator.dart';
 import 'ui_source_pack.dart';
 import 'ui_source_pack_builder.dart';
+import 'ui_visual_profile.dart';
 
 /// AI UI 理解阶段：读整张卡的证据包，输出 UiDesignPlan。
 ///
@@ -25,6 +24,7 @@ class AiUiInterpreter {
     required CardConversionResult baseResult,
     void Function(String line)? onLog,
     UiTranslateTraceBuilder? traceBuilder,
+    UiVisualProfile? visualProfile,
   }) async {
     final sourcePack = UiSourcePackBuilder.build(sourceJson);
     final characterName = baseResult.characterName;
@@ -42,6 +42,7 @@ class AiUiInterpreter {
       sourcePack: sourcePack,
       knowledge: knowledge,
       characterName: characterName,
+      visualProfile: visualProfile,
     );
     onLog?.call('  UI 理解 prompt 总大小：${_promptSizeLabel(_messageChars(messages))}');
 
@@ -114,7 +115,11 @@ class AiUiInterpreter {
     required UiSourcePack sourcePack,
     required String knowledge,
     required String characterName,
+    UiVisualProfile? visualProfile,
   }) {
+    final visualSection = (visualProfile == null || visualProfile.isEmpty)
+        ? ''
+        : '\n\n${visualProfile.toPromptSlim()}';
     return [
       const ChatMessage(
         role: 'system',
@@ -127,7 +132,7 @@ class AiUiInterpreter {
    - **Extra_Companion** (常驻推荐)：处理 `regex_scripts` 定义的监控面板、属性栏。这是最符合原版“状态栏”体验的模式。
    - **多 UI 输出惯例**：只要检测到上述两种证据，你**必须**使用 `{"assemblies": [opening方案, extra_companion方案]}` 结构。严禁只给其中一个，严禁询问“要不要补全”。
 2. **彻底打破系统套路**：严禁套用“属性/档案/选项”模板。根据角色身份构建独特布局（如：商店、技能、个人终端）。
-3. **视觉风格定制**：配色必须反映角色的灵魂（魔法少女-明亮/发光，硬汉-工业/粗犷，地牢-暗黑/压抑）。
+3. **视觉风格定制**：配色必须反映角色的灵魂（魔法少女-明亮/发光，硬汉-工业/粗犷，地牢-暗黑/压抑）。尽量还原原卡的 CSS 视觉特征（渐变/描边/发光/气泡配色），映射到 visualStyle 字段；拿不准就留空。
 4. **空间利用**：优先使用 `columns: 2` 或 `3`。数值字段应紧凑。
 
 【执行指令】
@@ -141,7 +146,7 @@ class AiUiInterpreter {
       ),
       ChatMessage(
         role: 'user',
-        content: '【待分析角色卡：$characterName】\n${sourcePack.toPromptTextSlim()}',
+        content: '【待分析角色卡：$characterName】\n${sourcePack.toPromptTextSlim()}$visualSection',
       ),
       const ChatMessage(
         role: 'user',

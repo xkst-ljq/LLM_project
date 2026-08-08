@@ -215,6 +215,7 @@ class UiEngineApiDictionary {
         'fontSize': {'type': 'double', 'default': 12.5, 'range': [8, 24]},
         'userBubbleColor': {'type': 'argbInt', 'default': 0xFFDCF8C6},
         'assistantBubbleColor': {'type': 'argbInt', 'default': 0xFFF1F1F4},
+        'bubbleTextColor': {'type': 'argbInt', 'default': 0xFF111116, 'description': '气泡内文字色；深色主题下应跟随气泡色自动取浅色，避免深底深字'},
         'bubbleRadius': {'type': 'double', 'default': 12, 'range': [0, 32]},
       },
       'aiGuidance': ['scene 中承载正文的首选组件', '可放在 surface 上形成终端/档案正文框'],
@@ -383,10 +384,10 @@ class UiEngineApiDictionary {
   static const List<String> limitations = [
     '不执行 SillyTavern JS / CSS / hover 伪类。',
     '当前转译编译器还没有 per-message template schema；消息级 UI 可标注为待支持或转为作者确认的持久页。',
-    '完整 branchVariants 布局生成仍待扩展；当前优先同布局 + branchInitialValues。',
+    'branchVariants 由 UiDesignPlan.branchPlans 生成（每分支独立 pagesJson，运行时按 branchIndex 切换）；同布局数据差异用 status_field 的 branch_initial_values 表达。',
     '复杂条件样式需 indicator.statusRules 或后续 conditionalStyles schema。',
     '动态 progress max/min 需要额外 API；不要默认假设。',
-    'UIEngine runtime 支持 ElementAnimation/event_to_animation，但当前 UiDesignPlan 编译器尚无通用 animations[] schema；只会自动生成按钮按压反馈与页面过渡。',
+    'UIEngine runtime 支持 ElementAnimation/event_to_animation，当前 UiDesignPlan 编译器提供受控的视觉映射：按钮按压反馈、页面过渡、以及 visualStyle.glow → glowPulse 发光脉冲。没有开放的通用 animations[] schema；其他 CSS 循环/悬浮动画仍应记为 unsupported 或未来增强。',
     'Opening UI 应选择 opening_greetings 分支方向并收集少量人物信息；不要把某个分支内部的 quest/DQ 选择提升成 opening 选择。',
     'quest / DQ_ChoiceBox / FriendsAlbumPage 等稳定消息级 schema，在来源明确或作者确认时可映射为 LLM 可更新的持久字段/页面。',
   ];

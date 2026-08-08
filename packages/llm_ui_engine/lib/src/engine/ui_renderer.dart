@@ -194,6 +194,7 @@ class UIRenderer {
           module.borderRadius,
           _buildBaseBox(),
           size,
+          module,
         );
       case 'linker':
         return SizedBox(
@@ -341,6 +342,7 @@ class UIRenderer {
       double borderRadius,
       Widget child,
       Size size,
+      UIModule module,
       ) {
     Widget content = child;
 
@@ -360,6 +362,9 @@ class UIRenderer {
           decoration: BoxDecoration(
             color: color.withValues(alpha: opacity),
             borderRadius: BorderRadius.circular(borderRadius),
+            // 静态发光（转译器 visualStyle.glow 映射）：solid 材质上叠一层
+            // 外发光阴影。属性由 `properties['__staticGlow']` 携带。
+            boxShadow: _staticGlowShadow(module, color),
           ),
           child: child,
         );
@@ -412,6 +417,28 @@ class UIRenderer {
       case UIModuleShape.rectangle:
         return content;
     }
+  }
+
+  /// 静态发光阴影：读取 `properties['__staticGlow']`。
+  ///
+  /// 转译器在 visualStyle.glowIntensity > 0 且材质为 solid 时写入：
+  /// `{'color': ARGB, 'intensity': 0~1, 'blur': 像素}`。没有该配置时返回
+  /// null（与现状一致，不叠阴影）。
+  static List<BoxShadow>? _staticGlowShadow(
+    UIModule module,
+    Color moduleColor,
+  ) {
+    final props = module.properties;
+    final glow = props['__staticGlow'];
+    if (glow is! Map) return null;
+    final colorInt = (glow['color'] as num?)?.toInt() ?? moduleColor.toARGB32();
+    final intensity = (glow['intensity'] as num?)?.toDouble() ?? 0.6;
+    final blur = (glow['blur'] as num?)?.toDouble() ?? 14.0;
+    if (intensity <= 0) return null;
+    final c = Color(colorInt).withValues(alpha: 0.35 * intensity.clamp(0.0, 1.0));
+    return [
+      BoxShadow(color: c, blurRadius: blur * intensity.clamp(0.4, 1.0), spreadRadius: 2),
+    ];
   }
 
   static Widget _buildBaseBox() {
@@ -2249,6 +2276,8 @@ class UIRenderer {
         Color((props['userBubbleColor'] as num?)?.toInt() ?? 0xFFDCF8C6);
     final assistantColor =
         Color((props['assistantBubbleColor'] as num?)?.toInt() ?? 0xFFF1F1F4);
+    final bubbleTextColor =
+        Color((props['bubbleTextColor'] as num?)?.toInt() ?? 0xFF111116);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(module.borderRadius),
@@ -2270,6 +2299,7 @@ class UIRenderer {
                 bubbleRadius: radius,
                 userColor: userColor,
                 assistantColor: assistantColor,
+                bubbleTextColor: bubbleTextColor,
                 // A11-2：消息流默认开启富文本——LLM 回复里带 Markdown
                 // 是常态，关掉会看到满屏的 ** 和 #。
                 richText: props['richText'] != false,
@@ -3399,12 +3429,17 @@ class _MessageFlowList extends StatefulWidget {
   /// A11-2：气泡内容是否按 Markdown / HTML 渲染。
   final bool richText;
 
+  /// 气泡文字色。默认深色 0xFF111116；深色主题下编译器会按气泡底色亮度
+  /// 自动取浅色，避免深底深字。
+  final Color bubbleTextColor;
+
   const _MessageFlowList({
     required this.messages,
     required this.fontSize,
     required this.bubbleRadius,
     required this.userColor,
     required this.assistantColor,
+    this.bubbleTextColor = const Color(0xFF111116),
     this.richText = true,
   });
 
@@ -3486,7 +3521,7 @@ class _MessageFlowListState extends State<_MessageFlowList> {
                     final style = TextStyle(
                       fontSize: widget.fontSize,
                       height: 1.35,
-                      color: const Color(0xFF111116),
+                      color: widget.bubbleTextColor,
                     );
                     if (!widget.richText) {
                       return Text(parsed.cleanContent, style: style);

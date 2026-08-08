@@ -106,6 +106,11 @@ class _PageLayoutIntent {
 ///
 /// 小字（<14px）按 WCAG **AAA 7:1** 要求，不是 4.5:1
 /// ——状态栏的标签基本都是 11~12px。
+///
+/// 扩展视觉字段用 nullable / 哨兵值区分「未设置」：
+/// - [gradientTo] / [strokeColor] / [glowColor] / 两个气泡色：null = 未设置；
+/// - [surfaceMaterial]：'auto' = 未设置，由编译器启发式；
+/// - [glowIntensity]：0 = 未设置。旧 plan 无这些字段时全部回落，产物与现状一致。
 class UiVisualTheme {
   final int pcbColor;
   final int panelColor;
@@ -119,6 +124,31 @@ class UiVisualTheme {
   final double borderRadius;
   final bool glow;
 
+  /// 渐变第二色。null = 无渐变。
+  final int? gradientTo;
+
+  /// 底板材质：'auto' | 'solid' | 'gradient' | 'outline' | 'glass'。
+  /// 'auto' 由 [_materialForBackdrop] 启发式决定。
+  final String surfaceMaterial;
+
+  /// 描边色。null = 无描边。
+  final int? strokeColor;
+
+  /// 描边宽度（预留）。
+  final double strokeWidth;
+
+  /// 发光色。null = 回落 accentColor。
+  final int? glowColor;
+
+  /// 发光强度 0~1。0 = 无发光。
+  final double glowIntensity;
+
+  /// 消息流用户气泡色。null = 引擎默认 0xFFDCF8C6。
+  final int? userBubbleColor;
+
+  /// 消息流 AI 气泡色。null = 引擎默认 0xFFF1F1F4。
+  final int? assistantBubbleColor;
+
   const UiVisualTheme({
     required this.pcbColor,
     required this.panelColor,
@@ -131,6 +161,14 @@ class UiVisualTheme {
     required this.buttonBgColor,
     required this.borderRadius,
     required this.glow,
+    this.gradientTo,
+    this.surfaceMaterial = 'auto',
+    this.strokeColor,
+    this.strokeWidth = 0,
+    this.glowColor,
+    this.glowIntensity = 0,
+    this.userBubbleColor,
+    this.assistantBubbleColor,
   });
 
   factory UiVisualTheme.defaultTheme() => const UiVisualTheme(
@@ -161,6 +199,20 @@ class UiVisualTheme {
       return fallback;
     }
 
+    // 可空色值：空字符串 / 非法值 → null（未设置）。
+    int? parseNullableColor(dynamic v) {
+      if (v is int) return v;
+      if (v is String) {
+        final s = v.trim().replaceAll('#', '');
+        if (s.length == 6) {
+          return int.tryParse('FF$s', radix: 16);
+        } else if (s.length == 8) {
+          return int.tryParse(s, radix: 16);
+        }
+      }
+      return null;
+    }
+
     double parseDouble(dynamic v, double fallback) {
       if (v is num) return v.toDouble();
       if (v is String) return double.tryParse(v) ?? fallback;
@@ -168,6 +220,12 @@ class UiVisualTheme {
     }
 
     final d = UiVisualTheme.defaultTheme();
+    String materialOf(dynamic raw) {
+      final v = (raw ?? '').toString().toLowerCase().trim();
+      const allowed = {'auto', 'solid', 'gradient', 'outline', 'glass'};
+      return allowed.contains(v) ? v : 'auto';
+    }
+
     return UiVisualTheme(
       pcbColor: parseColor(json['pcbColor'], d.pcbColor),
       panelColor: parseColor(json['panelColor'], d.panelColor),
@@ -182,6 +240,14 @@ class UiVisualTheme {
           .clamp(0.0, 32.0)
           .toDouble(),
       glow: json['glow'] == true,
+      gradientTo: parseNullableColor(json['gradientTo'] ?? json['gradientColor']),
+      surfaceMaterial: materialOf(json['surfaceMaterial'] ?? json['material']),
+      strokeColor: parseNullableColor(json['strokeColor']),
+      strokeWidth: parseDouble(json['strokeWidth'], 0).clamp(0.0, 8.0).toDouble(),
+      glowColor: parseNullableColor(json['glowColor']),
+      glowIntensity: parseDouble(json['glowIntensity'], 0).clamp(0.0, 1.0).toDouble(),
+      userBubbleColor: parseNullableColor(json['userBubbleColor']),
+      assistantBubbleColor: parseNullableColor(json['assistantBubbleColor']),
     );
   }
 }
@@ -321,11 +387,62 @@ class UiAssemblyBuilder {
     );
   }
 
-  /// AI UiDesignPlan → 合法 assembly/status_bar_fields。
+  /// AI UiDesignPlan → 合法 assembly/status_bar_fields（薄包装）。
+  ///
+  /// 无分支变体时直接转发 [_buildAssemblyFromPlan]；有变体时主支路 + 每个
+  /// 变体分支各编译一份 pagesJson，合并 statusFields，塞进 `branchVariants`。
+  static BuiltAssembly buildFromPlan(
+    UiDesignPlan plan, {
+    String cardName = '',
+    UiSourcePack? sourcePack,
+  }) {
+    if (!plan.hasUi || plan.branchPlans.isEmpty) {
+      return _buildAssemblyFromPlan(plan, cardName: cardName, sourcePack: sourcePack);
+    }
+    // 1) 主支路基线
+    final base = _buildAssemblyFromPlan(plan, cardName: cardName, sourcePack: sourcePack);
+    if (base.assemblies.isEmpty) return base;
+    final mainAsm = jsonDecode(base.assemblies.first) as Map;
+    // 2) 每个变体分支各编译一份 pagesJson（复用同一编译管线）
+    final variants = <String, String>{};
+    final branchNotes = <String>[];
+    final allBranchStatus = <Map<String, dynamic>>[];
+    for (final entry in plan.branchPlans.entries) {
+      final branchAsm = _buildAssemblyFromPlan(entry.value,
+          cardName: cardName, sourcePack: sourcePack);
+      if (branchAsm.assemblies.isEmpty) continue;
+      final asmMap = jsonDecode(branchAsm.assemblies.first) as Map;
+      variants['${entry.key}'] = asmMap['pages'] as String;
+      allBranchStatus.addAll(branchAsm.statusFields);
+      branchNotes.addAll(branchAsm.notes);
+    }
+    // 3) 合并 statusFields：分支特有字段必须进顶层 status_bar_fields，
+    //    否则运行时 DataChannelService 找不到该分支字段的 channel。
+    //    按 id 去重，主支路优先。
+    final merged = <Map<String, dynamic>>[];
+    final seenIds = <String>{};
+    for (final f in [...base.statusFields, ...allBranchStatus]) {
+      final id = f['id']?.toString() ?? '';
+      if (id.isEmpty || seenIds.add(id)) merged.add(f);
+    }
+    // 4) 重写主支路 assembly，塞 branchVariants（引擎按 branchIndex 切换）。
+    mainAsm['branchVariants'] = variants;
+    return BuiltAssembly(
+      assemblies: [jsonEncode(mainAsm)],
+      statusFields: merged,
+      notes: [
+        ...base.notes,
+        ...branchNotes,
+        '已为分支 ${variants.keys.join(',')} 生成独立布局变体（branchVariants）。',
+      ],
+    );
+  }
+
+  /// 单个 UiDesignPlan → 合法 assembly/status_bar_fields 的完整实现。
   ///
   /// AI 只负责输出高层计划；内部 JSON 的三层 encode、ARGB、枚举下标、
   /// keyAction 等易错细节仍由这里的确定性代码收口。
-  static BuiltAssembly buildFromPlan(
+  static BuiltAssembly _buildAssemblyFromPlan(
     UiDesignPlan plan, {
     String cardName = '',
     UiSourcePack? sourcePack,
@@ -354,6 +471,14 @@ class UiAssemblyBuilder {
       'buttonBgColor': plan.visualStyle.buttonBgColor,
       'borderRadius': plan.visualStyle.borderRadius,
       'glow': plan.visualStyle.glow,
+      'gradientTo': plan.visualStyle.gradientTo,
+      'surfaceMaterial': plan.visualStyle.surfaceMaterial,
+      'strokeColor': plan.visualStyle.strokeColor,
+      'strokeWidth': plan.visualStyle.strokeWidth,
+      'glowColor': plan.visualStyle.glowColor,
+      'glowIntensity': plan.visualStyle.glowIntensity,
+      'userBubbleColor': plan.visualStyle.userBubbleColor,
+      'assistantBubbleColor': plan.visualStyle.assistantBubbleColor,
     });
 
     var seed = DateTime.now().millisecondsSinceEpoch;
@@ -375,7 +500,9 @@ class UiAssemblyBuilder {
     final actionsByPage = <String, List<UiPlanAction>>{
       for (final title in pageTitles) title: <UiPlanAction>[],
     };
-    final resolvedFields = _dedupePlanFields(plan.fields)
+    final (dedupedFields, dedupeNotes) = _dedupePlanFields(plan.fields);
+    notes.addAll(dedupeNotes);
+    final resolvedFields = dedupedFields
         .map((field) => _resolveAutoField(field, sourcePack))
         .toList();
     for (final f in resolvedFields) {
@@ -1188,7 +1315,7 @@ class UiAssemblyBuilder {
     if (titles.isEmpty) {
       titles.add('主界面');
     }
-    return titles.take(5).toList();
+    return titles.take(9).toList();
   }
 
   static Map<String, String> _planPageRoles(UiDesignPlan plan) {
@@ -1247,16 +1374,30 @@ class UiAssemblyBuilder {
     return titles.isEmpty ? '主界面' : titles.first;
   }
 
-  static List<UiPlanField> _dedupePlanFields(List<UiPlanField> fields) {
+  /// 去重字段，返回 `(去重后的字段, 截断说明)`。
+  ///
+  /// 上限 `maxFields * 2`（28）是为了防 PCB 超高（宁可少放也不要生成
+  /// 高度 2000 的巨型面板）。超出的字段**不再静默丢弃**——生成 notes
+  /// 说明省略了多少，让作者知道有数据没进 UI（落实 `_Layout.maxFields`
+  /// 注释「丢弃并在 notes 里说明」的承诺）。
+  static (List<UiPlanField>, List<String>) _dedupePlanFields(
+    List<UiPlanField> fields,
+  ) {
     final seen = <String>{};
     final out = <UiPlanField>[];
+    final notes = <String>[];
     for (final f in fields) {
       final key = f.name.trim().toLowerCase();
       if (key.isEmpty || !seen.add(key)) continue;
       out.add(f);
       if (out.length >= _Layout.maxFields * 2) break;
     }
-    return out;
+    if (fields.length > out.length) {
+      notes.add(
+          '原卡字段过多（${fields.length}），已按 AI 确认去重/截断为 ${out.length} 个；'
+          '省略了 ${fields.length - out.length} 个（防止 PCB 超高，宁缺毋滥）。');
+    }
+    return (out, notes);
   }
 
   static List<Map<String, dynamic>> _planGesturesForPage({
@@ -1628,7 +1769,7 @@ class UiAssemblyBuilder {
     required double innerW,
   }) {
     if (overlayTargets.isEmpty) return y;
-    final count = overlayTargets.length.clamp(1, 4).toInt();
+    final count = overlayTargets.length.clamp(1, 6).toInt();
     final gap = count == 1 ? 0.0 : 6.0;
     final buttonW = (innerW - (count - 1) * gap) / count;
     const buttonH = 26.0;
@@ -1720,6 +1861,9 @@ class UiAssemblyBuilder {
   }) {
     final elements = <Map<String, dynamic>>[];
     final pressPairs = <({String surface, String button})>[];
+    // glowPulse 的触发源：页面上的 keyAction 按钮（scene/opening/extra_sticky
+    // 都至少有一个；extra_companion 可能没有 → 只做静态发光）。
+    final keyActionButtonIds = <String>[];
     final intent = pageIntent ?? const _PageLayoutIntent();
     final columns = intent.effectiveColumns(fields.length, mode);
     final rowScale = intent.rowScale();
@@ -1907,6 +2051,7 @@ class UiAssemblyBuilder {
         color: theme.panelColor,
         layer: elements.length + 1,
         radius: 10,
+        theme: theme,
       ));
       y += flowHeight + 12.0;
     }
@@ -1959,6 +2104,7 @@ class UiAssemblyBuilder {
           theme: theme,
           y: y,
           innerW: innerW,
+          rowScale: rowScale,
         );
       } else if (_isCoreProgressGroup(groupFields, mode)) {
         y = _renderProgressClusterFields(
@@ -1971,6 +2117,24 @@ class UiAssemblyBuilder {
           y: y,
           innerW: innerW,
           labelW: labelW,
+          rowScale: rowScale,
+        );
+      } else if (_fieldLayoutSegment(groupFields) case final layout?) {
+        // 字段级 layout 显式声明优先于组名启发式：AI 明确说这些字段
+        // 按 grid/progress/badge/standard 渲染就尊重它。
+        y = _renderByFieldLayout(
+          layout: layout,
+          elements: elements,
+          fields: groupFields,
+          nextId: nextId,
+          statusFields: statusFields,
+          theme: theme,
+          mode: mode,
+          y: y,
+          innerW: innerW,
+          labelW: labelW,
+          columns: columns,
+          rowScale: rowScale,
         );
       } else if (columns >= 2 && groupFields.length >= 2) {
         // 列数 > 1 时，普通字段组也走网格：每行放 columns 个字段，
@@ -2141,6 +2305,10 @@ class UiAssemblyBuilder {
       final buttonId = nextId('el');
       final shouldSendMessage =
           !(mode == 'opening' && a.branchIndex != null) && a.sendText.trim().isNotEmpty;
+      final isKeyAction = _shouldMarkKeyAction(mode, a);
+      if (isKeyAction) {
+        keyActionButtonIds.add(buttonId);
+      }
       elements.add(_button(
         id: buttonId,
         name: label,
@@ -2150,7 +2318,7 @@ class UiAssemblyBuilder {
         h: buttonH,
         layer: elements.length + 1,
         sendsMessage: shouldSendMessage,
-        keyAction: _shouldMarkKeyAction(mode, a),
+        keyAction: isKeyAction,
         message: shouldSendMessage ? a.sendText.trim() : '',
         targetBranchIndex: mode == 'opening' ? a.branchIndex : null,
         color: theme.accentColor,
@@ -2173,6 +2341,29 @@ class UiAssemblyBuilder {
 
     final frameInset = _frameInsetFor(mode);
     final bgHeight = (y + _Layout.pcbPadding).clamp(64.0, 2000.0).toDouble();
+
+    // ── 底板视觉：材质 / 静态发光 / 发光脉冲 ──
+    // 材质只作用在底板与大容器，保证文字可读性（按钮/tab 底保持 solid）。
+    final backdropMaterial = _materialForBackdrop(theme);
+    final hasGlow = theme.glowIntensity > 0;
+    final hasStaticGlow = _hasStaticGlow(theme);
+    Map<String, dynamic>? backdropProps;
+    if (hasStaticGlow) {
+      backdropProps = {'__staticGlow': _staticGlowProps(theme)};
+    }
+    if (hasGlow) {
+      final animProps = {
+        '__anim': {
+          'type': 'glow_pulse',
+          'durationMs': 600,
+          'curve': 'easeInOut',
+          'intensity': theme.glowIntensity.clamp(0.0, 1.0).toDouble(),
+          if (theme.glowColor != null) 'color': theme.glowColor,
+        },
+      };
+      backdropProps = {...?backdropProps, ...animProps};
+    }
+
     final bg = _surface(
       id: nextId('el'),
       name: '底板',
@@ -2183,7 +2374,23 @@ class UiAssemblyBuilder {
       color: theme.panelColor,
       layer: 0,
       radius: theme.borderRadius,
+      material: backdropMaterial,
+      props: backdropProps,
     );
+
+    // 动态发光脉冲需要触发源：取本页第一个 keyAction 按钮（scene/opening/
+    // extra_sticky 都有；extra_companion 无按钮时只做静态发光，不生成 linker）。
+    if (hasGlow && keyActionButtonIds.isNotEmpty) {
+      elements.add(_glowPulseLinker(
+        id: nextId('el'),
+        name: '底板发光脉冲',
+        buttonId: keyActionButtonIds.first,
+        surfaceId: bg['id'] as String,
+        y: -156.0,
+        layer: elements.length + 1,
+      ));
+    }
+
     return [bg, ...elements];
   }
 
@@ -2402,7 +2609,9 @@ class UiAssemblyBuilder {
   }) {
     const gap = 8.0;
     final cellW = (innerW - (columns - 1) * gap) / columns;
-    final colCount = columns.clamp(2, 3);
+    // AI 可声明到 6 列（_positiveIntOf 已在上限 6 截断）；窄 PCB 下仍受
+    // 几何自检约束，列过密时 text 会自动转 wrap / 补高，不会溢出。
+    final colCount = columns.clamp(2, 6);
 
     // 先计算每个字段需要的行高：数值短值单行，长文本按内容估算。
     double fieldRowHeight(UiPlanField f) {
@@ -2549,10 +2758,13 @@ class UiAssemblyBuilder {
     required UiVisualTheme theme,
     required double y,
     required double innerW,
+    double rowScale = 1.0,
   }) {
     const columns = 2;
     const gap = 8.0;
-    const cellH = 32.0;
+    // density 只缩放单元格高度，字号/内边距不动（文字不缩放，避免小数化）。
+    final cellH = 32.0 * rowScale.clamp(0.85, 1.25);
+    final rowGap = gap * (rowScale > 1 ? 1.15 : 1.0);
     final cellW = (innerW - gap) / columns;
     for (var i = 0; i < fields.length; i++) {
       final field = fields[i];
@@ -2572,7 +2784,7 @@ class UiAssemblyBuilder {
       final col = i % columns;
       final row = i ~/ columns;
       final x = _Layout.pcbPadding + col * (cellW + gap);
-      final cellY = y + row * (cellH + gap);
+      final cellY = y + row * (cellH + rowGap);
       elements.add(_surface(
         id: nextId('el'),
         name: '${field.name}格底',
@@ -2601,7 +2813,7 @@ class UiAssemblyBuilder {
       ));
     }
     final rows = (fields.length / columns).ceil();
-    final rowGaps = ((rows - 1).clamp(0, 999) as num).toDouble() * gap;
+    final rowGaps = ((rows - 1).clamp(0, 999) as num).toDouble() * rowGap;
     return y + rows * cellH + rowGaps + _Layout.rowGap;
   }
 
@@ -2615,8 +2827,11 @@ class UiAssemblyBuilder {
     required double y,
     required double innerW,
     required double labelW,
+    double rowScale = 1.0,
   }) {
     final remaining = [...fields];
+    // density 缩放进度条行距（进度条本身高度 10 不动，只调行距）。
+    final clusterStep = 38.0 * rowScale.clamp(0.85, 1.25);
     bool isHp(UiPlanField f) {
       final t = '${f.name} ${f.sourceKey}'.toLowerCase();
       return t.contains('hp') || t.contains('生命') || t.contains('health');
@@ -2656,7 +2871,7 @@ class UiAssemblyBuilder {
         w: cellW,
         compact: true,
       );
-      y += 38.0;
+      y += clusterStep;
       if (hpIndex > mpIndex) {
         remaining.removeAt(hpIndex);
         remaining.removeAt(mpIndex);
@@ -2679,7 +2894,7 @@ class UiAssemblyBuilder {
           w: innerW,
           compact: false,
         );
-        y += 38.0;
+        y += clusterStep;
       } else {
         y = _renderPlanFieldStandard(
           elements: elements,
@@ -2695,6 +2910,88 @@ class UiAssemblyBuilder {
       }
     }
     return y + _Layout.rowGap;
+  }
+
+  /// 组内字段是否声明了**一致且非空**的 layout。
+  ///
+  /// 返回 null = 未声明或混合 → 沿用组名启发式；返回 layout 名 =
+  /// AI 显式要求按该 layout 渲染。badge/grid 都归到紧凑网格渲染，
+  /// progress 归到进度条集群，standard 归到标准行。
+  static String? _fieldLayoutSegment(List<UiPlanField> fields) {
+    String? layout;
+    for (final f in fields) {
+      final l = f.layout.trim();
+      if (l.isEmpty) return null; // 有一个没声明就不强制
+      if (layout == null) {
+        layout = l;
+      } else if (layout != l) {
+        return null; // 混合 layout 不强制
+      }
+    }
+    return layout;
+  }
+
+  /// 按字段级 layout 派发到对应渲染器。
+  static double _renderByFieldLayout({
+    required String layout,
+    required List<Map<String, dynamic>> elements,
+    required List<UiPlanField> fields,
+    required String Function(String) nextId,
+    required List<Map<String, dynamic>> statusFields,
+    required UiVisualTheme theme,
+    required String mode,
+    required double y,
+    required double innerW,
+    required double labelW,
+    required int columns,
+    double rowScale = 1.0,
+  }) {
+    switch (layout) {
+      case 'progress':
+        return _renderProgressClusterFields(
+          elements: elements,
+          fields: fields,
+          nextId: nextId,
+          statusFields: statusFields,
+          theme: theme,
+          mode: mode,
+          y: y,
+          innerW: innerW,
+          labelW: labelW,
+          rowScale: rowScale,
+        );
+      case 'grid':
+      case 'badge':
+        // 紧凑网格格：badge 语义 = 短值徽章格，grid = 紧凑格，渲染同款。
+        return _renderAttributeGridFields(
+          elements: elements,
+          fields: fields,
+          nextId: nextId,
+          statusFields: statusFields,
+          theme: theme,
+          y: y,
+          innerW: innerW,
+          rowScale: rowScale,
+        );
+      case 'standard':
+      default:
+        var nextY = y;
+        for (final f in fields) {
+          nextY = _renderPlanFieldStandard(
+            elements: elements,
+            field: f,
+            nextId: nextId,
+            statusFields: statusFields,
+            theme: theme,
+            mode: mode,
+            y: nextY,
+            innerW: innerW,
+            labelW: labelW,
+            rowScale: rowScale,
+          );
+        }
+        return nextY;
+    }
   }
 
   static void _renderProgressCell({
@@ -2760,6 +3057,65 @@ class UiAssemblyBuilder {
       return 8.0;
     }
     return 6.0;
+  }
+
+  /// 底板材质映射：把 UiVisualTheme 的 surfaceMaterial / gradientTo /
+  /// strokeColor 转成引擎材质枚举下标。
+  ///
+  /// 'auto' 启发式：AI 显式声明过渐变 → gradient(2)；声明过描边且底色偏亮
+  /// （outline 是透明+描边，深色底下看不清）→ outline(3)；否则 solid(1)。
+  /// 只有底板与大容器才用；按钮/tab 底保持 solid 保证可读性。
+  static int _materialForBackdrop(UiVisualTheme theme) {
+    switch (theme.surfaceMaterial) {
+      case 'gradient':
+        return 2;
+      case 'outline':
+        return 3;
+      case 'glass':
+        return 0;
+      case 'solid':
+        return 1;
+      default:
+        break;
+    }
+    if (theme.gradientTo != null) return 2;
+    if (theme.strokeColor != null && _isLightColor(theme.pcbColor)) return 3;
+    return 1;
+  }
+
+  /// 底板是否需要静态发光 boxShadow（glowIntensity>0 且材质为 solid 时）。
+  static bool _hasStaticGlow(UiVisualTheme theme) =>
+      theme.glowIntensity > 0 && _materialForBackdrop(theme) == 1;
+
+  /// 底板发光配置（写进 module.properties['__staticGlow']）。
+  static Map<String, dynamic> _staticGlowProps(UiVisualTheme theme) => {
+        'color': theme.glowColor ?? theme.accentColor,
+        'intensity': theme.glowIntensity.clamp(0.0, 1.0).toDouble(),
+        'blur': 14,
+      };
+
+  /// 粗略亮度判断：色值是否偏亮（用于决定文字方向 / outline 是否可读）。
+  static bool _isLightColor(int argb) {
+    final r = (argb >> 16) & 0xFF;
+    final g = (argb >> 8) & 0xFF;
+    final b = argb & 0xFF;
+    // 相对亮度近似（0~1），>0.45 视为偏亮。
+    final luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return luminance / 255 > 0.45;
+  }
+
+  /// 气泡文字色：以两个气泡色中较暗者为基准自动取深/浅，避免深底深字。
+  /// 两个都未设置（无主题气泡色）时回落到引擎默认深字 0xFF111116。
+  static int _bubbleTextColorFor(int? userBubbleColor, int? assistantBubbleColor) {
+    int? darker;
+    for (final c in [userBubbleColor, assistantBubbleColor]) {
+      if (c == null) continue;
+      if (darker == null || !_isLightColor(c) && _isLightColor(darker)) {
+        darker = c;
+      }
+    }
+    if (darker == null) return 0xFF111116;
+    return _isLightColor(darker) ? 0xFF111116 : 0xFFF4F6FA;
   }
 
   static bool _modeRequiresGeneratedKeyAction(String mode) =>
@@ -2955,6 +3311,48 @@ class UiAssemblyBuilder {
               'scheme': scheme,
               'sourceModuleId': buttonId,
               'targetModuleId': routerId,
+              'enabled': true,
+              'priority': 5,
+            },
+          },
+        ),
+      );
+
+  /// 发光脉冲联动器：点按 keyAction 按钮时，触发底板 surface 的
+  /// glowPulse 动画（`event_to_animation`）。
+  ///
+  /// ## 为什么 sourcePort 必须是 'tap'
+  ///
+  /// `event_to_animation` 不满足 `isSurfaceVisualScheme`（linker_service.dart:321），
+  /// 因此 `tap_down` 对它不匹配（linker_service.dart:328 仅放行按压视觉方案）。
+  /// 只有 `tap`（且 srcPort 命中 `output`/`current`/`tap`）才匹配。
+  /// 这里显式写 `sourcePort: 'tap'`，点按即刻触发。
+  static Map<String, dynamic> _glowPulseLinker({
+    required String id,
+    required String name,
+    required String buttonId,
+    required String surfaceId,
+    required double y,
+    required int layer,
+  }) =>
+      _element(
+        id: id,
+        x: -224,
+        y: y,
+        w: 132,
+        h: 44,
+        layer: layer,
+        module: _module(
+          id: id,
+          name: name,
+          type: 'linker',
+          color: 0x00000000,
+          props: {
+            'linker': {
+              'scheme': 'event_to_animation',
+              'sourceModuleId': buttonId,
+              'targetModuleId': surfaceId,
+              'sourcePort': 'tap',
               'enabled': true,
               'priority': 5,
             },
@@ -3243,6 +3641,9 @@ class UiAssemblyBuilder {
     required int color,
     required int layer,
     double radius = 12,
+    int material = 1, // solid
+    int shape = 1, // rounded
+    Map<String, dynamic>? props,
   }) =>
       _element(
         id: id,
@@ -3257,6 +3658,9 @@ class UiAssemblyBuilder {
           type: 'surface',
           color: color,
           radius: radius,
+          material: material,
+          shape: shape,
+          props: props,
         ),
       );
 
@@ -3424,32 +3828,41 @@ class UiAssemblyBuilder {
     required int color,
     required int layer,
     double radius = 12,
-  }) =>
-      _element(
+    UiVisualTheme? theme,
+  }) {
+    final userBubble = theme?.userBubbleColor;
+    final assistantBubble = theme?.assistantBubbleColor;
+    return _element(
+      id: id,
+      x: x,
+      y: y,
+      w: w,
+      h: h,
+      layer: layer,
+      module: _module(
         id: id,
-        x: x,
-        y: y,
-        w: w,
-        h: h,
-        layer: layer,
-        module: _module(
-          id: id,
-          name: name,
-          type: 'message_flow',
-          color: color,
-          radius: radius,
-          props: {
-            'historyLimit': 0,
-            'showUser': true,
-            'showAssistant': true,
-            'richText': true,
-            'fontSize': 12.5,
-            'userBubbleColor': 0xFFDCF8C6,
-            'assistantBubbleColor': 0xFFF1F1F4,
-            'bubbleRadius': 12.0,
-          },
-        ),
-      );
+        name: name,
+        type: 'message_flow',
+        color: color,
+        radius: radius,
+        props: {
+          'historyLimit': 0,
+          'showUser': true,
+          'showAssistant': true,
+          'richText': true,
+          'fontSize': 12.5,
+          'userBubbleColor': userBubble ?? 0xFFDCF8C6,
+          'assistantBubbleColor': assistantBubble ?? 0xFFF1F1F4,
+          // 气泡文字色跟随底色亮度自动取深/浅，避免深底深字。
+          'bubbleTextColor': _bubbleTextColorFor(
+            theme?.userBubbleColor,
+            theme?.assistantBubbleColor,
+          ),
+          'bubbleRadius': 12.0,
+        },
+      ),
+    );
+  }
 
   static Map<String, dynamic> _input({
     required String id,

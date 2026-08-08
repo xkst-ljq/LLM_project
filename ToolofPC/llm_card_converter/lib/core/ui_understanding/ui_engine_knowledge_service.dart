@@ -34,7 +34,7 @@ ${UiEngineApiDictionary.compactReferenceForTranslator()}
 - Multiple assemblies can coexist when lifecycles differ: opening + scene is valid. scene suppresses native chat/extra_companion; sticky remains a tool layer; opening is shown until dismissed.
 - In scene mode, notes that "message_flow should be used" are not enough. To actually get message_flow, declare a base layout page whose role is story/message/narrative/content/log. Put current DQ choices and free input on that same page so they stay physically close to the story.
 - Logic components are optional. Use math_node/timer/indicator/linker only when source evidence or confirmed author intent requires native computation/condition/automation. Pure visual upgrades may use line/surface/animation without changing gameplay.
-- UIEngine runtime supports ElementAnimation / event_to_animation, but the current high-level UiDesignPlan compiler only emits automatic button press feedback and page transitions. Do not invent an animations[] schema; CSS loop/hover animations should be recorded as unsupported or as future enhancement unless they can be expressed by existing fields/notes without promising compiler output.
+- UIEngine runtime supports ElementAnimation / event_to_animation. The UiDesignPlan compiler provides a controlled mapping: automatic button press feedback, page transitions, and visualStyle.glow → glowPulse pulse on the backdrop. Do NOT invent a general animations[] schema; CSS loop/hover animations beyond glow should be recorded as unsupported or as future enhancement unless they can be expressed by existing fields/notes without promising compiler output.
 
 # Layout fidelity and mobile adaptation policy
 - First reconstruct the original rendered UI structure: section order, grouping, columns/grid/flex, header/body/status/actions/footer, and which blocks are simultaneously visible.
@@ -73,6 +73,7 @@ Guidelines for good space allocation:
 
 # What to extract from a SillyTavern card
 - regex_scripts findRegex/replaceString may define UI fields and HTML/CSS layout.
+- Extract visual cues from the original HTML/CSS (replaceString / inline snippets) into visualStyle: linear-gradient → gradientTo/surfaceMaterial="gradient"; border/outline boxes → strokeColor/surfaceMaterial="outline"; box-shadow glow/neon → glowColor + glowIntensity>0; chat bubbles → userBubbleColor/assistantBubbleColor. The compiler maps these to engine materials/glowPulse; leave fields empty when unsure (defaults apply).
 - IMPORTANT: use the human-facing labels from replaceString / rendered HTML as field.name. If the transport key is English (HP/MP/STR) but the rendered label is Chinese (生命值 (HP)), use the Chinese display label as name and put the raw key in sourceKey. Do not throw away the original display translation.
 - first_mes / alternate_greetings may contain initial status tags, e.g. <生命>84%</生命>.
 - onclick="send('...')" or send('...') means an action button.
@@ -131,7 +132,15 @@ Single UiDesignPlan object shape:
     "barFillColor": "#4FA3D1",
     "barTrackColor": "#2A2D36",
     "borderRadius": 14,
-    "glow": false
+    "glow": false,
+    "gradientTo": "#1E232B",
+    "surfaceMaterial": "auto",
+    "strokeColor": "#4FA3D1",
+    "strokeWidth": 0,
+    "glowColor": "#4FA3D1",
+    "glowIntensity": 0,
+    "userBubbleColor": "#DCF8C6",
+    "assistantBubbleColor": "#F1F1F4"
   },
   "layout": {
     "kind": "tabbed_companion_panel|single_panel|opening_choices|scene_dashboard",
@@ -214,11 +223,17 @@ Knowledge version: $knowledgeVersion
    - `pcbColor`: PCB 底板色；`panelColor`: 容器面板色。
    - `accentColor`: 交互高亮色；`barFillColor`: 进度条填充色。
    - 示例：黑暗地牢卡可用 #1A1A1A 底 + #8B0000 鲜血红；清新校园卡可用 #F0F8FF 底 + #87CEEB 天空蓝。
-2. **布局意图 (layout)**：
-   - `columns`: 页面的网格列数 (1-3)。数值类字段多时，设为 2 或 3 以紧凑显示。
+2. **还原原卡视觉结构 (visualStyle 扩展字段，可选)**：从原卡 replaceString / 内联 CSS 提取视觉特征并映射，拿不准就留空（默认回落，行为不变）：
+   - `gradientTo`: 渐变第二色。原卡有 linear-gradient → 填渐变末端色。
+   - `surfaceMaterial`: 底板材质。`auto`(编译器启发式) | `solid` | `gradient` | `outline` | `glass`。原卡有渐变底 → gradient；有描边框 → outline。
+   - `strokeColor`: 描边色。原卡用 border 描框时填。
+   - `glowColor` / `glowIntensity`(0~1)：发光色与强度。原卡有 box-shadow 发光/霓虹 → 填 glowColor + glowIntensity>0。
+   - `userBubbleColor` / `assistantBubbleColor`: message_flow 气泡底色，跟随原卡聊天气泡配色。深色主题时编译器会自动把气泡文字调亮，无需担心对比度。
+3. **布局意图 (layout)**：
+   - `columns`: 页面的网格列数 (1-6)。数值类字段多时，设为 2~4 以紧凑显示；极密属性面板可到 6。
    - `pages`: 合理划分子页面。`role=story` 的 base 页是 scene 的核心；低频详情（任务、档案）用 `type=overlay` 叠加页。
    - `span`: 字段跨度。长文本字段（任务板、描述）设为 2（占满行）。
-3. **多生命周期 (assemblies)**：
+4. **多生命周期 (assemblies)**：
    - 原卡有开场分支按钮 → 必须包含 `uiMode=opening`。
    - 原卡有常驻状态栏/面板/正文包裹 → 必须包含 `uiMode=scene`。
    - 识别 scene 信号：`<生命>` 等标签、`{PlayerStatus|...}`、`<正文>` 包裹、regex 仪表盘。
@@ -229,10 +244,26 @@ Knowledge version: $knowledgeVersion
 3. **extra_companion** (常驻伴生栏)：**在聊天框侧边显示的持久面板**（宽 212px）。这是 SillyTavern 绝大多数“常驻状态栏”的最佳转译目标。
 4. **extra_sticky** (悬浮工具栏)：顶部/底部的窄条。
 
-# 组合策略 (多 UI 决策)
-- 如果原卡有开场按钮 + 常驻状态栏：**必须**输出 `assemblies: [opening方案, extra_companion方案]`。
-- 如果原卡是沉浸式 RPG：**必须**输出 `assemblies: [opening方案, scene方案]`。
-- **不要把开场按钮和常驻状态混在一个 UI 里**，那不符合 UIEngine 的物理生命周期。
+# 多 UI 决策树 (证据 → 输出哪几套)
+- 有开场分支按钮 onclick/send（first_mes/alternate_greetings 内）→ **必须** output opening。
+- 有 `<生命>` 等 XML 标签 / `{PlayerStatus|...}` / regex 仪表盘 / `<正文>` 包裹 → extra_companion（窄面板）或 scene（全屏沉浸，仅当原卡是终端/档案卡）。
+- 开场 + 状态栏都有 → `assemblies:[opening, extra_companion]`；沉浸 RPG 且正文包裹 → `assemblies:[opening, scene]`。
+- 只有状态栏 → 单 assembly extra_companion。
+- 只有开场按钮 → 单 assembly opening。
+- 严禁：证据只有状态栏时硬造 opening；或只有开场按钮时硬造 scene。
+- scene 与 extra_companion 互斥——一张卡不两个常驻生命周期并存。
+
+# 多开场分支差异化 (branchVariants)
+- 多开场白（alternate_greetings 非空）时，两种差异化方式，**按差异类型选择**：
+  1. 界面相同、仅初始数据不同 → fields[].branchInitialValues（推荐，零额外布局成本）。
+  2. 某个开场有真正不同的界面结构（不同字段/不同页面/不同分组）→ 在 plan 顶层加
+     `"branchPlans": { "<分支下标>": { 完整 UiDesignPlan 变体 } }`。
+     分支 0 是主支路（plan 本体），branchPlans 只写差异分支（下标 >= 1）。
+- 变体里可覆盖 fields/actions/layout/visualStyle；未覆盖的继承主支路。
+- 变体的 uiMode 必须与主支路一致；不允许嵌套 branchPlans。
+- 只有 1-2 个字段不同 → 用 branchInitialValues；不要为小差异生成整份变体。
+- 任务板/羁绊内容差异 → 用 __AUTO_QUEST_BOARD__ 或 branchInitialValues，不要 branchPlans。
+- 引擎按 opening 按钮的 branchIndex 切换：点「狱警入职」就显示 branch 1 的独立布局。
 
 # UiDesignPlan schema
 {
@@ -242,11 +273,12 @@ Knowledge version: $knowledgeVersion
   "uiName": "主题名",
   "evidenceSummary": "...",
   "sourceRefs": ["data..."],
-  "visualStyle": {"styleName":"主题风格名","pcbColor":"#RRGGBB","panelColor":"#RRGGBB","titleColor":"#FFFFFF","labelColor":"#AAB0BC","valueColor":"#E8EDF5","accentColor":"#RRGGBB","buttonBgColor":"#RRGGBB","barFillColor":"#RRGGBB","barTrackColor":"#RRGGBB","borderRadius":14,"glow":false},
+  "visualStyle": {"styleName":"主题风格名","pcbColor":"#RRGGBB","panelColor":"#RRGGBB","titleColor":"#FFFFFF","labelColor":"#AAB0BC","valueColor":"#E8EDF5","accentColor":"#RRGGBB","buttonBgColor":"#RRGGBB","barFillColor":"#RRGGBB","barTrackColor":"#RRGGBB","borderRadius":14,"glow":false,"gradientTo":"#RRGGBB","surfaceMaterial":"auto|solid|gradient|outline|glass","strokeColor":"#RRGGBB","glowIntensity":0.0,"glowColor":"#RRGGBB","userBubbleColor":"#RRGGBB","assistantBubbleColor":"#RRGGBB"},
   "layout": {"kind":"scene_dashboard|opening_choices|single_panel","navigation":"tabs_and_swipe|swipe|none","columns":1,"pages":[{"title":"页面名","role":"story|stats|tasks|form","type":"base|overlay","parentPage":"父页ID","columns":1,"density":"compact|normal|spacious","fill":true}]},
   "fields": [{"name":"名","sourceKey":"Key","group":"分组","type":"number|text","display":"progress|text|badge","overflow":"ellipsis|wrap|scroll","initialValue":"...","span":1,"page":"页面名","sourceRef":"..."}],
   "inputs": [{"name":"名","sourceKey":"UserProfile_Name","placeholder":"...","initialValue":"","sendOnSubmit":false,"targetKind":"status_field|none","page":"页面名","sourceRef":"..."}],
   "actions": [{"label":"文案","sendText":"...","branchIndex":0,"page":"页面名","sourceRef":"..."}],
+  "branchPlans": {"1": { 完整 UiDesignPlan 变体，覆盖 fields/actions/layout 等 }},
   "unsupported": [], "notes": []
 }
 

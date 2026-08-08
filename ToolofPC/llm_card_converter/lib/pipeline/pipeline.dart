@@ -7,6 +7,9 @@ import '../core/ui_assembly_builder.dart';
 import '../core/greeting_sanitizer.dart';
 import '../core/ui_translate_trace.dart';
 import '../core/ui_understanding/ai_ui_interpreter.dart';
+import '../core/ui_understanding/ui_design_plan.dart';
+import '../core/ui_understanding/ui_source_pack_builder.dart';
+import '../core/ui_understanding/ui_visual_profile_service.dart';
 
 /// 三步转译流水线（纯 Dart，平台无关）。
 ///
@@ -297,11 +300,19 @@ class ConversionPipeline {
       // AiUiInterpreter 内部用于整理 sourceRef 证据。
       final traceBuilder = UiTranslateTraceBuilder(cardName: card['name']?.toString() ?? '');
       item.uiTraceBuilder = traceBuilder;
+
+      // 原卡视觉分析（参考证据，不强制）：规则扫描零 API 调用，
+      // 可选 AI 深化失败时静默回落规则结果。
+      final sourcePack = UiSourcePackBuilder.build(src);
+      final ruleProfile = UiVisualProfileService.scan(sourcePack);
+      final visualProfile = await UiVisualProfileService.enrich(ruleProfile, sourcePack);
+
       final interpretation = await AiUiInterpreter.understand(
         sourceJson: src,
         baseResult: base,
         onLog: onLog,
         traceBuilder: traceBuilder,
+        visualProfile: visualProfile,
       );
       item.uiAiConversationContext = interpretation.conversationContext;
       item.uiTranslateTrace = traceBuilder.build();
@@ -316,9 +327,23 @@ class ConversionPipeline {
       //
       // 这一步不再依赖正则规则判断 UI，而是使用 AI plan 中已经确认的
       // 字段名作为 knownTags。AI 没确认的标签不会被删，避免误删正文。
-      final knownTags = <String>{
-        for (final f in interpretation.plan.fields) f.name,
-      };
+      // knownTags 从**全部 assemblies + 各分支变体**的字段（name + sourceKey）
+      // 收集——多 assembly 时第 2+ 个方案的字段也要参与剥离，且标签
+      // 只写在 sourceKey 时同样能匹配。
+      final knownTags = <String>{};
+      void collectPlanTags(UiDesignPlan p) {
+        for (final f in p.fields) {
+          if (f.name.trim().isNotEmpty) knownTags.add(f.name);
+          if (f.sourceKey.trim().isNotEmpty) knownTags.add(f.sourceKey);
+        }
+        for (final vp in p.branchPlans.values) {
+          collectPlanTags(vp);
+        }
+      }
+
+      for (final p in interpretation.plans) {
+        collectPlanTags(p);
+      }
       final sanitizeNotes = <String>[];
       final rawGreetings = card['opening_greetings'];
       if (knownTags.isNotEmpty && rawGreetings is String && rawGreetings.isNotEmpty) {
@@ -334,6 +359,9 @@ class ConversionPipeline {
               final after = GreetingSanitizer.sanitize(
                 before,
                 knownTags: knownTags,
+                knownTagNames: interpretation.sourcePack.stableTagNames
+                    .toSet()
+                    ..addAll(knownTags),
               );
               if (after != before) changed++;
               item['content'] = after;
