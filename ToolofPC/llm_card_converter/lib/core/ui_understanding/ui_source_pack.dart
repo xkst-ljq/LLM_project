@@ -466,19 +466,15 @@ class UiSourcePack {
     }
 
     // ── 检测到的状态字段（显式列出，避免 AI 因信息藏在 HTML 里而漏判）──
-    // 黑曜石法外特区等卡用 XML 标签 <生命>100%</生命> 表达状态，
-    // 值在 first_mes / alternate_greetings 里有静态数据。这里把
-    // 各分支提取到的字段名与初始值显式列出，AI 一眼就能识别
-    // 这是「可迁移的状态栏」而不是动态脚本。
     final detectedStatus = _detectedStatusFields();
     if (detectedStatus.isNotEmpty) {
-      b.writeln('\n# Detected persistent status fields (migrate these to scene)');
+      b.writeln('\n# Detected persistent status fields (migrate these to permanent Companion UI)');
       b.writeln('The card has persistent status fields with static initial values found in greetings. '
-          'These are NOT runtime-only scripts - extract them into a scene status panel:');
+          'Extract them into a permanent extra_companion UI:');
       for (final entry in detectedStatus.entries) {
         b.writeln('- ${entry.key}: ${entry.value}');
       }
-      b.writeln('Map these to a scene UI with role=stats overlay page. '
+      b.writeln('Map these to an extra_companion UI with multi-column layout. '
           'Numeric values (percent or HP/MP/XP) use display=progress; text values use display=text.');
     }
 
