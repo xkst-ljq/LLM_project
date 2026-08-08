@@ -362,6 +362,127 @@
       .drawer-item strong { color: var(--text); font-size: 13px; }
       .drawer-item button { border: 0; color: var(--accent-strong); background: transparent; cursor: pointer; }
 
+      /* Variant E: game title screen — a full-bleed main menu, not a dashboard */
+      .game-page {
+        position: relative;
+        min-height: 720px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 28px;
+        background: #080b11;
+        box-shadow: var(--shadow);
+        isolation: isolate;
+      }
+      .game-page::before {
+        content: "";
+        position: absolute;
+        z-index: -2;
+        inset: 0;
+        background:
+          radial-gradient(circle at 76% 27%, rgba(175, 188, 255, 0.55), transparent 17rem),
+          linear-gradient(90deg, rgba(5, 7, 12, 0.95) 0%, rgba(5, 7, 12, 0.66) 40%, rgba(5, 7, 12, 0.12) 76%, rgba(5, 7, 12, 0.56) 100%),
+          linear-gradient(140deg, #172235, #596aa2 56%, #0b1019);
+        transition: background 350ms var(--ease);
+      }
+      .game-page[data-role="lume"]::before {
+        background:
+          radial-gradient(circle at 72% 22%, rgba(255, 208, 164, 0.48), transparent 17rem),
+          linear-gradient(90deg, rgba(19, 7, 12, 0.95) 0%, rgba(19, 7, 12, 0.66) 40%, rgba(19, 7, 12, 0.1) 76%, rgba(19, 7, 12, 0.58) 100%),
+          linear-gradient(140deg, #412632, #a96e63 56%, #151018);
+      }
+      .game-page[data-role="riven"]::before {
+        background:
+          radial-gradient(circle at 72% 26%, rgba(130, 224, 205, 0.48), transparent 17rem),
+          linear-gradient(90deg, rgba(3, 16, 19, 0.95) 0%, rgba(3, 16, 19, 0.66) 40%, rgba(3, 16, 19, 0.08) 76%, rgba(3, 16, 19, 0.6) 100%),
+          linear-gradient(140deg, #0e2a31, #2a7774 56%, #071317);
+      }
+      .game-page::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        right: 7%;
+        top: 7%;
+        width: 47%;
+        height: 88%;
+        border-radius: 50% 50% 14% 14%;
+        background: linear-gradient(160deg, rgba(230, 235, 255, 0.72), rgba(116, 132, 220, 0.22) 44%, rgba(6, 9, 16, 0.7));
+        transform: rotate(-7deg);
+        box-shadow: -35px 30px 120px var(--accent-glow);
+        opacity: 0.72;
+      }
+      .game-noise {
+        position: absolute;
+        z-index: -1;
+        inset: 0;
+        opacity: 0.16;
+        background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 4px);
+        mix-blend-mode: overlay;
+        pointer-events: none;
+      }
+      .game-topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 25px 30px;
+        color: rgba(241, 244, 255, 0.58);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.2em;
+      }
+      .game-topline .signal { display: inline-flex; align-items: center; gap: 8px; }
+      .game-topline .signal::before { content: ""; width: 7px; height: 7px; border: 1px solid var(--accent); border-radius: 50%; box-shadow: 0 0 13px var(--accent); }
+      .game-title { position: absolute; top: 116px; right: 8%; width: min(390px, 44%); text-align: right; color: white; }
+      .game-title .game-kicker { color: rgba(239, 242, 255, 0.64); font-size: 10px; font-weight: 800; letter-spacing: 0.2em; }
+      .game-title h1 { margin-top: 12px; font-size: clamp(42px, 7vw, 92px); line-height: 0.82; letter-spacing: -0.09em; text-shadow: 0 12px 36px rgba(0,0,0,0.34); }
+      .game-title p { margin-top: 16px; color: rgba(240, 243, 255, 0.7); font-size: 13px; line-height: 1.55; }
+      .game-menu { position: absolute; left: 6.5%; bottom: 105px; width: min(360px, 42%); }
+      .game-menu-heading { margin-bottom: 15px; color: rgba(239, 242, 255, 0.48); font-size: 10px; font-weight: 800; letter-spacing: 0.2em; }
+      .game-menu-list { display: grid; gap: 2px; }
+      .game-menu-item {
+        position: relative;
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        align-items: center;
+        gap: 8px;
+        min-height: 54px;
+        padding: 0 15px 0 4px;
+        border: 0;
+        border-bottom: 1px solid rgba(255,255,255,0.14);
+        background: transparent;
+        color: rgba(241,244,255,0.62);
+        cursor: pointer;
+        text-align: left;
+        transition: color 180ms var(--ease), padding 180ms var(--ease), border-color 180ms var(--ease);
+      }
+      .game-menu-item::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 0; height: 1px; background: var(--accent); box-shadow: 0 0 14px var(--accent); transition: width 220ms var(--ease); }
+      .game-menu-item .cursor { color: var(--accent); opacity: 0; transform: translateX(-5px); transition: opacity 180ms var(--ease), transform 180ms var(--ease); }
+      .game-menu-item strong { font-size: 15px; font-weight: 680; }
+      .game-menu-item em { color: rgba(241,244,255,0.34); font-size: 10px; font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; }
+      .game-menu-item:hover, .game-menu-item.active { padding-left: 11px; color: white; }
+      .game-menu-item:hover::after, .game-menu-item.active::after { width: 100%; }
+      .game-menu-item:hover .cursor, .game-menu-item.active .cursor { opacity: 1; transform: translateX(0); }
+      .game-save {
+        position: absolute;
+        right: 6.5%;
+        bottom: 101px;
+        width: min(300px, 35%);
+        padding: 17px 18px;
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 17px;
+        background: rgba(6,9,15,0.34);
+        color: rgba(241,244,255,0.7);
+        backdrop-filter: blur(16px);
+      }
+      .game-save-head { display: flex; align-items: center; justify-content: space-between; color: rgba(241,244,255,0.5); font-size: 10px; font-weight: 800; letter-spacing: 0.16em; }
+      .game-save-head span:last-child { color: var(--success); letter-spacing: 0.04em; }
+      .game-save-body { display: flex; gap: 12px; align-items: center; margin-top: 15px; }
+      .game-save-mark { display: grid; flex: 0 0 46px; place-items: center; width: 46px; height: 46px; border: 1px solid rgba(255,255,255,0.24); border-radius: 13px; background: var(--accent-soft); color: var(--accent-strong); font-size: 22px; }
+      .game-save-body strong { display: block; color: white; font-size: 15px; }
+      .game-save-body p { margin-top: 4px; color: rgba(241,244,255,0.52); font-size: 11px; line-height: 1.4; }
+      .game-save-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 15px; padding-top: 11px; border-top: 1px solid rgba(255,255,255,0.14); color: rgba(241,244,255,0.42); font-size: 10px; }
+      .game-foot { position: absolute; left: 30px; right: 30px; bottom: 28px; display: flex; justify-content: space-between; gap: 20px; color: rgba(241,244,255,0.38); font-size: 10px; letter-spacing: 0.08em; }
+      .game-foot span:last-child { text-align: right; }
+
       /* Variant D: portrait theater — mobile-first, vertically staged */
       .portrait-page {
         width: min(100%, 620px);
@@ -591,6 +712,16 @@
         .hub-info { padding: 25px; }
         .section-heading { align-items: start; flex-direction: column; gap: 9px; }
         .role-rail { grid-auto-columns: minmax(150px, 43vw); }
+        .game-page { min-height: 760px; border-radius: 25px; }
+        .game-page::after { right: -5%; top: 16%; width: 74%; height: 56%; }
+        .game-topline { padding: 20px 21px; }
+        .game-title { top: 105px; right: 22px; width: 66%; }
+        .game-title h1 { font-size: 55px; }
+        .game-menu { left: 22px; right: 22px; bottom: 158px; width: auto; }
+        .game-save { left: 22px; right: 22px; bottom: 22px; width: auto; padding: 12px 14px; }
+        .game-save-body { margin-top: 9px; }
+        .game-save-foot { display: none; }
+        .game-foot { display: none; }
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -622,6 +753,7 @@
           <button class="variant-button" data-variant="b" type="button">B · 角色台</button>
           <button class="variant-button" data-variant="c" type="button">C · 平衡中心</button>
           <button class="variant-button" data-variant="d" type="button">D · 竖屏剧场</button>
+          <button class="variant-button" data-variant="e" type="button">E · 游戏主界面</button>
         </div>
       </div>
 
@@ -655,7 +787,7 @@
         null: { name: 'Noct', title: '未命名世界', desc: '新体验等待建立', symbol: '○' },
       };
 
-      let currentVariant = 'a';
+      let currentVariant = 'e';
       let currentRole = 'mira';
       let theme = 'night';
 
@@ -764,6 +896,28 @@
           </section>`;
       }
 
+      function gameView() {
+        const data = roles[currentRole];
+        return `
+          <section class="game-page view-enter" data-role="${currentRole}">
+            <div class="game-noise"></div>
+            <div class="game-topline"><span class="signal">LLM PROJECT</span><span>EXPERIENCE 01 · ${theme.toUpperCase()}</span></div>
+            <div class="game-title"><div class="game-kicker">CURRENT EXPERIENCE / ${data.title.toUpperCase()}</div><h1>${data.name}</h1><p>${data.desc}<br>一段尚未结束的角色互动，等待继续。</p></div>
+            <nav class="game-menu" aria-label="体验主菜单">
+              <div class="game-menu-heading">MAIN MENU</div>
+              <div class="game-menu-list">
+                <button class="game-menu-item active" data-action="continue" type="button"><span class="cursor">▶</span><strong>继续体验</strong><em>Continue</em></button>
+                <button class="game-menu-item" data-action="new" type="button"><span class="cursor">▶</span><strong>新建体验</strong><em>New</em></button>
+                <button class="game-menu-item" data-action="switch" type="button"><span class="cursor">▶</span><strong>角色台</strong><em>Cast</em></button>
+                <button class="game-menu-item" data-action="archive" type="button"><span class="cursor">▶</span><strong>档案与创作</strong><em>Archive</em></button>
+                <button class="game-menu-item" data-action="settings" type="button"><span class="cursor">▶</span><strong>设置</strong><em>System</em></button>
+              </div>
+            </nav>
+            <aside class="game-save"><div class="game-save-head"><span>CONTINUE SLOT 01</span><span>READY</span></div><div class="game-save-body"><div class="game-save-mark">${data.symbol}</div><div><strong>${data.name} · ${data.title}</strong><p>${data.desc}<br>上次体验：12 分钟前</p></div></div><div class="game-save-foot"><span>自由对话</span><span>SESSION SAVED</span></div></aside>
+            <div class="game-foot"><span>SELECT / ENTER · 体验由角色和世界共同生成</span><span>V 1.0 · LOCAL EXPERIENCE RUNTIME</span></div>
+          </section>`;
+      }
+
       function portraitRole(role) {
         const data = roles[role];
         return `
@@ -797,7 +951,15 @@
       }
 
       function render() {
-        app.innerHTML = currentVariant === 'a' ? stageView() : currentVariant === 'b' ? roleStageView() : currentVariant === 'c' ? hubView() : portraitView();
+        app.innerHTML = currentVariant === 'a'
+          ? stageView()
+          : currentVariant === 'b'
+              ? roleStageView()
+              : currentVariant === 'c'
+                  ? hubView()
+                  : currentVariant === 'd'
+                      ? portraitView()
+                      : gameView();
         document.querySelectorAll('.variant-button').forEach(button => button.classList.toggle('active', button.dataset.variant === currentVariant));
         bindInteractions();
       }
@@ -824,6 +986,8 @@
             else if (action === 'switch') showToast('这里将打开正式的角色切换轮盘');
             else if (action === 'create') showToast('创作入口将作为后台能力打开');
             else if (action === 'settings') { drawer.classList.add('show'); drawerBackdrop.classList.add('show'); }
+            else if (action === 'new') showToast('新建体验将从角色台或体验模式开始');
+            else if (action === 'archive') showToast('档案、角色设定和 UI 创作会在这里汇合');
             else if (action === 'modes') showToast('体验模式中心：聊天、Galgame、RPG、互动小说');
             else if (action.startsWith('mode-')) showToast(`${action.slice(5)} 模式暂作为后续体验入口`);
           });
