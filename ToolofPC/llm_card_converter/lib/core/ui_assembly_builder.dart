@@ -550,6 +550,7 @@ class UiAssemblyBuilder {
     final pcbH = contentPcbH.clamp(minPcbH, 2000.0).toDouble();
     for (final page in pages) {
       final elements = page['elements'];
+      final pageName = page['name'] as String? ?? '';
       if (elements is! List) continue;
       for (final element in elements) {
         if (element is Map && element['name'] == '底板') {
@@ -571,7 +572,7 @@ class UiAssemblyBuilder {
         elements.cast<Map<String, dynamic>>(),
         pcbH: pcbH,
         pcbW: pcbW,
-        fill: pageLayoutIntents[title]?.fill ?? false,
+        fill: pageLayoutIntents[pageName]?.fill ?? false,
       );
       // 几何自检：把所有元素收敛到 PCB 内边距内，超宽文本转 wrap / 补高。
       _sanitizeElementGeometry(
