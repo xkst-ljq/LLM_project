@@ -46,7 +46,7 @@ import 'ui_understanding/ui_source_pack.dart';
 ///
 /// 单独抽出来是因为它们会被多处引用，散落在代码里改一处漏一处。
 class _Layout {
-  static const double pcbPadding = 12;
+  static const double pcbPadding = 10;
   static const double rowHeight = 22;
   static const double rowGap = 6;
   static const double barHeight = 10;
@@ -517,6 +517,7 @@ class UiAssemblyBuilder {
         pageIntent: pageLayoutIntents[title] ?? const _PageLayoutIntent(),
         showMessageFlow: title == fallbackMessagePage ||
             _isSceneMessagePage(mode, title, pageRoles[title]),
+        navigation: plan.layout.navigation,
       );
       final h = _pageContentHeight(elements);
       pageHeights.add((title: title, isOverlay: isOverlayPage, height: h));
@@ -545,7 +546,7 @@ class UiAssemblyBuilder {
     final contentPcbH = allHeights.isEmpty
         ? 96.0
         : allHeights.reduce((a, b) => a > b ? a : b);
-    final minPcbH = mode == 'scene' && hasOverlayPages ? 760.0 : 96.0;
+    final minPcbH = mode == 'scene' && hasOverlayPages ? 480.0 : 96.0;
     final pcbH = contentPcbH.clamp(minPcbH, 2000.0).toDouble();
     for (final page in pages) {
       final elements = page['elements'];
@@ -570,6 +571,7 @@ class UiAssemblyBuilder {
         elements.cast<Map<String, dynamic>>(),
         pcbH: pcbH,
         pcbW: pcbW,
+        fill: pageLayoutIntents[title]?.fill ?? false,
       );
       // 几何自检：把所有元素收敛到 PCB 内边距内，超宽文本转 wrap / 补高。
       _sanitizeElementGeometry(
@@ -1320,6 +1322,7 @@ class UiAssemblyBuilder {
     List<Map<String, dynamic>> elements, {
     required double pcbH,
     required double pcbW,
+    bool fill = false,
   }) {
     var candidateIndex = -1;
     var candidateY = -1.0;
@@ -1334,9 +1337,10 @@ class UiAssemblyBuilder {
       }
     }
     if (candidateIndex < 0) {
-      // 无 scroll / message_flow：把最后一个全宽容器 surface 拉伸到接近底部，
-      // 消灭「内容到一半、下方整段空白」。
-      _stretchLastContentBlock(elements, pcbH: pcbH, pcbW: pcbW);
+      // 无 scroll / message_flow：若明确要求占满（fill=true），则拉伸最后一个全宽容器。
+      if (fill) {
+        _stretchLastContentBlock(elements, pcbH: pcbH, pcbW: pcbW);
+      }
       return;
     }
 
@@ -1716,6 +1720,7 @@ class UiAssemblyBuilder {
     required double innerW,
     _PageLayoutIntent? pageIntent,
     required bool showMessageFlow,
+    required String navigation,
   }) {
     final elements = <Map<String, dynamic>>[];
     final pressPairs = <({String surface, String button})>[];
@@ -1724,7 +1729,12 @@ class UiAssemblyBuilder {
     final rowScale = intent.rowScale();
     var y = _Layout.pcbPadding;
 
-    if (navigationTitles.length > 1 && !isOverlayPage) {
+    // ── 智能导航与标题渲染 ──
+    final showTabs = navigationTitles.length > 1 &&
+        !isOverlayPage &&
+        (navigation.contains('tabs') || navigation == 'both');
+
+    if (showTabs) {
       final tabW = (innerW - (navigationTitles.length - 1) * 6.0) / navigationTitles.length;
       const tabH = 22.0;
       final routerIds = <String, String>{};
@@ -1794,20 +1804,24 @@ class UiAssemblyBuilder {
       }
       y += tabH + 12.0;
     } else {
-      elements.add(_text(
-        id: nextId('el'),
-        name: '标题',
-        text: pageTitle,
-        x: _Layout.pcbPadding,
-        y: y,
-        w: innerW,
-        h: 22,
-        fontSize: mode == 'extra_companion' ? 13 : 16,
-        color: theme.titleColor,
-        align: 'center',
-        layer: elements.length + 1,
-      ));
-      y += 28.0;
+      // 非 Tab 模式或单页：若 AI 提供了有意义的标题则显示，否则跳过以节省空间。
+      final isGenericTitle = const {'主界面', '主页', 'Main', 'Home', 'Base', '页面'}.contains(pageTitle);
+      if (!isGenericTitle || navigationTitles.length > 1 || isOverlayPage) {
+        elements.add(_text(
+          id: nextId('el'),
+          name: '标题',
+          text: pageTitle,
+          x: _Layout.pcbPadding,
+          y: y,
+          w: innerW,
+          h: 22,
+          fontSize: mode == 'extra_companion' ? 13 : 15,
+          color: theme.titleColor,
+          align: 'center',
+          layer: elements.length + 1,
+        ));
+        y += 26.0;
+      }
     }
 
     if (isOverlayPage && parentPageId != null && parentPageId.isNotEmpty) {
@@ -1885,7 +1899,8 @@ class UiAssemblyBuilder {
 
     if (showMessageFlow) {
       final fullMessagePage = fields.isEmpty && inputs.isEmpty && actions.isEmpty;
-      final flowHeight = fullMessagePage ? 650.0 : 320.0;
+      // 降低初始预设高度，后续通过 _expandScrollableContentToFillPage 动态伸缩
+      final flowHeight = fullMessagePage ? 420.0 : 260.0;
       elements.add(_messageFlow(
         id: nextId('el'),
         name: '剧情消息流',
@@ -1919,8 +1934,8 @@ class UiAssemblyBuilder {
           y: y,
           w: innerW,
           h: 16,
-          fontSize: mode == 'extra_companion' ? 10 : 12,
-          color: theme.titleColor,
+          fontSize: mode == 'extra_companion' ? 9.5 : 11,
+          color: theme.labelColor,
           align: 'left',
           layer: elements.length + 1,
         ));
@@ -1928,15 +1943,15 @@ class UiAssemblyBuilder {
           id: nextId('el'),
           name: '分组线_$group',
           x: _Layout.pcbPadding,
-          y: y + 17,
+          y: y + 15,
           w: innerW,
           h: 2,
-          color: theme.accentColor,
+          color: (theme.accentColor & 0x00FFFFFF) | 0x4D000000, // 30% 透明度
           layer: elements.length + 1,
-          style: 'dashed',
-          thickness: 1.0,
+          style: 'solid',
+          thickness: 0.5,
         ));
-        y += 22.0;
+        y += 20.0;
       }
 
       if (_isAttributeGridGroup(group, groupFields, mode)) {
@@ -2743,12 +2758,12 @@ class UiAssemblyBuilder {
   }
 
   static double _frameInsetFor(String mode) {
-    // 伴生面板宽度很窄，留 8px 就足以看出“PCB 外框 + 内层面板”层次。
-    if (mode == 'extra_companion') return 8.0;
+    // 伴生面板宽度很窄，留 6px 就足以看出“PCB 外框 + 内层面板”层次。
+    if (mode == 'extra_companion') return 6.0;
     if (mode == 'opening' || mode == 'scene' || mode == 'extra_sticky') {
-      return 12.0;
+      return 8.0;
     }
-    return 8.0;
+    return 6.0;
   }
 
   static bool _modeRequiresGeneratedKeyAction(String mode) =>
