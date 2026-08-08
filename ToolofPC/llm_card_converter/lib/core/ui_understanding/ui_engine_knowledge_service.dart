@@ -7,7 +7,7 @@ import '../ui_engine_api/ui_engine_api_dictionary.dart';
 class UiEngineKnowledgeService {
   const UiEngineKnowledgeService._();
 
-  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-07.7';
+  static const String knowledgeVersion = 'ui_engine_api_dictionary_v2026-08-08.1';
 
   static String compactPrompt() => '''
 # LLM Project UIEngine capabilities
@@ -25,8 +25,15 @@ Use multiple assemblies when the original card has distinct lifecycle UI, e.g. o
 ${UiEngineApiDictionary.compactReferenceForTranslator()}
 
 # Confirmed runtime facts (do not present these as unknown)
+- scene mode fully takes over the chat page: the native message list, the bottom input bar, and the side status bar are all disabled; the chat page only remains as a dimmed background. Because of this, EVERY player message in scene must be sent through a component YOU create: strongly prefer providing at least one sendsMessage action (button) or one input with sendOnSubmit:true. If the source card is a pure display terminal with no sendable interaction, say so in notes instead of inventing a send button.
+- Do NOT assume scene has a default input bar at the bottom. The normal chat input does not exist in scene; if you want free text input, declare an explicit input with sendOnSubmit:true on the story page (or use choice buttons with sendsMessage).
+- button is completely invisible at runtime: it is only a tap hotzone and draws nothing. Its appearance must be carried by an underlying surface (backing plate) or text. For press/ripple feedback on a button, link the button to its backing surface with click_to_surface_press. Action/choice buttons must be the surface(text)+text(label)+button(hotzone) trio, otherwise players cannot see or hit them.
+- keyAction is a hard runtime gate: opening and scene will NOT run at all without a keyAction-marked button (blocksWithoutKeyAction). In scene its meaning is "open chat settings/menu" (the compiler auto-generates one when no non-sending action exists); in opening it means "confirm & close, switching branch by targetBranchIndex"; in extra_sticky it means "collapse".
+- extra_companion has a hard width cap of 212px, but height can grow within PCB limits and the surrounding chat list scrolls. It can use pages/tabs/gestures, but dense layouts are discouraged because the width is narrow. Normally DO NOT add an input component: the normal chat input already exists; record input_prompt in notes unless the author explicitly wants an in-panel input.
+- opening is a conversation-start-only fullscreen UI that is destroyed after confirmation. It must NOT be used as a persistent status bar.
+- extra_sticky is a persistent tool layer (top/bottom bar) overlaid on the chat; it does not take over the chat page and does not host narrative.
+- page_router / math_node / timer / linker are invisible at runtime (SizedBox.shrink), placed in the PCB logic area; they only route pages / compute / tick / link.
 - message_flow is a normal UI module rendered in a SizedBox; it can be visually placed over/inside surfaces by absolute layout. It is not restricted to a top-level-only slot.
-- extra_companion has a hard width cap of 212px, but height can grow within PCB limits and the surrounding chat list scrolls. It can use pages/tabs/gestures, but dense layouts are discouraged because the width is narrow.
 - line color comes from module.color; thickness/axis/solid/dashed/dotted/curve/double are supported. Use line for borders, dividers, ornaments, and terminal/codex styling.
 - overlay pages open via page_router route action open_overlay and can contain their own text/input/buttons/scroll areas. They are suitable for dossiers, quest details, friend lists, and expanded status panels.
 - status_bar_fields are LLM Project native state fields. They are not an automatic SillyTavern parser: the translator must map ST keys into fields/sourceKey/dataChannel. Once mapped, the app prompt/update mechanism lets the LLM read and update them.
@@ -234,6 +241,18 @@ If hasUi=false, still return evidenceSummary, sourceRefs, unsupported and notes;
 Knowledge version: $knowledgeVersion
 
 你负责输出高层 UiDesignPlan JSON。
+
+# 引擎显示效果（转译前必读——先搞清楚“你做的东西会怎么被显示”，再动手设计）
+这里是 UIEngine 与 SillyTavern 的**本质差异**。以下每一条都真实发生在运行期，转译时若不按它们设计，产物会“看起来没有输入框”“按钮点了没反应”“正文没地方显示”。
+1. **scene 完全顶替整个聊天页**：原生消息列表、底部输入框、侧边状态栏全部被禁用。原聊天页只作为被压暗的背景。**后果：scene 里玩家的发言只能靠你做的组件来发送**——请优先提供至少一条玩家→LLM 的发送路径：一个 `sendsMessage` 的 action（按钮），或一个 `sendOnSubmit:true` 的 input。若原卡本身就是纯展示终端、没有可发送的交互，可在 notes 说明，不必强行捏造发送按钮。keyAction 按钮在 scene 下是“打开聊天设置”的出口，不是发送入口。
+2. **不要在 scene 里假设“底部默认有输入框”**。ChatGPT/酒馆的底部输入栏不存在于 scene。想要输入入口，就显式做一个 `sendOnSubmit:true` 的 input（或用带发送语义的选项按钮）放在正文页下方。
+3. **button 运行期彻底隐形**：它只是一个点击热区，不画任何东西。按钮外观必须由它背后的 `surface`（底板）或 `text`（文字）承载。想让按钮有按压/涟漪反馈，用 `click_to_surface_press` 把 button 联到背后的 surface。选项/动作类按钮必须是 surface(底板)+text(文案)+button(热区) 三件套，否则玩家看不到也点不中。
+4. **opening 是开场白全屏页，确认后销毁**：只承载简介、身份/资料输入、开场方向选择。不能作为长期状态栏。开场方向选择由 action 的 branchIndex 决定。
+5. **extra_companion 是 212px 宽伴生栏，且通常不放输入框**：聊天页主输入框已存在，companion 里再放 input 只会重复。它的 input_prompt 建议记入 notes 而不是生成输入组件。
+6. **extra_sticky 是悬浮工具层**（顶部/底部窄条），叠加在聊天之上；不会顶替聊天页，不需要它承载正文。
+7. **page_router / math_node / timer / linker 运行期彻底隐形**：它们不占用物理像素（放在 PCB 逻辑区），只负责换页 / 计算 / 定时 / 联动。
+8. **scene 必须声明正文页**：`layout.pages` 里至少要有一个 `role=story|message|narrative|content|log` 的 base 页，编译器才会插入 `message_flow` 显示真实对话。只在 notes 里说“建议用 message_flow”不会生成组件。
+9. **overlay 叠加页仍在同一块 PCB 内渲染**，不能设计成放不下内容的小弹窗；它需要有足够纵向空间（长内容用 overflow=scroll）。
 
 # 视觉与布局核心契约
 1. **视觉风格 (visualStyle)**：**严禁无脑使用默认配色**。必须根据角色描述（description/personality）定制主题色。

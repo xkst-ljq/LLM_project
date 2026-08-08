@@ -1472,6 +1472,56 @@ void main() {
       expect(result.ok, isFalse, reason: '非法 uiMode 应被 validator 拦截');
       expect(result.errors.join(), contains('非法 uiMode'));
     });
+
+    test('scene without any send path warns', () {
+      final pack = UiSourcePackBuilder.build(greetingPackJson());
+      UiDesignPlan scenePlan(Map<String, dynamic> extra) => UiDesignPlan.fromJson({
+            'hasUi': true,
+            'uiMode': 'scene',
+            'uiName': '终端',
+            'layout': {
+              'pages': [
+                {'title': '正文', 'role': 'story', 'type': 'base'},
+              ],
+            },
+            'fields': [
+              {'name': '生命', 'type': 'number', 'initialValue': '84', 'sourceRef': 'x'},
+            ],
+            ...extra,
+          });
+
+      // 缺发送路径：不阻断转译，但给出建议提示。
+      final noPath = UiPlanValidator.validate(scenePlan({}), pack);
+      expect(noPath.ok, isTrue, reason: '缺少发送路径只应是建议，不阻断转译');
+      expect(noPath.warnings.join(), contains('发送路径'));
+
+      // sendsMessage action 提供发送路径 → 无该建议。
+      final viaAction = scenePlan({
+        'actions': [
+          {'label': '行动', 'sendText': '行动', 'page': '正文', 'sourceRef': 'x'},
+        ],
+      });
+      expect(UiPlanValidator.validate(viaAction, pack).warnings.join(),
+          isNot(contains('发送路径')),
+          reason: 'sendsMessage action 应满足 scene 发送路径');
+
+      // sendOnSubmit input 提供发送路径 → 无该建议。
+      final viaInput = scenePlan({
+        'inputs': [
+          {
+            'name': '自由输入',
+            'placeholder': '在此输入...',
+            'sendOnSubmit': true,
+            'targetKind': 'none',
+            'page': '正文',
+            'sourceRef': 'x',
+          },
+        ],
+      });
+      expect(UiPlanValidator.validate(viaInput, pack).warnings.join(),
+          isNot(contains('发送路径')),
+          reason: 'sendOnSubmit input 应满足 scene 发送路径');
+    });
   });
 
   group('UI engine knowledge - decision guidance', () {
@@ -1483,11 +1533,33 @@ void main() {
       expect(slim, contains('extra_companion / extra_sticky'));
     });
 
+    test('slim knowledge carries runtime display facts', () {
+      final slim = UiEngineKnowledgeService.compactPromptSlim();
+      expect(slim, contains('完全顶替整个聊天页'),
+          reason: '必须告知 scene 顶替聊天页、原生输入框被禁用');
+      expect(slim, contains('发送路径'),
+          reason: '必须告知 scene 需要提供玩家→LLM 发送路径');
+      expect(slim, contains('button 运行期彻底隐形'),
+          reason: '必须告知 button 隐形、外观靠 surface/text 承载');
+      expect(slim, contains('keyAction'),
+          reason: '必须告知 keyAction 是运行门槛');
+      expect(slim, contains('212px'),
+          reason: '必须告知 companion 宽度上限');
+    });
+
     test('full knowledge covers density and branch differentiation', () {
       final full = UiEngineKnowledgeService.compactPrompt();
       expect(full, contains('Mode selection by information density'));
       expect(full, contains('Opening branch differentiation (mandatory)'));
       expect(full, contains('Multiple greetings always require opening'));
+    });
+
+    test('full knowledge carries runtime display facts', () {
+      final full = UiEngineKnowledgeService.compactPrompt();
+      expect(full, contains('fully takes over the chat page'));
+      expect(full, contains('sendOnSubmit'));
+      expect(full, contains('invisible at runtime'));
+      expect(full, contains('keyAction'));
     });
   });
 

@@ -349,6 +349,23 @@ class UiEngineApiDictionary {
     'utility': ['name_to_text', 'to_string'],
   };
 
+  /// 引擎运行期显示效果事实（转译 AI 必读，防止“像 SillyTavern 那样”的误判）。
+  ///
+  /// 这些是 UIEngine 与 SillyTavern 的本质差异，不是可选项。生成时通过
+  /// [compactReferenceForTranslator] 与 knowledge 一起注入转译 AI。
+  static const List<String> runtimeDisplayFacts = [
+    'scene 完全顶替整个聊天页：原生消息列表、底部输入框、侧边状态栏全部禁用，聊天页只留作被压暗的背景。玩家在 scene 里的发言只能通过你创建的组件发送——请优先提供至少一条玩家→LLM 发送路径（sendsMessage action 或 sendOnSubmit:true 的 input）。若原卡是纯展示终端、没有可发送交互，在 notes 说明即可，不必强行捏造发送按钮。',
+    '不要假设 scene 底部默认有输入框。想要自由输入，就在正文页显式声明 sendOnSubmit:true 的 input（或用 sendsMessage 选项按钮）。',
+    'button 运行期彻底隐形：只是点击热区，不画任何东西。外观必须由背后的 surface/text 承载；按动反馈用 click_to_surface_press 把 button 联到背后的 surface。选项/动作按钮必须是 surface+text+button 三件套。',
+    'keyAction 是硬性运行门槛：opening 和 scene 缺 keyAction 按钮就整层不渲染。scene 下它=打开聊天设置（编译器在没有非发送动作时会自动补一个）；opening 下它=确认关闭并按 targetBranchIndex 切换分支；extra_sticky 下它=折叠。',
+    'extra_companion 宽度硬限 212px，通常不要放 input——聊天页主输入框已存在，把 input_prompt 记入 notes。',
+    'opening 是仅对话开始时的全屏页，确认后销毁，不能当长期状态栏。',
+    'extra_sticky 是悬浮工具层（顶/底窄条），叠加在聊天之上，不顶替聊天页、不承载正文。',
+    'page_router / math_node / timer / linker 运行期彻底隐形（SizedBox.shrink），放在 PCB 逻辑区，只负责换页/计算/定时/联动。',
+    'scene 必须在 layout.pages 里声明一个 role=story|message|narrative|content|log 的 base 页，编译器才会插入 message_flow；只在 notes 里写“建议用 message_flow”不会生成组件。',
+    'overlay 叠加页仍在同一块 PCB 内渲染，必须给足纵向空间（长内容用 overflow=scroll），不能设计成放不下字段的小浮窗。',
+  ];
+
   static const Map<String, dynamic> layoutPolicies = {
     'fidelityFirst': '先还原原卡渲染结构、阅读顺序和分组，再因移动端冲突做适配。',
     'avoidSparseTabs': '不要把原本单张长卡机械拆成很多空页；多页必须让每页有足够内容、可滚动大内容区，或作为 overlay 详情。opening 的资料填写和开场方向选择默认应合并成同一张登记卡。',
@@ -401,6 +418,7 @@ class UiEngineApiDictionary {
     'linkerSchemes': linkerSchemes,
     'layoutPolicies': layoutPolicies,
     'layoutPatterns': layoutPatterns,
+    'runtimeDisplayFacts': runtimeDisplayFacts,
     'limitations': limitations,
   };
 
@@ -489,6 +507,10 @@ Use dictionary paths like `components.text`, `components.progress`, `modes.scene
     linkerSchemes.forEach((key, value) {
       b.writeln('- $key: ${(value as List).join(', ')}');
     });
+    b.writeln('\n# Runtime display facts (read BEFORE designing)');
+    for (final fact in runtimeDisplayFacts) {
+      b.writeln('- $fact');
+    }
     b.writeln('\n# Limitations');
     for (final item in limitations) {
       b.writeln('- $item');

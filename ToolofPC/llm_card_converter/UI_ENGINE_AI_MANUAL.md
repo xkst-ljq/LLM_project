@@ -2,12 +2,35 @@
 
 > 本文档为转译 AI（包括 Stage 2 AI 智能归类、Stage 3b AI 视觉特征提取、Stage 4 AI 自检精修）的唯一、权威**背景能力手册**。
 > 转译 AI 在进行任何决策、分析、审计或意图分类前，必须完全对齐并遵循本手册。
+> 特别注意：**第 0 节「引擎显示效果与特殊机制」** 描述的是 UIEngine 与 SillyTavern 的本质差异，转译前必须优先阅读。
 
 ---
 
 ## 第一部分：UI 引擎（llm_ui_engine）原语与逻辑芯片契约
 
 本项目采用「数据-模板分离」的声明式 UI 架构。AI 只需提取设计意图（Design Tokens）和协议连线（Linkers），禁止手动捏造复杂的 PCB 几何坐标。
+
+### 0. 引擎显示效果与特殊机制（转译前必读）
+
+转译 AI 对 SillyTavern 的认知（底部默认输入框、按钮自带外观、`#RRGGBB` 颜色等）**在 UIEngine 中不成立**。以下是运行期真实发生的显示行为，转译时必须按它们设计：
+
+*   **scene 完全顶替整个聊天页**：原生消息列表、底部输入框、侧边状态栏全部禁用，聊天页只留作被压暗的背景。
+    *   **后果：scene 里玩家的发言只能靠转译出的组件发送**——请优先提供至少一条玩家→LLM 发送路径：一个 `sendsMessage` 的 action（按钮），或一个 `sendOnSubmit:true` 的 input。
+    *   若原卡本身就是纯展示终端、没有可发送的交互，在 notes 说明即可，不必强行捏造发送按钮。
+    *   **不要在 scene 里假设「底部默认有输入框」**。想要输入入口，就显式做 `sendOnSubmit:true` 的 input（或用带发送语义的选项按钮）放在正文页下方。
+    *   scene 的 keyAction 按钮是「打开聊天设置」的出口，不是发送入口。
+*   **`button` 运行期彻底隐形**：它只是一个点击热区，不画任何东西，也没有按压反馈。按钮外观必须由它背后的 `surface`（底板）或 `text`（文案）承载；想让按钮有按压/涟漪反馈，用 `click_to_surface_press` 把 button 联到背后的 surface。选项/动作类按钮必须是 **surface(底板)+text(文案)+button(热区)** 三件套，否则玩家看不到也点不中。
+*   **`keyAction` 是硬性运行门槛**：`opening` 与 `scene` 缺少 keyAction 标记的按钮时整层不渲染（防止玩家被困在无出口的界面里）。
+    *   `opening` 下它 = 确认并关闭开场页，若有 `targetBranchIndex` 则切换开场分支。
+    *   `scene` 下它 = 打开聊天设置 / 菜单。
+    *   `extra_sticky` 下它 = 折叠界面。
+    *   编译器在没有「非发送动作」时会自动补一个 keyAction 按钮（`scene`→设置、`opening`→开始、`extra_sticky`→收起）。
+*   **`extra_companion` 通常不放输入框**：它是 212px 宽的伴生栏，聊天页主输入框已存在，再放 input 只会重复入口。原卡的 `input_prompt` 建议记入 notes 而不是生成输入组件。
+*   **`opening` 是仅对话开始时展示的全屏页，确认后销毁**：只承载简介、身份/资料输入、开场方向选择，不能作为长期状态栏。
+*   **`extra_sticky` 是悬浮工具层**（顶部/底部窄条），叠加在聊天之上，不顶替聊天页、不承载正文。
+*   **`page_router` / `math_node` / `timer` / `linker` 运行期彻底隐形**：不占用物理像素（放在 PCB 逻辑区），只负责换页 / 计算 / 定时 / 联动。
+*   **scene 必须声明正文页**：`layout.pages` 里至少要有一个 `role=story|message|narrative|content|log` 的 base 页，编译器才会插入 `message_flow` 显示真实对话；只在 notes 里写「建议用 message_flow」不会生成组件。
+*   **overlay 叠加页仍在同一块 PCB 内渲染**：不能设计成放不下内容的小弹窗，要给足纵向空间（长内容用 `overflow=scroll`）。
 
 ### 1.1 可见物理原语 (Visual Primitives)
 

@@ -87,6 +87,9 @@ class UiPlanValidator {
         } else if (_messagePageIsOvercrowded(plan, sourcePack)) {
           errors.add('scene 正文/message_flow 页面过于拥挤：不要把完整状态栏、任务板、羁绊名录等低频详情全部堆在正文与选项之间。请保留正文页 + 当前选项/自由输入，把完整状态/任务/羁绊改为 type=overlay 的叠加页或少量详情页。');
         }
+        if (!_hasSceneSendPath(plan)) {
+          warnings.add('scene 会抑制底部原生输入框，玩家只能通过组件发言；建议提供至少一条发送路径——一个 sendsMessage 的 action，或一个 sendOnSubmit:true 的 input。若原卡本身只有展示面板、没有可发送的交互，可在 notes 说明。');
+        }
         final baseDetailPages = _baseDetailPagesThatShouldBeOverlay(plan, sourcePack);
         if (baseDetailPages.isNotEmpty) {
           errors.add('scene 中以下低频详情页不应作为稀疏 base tab 撑大 PCB：${baseDetailPages.join('、')}。请在 layout.pages 中设置 type="overlay" 并指定 parentPage 为正文/message_flow 页面。');
@@ -455,6 +458,17 @@ class UiPlanValidator {
   static bool _hasSceneMessagePage(UiDesignPlan plan) {
     return plan.layout.pages.any((page) =>
         page.type != 'overlay' && _isMessagePage(page.title, page.role));
+  }
+
+  /// scene 是否提供了一条玩家→LLM 的发送路径。
+  ///
+  /// scene 完全顶替聊天页，底部原生输入框被禁用，玩家只能通过组件发言：
+  /// 一个 sendsMessage 的 action（按钮），或一个 sendOnSubmit:true 的 input。
+  /// 两者都没有时玩家将无法对话，转译必须拦截。
+  static bool _hasSceneSendPath(UiDesignPlan plan) {
+    if (plan.actions.any((a) => a.sendText.trim().isNotEmpty)) return true;
+    if (plan.inputs.any((input) => input.sendOnSubmit)) return true;
+    return false;
   }
 
   static bool _messagePageIsOvercrowded(

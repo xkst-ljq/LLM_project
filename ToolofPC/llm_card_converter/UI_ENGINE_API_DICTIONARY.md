@@ -81,7 +81,23 @@ UiEngineApiDictionary.compactReferenceForTranslator()
 - 逻辑组件；
 - linker scheme 分组；
 - 已知限制；
-- scene/message_flow 与 overlay 页面转译约束。
+- scene/message_flow 与 overlay 页面转译约束；
+- 运行期显示效果事实（scene 接管 / button 隐形 / keyAction 门槛等）。
+
+## 运行期显示效果事实
+
+这些是 UIEngine 与 SillyTavern 的**本质差异**，转译 AI 在设计前必须对齐：
+
+- `scene` 完全顶替整个聊天页：原生消息列表、底部输入框、侧边状态栏全部禁用，聊天页只留作被压暗的背景。**玩家在 scene 里的发言只能通过你创建的组件发送**——请优先提供至少一条玩家→LLM 发送路径（`sendsMessage` action 或 `sendOnSubmit:true` 的 input）。若原卡是纯展示终端、没有可发送交互，在 notes 说明即可，不必强行捏造发送按钮。
+- **不要假设 scene 底部默认有输入框**。想要自由输入，就在正文页显式声明 `sendOnSubmit:true` 的 input（或用 `sendsMessage` 选项按钮）。
+- `button` 运行期彻底隐形：只是点击热区，不画任何东西。外观必须由背后的 `surface`/`text` 承载；按动反馈用 `click_to_surface_press` 把 button 联到背后的 surface。选项/动作按钮必须是 surface+text+button 三件套。
+- `keyAction` 是硬性运行门槛：`opening` 和 `scene` 缺 keyAction 按钮就整层不渲染。scene 下它=打开聊天设置；opening 下它=确认关闭并按 `targetBranchIndex` 切换分支；extra_sticky 下它=折叠。
+- `extra_companion` 宽度硬限 212px，通常不要放 input——聊天页主输入框已存在。
+- `opening` 是仅对话开始时的全屏页，确认后销毁，不能当长期状态栏。
+- `extra_sticky` 是悬浮工具层（顶/底窄条），不顶替聊天页、不承载正文。
+- `page_router` / `math_node` / `timer` / `linker` 运行期彻底隐形，放在 PCB 逻辑区。
+- `scene` 必须在 `layout.pages` 里声明一个 `role=story|message|narrative|content|log` 的 base 页，编译器才会插入 `message_flow`。
+- `overlay` 叠加页仍在同一块 PCB 内渲染，必须给足纵向空间（长内容用 `overflow=scroll`）。
 
 ## Scene 与 overlay 转译约束
 
