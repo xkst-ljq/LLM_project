@@ -8,6 +8,9 @@ import 'package:provider/provider.dart';
 import 'core/module_interface.dart';
 import 'modules/chat_module.dart';
 import 'pages/main_menu_page.dart';
+import 'shared/theme/app_theme.dart';
+import 'shared/theme/app_theme_manager.dart';
+import 'shared/theme/app_theme_tokens.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,9 +58,15 @@ void main() async {
   // CharacterDraftService.load 只清理「正在打开的那一张」。
   unawaited(CharacterDraftService.purgeExpired());
 
+  final themeManager = AppThemeManager();
+  await themeManager.load();
+
   runApp(
-    Provider<ChatModule>.value(
-      value: chatModule,
+    MultiProvider(
+      providers: [
+        Provider<ChatModule>.value(value: chatModule),
+        ChangeNotifierProvider<AppThemeManager>.value(value: themeManager),
+      ],
       child: const MyApp(),
     ),
   );
@@ -68,10 +77,32 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      title: 'llm_project',
-      debugShowCheckedModeBanner: false,
-      home: MainMenuPage(),
+    final themeManager = context.watch<AppThemeManager>();
+    final tokens = themeManager.isNight
+        ? const AppThemeTokens.night()
+        : const AppThemeTokens.day();
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: tokens.canvas,
+        statusBarIconBrightness:
+            themeManager.isNight ? Brightness.light : Brightness.dark,
+        systemNavigationBarIconBrightness:
+            themeManager.isNight ? Brightness.light : Brightness.dark,
+        systemStatusBarContrastEnforced: false,
+        systemNavigationBarContrastEnforced: false,
+      ),
+      child: MaterialApp(
+        title: 'llm_project',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.day,
+        darkTheme: AppTheme.night,
+        themeMode: themeManager.materialThemeMode,
+        themeAnimationDuration: const Duration(milliseconds: 240),
+        themeAnimationCurve: Curves.easeOutCubic,
+        home: const MainMenuPage(),
+      ),
     );
   }
 }

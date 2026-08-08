@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../shared/theme/app_theme_manager.dart';
 import 'api_config_page.dart';
 import 'backup_restore_page.dart';
 import 'prompt_settings_page.dart';
@@ -40,6 +42,8 @@ class SettingsMenuPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeManager = context.watch<AppThemeManager>();
+
     return SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,6 +124,21 @@ class SettingsMenuPage extends StatelessWidget {
                   ),
                 );
               },
+            ),
+          ),
+          ListTile(
+            leading: Icon(
+              themeManager.isNight
+                  ? Icons.dark_mode_outlined
+                  : Icons.light_mode_outlined,
+            ),
+            title: const Text('界面主题'),
+            subtitle: Text(
+              themeManager.isNight ? 'Night · 沉浸模式' : 'Day · 清晰模式',
+            ),
+            trailing: Switch(
+              value: themeManager.isNight,
+              onChanged: (_) => themeManager.toggle(),
             ),
           ),
           ListTile(
