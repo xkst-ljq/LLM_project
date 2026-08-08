@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Project · Home UI Prototypes</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --canvas: #0b0e13;
+        --canvas-deep: #080a0f;
+        --surface: rgba(20, 25, 34, 0.78);
+        --surface-solid: #141922;
+        --surface-elevated: #1d2430;
+        --surface-soft: rgba(255, 255, 255, 0.065);
+        --surface-hover: rgba(255, 255, 255, 0.105);
+        --text: #f2f4f8;
+        --muted: #a6adba;
+        --quiet: #717b8b;
+        --line: rgba(255, 255, 255, 0.14);
+        --line-strong: rgba(255, 255, 255, 0.24);
+        --accent: #a1aaff;
+        --accent-strong: #c6cbff;
+        --accent-soft: rgba(161, 170, 255, 0.16);
+        --accent-glow: rgba(129, 141, 255, 0.42);
+        --success: #7ed5ae;
+        --danger: #ff8e8b;
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+        --small-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+        --blur: 22px;
+        --radius-sm: 12px;
+        --radius-md: 18px;
+        --radius-lg: 26px;
+        --radius-xl: 34px;
+        --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+      }
+
+      [data-theme="day"] {
+        color-scheme: light;
+        --canvas: #f1efe9;
+        --canvas-deep: #e8e5de;
+        --surface: rgba(255, 255, 255, 0.76);
+        --surface-solid: #ffffff;
+        --surface-elevated: #fbfaf7;
+        --surface-soft: rgba(26, 30, 40, 0.055);
+        --surface-hover: rgba(26, 30, 40, 0.09);
+        --text: #17191d;
+        --muted: #6c727c;
+        --quiet: #8c929b;
+        --line: rgba(22, 27, 36, 0.12);
+        --line-strong: rgba(22, 27, 36, 0.2);
+        --accent: #5666d7;
+        --accent-strong: #3f4eb9;
+        --accent-soft: rgba(86, 102, 215, 0.12);
+        --accent-glow: rgba(86, 102, 215, 0.22);
+        --success: #2f8b62;
+        --danger: #c54d4b;
+        --shadow: 0 24px 70px rgba(38, 39, 45, 0.14);
+        --small-shadow: 0 12px 28px rgba(38, 39, 45, 0.1);
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body { min-height: 100%; }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        background:
+          radial-gradient(circle at 82% 0%, rgba(100, 117, 255, 0.12), transparent 30rem),
+          radial-gradient(circle at 10% 92%, rgba(105, 215, 190, 0.07), transparent 26rem),
+          var(--canvas);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+        transition: background-color 260ms var(--ease), color 260ms var(--ease);
+      }
+
+      button { font: inherit; }
+
+      button:focus-visible, [tabindex]:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      .app-shell {
+        position: relative;
+        min-height: 100vh;
+        overflow: hidden;
+      }
+
+      .ambient {
+        position: fixed;
+        inset: auto auto -17rem -11rem;
+        width: 36rem;
+        height: 36rem;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(88, 205, 177, 0.11), transparent 68%);
+        pointer-events: none;
+        filter: blur(10px);
+      }
+
+      .topbar {
+        position: relative;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: min(1440px, calc(100% - 64px));
+        margin: 0 auto;
+        padding: 26px 0 18px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border: 1px solid var(--line-strong);
+        border-radius: 13px;
+        background: linear-gradient(145deg, var(--accent-soft), var(--surface-soft));
+        color: var(--accent-strong);
+        box-shadow: 0 0 24px var(--accent-glow);
+        font-size: 18px;
+      }
+
+      .brand-title { font-size: 14px; font-weight: 760; letter-spacing: 0.12em; }
+      .brand-subtitle { margin-top: 3px; color: var(--quiet); font-size: 11px; letter-spacing: 0.08em; }
+
+      .top-actions, .variant-switcher { display: flex; align-items: center; gap: 8px; }
+
+      .icon-button, .quiet-button, .variant-button {
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: transform 180ms var(--ease), background-color 180ms var(--ease), color 180ms var(--ease), border-color 180ms var(--ease);
+      }
+
+      .icon-button {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        font-size: 18px;
+      }
+
+      .icon-button:hover, .quiet-button:hover, .variant-button:hover {
+        border-color: var(--line);
+        background: var(--surface-hover);
+        color: var(--text);
+        transform: translateY(-1px);
+      }
+
+      .prototype-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        width: min(1440px, calc(100% - 64px));
+        margin: 0 auto;
+        padding: 12px 0 18px;
+        color: var(--quiet);
+        font-size: 12px;
+      }
+
+      .variant-switcher { padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
+      .variant-button { padding: 8px 11px; font-size: 11px; }
+      .variant-button.active { border-color: var(--line-strong); background: var(--accent-soft); color: var(--accent-strong); }
+
+      main {
+        position: relative;
+        z-index: 1;
+        width: min(1440px, calc(100% - 64px));
+        margin: 0 auto;
+        padding-bottom: 64px;
+      }
+
+      .view-enter { animation: view-enter 420ms var(--ease) both; }
+      @keyframes view-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+      .eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--quiet);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .eyebrow::before { content: ""; width: 18px; height: 1px; background: var(--accent); box-shadow: 0 0 10px var(--accent-glow); }
+
+      h1, h2, h3, p { margin: 0; }
+      h1 { margin-top: 13px; font-size: clamp(30px, 4vw, 56px); line-height: 1.02; letter-spacing: -0.045em; }
+      h2 { font-size: 20px; letter-spacing: -0.02em; }
+      h3 { font-size: 15px; }
+      .lede { max-width: 540px; margin-top: 15px; color: var(--muted); font-size: 15px; line-height: 1.65; }
+
+      .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+      .section-heading p { margin-top: 5px; color: var(--quiet); font-size: 12px; }
+
+      .quiet-button { padding: 9px 12px; border-color: var(--line); font-size: 12px; }
+
+      .primary-button, .secondary-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        min-height: 46px;
+        padding: 0 18px;
+        border-radius: 14px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 760;
+        transition: transform 180ms var(--ease), box-shadow 180ms var(--ease), background-color 180ms var(--ease), border-color 180ms var(--ease);
+      }
+      .primary-button { border: 1px solid transparent; background: var(--accent); color: var(--on-accent, #10131a); box-shadow: 0 12px 26px var(--accent-glow); }
+      .secondary-button { border: 1px solid var(--line-strong); background: var(--surface-soft); color: var(--text); }
+      .primary-button:hover, .secondary-button:hover { transform: translateY(-2px); }
+      .primary-button:active, .secondary-button:active { transform: scale(0.97); }
+      .primary-button .arrow { font-size: 18px; line-height: 0; }
+
+      .surface {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: var(--small-shadow);
+        backdrop-filter: blur(var(--blur));
+        -webkit-backdrop-filter: blur(var(--blur));
+      }
+
+      /* Variant A: experience stage */
+      .stage-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr); gap: 18px; align-items: stretch; }
+      .hero-stage { position: relative; min-height: 480px; overflow: hidden; border-radius: var(--radius-xl); border: 1px solid var(--line-strong); background: #121722; box-shadow: var(--shadow); }
+      .hero-stage::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 68% 26%, rgba(135, 148, 255, 0.34), transparent 18rem), linear-gradient(100deg, rgba(8, 10, 15, 0.92) 5%, rgba(8, 10, 15, 0.26) 68%, rgba(8, 10, 15, 0.58)); z-index: 1; }
+      .hero-art { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(140deg, #182132 0%, #2d3968 48%, #0d121b 100%); }
+      .hero-art::before { content: ""; position: absolute; width: 58%; aspect-ratio: 1; right: -7%; top: -8%; border-radius: 50%; background: radial-gradient(circle, rgba(184, 195, 255, 0.84) 0 2%, rgba(126, 145, 255, 0.36) 15%, transparent 62%); filter: blur(1px); }
+      .hero-art::after { content: ""; position: absolute; inset: 13% 16% 7% 46%; border-radius: 52% 42% 15% 56%; background: linear-gradient(160deg, rgba(222, 227, 255, 0.78), rgba(119, 133, 228, 0.22) 46%, rgba(11, 15, 25, 0.52)); filter: blur(0.4px); transform: rotate(-7deg); box-shadow: -34px 22px 90px rgba(70, 92, 219, 0.32); }
+      .hero-copy { position: relative; z-index: 2; display: flex; flex-direction: column; justify-content: end; min-height: 480px; max-width: 560px; padding: clamp(26px, 5vw, 60px); }
+      .status-chip { display: inline-flex; align-items: center; gap: 7px; width: fit-content; padding: 7px 10px; border: 1px solid rgba(220, 226, 255, 0.24); border-radius: 999px; background: rgba(8, 11, 19, 0.35); color: #d6dcff; font-size: 11px; }
+      .status-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 12px var(--success); }
+      .hero-copy h2 { margin-top: 19px; color: #fff; font-size: clamp(30px, 5vw, 62px); line-height: 0.98; letter-spacing: -0.06em; }
+      .hero-copy .scene-line { margin-top: 16px; color: rgba(239, 242, 255, 0.72); font-size: 14px; }
+      .hero-copy .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 27px; }
+      .hero-copy .secondary-button { border-color: rgba(255,255,255,0.24); background: rgba(255,255,255,0.1); color: #fff; }
+      .hero-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; color: rgba(239, 242, 255, 0.65); font-size: 11px; }
+      .hero-meta span { padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.2); }
+      .hero-meta span:last-child { border-right: 0; }
+
+      .side-stack { display: grid; grid-template-rows: 1fr 1fr; gap: 18px; }
+      .side-card { position: relative; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; padding: 25px; overflow: hidden; border-radius: var(--radius-lg); }
+      .side-card strong { display: block; margin-top: 12px; font-size: 25px; letter-spacing: -0.04em; }
+      .side-card p { max-width: 250px; margin-top: 9px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .side-card .side-icon { color: var(--accent); font-size: 25px; }
+      .side-card.mode-card { background: linear-gradient(145deg, var(--surface-solid), var(--accent-soft)); }
+      .side-card.create-card { background: linear-gradient(145deg, rgba(121, 213, 187, 0.12), var(--surface)); }
+      .side-card .mini-action { align-self: start; margin-top: 22px; color: var(--accent-strong); font-size: 12px; font-weight: 700; }
+
+      .rail-section { margin-top: 54px; }
+      .role-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(170px, 1fr); gap: 12px; overflow-x: auto; padding: 3px 2px 14px; scrollbar-width: thin; }
+      .role-card { position: relative; min-height: 174px; overflow: hidden; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; text-align: left; color: var(--text); box-shadow: var(--small-shadow); transition: transform 220ms var(--ease), border-color 220ms var(--ease), box-shadow 220ms var(--ease); }
+      .role-card:hover { transform: translateY(-5px); border-color: var(--line-strong); box-shadow: var(--shadow); }
+      .role-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 16px 38px var(--accent-glow); }
+      .role-card::before { content: ""; position: absolute; inset: 0; opacity: 0.92; background: var(--role-gradient); }
+      .role-card::after { content: ""; position: absolute; inset: 46% 0 0; background: linear-gradient(transparent, rgba(6, 9, 15, 0.92)); }
+      .role-content { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: end; height: 100%; }
+      .role-symbol { margin-bottom: auto; color: rgba(255,255,255,0.82); font-size: 27px; }
+      .role-card h3 { color: #fff; font-size: 17px; }
+      .role-card p { margin-top: 5px; color: rgba(255,255,255,0.68); font-size: 11px; }
+      .role-card[data-role="mira"] { --role-gradient: radial-gradient(circle at 72% 24%, #b9c3ff, transparent 20%), linear-gradient(135deg, #182131, #4e609b 60%, #101521); }
+      .role-card[data-role="lume"] { --role-gradient: radial-gradient(circle at 22% 10%, #ffddb4, transparent 22%), linear-gradient(135deg, #542e39, #ba7c69 54%, #17131b); }
+      .role-card[data-role="riven"] { --role-gradient: radial-gradient(circle at 68% 30%, #98e3d1, transparent 18%), linear-gradient(135deg, #112c31, #277978 57%, #0e161c); }
+      .role-card[data-role="null"] { --role-gradient: radial-gradient(circle at 52% 28%, #c4c8d7, transparent 12%), linear-gradient(135deg, #2b303b, #555c6c 58%, #171a21); }
+
+      /* Variant B: role carousel */
+      .carousel-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 22px; align-items: stretch; }
+      .carousel-stage { position: relative; min-height: 630px; overflow: hidden; border-radius: var(--radius-xl); border: 1px solid var(--line-strong); background: radial-gradient(circle at 50% 40%, var(--accent-soft), transparent 23rem), var(--canvas-deep); box-shadow: var(--shadow); }
+      .carousel-stage::before { content: "ROLE SELECT"; position: absolute; top: 30px; left: 34px; color: var(--quiet); font-size: 10px; font-weight: 800; letter-spacing: 0.22em; }
+      .carousel-stage::after { content: ""; position: absolute; left: 7%; right: 7%; bottom: 16%; height: 1px; background: linear-gradient(90deg, transparent, var(--line-strong), transparent); }
+      .carousel-cards { position: absolute; inset: 100px 7% 96px; display: flex; align-items: center; justify-content: center; perspective: 1100px; }
+      .carousel-card { position: absolute; width: clamp(150px, 20vw, 220px); aspect-ratio: 0.68; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 22px; box-shadow: var(--small-shadow); background: var(--role-gradient); transition: transform 360ms var(--ease), filter 360ms var(--ease), opacity 360ms var(--ease), border-color 360ms var(--ease); }
+      .carousel-card::before { content: ""; position: absolute; inset: 0; background: linear-gradient(155deg, rgba(255,255,255,0.12), transparent 36%, rgba(0,0,0,0.52)); }
+      .carousel-card::after { content: ""; position: absolute; inset: auto 0 0; height: 42%; background: linear-gradient(transparent, rgba(4,6,10,0.92)); }
+      .carousel-card .card-name { position: absolute; z-index: 1; left: 18px; right: 18px; bottom: 18px; color: #fff; font-size: 18px; font-weight: 760; }
+      .carousel-card .card-symbol { position: absolute; z-index: 1; top: 18px; left: 18px; color: rgba(255,255,255,0.8); font-size: 25px; }
+      .carousel-card.center { z-index: 3; transform: translateX(0) translateY(-12px) scale(1.04); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 28px 70px var(--accent-glow); }
+      .carousel-card.left { z-index: 2; transform: translateX(-63%) translateY(30px) rotate(-7deg) scale(0.86); filter: saturate(0.7); opacity: 0.8; }
+      .carousel-card.right { z-index: 2; transform: translateX(63%) translateY(30px) rotate(7deg) scale(0.86); filter: saturate(0.7); opacity: 0.8; }
+      .carousel-card.far-left { transform: translateX(-105%) translateY(58px) rotate(-14deg) scale(0.7); filter: saturate(0.45); opacity: 0.34; }
+      .carousel-card.far-right { transform: translateX(105%) translateY(58px) rotate(14deg) scale(0.7); filter: saturate(0.45); opacity: 0.34; }
+      .carousel-caption { position: absolute; z-index: 4; left: 0; right: 0; bottom: 35px; text-align: center; }
+      .carousel-caption .eyebrow { justify-content: center; }
+      .carousel-caption .eyebrow::before { display: none; }
+      .carousel-caption h2 { margin-top: 11px; font-size: 30px; }
+      .carousel-caption p { margin-top: 8px; color: var(--muted); font-size: 12px; }
+      .carousel-caption .primary-button { margin-top: 17px; }
+      .carousel-side { display: flex; flex-direction: column; justify-content: space-between; padding: 26px; border-radius: var(--radius-lg); }
+      .carousel-side .side-title { margin-top: 12px; font-size: 24px; letter-spacing: -0.05em; }
+      .carousel-side p { margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+      .rule-list { display: grid; gap: 12px; margin-top: 28px; }
+      .rule-item { display: flex; gap: 11px; align-items: flex-start; color: var(--muted); font-size: 12px; line-height: 1.55; }
+      .rule-item b { display: grid; flex: 0 0 24px; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 50%; color: var(--accent-strong); font-size: 11px; }
+
+      /* Variant C: balanced hub */
+      .hub-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr); gap: 18px; }
+      .hub-hero { display: grid; grid-template-columns: minmax(190px, 0.7fr) minmax(0, 1fr); min-height: 370px; overflow: hidden; border-radius: var(--radius-xl); }
+      .hub-poster { position: relative; min-height: 300px; overflow: hidden; background: radial-gradient(circle at 70% 22%, #d9c0ff, transparent 16%), linear-gradient(145deg, #302443, #7565a9 52%, #17131f); }
+      .hub-poster::before { content: "✦"; position: absolute; right: 18%; top: 15%; color: rgba(255,255,255,0.72); font-size: 55px; text-shadow: 0 0 25px rgba(255,255,255,0.5); }
+      .hub-poster::after { content: ""; position: absolute; left: 21%; right: 10%; bottom: -8%; height: 72%; border-radius: 48% 48% 0 0; background: linear-gradient(160deg, rgba(247, 227, 255, 0.76), rgba(153, 119, 208, 0.3) 45%, rgba(20, 16, 31, 0.65)); }
+      .hub-info { display: flex; flex-direction: column; justify-content: center; padding: clamp(24px, 4vw, 48px); }
+      .hub-info h2 { margin-top: 13px; font-size: clamp(28px, 4vw, 48px); letter-spacing: -0.06em; }
+      .hub-info p { margin-top: 13px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+      .hub-info .hero-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
+      .hub-side { display: grid; gap: 18px; }
+      .hub-side-card { padding: 24px; border-radius: var(--radius-lg); }
+      .hub-side-card .side-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .hub-side-card .number { color: var(--accent-strong); font-size: 24px; font-weight: 800; }
+      .mini-list { display: grid; gap: 9px; margin-top: 18px; }
+      .mini-row { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid transparent; border-radius: 12px; color: var(--muted); font-size: 12px; }
+      .mini-row:hover { border-color: var(--line); background: var(--surface-soft); color: var(--text); }
+      .mini-dot { width: 28px; height: 28px; border-radius: 9px; background: var(--mini-gradient); }
+      .mini-row span:last-child { margin-left: auto; color: var(--quiet); font-size: 11px; }
+      .mini-row[data-role="mira"] { --mini-gradient: linear-gradient(135deg, #b9c3ff, #334577); }
+      .mini-row[data-role="lume"] { --mini-gradient: linear-gradient(135deg, #ffd4ab, #7c4153); }
+      .mini-row[data-role="riven"] { --mini-gradient: linear-gradient(135deg, #9ce3d3, #27686b); }
+
+      .toast {
+        position: fixed;
+        z-index: 30;
+        right: 24px;
+        bottom: 24px;
+        max-width: min(350px, calc(100% - 48px));
+        padding: 13px 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: var(--surface-solid);
+        color: var(--text);
+        box-shadow: var(--shadow);
+        opacity: 0;
+        transform: translateY(10px);
+        pointer-events: none;
+        transition: opacity 200ms var(--ease), transform 200ms var(--ease);
+        font-size: 13px;
+      }
+      .toast.show { opacity: 1; transform: translateY(0); }
+
+      .drawer-backdrop { position: fixed; z-index: 20; inset: 0; display: none; background: rgba(3,5,9,0.58); backdrop-filter: blur(4px); }
+      .drawer-backdrop.show { display: block; }
+      .drawer { position: fixed; z-index: 21; top: 0; right: 0; bottom: 0; width: min(390px, 92vw); padding: 26px; border-left: 1px solid var(--line-strong); background: var(--surface-solid); box-shadow: -25px 0 70px rgba(0,0,0,0.3); transform: translateX(102%); transition: transform 300ms var(--ease); }
+      .drawer.show { transform: translateX(0); }
+      .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .drawer h2 { font-size: 22px; }
+      .drawer p { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .drawer-list { display: grid; gap: 10px; margin-top: 30px; }
+      .drawer-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+      .drawer-item strong { color: var(--text); font-size: 13px; }
+      .drawer-item button { border: 0; color: var(--accent-strong); background: transparent; cursor: pointer; }
+
+      @media (max-width: 980px) {
+        .stage-layout, .carousel-layout, .hub-grid { grid-template-columns: 1fr; }
+        .side-stack { grid-template-columns: 1fr 1fr; grid-template-rows: none; }
+        .carousel-side { min-height: 250px; }
+        .hub-side { grid-template-columns: 1fr 1fr; }
+      }
+
+      @media (max-width: 640px) {
+        .topbar, .prototype-bar, main { width: min(100% - 32px, 1440px); }
+        .topbar { padding-top: 17px; }
+        .prototype-bar { display: block; }
+        .prototype-bar .variant-switcher { margin-top: 12px; width: fit-content; }
+        .hero-stage { min-height: 540px; border-radius: 25px; }
+        .hero-copy { min-height: 540px; padding: 27px; }
+        .hero-copy h2 { font-size: 42px; }
+        .side-stack, .hub-side { grid-template-columns: 1fr; }
+        .carousel-stage { min-height: 560px; border-radius: 25px; }
+        .carousel-cards { inset-inline: 0; }
+        .carousel-card { width: 172px; }
+        .carousel-card.left { transform: translateX(-58%) translateY(29px) rotate(-7deg) scale(0.78); }
+        .carousel-card.right { transform: translateX(58%) translateY(29px) rotate(7deg) scale(0.78); }
+        .carousel-card.far-left, .carousel-card.far-right { opacity: 0; }
+        .hub-hero { grid-template-columns: 1fr; }
+        .hub-poster { min-height: 230px; }
+        .hub-info { padding: 25px; }
+        .section-heading { align-items: start; flex-direction: column; gap: 9px; }
+        .role-rail { grid-auto-columns: minmax(150px, 43vw); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+      }
+    </style>
+  </head>
+  <body data-theme="night">
+    <div class="app-shell">
+      <div class="ambient"></div>
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">✦</div>
+          <div>
+            <div class="brand-title">LLM PROJECT</div>
+            <div class="brand-subtitle">INTERACTIVE EXPERIENCE RUNTIME</div>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" id="themeToggle" type="button" aria-label="切换 Day / Night">☼</button>
+          <button class="icon-button" id="settingsButton" type="button" aria-label="打开设置">☷</button>
+        </div>
+      </header>
+
+      <div class="prototype-bar">
+        <div><strong>主页方案预览</strong> · 当前建议把主页从“功能目录”改为“体验大厅”</div>
+        <div class="variant-switcher" role="tablist" aria-label="选择主页方案">
+          <button class="variant-button active" data-variant="a" type="button">A · 舞台大厅</button>
+          <button class="variant-button" data-variant="b" type="button">B · 角色台</button>
+          <button class="variant-button" data-variant="c" type="button">C · 平衡中心</button>
+        </div>
+      </div>
+
+      <main id="app" aria-live="polite"></main>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="drawer" id="drawer" aria-label="设置预览">
+      <div class="drawer-head">
+        <div>
+          <div class="eyebrow">BACKSTAGE</div>
+          <h2>体验设置</h2>
+        </div>
+        <button class="icon-button" id="drawerClose" type="button" aria-label="关闭设置">×</button>
+      </div>
+      <p>设置、备份和创作能力保留在后台，不抢占主页的体验焦点。</p>
+      <div class="drawer-list">
+        <div class="drawer-item"><strong>界面主题</strong><button id="drawerTheme" type="button">Night</button></div>
+        <div class="drawer-item"><strong>角色库</strong><button type="button" data-toast="打开角色库">进入</button></div>
+        <div class="drawer-item"><strong>UI 创作工作室</strong><button type="button" data-toast="打开创作工作室">进入</button></div>
+        <div class="drawer-item"><strong>API 与数据</strong><button type="button" data-toast="打开 API 与数据设置">进入</button></div>
+      </div>
+    </aside>
+
+    <script>
+      const roles = {
+        mira: { name: 'Mira', title: '夜航观测员', desc: '夜航列车 · 第 04 节', symbol: '◒' },
+        lume: { name: 'Lume', title: '余烬里的信使', desc: '灰港 · 雨夜档案', symbol: '✧' },
+        riven: { name: 'Riven', title: '潮汐协议', desc: '深海节点 · 12:47', symbol: '◇' },
+        null: { name: 'Noct', title: '未命名世界', desc: '新体验等待建立', symbol: '○' },
+      };
+
+      let currentVariant = 'a';
+      let currentRole = 'mira';
+      let theme = 'night';
+
+      const app = document.getElementById('app');
+      const toast = document.getElementById('toast');
+      const drawer = document.getElementById('drawer');
+      const drawerBackdrop = document.getElementById('drawerBackdrop');
+
+      function roleCard(role, active = false) {
+        const data = roles[role];
+        return `
+          <button class="role-card ${active ? 'active' : ''}" data-role="${role}" type="button">
+            <div class="role-content">
+              <div class="role-symbol">${data.symbol}</div>
+              <h3>${data.name}</h3>
+              <p>${data.title}</p>
+            </div>
+          </button>`;
+      }
+
+      function stageView() {
+        return `
+          <section class="view-enter">
+            <div class="eyebrow">CONTINUE EXPERIENCE</div>
+            <h1>回到你的角色世界。</h1>
+            <p class="lede">主页不是功能目录，而是下一次互动开始的地方。先继续体验，再在需要时进入创作和管理。</p>
+            <div class="stage-layout" style="margin-top: 32px">
+              <article class="hero-stage">
+                <div class="hero-art"></div>
+                <div class="hero-copy">
+                  <div class="status-chip">上次体验 · 12 分钟前</div>
+                  <h2>${roles[currentRole].name}</h2>
+                  <p class="scene-line">${roles[currentRole].title} · ${roles[currentRole].desc}</p>
+                  <div class="hero-actions">
+                    <button class="primary-button" data-action="continue" type="button">继续体验 <span class="arrow">→</span></button>
+                    <button class="secondary-button" data-action="switch" type="button">切换角色</button>
+                  </div>
+                  <div class="hero-meta"><span>自由对话</span><span>夜航观测站</span><span>已保存</span></div>
+                </div>
+              </article>
+              <div class="side-stack">
+                <article class="side-card surface mode-card">
+                  <div><div class="side-icon">◈</div><strong>体验模式</strong><p>聊天是现在的入口，未来可以在同一舞台进入 Galgame、RPG 和互动小说。</p></div>
+                  <div class="mini-action" data-action="modes">查看模式 →</div>
+                </article>
+                <article class="side-card surface create-card">
+                  <div><div class="side-icon">＋</div><strong>创作入口</strong><p>角色、世界书和 UI Engine 都是为了让体验真正可玩。</p></div>
+                  <div class="mini-action" data-action="create">进入创作 →</div>
+                </article>
+              </div>
+            </div>
+            <div class="rail-section">
+              <div class="section-heading"><div><h2>角色台</h2><p>最近进入过的角色 · 点击角色可以打开正式选角</p></div><button class="quiet-button" data-action="switch" type="button">打开角色切换</button></div>
+              <div class="role-rail">${roleCard('mira', currentRole === 'mira')}${roleCard('lume', currentRole === 'lume')}${roleCard('riven', currentRole === 'riven')}${roleCard('null', currentRole === 'null')}</div>
+            </div>
+          </section>`;
+      }
+
+      function carouselCard(role, position) {
+        const data = roles[role];
+        return `<div class="carousel-card ${position}" data-role="${role}" style="--role-gradient: ${role === 'mira' ? 'radial-gradient(circle at 72% 24%, #b9c3ff, transparent 20%), linear-gradient(135deg, #182131, #4e609b 60%, #101521)' : role === 'lume' ? 'radial-gradient(circle at 22% 10%, #ffddb4, transparent 22%), linear-gradient(135deg, #542e39, #ba7c69 54%, #17131b)' : 'radial-gradient(circle at 68% 30%, #98e3d1, transparent 18%), linear-gradient(135deg, #112c31, #277978 57%, #0e161c)'}"><span class="card-symbol">${data.symbol}</span><span class="card-name">${data.name}</span></div>`;
+      }
+
+      function roleStageView() {
+        return `
+          <section class="view-enter">
+            <div class="eyebrow">ROLE STAGE</div>
+            <h1>先选一个世界，再进入对话。</h1>
+            <p class="lede">这一版把你现在最满意的角色切换体验提升为主页核心：浏览、聚焦、查看，然后进入角色。</p>
+            <div class="carousel-layout" style="margin-top: 32px">
+              <article class="carousel-stage">
+                <div class="carousel-cards">
+                  ${carouselCard('lume', 'far-left')}
+                  ${carouselCard('lume', 'left')}
+                  ${carouselCard(currentRole, 'center')}
+                  ${carouselCard('riven', 'right')}
+                  ${carouselCard('riven', 'far-right')}
+                </div>
+                <div class="carousel-caption"><div class="eyebrow">CURRENT ROLE</div><h2>${roles[currentRole].name}</h2><p>${roles[currentRole].title} · ${roles[currentRole].desc}</p><button class="primary-button" data-action="continue" type="button">进入体验 <span class="arrow">→</span></button></div>
+              </article>
+              <aside class="carousel-side surface">
+                <div><div class="eyebrow">WHY THIS WORKS</div><div class="side-title">把“切换角色”变成一次进入世界的仪式。</div><p>中间是当前焦点，两侧是可探索的上下文。详情和编辑不在第一层出现，避免主页重新变成工具菜单。</p><div class="rule-list"><div class="rule-item"><b>01</b><span>先浏览，不让所有角色同时争夺注意力。</span></div><div class="rule-item"><b>02</b><span>聚焦后才查看详情，信息逐层揭示。</span></div><div class="rule-item"><b>03</b><span>最后用一个明确动作进入角色。</span></div></div></div>
+                <button class="secondary-button" data-action="switch" type="button">打开完整角色轮盘</button>
+              </aside>
+            </div>
+          </section>`;
+      }
+
+      function hubView() {
+        return `
+          <section class="view-enter">
+            <div class="eyebrow">EXPERIENCE HUB</div>
+            <h1>你的下一段互动，从这里开始。</h1>
+            <p class="lede">这是更接近传统 App 的平衡方案：保留清晰入口，但让当前角色和继续体验拥有最高视觉权重。</p>
+            <div class="hub-grid" style="margin-top: 32px">
+              <article class="hub-hero surface">
+                <div class="hub-poster"></div>
+                <div class="hub-info"><div class="status-chip" style="color: var(--text); border-color: var(--line); background: var(--surface-soft);">最近体验</div><h2>${roles[currentRole].name}</h2><p>${roles[currentRole].title} · ${roles[currentRole].desc}<br>上次停留在一段尚未结束的对话中。</p><div class="hero-actions"><button class="primary-button" data-action="continue" type="button">继续体验 <span class="arrow">→</span></button><button class="secondary-button" data-action="switch" type="button">换一个</button></div></div>
+              </article>
+              <div class="hub-side">
+                <article class="hub-side-card surface"><div class="side-heading"><div><div class="eyebrow">RECENT CAST</div><h3 style="margin-top: 10px">最近角色</h3></div><div class="number">04</div></div><div class="mini-list"><div class="mini-row" data-role="mira"><div class="mini-dot"></div><strong>Mira</strong><span>12 分钟前</span></div><div class="mini-row" data-role="lume"><div class="mini-dot"></div><strong>Lume</strong><span>昨天</span></div><div class="mini-row" data-role="riven"><div class="mini-dot"></div><strong>Riven</strong><span>3 天前</span></div></div></article>
+                <article class="hub-side-card surface"><div class="eyebrow">CREATE WHEN NEEDED</div><h3 style="margin-top: 12px; font-size: 24px">把想法变成可玩的体验。</h3><p style="margin-top: 9px; color: var(--muted); font-size: 12px; line-height: 1.6">角色、世界书、背景和 UI Engine 都可以从这里继续。</p><button class="quiet-button" style="margin-top: 20px" data-action="create" type="button">打开创作入口 →</button></article>
+              </div>
+            </div>
+            <div class="rail-section"><div class="section-heading"><div><h2>体验模式</h2><p>同一个角色世界，可以拥有不同的玩法。</p></div></div><div class="role-rail"><button class="role-card active" type="button" data-action="mode-chat"><div class="role-content"><div class="role-symbol">◈</div><h3>自由聊天</h3><p>现在可用 · 角色互动</p></div></button><button class="role-card" type="button" data-action="mode-novel"><div class="role-content"><div class="role-symbol">✦</div><h3>互动小说</h3><p>体验模式 · 预留</p></div></button><button class="role-card" type="button" data-action="mode-rpg"><div class="role-content"><div class="role-symbol">◇</div><h3>RPG 模式</h3><p>体验模式 · 预留</p></div></button></div></div>
+          </section>`;
+      }
+
+      function render() {
+        app.innerHTML = currentVariant === 'a' ? stageView() : currentVariant === 'b' ? roleStageView() : hubView();
+        document.querySelectorAll('.variant-button').forEach(button => button.classList.toggle('active', button.dataset.variant === currentVariant));
+        bindInteractions();
+      }
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(showToast.timer);
+        showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200);
+      }
+
+      function bindInteractions() {
+        document.querySelectorAll('[data-role]').forEach(element => {
+          element.addEventListener('click', () => {
+            currentRole = element.dataset.role;
+            showToast(`已聚焦 ${roles[currentRole].name} · 再次点击“继续体验”进入角色`);
+            render();
+          });
+        });
+        document.querySelectorAll('[data-action]').forEach(element => {
+          element.addEventListener('click', () => {
+            const action = element.dataset.action;
+            if (action === 'continue') showToast(`正在进入 ${roles[currentRole].name} 的体验…`);
+            else if (action === 'switch') showToast('这里将打开正式的角色切换轮盘');
+            else if (action === 'create') showToast('创作入口将作为后台能力打开');
+            else if (action === 'modes') showToast('体验模式中心：聊天、Galgame、RPG、互动小说');
+            else if (action.startsWith('mode-')) showToast(`${action.slice(5)} 模式暂作为后续体验入口`);
+          });
+        });
+      }
+
+      document.querySelectorAll('.variant-button').forEach(button => button.addEventListener('click', () => {
+        currentVariant = button.dataset.variant;
+        render();
+      }));
+
+      function setTheme(next) {
+        theme = next;
+        document.body.dataset.theme = theme;
+        document.getElementById('themeToggle').textContent = theme === 'night' ? '☼' : '☾';
+        document.getElementById('drawerTheme').textContent = theme === 'night' ? 'Night' : 'Day';
+      }
+
+      document.getElementById('themeToggle').addEventListener('click', () => setTheme(theme === 'night' ? 'day' : 'night'));
+      document.getElementById('drawerTheme').addEventListener('click', () => setTheme(theme === 'night' ? 'day' : 'night'));
+      document.getElementById('settingsButton').addEventListener('click', () => { drawer.classList.add('show'); drawerBackdrop.classList.add('show'); });
+      document.getElementById('drawerClose').addEventListener('click', () => { drawer.classList.remove('show'); drawerBackdrop.classList.remove('show'); });
+      drawerBackdrop.addEventListener('click', () => { drawer.classList.remove('show'); drawerBackdrop.classList.remove('show'); });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') { drawer.classList.remove('show'); drawerBackdrop.classList.remove('show'); } });
+      document.querySelectorAll('[data-toast]').forEach(element => element.addEventListener('click', () => showToast(element.dataset.toast)));
+
+      render();
+    </script>
+  </body>
+</html>
