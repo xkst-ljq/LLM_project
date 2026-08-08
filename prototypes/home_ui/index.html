@@ -362,6 +362,208 @@
       .drawer-item strong { color: var(--text); font-size: 13px; }
       .drawer-item button { border: 0; color: var(--accent-strong); background: transparent; cursor: pointer; }
 
+      /* Variant D: portrait theater — mobile-first, vertically staged */
+      .portrait-page {
+        width: min(100%, 620px);
+        margin: 0 auto;
+        padding-bottom: 28px;
+      }
+      .portrait-intro {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 14px;
+        margin: 6px 4px 16px;
+      }
+      .portrait-intro h1 {
+        max-width: 420px;
+        margin-top: 10px;
+        font-size: clamp(28px, 7vw, 42px);
+      }
+      .portrait-intro .lede { display: none; }
+      .portrait-experience {
+        position: relative;
+        min-height: 700px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 31px;
+        background: #111722;
+        box-shadow: var(--shadow);
+        isolation: isolate;
+      }
+      .portrait-experience::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        inset: 0;
+        background:
+          radial-gradient(circle at 50% 25%, rgba(185, 195, 255, 0.46), transparent 17rem),
+          linear-gradient(180deg, rgba(11, 14, 22, 0.08) 0%, rgba(9, 12, 18, 0.25) 42%, rgba(8, 10, 15, 0.98) 90%),
+          linear-gradient(145deg, #1b2537, #4b5c91 47%, #0b1019);
+        transition: background 300ms var(--ease);
+      }
+      .portrait-experience[data-role="lume"]::before {
+        background:
+          radial-gradient(circle at 64% 18%, rgba(255, 218, 181, 0.5), transparent 15rem),
+          linear-gradient(180deg, rgba(38, 15, 23, 0.06) 0%, rgba(25, 11, 18, 0.22) 42%, rgba(9, 8, 13, 0.98) 90%),
+          linear-gradient(145deg, #4c2935, #b77868 48%, #161018);
+      }
+      .portrait-experience[data-role="riven"]::before {
+        background:
+          radial-gradient(circle at 36% 22%, rgba(150, 228, 211, 0.48), transparent 15rem),
+          linear-gradient(180deg, rgba(5, 25, 28, 0.06) 0%, rgba(4, 18, 21, 0.25) 42%, rgba(5, 11, 14, 0.98) 90%),
+          linear-gradient(145deg, #102f34, #287774 48%, #081216);
+      }
+      .portrait-experience::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        left: 50%;
+        top: 18%;
+        width: 48%;
+        aspect-ratio: 0.72;
+        border-radius: 50% 50% 24% 24%;
+        background: linear-gradient(160deg, rgba(230, 234, 255, 0.8), rgba(111, 128, 220, 0.18) 48%, rgba(8, 11, 19, 0.68));
+        transform: translateX(-50%) rotate(-5deg);
+        box-shadow: 0 35px 100px rgba(93, 111, 235, 0.3);
+        opacity: 0.78;
+      }
+      .portrait-topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 22px 22px 0;
+        color: rgba(243, 245, 255, 0.64);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+      }
+      .portrait-topline .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .portrait-topline .live::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--success);
+        box-shadow: 0 0 12px var(--success);
+      }
+      .portrait-topline button {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 50%;
+        background: rgba(0,0,0,0.18);
+        color: white;
+        cursor: pointer;
+      }
+      .portrait-content {
+        display: flex;
+        flex-direction: column;
+        justify-content: end;
+        min-height: 640px;
+        padding: 0 22px 25px;
+      }
+      .portrait-symbol {
+        display: grid;
+        place-items: center;
+        width: 84px;
+        height: 84px;
+        margin: auto auto 30px;
+        border: 1px solid rgba(255,255,255,0.35);
+        border-radius: 27px;
+        background: rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.9);
+        box-shadow: 0 0 34px var(--accent-glow);
+        backdrop-filter: blur(12px);
+        font-size: 40px;
+      }
+      .portrait-copy { max-width: 480px; }
+      .portrait-copy .status-chip { background: rgba(3,6,12,0.26); }
+      .portrait-copy h2 {
+        margin-top: 15px;
+        color: white;
+        font-size: clamp(45px, 13vw, 76px);
+        line-height: 0.88;
+        letter-spacing: -0.075em;
+      }
+      .portrait-copy p {
+        margin-top: 13px;
+        color: rgba(242,245,255,0.73);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .portrait-actions { display: grid; grid-template-columns: 1fr auto; gap: 9px; margin-top: 23px; }
+      .portrait-actions .primary-button { min-height: 52px; }
+      .portrait-actions .secondary-button { min-width: 52px; padding: 0 15px; border-color: rgba(255,255,255,0.23); background: rgba(255,255,255,0.1); color: white; }
+      .portrait-meta { display: flex; gap: 10px; margin-top: 18px; color: rgba(242,245,255,0.55); font-size: 11px; }
+      .portrait-meta span { display: inline-flex; align-items: center; gap: 5px; }
+      .portrait-meta span::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+      .portrait-section { margin-top: 33px; }
+      .portrait-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+      .portrait-section-head h2 { font-size: 18px; }
+      .portrait-section-head p { margin-top: 4px; color: var(--quiet); font-size: 11px; }
+      .portrait-role-list { display: grid; gap: 8px; }
+      .portrait-role {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        min-height: 66px;
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 17px;
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        text-align: left;
+        transition: transform 180ms var(--ease), border-color 180ms var(--ease), background-color 180ms var(--ease);
+      }
+      .portrait-role:hover { transform: translateX(3px); border-color: var(--line-strong); background: var(--surface-hover); }
+      .portrait-role.active { border-color: var(--accent); background: var(--accent-soft); }
+      .portrait-role-art { position: relative; flex: 0 0 47px; width: 47px; height: 47px; overflow: hidden; border-radius: 13px; background: var(--role-gradient); }
+      .portrait-role-art::after { content: ""; position: absolute; inset: 35% 7% -7%; border-radius: 50% 50% 0 0; background: rgba(255,255,255,0.32); }
+      .portrait-role-copy { min-width: 0; }
+      .portrait-role-copy strong { display: block; font-size: 14px; }
+      .portrait-role-copy span { display: block; margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+      .portrait-role .role-arrow { margin-left: auto; padding: 0 9px; color: var(--quiet); font-size: 18px; }
+      .portrait-role[data-role="mira"] .portrait-role-art { --role-gradient: linear-gradient(135deg, #b9c3ff, #334577); }
+      .portrait-role[data-role="lume"] .portrait-role-art { --role-gradient: linear-gradient(135deg, #ffd4ab, #7c4153); }
+      .portrait-role[data-role="riven"] .portrait-role-art { --role-gradient: linear-gradient(135deg, #9ce3d3, #27686b); }
+      .portrait-role[data-role="null"] .portrait-role-art { --role-gradient: linear-gradient(135deg, #c4c8d7, #555c6c); }
+      .portrait-dock {
+        position: sticky;
+        bottom: 14px;
+        z-index: 4;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        margin-top: 18px;
+        padding: 6px;
+        border: 1px solid var(--line-strong);
+        border-radius: 21px;
+        background: color-mix(in srgb, var(--surface-solid) 82%, transparent);
+        box-shadow: var(--small-shadow);
+        backdrop-filter: blur(18px);
+      }
+      .portrait-dock button {
+        min-height: 46px;
+        border: 0;
+        border-radius: 15px;
+        background: transparent;
+        color: var(--quiet);
+        cursor: pointer;
+        font-size: 11px;
+        transition: background-color 180ms var(--ease), color 180ms var(--ease), transform 180ms var(--ease);
+      }
+      .portrait-dock button:hover, .portrait-dock button.active { background: var(--accent-soft); color: var(--accent-strong); }
+      .portrait-dock button:active { transform: scale(0.95); }
+
       @media (max-width: 980px) {
         .stage-layout, .carousel-layout, .hub-grid { grid-template-columns: 1fr; }
         .side-stack { grid-template-columns: 1fr 1fr; grid-template-rows: none; }
@@ -419,6 +621,7 @@
           <button class="variant-button active" data-variant="a" type="button">A · 舞台大厅</button>
           <button class="variant-button" data-variant="b" type="button">B · 角色台</button>
           <button class="variant-button" data-variant="c" type="button">C · 平衡中心</button>
+          <button class="variant-button" data-variant="d" type="button">D · 竖屏剧场</button>
         </div>
       </div>
 
@@ -561,8 +764,40 @@
           </section>`;
       }
 
+      function portraitRole(role) {
+        const data = roles[role];
+        return `
+          <button class="portrait-role ${currentRole === role ? 'active' : ''}" data-role="${role}" type="button">
+            <span class="portrait-role-art"></span>
+            <span class="portrait-role-copy"><strong>${data.name}</strong><span>${data.title} · ${data.desc}</span></span>
+            <span class="role-arrow">›</span>
+          </button>`;
+      }
+
+      function portraitView() {
+        const data = roles[currentRole];
+        return `
+          <section class="portrait-page view-enter">
+            <div class="portrait-intro">
+              <div><div class="eyebrow">YOUR STORY</div><h1>继续上次的体验。</h1></div>
+              <button class="quiet-button" data-action="switch" type="button">换角</button>
+            </div>
+            <article class="portrait-experience" data-role="${currentRole}">
+              <div class="portrait-topline"><span class="live">LIVE SESSION</span><button data-action="settings" type="button" aria-label="打开体验设置">☷</button></div>
+              <div class="portrait-content">
+                <div class="portrait-symbol">${data.symbol}</div>
+                <div class="portrait-copy"><div class="status-chip">上次体验 · 12 分钟前</div><h2>${data.name}</h2><p>${data.title} · ${data.desc}<br>上次停留在一段尚未结束的对话中。</p></div>
+                <div class="portrait-actions"><button class="primary-button" data-action="continue" type="button">继续体验 <span class="arrow">→</span></button><button class="secondary-button" data-action="switch" type="button" aria-label="切换角色">↗</button></div>
+                <div class="portrait-meta"><span>自由对话</span><span>已保存</span></div>
+              </div>
+            </article>
+            <section class="portrait-section"><div class="portrait-section-head"><div><h2>角色台</h2><p>点击角色，打开正式选角</p></div><button class="quiet-button" data-action="switch" type="button">全部</button></div><div class="portrait-role-list">${portraitRole('mira')}${portraitRole('lume')}${portraitRole('riven')}</div></section>
+            <nav class="portrait-dock" aria-label="体验导航"><button class="active" data-action="continue" type="button">◈<br>体验</button><button data-action="switch" type="button">✦<br>角色</button><button data-action="create" type="button">＋<br>创作</button><button data-action="settings" type="button">☷<br>更多</button></nav>
+          </section>`;
+      }
+
       function render() {
-        app.innerHTML = currentVariant === 'a' ? stageView() : currentVariant === 'b' ? roleStageView() : hubView();
+        app.innerHTML = currentVariant === 'a' ? stageView() : currentVariant === 'b' ? roleStageView() : currentVariant === 'c' ? hubView() : portraitView();
         document.querySelectorAll('.variant-button').forEach(button => button.classList.toggle('active', button.dataset.variant === currentVariant));
         bindInteractions();
       }
@@ -588,6 +823,7 @@
             if (action === 'continue') showToast(`正在进入 ${roles[currentRole].name} 的体验…`);
             else if (action === 'switch') showToast('这里将打开正式的角色切换轮盘');
             else if (action === 'create') showToast('创作入口将作为后台能力打开');
+            else if (action === 'settings') { drawer.classList.add('show'); drawerBackdrop.classList.add('show'); }
             else if (action === 'modes') showToast('体验模式中心：聊天、Galgame、RPG、互动小说');
             else if (action.startsWith('mode-')) showToast(`${action.slice(5)} 模式暂作为后续体验入口`);
           });
