@@ -203,53 +203,46 @@ If hasUi=false, still return evidenceSummary, sourceRefs, unsupported and notes;
 ''';
 
   /// 精简版知识库：只保留让 AI 输出合法 UiDesignPlan 的最小必需信息。
-  ///
-  /// 用于「单轮全量注入」——prompt 太大是空返回的根因（黑曜石卡实测
-  /// 知识库 23k 字符 + 证据包 57k 字符 ≈ 40k tokens，模型直接空回复）。
-  /// 这个版本砍掉大部分散文规则，只留：
-  ///   - 硬性输出规则
-  ///   - UiDesignPlan schema（字段级）
-  ///   - 少量关键指引（mode 语义 / 布局意图 / 常见陷阱）
-  ///
-  /// 完整版本见 [compactPrompt]（调试/精修时可用）。
   static String compactPromptSlim() => '''
-# LLM Project UIEngine — 精简知识库
+# LLM Project UIEngine — 核心知识库
 Knowledge version: $knowledgeVersion
 
-你只输出高层 UiDesignPlan JSON（不要内部 assembly JSON，不要 markdown，不要解释）。
-可以输出单个对象，或用顶层 {"assemblies": [...]} 表达多个生命周期（如 opening + scene）。
+你负责输出高层 UiDesignPlan JSON。
+
+# 视觉与布局核心契约
+1. **视觉风格 (visualStyle)**：**严禁无脑使用默认配色**。必须根据角色描述（description/personality）定制主题色。
+   - `pcbColor`: PCB 底板色；`panelColor`: 容器面板色。
+   - `accentColor`: 交互高亮色；`barFillColor`: 进度条填充色。
+   - 示例：黑暗地牢卡可用 #1A1A1A 底 + #8B0000 鲜血红；清新校园卡可用 #F0F8FF 底 + #87CEEB 天空蓝。
+2. **布局意图 (layout)**：
+   - `columns`: 页面的网格列数 (1-3)。数值类字段多时，设为 2 或 3 以紧凑显示。
+   - `pages`: 合理划分子页面。`role=story` 的 base 页是 scene 的核心；低频详情（任务、档案）用 `type=overlay` 叠加页。
+   - `span`: 字段跨度。长文本字段（任务板、描述）设为 2（占满行）。
+3. **多生命周期 (assemblies)**：
+   - 原卡有开场分支按钮 → 必须包含 `uiMode=opening`。
+   - 原卡有常驻状态栏/面板/正文包裹 → 必须包含 `uiMode=scene`。
+   - 识别 scene 信号：`<生命>` 等标签、`{PlayerStatus|...}`、`<正文>` 包裹、regex 仪表盘。
 
 # UiDesignPlan schema
 {
   "hasUi": true/false,
   "confidence": 0.0~1.0,
   "uiMode": "opening|scene|extra_sticky|extra_companion",
-  "uiName": "简短名称",
-  "evidenceSummary": "为什么有/没有 UI",
+  "uiName": "主题名 (如: 冒险者终端)",
+  "evidenceSummary": "...",
   "sourceRefs": ["data..."],
-  "visualStyle": {"styleName":"...","pcbColor":"#111318","panelColor":"#1E232B","titleColor":"#FFFFFF","labelColor":"#AAB0BC","valueColor":"#E8EDF5","accentColor":"#4FA3D1","buttonBgColor":"#2A3340","barFillColor":"#4FA3D1","barTrackColor":"#2A2D36","borderRadius":14,"glow":false},
-  "layout": {"kind":"opening_choices|scene_dashboard|single_panel","navigation":"tabs|swipe|tabs_and_swipe|none","columns":1,"pages":[{"title":"页面","role":"story|stats|tasks|form","type":"base|overlay","parentPage":"父页","columns":1,"density":"compact|normal|spacious","fill":true}]},
-  "fields": [{"name":"字段名","sourceKey":"Key","group":"精确分组","type":"number|text|bool","display":"progress|text|badge","overflow":"ellipsis|wrap|scroll","initialValue":"...","branchInitialValues":{"1":"..."},"min":0,"max":100,"owner":"player|char|neutral","span":1,"page":"页面","sourceRef":"证据路径"}],
-  "inputs": [{"name":"输入名","sourceKey":"UserProfile_Name","placeholder":"...","initialValue":"","sendOnSubmit":false,"targetKind":"status_field|none","page":"页面","sourceRef":"证据路径"}],
-  "actions": [{"label":"按钮文案","sendText":"发送文本；opening 分支按钮通常留空","keyAction":false,"branchIndex":0,"page":"页面","sourceRef":"证据路径"}],
-  "unsupported": [{"kind":"...","reason":"...","sourceRef":"..."}],
-  "notes": []
+  "visualStyle": {"styleName":"主题风格名","pcbColor":"#RRGGBB","panelColor":"#RRGGBB","titleColor":"#FFFFFF","labelColor":"#AAB0BC","valueColor":"#E8EDF5","accentColor":"#RRGGBB","buttonBgColor":"#RRGGBB","barFillColor":"#RRGGBB","barTrackColor":"#RRGGBB","borderRadius":14,"glow":false},
+  "layout": {"kind":"scene_dashboard|opening_choices|single_panel","navigation":"tabs_and_swipe|swipe|none","columns":1,"pages":[{"title":"页面名","role":"story|stats|tasks|form","type":"base|overlay","parentPage":"父页ID","columns":1,"density":"compact|normal|spacious","fill":true}]},
+  "fields": [{"name":"名","sourceKey":"Key","group":"分组","type":"number|text","display":"progress|text|badge","overflow":"ellipsis|wrap|scroll","initialValue":"...","span":1,"page":"页面名","sourceRef":"..."}],
+  "inputs": [{"name":"名","sourceKey":"UserProfile_Name","placeholder":"...","initialValue":"","sendOnSubmit":false,"targetKind":"status_field|none","page":"页面名","sourceRef":"..."}],
+  "actions": [{"label":"文案","sendText":"...","branchIndex":0,"page":"页面名","sourceRef":"..."}],
+  "unsupported": [], "notes": []
 }
 
-# 关键规则
-- 原卡没有明确 UI 证据时 hasUi=false。
-- 每个字段/动作/输入必须有 sourceRef；没有证据不要生成。
-- 不要凭空设计 UI；优先忠实迁移原卡 UI 语义，再做移动端适配。
-- opening：只做开场方向选择与少量资料输入；不要放完整状态栏/任务板。
-- scene：必须有 role=story 的 base 页以插入 message_flow；任务/状态/羁绊等
-  低频详情用 overlay 页。长任务板/好友列表 initialValue 可用
-  "__AUTO_QUEST_BOARD__" / "__AUTO_FRIENDS_ALBUM_EMPTY__" 让 Dart 填充。
-- 用 columns/density/fill/span 控制空间分配；meaningful text 不要 ellipsis。
-- UI 依赖外部 JS 运行时写入 unsupported，除非证据中有静态可还原内容。
-- 保持相关内容物理邻近；避免一字段一行的稀疏布局浪费 PCB。
-- **多生命周期**：原卡既有「开局分支选择」又有「常驻状态栏/面板/正文」时，
-  必须输出 assemblies: [opening, scene] 两个方案，不要只挑一个。
-  识别常驻面板：`<生命>` `<精神>` `<体力>` 等状态标签、`{PlayerStatus|...}`、
-  `<Alliance>`/`<正文>` 包裹、regex 状态栏/仪表盘 HTML。
+# 严禁事项
+- 没有 UI 证据时 hasUi=false。
+- 不要凭空捏造字段；每个元素必须有 sourceRef。
+- 不要让布局太稀疏，一字段一行在移动端很丑。
 ''';
+
 }
