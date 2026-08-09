@@ -698,9 +698,11 @@ class _ModulePreviewTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PhysicalShape(
+    return SizedBox(
       key: entry.key,
-      clipper: _SlantedSurfaceClipper(),
+      height: 84,
+      child: PhysicalShape(
+        clipper: _SlantedSurfaceClipper(),
       color: tokens.surfaceElevated,
       shadowColor: tokens.shadow,
       elevation: tokens.elevationLow,
@@ -746,6 +748,7 @@ class _ModulePreviewTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }
