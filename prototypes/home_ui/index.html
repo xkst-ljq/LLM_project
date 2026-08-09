@@ -525,7 +525,7 @@
             currentRole = pickerSelection;
             pickerSelection = null;
             closeRolePicker();
-            renderScreen();
+            renderScreen(false);
             showToast(`已将 ${roles[currentRole].name} 换到主页`);
             return;
           }
@@ -551,10 +551,14 @@
         rolePickerBackdrop.classList.remove('show');
       }
 
-      function renderScreen() {
+      function renderScreen(animate = true) {
         device.innerHTML = screenMarkup();
         const screen = device.querySelector('.screen');
-        requestAnimationFrame(() => requestAnimationFrame(() => screen.classList.add('ready')));
+        if (animate) {
+          requestAnimationFrame(() => requestAnimationFrame(() => screen.classList.add('ready')));
+        } else {
+          screen.classList.add('ready');
+        }
         device.querySelectorAll('[data-action]').forEach(element => element.addEventListener('click', () => {
           const action = element.dataset.action;
           if (element.classList.contains('module-item')) {
@@ -569,7 +573,7 @@
       function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200); }
       function openSettings() { settingsDrawer.classList.add('show'); settingsBackdrop.classList.add('show'); }
       function closeSettings() { settingsDrawer.classList.remove('show'); settingsBackdrop.classList.remove('show'); }
-      function toggleTheme() { theme = theme === 'day' ? 'night' : 'day'; document.body.dataset.theme = theme; renderScreen(); }
+      function toggleTheme() { theme = theme === 'day' ? 'night' : 'day'; document.body.dataset.theme = theme; renderScreen(false); }
       function handleAction(action) {
         if (action === 'theme') toggleTheme();
         else if (action === 'recent-roles') openRolePicker();
