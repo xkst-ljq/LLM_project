@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>LLM Project · New User Home</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --canvas: #f8faf9;
+        --canvas-deep: #edf3f1;
+        --text: #20242d;
+        --muted: #727984;
+        --quiet: #a4abb1;
+        --line: rgba(42, 52, 67, 0.16);
+        --line-soft: rgba(42, 52, 67, 0.08);
+        --accent: #5966c4;
+        --accent-deep: #4551aa;
+        --accent-soft: rgba(89, 102, 196, 0.12);
+        --stage: #67bdb4;
+        --surface: rgba(255, 255, 255, 0.82);
+        --shadow: 0 24px 70px rgba(54, 62, 76, 0.15);
+        --module-a: #b99756;
+        --module-b: #5e8edb;
+        --module-c: #d97176;
+        --module-d: #536366;
+        --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+      }
+      [data-theme="night"] {
+        color-scheme: dark;
+        --canvas: #0b1018;
+        --canvas-deep: #101a24;
+        --text: #f1f4fb;
+        --muted: #a3adbb;
+        --quiet: #697486;
+        --line: rgba(216, 225, 255, 0.22);
+        --line-soft: rgba(216, 225, 255, 0.1);
+        --accent: #a6b0ff;
+        --accent-deep: #7d89ed;
+        --accent-soft: rgba(166, 176, 255, 0.16);
+        --stage: #7ed8ca;
+        --surface: rgba(21, 29, 40, 0.82);
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+        --module-a: #ae884b;
+        --module-b: #5f90db;
+        --module-c: #d16b76;
+        --module-d: #5a6a6d;
+      }
+      * { box-sizing: border-box; }
+      html, body { min-width: 320px; min-height: 100%; }
+      body {
+        display: grid;
+        place-items: center;
+        min-height: 100svh;
+        margin: 0;
+        overflow: hidden;
+        background: radial-gradient(circle at 50% 0%, rgba(104, 119, 218, 0.14), transparent 34rem), var(--canvas);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+        transition: background-color 260ms var(--ease), color 260ms var(--ease);
+      }
+      button { font: inherit; }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      .device { position: relative; width: min(100vw, 430px); height: min(100svh, 900px); min-height: 680px; overflow: hidden; border: 1px solid var(--line); border-radius: 38px; background: var(--canvas); box-shadow: var(--shadow); }
+      @media (max-width: 520px) { body { display: block; } .device { width: 100vw; height: 100svh; min-height: 100svh; border: 0; border-radius: 0; box-shadow: none; } }
+
+      .screen { position: relative; height: 100%; overflow: hidden; background: radial-gradient(ellipse at 4% 76%, rgba(103, 189, 180, 0.12), transparent 14rem), linear-gradient(145deg, transparent 0 60%, var(--canvas-deep) 100%), var(--canvas); isolation: isolate; }
+      .screen::before { content: ""; position: absolute; z-index: -2; top: 24%; right: -35%; width: 113%; height: 42%; border: 1px solid var(--line-soft); border-radius: 50%; transform: rotate(-57deg); box-shadow: 0 0 0 25px var(--line-soft), 0 0 0 75px var(--line-soft); opacity: 0.42; pointer-events: none; }
+      .screen::after { content: ""; position: absolute; z-index: -2; top: 51%; left: -22%; width: 150%; height: 1px; background: linear-gradient(90deg, transparent, var(--line), transparent); transform: rotate(-57deg); opacity: 0.48; pointer-events: none; }
+
+      .screen:not(.ready) .brand, .screen:not(.ready) .top-actions, .screen:not(.ready) .empty-role, .screen:not(.ready) .empty-stage, .screen:not(.ready) .module-rail { opacity: 0; }
+      .screen:not(.ready) .brand, .screen:not(.ready) .top-actions { transform: translateY(-8px); }
+      .screen:not(.ready) .empty-role { transform: translate(-24px, -8px); }
+      .screen:not(.ready) .empty-stage { transform: translateY(12px); }
+      .screen:not(.ready) .module-rail { transform: translateX(22px); }
+      .screen.ready .brand, .screen.ready .top-actions, .screen.ready .empty-role, .screen.ready .empty-stage, .screen.ready .module-rail { opacity: 1; transform: none; transition: opacity 360ms var(--ease), transform 520ms var(--ease); }
+      .screen.ready .brand { transition-delay: 40ms; }
+      .screen.ready .top-actions { transition-delay: 90ms; }
+      .screen.ready .empty-role { transition-delay: 140ms; }
+      .screen.ready .empty-stage { transition-delay: 240ms; }
+      .screen.ready .module-rail { transition-delay: 330ms; }
+      .screen.ready .module-item { animation: module-in 360ms var(--ease) both; }
+      .screen.ready .module-item:nth-child(1) { animation-delay: 390ms; }
+      .screen.ready .module-item:nth-child(2) { animation-delay: 435ms; }
+      .screen.ready .module-item:nth-child(3) { animation-delay: 480ms; }
+      .screen.ready .module-item:nth-child(4) { animation-delay: 525ms; }
+      @keyframes module-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+
+      .brand { position: absolute; z-index: 7; top: max(17px, env(safe-area-inset-top)); left: 22px; display: flex; align-items: center; gap: 9px; color: var(--accent); font-size: 13px; font-weight: 850; letter-spacing: 0.12em; }
+      .brand-mark { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); transform: rotate(45deg); box-shadow: 0 0 12px var(--accent); }
+      .top-actions { position: absolute; z-index: 8; top: max(14px, env(safe-area-inset-top)); right: 18px; }
+      .top-action { display: grid; place-items: center; width: 35px; height: 35px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; transition: transform 180ms var(--ease), color 180ms var(--ease), background-color 180ms var(--ease); }
+      .top-action:hover { color: var(--text); background: var(--canvas-deep); transform: translateY(-2px); }
+
+      .empty-role { position: absolute; z-index: 5; top: 119px; left: 12px; width: 76%; height: 171px; padding: 25px 24px; overflow: hidden; clip-path: polygon(0 0, 94% 0, 100% 12%, 92% 100%, 2% 94%); border: 0; background: linear-gradient(112deg, rgba(255,255,255,0.12), transparent 52%), linear-gradient(128deg, var(--accent), var(--accent-deep)); color: white; cursor: pointer; text-align: left; box-shadow: 12px 17px 0 rgba(64, 78, 178, 0.08), 0 19px 35px rgba(67, 79, 170, 0.18); transition: transform 230ms var(--ease), filter 230ms var(--ease), box-shadow 230ms var(--ease); }
+      .empty-role::before { content: ""; position: absolute; top: -65px; right: 18px; width: 174px; height: 174px; border: 1px solid rgba(255,255,255,0.18); border-radius: 50%; box-shadow: 0 0 0 19px rgba(255,255,255,0.035), 0 0 0 43px rgba(255,255,255,0.025); }
+      .empty-role::after { content: "START HERE"; position: absolute; right: 28px; top: 27px; color: rgba(255,255,255,0.52); font-size: 8px; font-weight: 900; letter-spacing: 0.15em; writing-mode: vertical-rl; }
+      .empty-role:hover { filter: brightness(1.06); transform: translate(2px, -2px); }
+      .empty-role:active { transform: scale(0.98); }
+      .empty-kicker { position: absolute; z-index: 1; top: 25px; left: 24px; color: rgba(255,255,255,0.64); font-size: 9px; font-weight: 850; letter-spacing: 0.18em; }
+      .empty-title { position: absolute; z-index: 1; top: 45px; left: 24px; font-size: 29px; font-weight: 780; letter-spacing: -0.06em; }
+      .empty-detail { position: absolute; z-index: 1; right: 88px; bottom: 20px; left: 24px; color: rgba(255,255,255,0.82); font-size: 11px; }
+      .empty-arrow { position: absolute; z-index: 2; right: 29px; bottom: 17px; display: grid; place-items: center; width: 49px; height: 38px; clip-path: polygon(13% 0, 100% 10%, 88% 100%, 0 88%); background: white; color: #1c2230; font-size: 23px; }
+      .empty-role::marker { content: none; }
+
+      .empty-stage { position: absolute; z-index: 1; top: 319px; right: 45%; bottom: 17px; left: 13px; pointer-events: none; }
+      .empty-glow { position: absolute; left: 50%; bottom: 13%; width: 205px; height: 140px; border-radius: 50%; background: radial-gradient(ellipse, rgba(103, 189, 180, 0.18), transparent 68%); filter: blur(11px); transform: translateX(-50%); animation: empty-breathe 6s ease-in-out infinite; }
+      .empty-ring { position: absolute; left: 50%; bottom: 11%; width: 158px; height: 55px; border: 1px solid rgba(103, 189, 180, 0.43); border-radius: 50%; transform: translateX(-50%) rotate(-13deg); animation: empty-orbit 9s ease-in-out infinite; }
+      .empty-ring::before, .empty-ring::after { content: ""; position: absolute; border: 1px solid rgba(103, 189, 180, 0.18); border-radius: 50%; }
+      .empty-ring::before { inset: -16px 22px; transform: rotate(22deg); }
+      .empty-ring::after { inset: 13px -21px; transform: rotate(-28deg); }
+      .empty-stage-copy { position: absolute; left: 50%; bottom: 7%; color: var(--quiet); font-size: 8px; font-weight: 850; letter-spacing: 0.17em; opacity: 0.78; transform: translateX(-50%); white-space: nowrap; }
+      .empty-stage-copy strong { display: block; margin-bottom: 5px; color: var(--stage); font-size: 10px; font-weight: 850; letter-spacing: 0.1em; text-align: center; }
+      @keyframes empty-breathe { 0%, 100% { opacity: 0.58; transform: translateX(-50%) scale(0.96); } 50% { opacity: 0.98; transform: translateX(-50%) scale(1.05); } }
+      @keyframes empty-orbit { 0%, 100% { transform: translateX(-50%) rotate(-13deg) scale(0.98); } 50% { transform: translateX(-50%) rotate(-7deg) scale(1.04); } }
+
+      .module-rail { position: absolute; z-index: 6; right: 12px; bottom: max(22px, env(safe-area-inset-bottom)); width: 45%; height: 48%; overflow: hidden; padding: 4px 0 4px 4px; }
+      .rail-head { display: flex; align-items: center; justify-content: space-between; margin: 0 8px 10px 12px; color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: 0.15em; }
+      .rail-head .rail-count { color: var(--quiet); font-size: 11px; letter-spacing: 0; }
+      .module-list { display: grid; gap: 7px; height: calc(100% - 27px); padding: 2px 4px 14px 0; overflow-y: auto; scrollbar-width: none; }
+      .module-list::-webkit-scrollbar { display: none; }
+      .module-item { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr) 17px; align-items: center; gap: 8px; min-height: 62px; padding: 6px 7px 6px 8px; border: 1px solid var(--line-soft); border-radius: 13px 6px 13px 6px; background: var(--surface); color: var(--text); cursor: pointer; text-align: left; box-shadow: 5px 6px 0 rgba(48, 60, 84, 0.05); transition: transform 180ms var(--ease), border-color 180ms var(--ease), background-color 180ms var(--ease), box-shadow 180ms var(--ease); }
+      .module-item::after { content: ""; position: absolute; right: 9px; bottom: 0; left: 54px; height: 1px; background: var(--module-accent); opacity: 0.64; }
+      .module-item:hover { border-color: var(--module-accent); background: var(--surface); box-shadow: 7px 9px 0 rgba(48, 60, 84, 0.07); transform: translateX(-3px); }
+      .module-item:active { transform: scale(0.97); }
+      .module-item:first-child { --module-accent: var(--module-a); animation: module-focus 3.8s var(--ease) 1.1s 2; }
+      .module-item:nth-child(2) { --module-accent: var(--module-b); }
+      .module-item:nth-child(3) { --module-accent: var(--module-c); }
+      .module-item:nth-child(4) { --module-accent: var(--module-d); }
+      .module-symbol { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--module-accent); border-radius: 9px 4px 9px 4px; background: color-mix(in srgb, var(--module-accent) 15%, transparent); color: var(--module-accent); font-size: 14px; }
+      .module-copy { min-width: 0; }
+      .module-copy strong { display: block; overflow: hidden; color: var(--text); font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+      .module-copy span { display: block; overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+      .module-arrow { color: var(--module-accent); font-size: 18px; }
+      .rail-scroll-hint { position: absolute; right: 1px; bottom: 1px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; background: var(--canvas); color: var(--muted); font-size: 12px; pointer-events: none; }
+      @keyframes module-focus { 0%, 100% { transform: translateX(0); box-shadow: 5px 6px 0 rgba(48, 60, 84, 0.05); } 12%, 25% { transform: translateX(-3px); box-shadow: 8px 9px 0 rgba(185, 151, 86, 0.18); } 38% { transform: translateX(0); } }
+
+      .settings-backdrop { position: fixed; z-index: 20; inset: 0; display: none; background: rgba(3,5,9,0.42); backdrop-filter: blur(4px); }
+      .settings-backdrop.show { display: block; }
+      .settings-drawer { position: fixed; z-index: 21; top: 0; right: 0; bottom: 0; width: min(350px, 88vw); padding: max(24px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom)); border-left: 1px solid var(--line); background: var(--surface); box-shadow: -24px 0 70px rgba(0,0,0,0.24); transform: translateX(105%); transition: transform 300ms var(--ease); backdrop-filter: blur(20px); }
+      .settings-drawer.show { transform: translateX(0); }
+      .drawer-handle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+      .drawer-kicker { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: 0.17em; }
+      .settings-drawer h2 { margin: 7px 0 0; font-size: 23px; letter-spacing: -0.05em; }
+      .settings-close { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; font-size: 22px; }
+      .settings-drawer p { margin: 18px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .settings-row { display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid var(--line); font-size: 13px; }
+      .settings-row span:last-child { color: var(--quiet); font-size: 18px; }
+      .settings-theme { color: var(--accent) !important; cursor: pointer; }
+      .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; backdrop-filter: blur(15px); }
+      .toast.show { opacity: 1; transform: translateY(0); }
+      @media (max-height: 750px) { .empty-role { top: 93px; height: 150px; } .empty-stage { top: 296px; } .module-rail { height: 44%; } }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; } }
+    </style>
+  </head>
+  <body data-theme="day">
+    <div class="device" id="device"></div>
+    <div class="settings-backdrop" id="settingsBackdrop"></div>
+    <aside class="settings-drawer" id="settingsDrawer" aria-label="设置面板"><div class="drawer-handle"><div><div class="drawer-kicker">BACKSTAGE</div><h2>设置</h2></div><button class="settings-close" id="settingsClose" type="button">×</button></div><p>从右侧边缘侧滑打开设置。先选择一个角色，再开始第一次体验。</p><div style="margin-top:25px"><div class="settings-row"><span>界面主题</span><span class="settings-theme" id="settingsTheme" role="button" tabindex="0">Day / Night</span></div><div class="settings-row"><span>API 配置</span><span>›</span></div><div class="settings-row"><span>用户设定</span><span>›</span></div></div></aside>
+    <div class="toast" id="toast" role="status"></div>
+
+    <script>
+      const modules = [
+        { name: '角色库', sub: '从这里导入或创建角色', symbol: '◎', action: 'roles' },
+        { name: '世界书库', sub: '世界、地点与设定', symbol: '◇', action: 'worlds' },
+        { name: '背景图库', sub: '为体验选择背景', symbol: '▱', action: 'backgrounds' },
+        { name: 'UI 模组库', sub: '角色专属界面', symbol: '✦', action: 'ui' },
+      ];
+      let theme = 'day';
+      let edgeStartX = null;
+      const device = document.getElementById('device');
+      const toast = document.getElementById('toast');
+      const settingsDrawer = document.getElementById('settingsDrawer');
+      const settingsBackdrop = document.getElementById('settingsBackdrop');
+      const settingsClose = document.getElementById('settingsClose');
+      const settingsTheme = document.getElementById('settingsTheme');
+
+      function moduleMarkup(item) { return `<button class="module-item" data-action="${item.action}" type="button"><span class="module-symbol">${item.symbol}</span><span class="module-copy"><strong>${item.name}</strong><span>${item.sub}</span></span><span class="module-arrow">›</span></button>`; }
+      function screenMarkup() { return `<div class="screen"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><button class="empty-role" data-action="library" type="button"><span class="empty-kicker">FIRST EXPERIENCE</span><span class="empty-title">开始第一次体验</span><span class="empty-detail">从角色库导入或创建一个角色</span><span class="empty-arrow">→</span></button><div class="empty-stage" aria-label="等待角色登场的看板区域"><div class="empty-glow"></div><div class="empty-ring"></div><div class="empty-stage-copy"><strong>YOUR STAGE</strong>等待第一个角色登场</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">04</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`; }
+      function renderScreen() { device.innerHTML = screenMarkup(); const screen = device.querySelector('.screen'); requestAnimationFrame(() => requestAnimationFrame(() => screen.classList.add('ready'))); device.querySelectorAll('[data-action]').forEach(element => element.addEventListener('click', () => handleAction(element.dataset.action))); }
+      function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200); }
+      function openSettings() { settingsDrawer.classList.add('show'); settingsBackdrop.classList.add('show'); }
+      function closeSettings() { settingsDrawer.classList.remove('show'); settingsBackdrop.classList.remove('show'); }
+      function toggleTheme() { theme = theme === 'day' ? 'night' : 'day'; document.body.dataset.theme = theme; renderScreen(); }
+      function handleAction(action) { if (action === 'theme') toggleTheme(); else if (action === 'library') showToast('打开角色库：导入或创建第一个角色'); else if (action === 'roles') showToast('打开角色库：导入或创建第一个角色'); else if (action === 'worlds') showToast('世界书库：可以先浏览世界设定'); else if (action === 'backgrounds') showToast('背景图库：选择体验的舞台氛围'); else if (action === 'ui') showToast('UI 模组库：查看可用的角色界面'); }
+      device.addEventListener('pointerdown', event => { const rect = device.getBoundingClientRect(); if (event.clientX - rect.left > rect.width - 34) { edgeStartX = event.clientX; device.setPointerCapture?.(event.pointerId); } });
+      device.addEventListener('pointerup', event => { if (edgeStartX == null) return; const distance = edgeStartX - event.clientX; edgeStartX = null; if (distance > 42) openSettings(); });
+      device.addEventListener('pointercancel', () => { edgeStartX = null; });
+      settingsClose.addEventListener('click', closeSettings); settingsBackdrop.addEventListener('click', closeSettings); settingsTheme.addEventListener('click', toggleTheme); settingsTheme.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') toggleTheme(); });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettings(); });
+      renderScreen();
+    </script>
+  </body>
+</html>
