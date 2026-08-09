@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/character_card.dart';
 import '../services/background_service.dart';
@@ -46,6 +47,8 @@ class HomeExperiencePage extends StatefulWidget {
 }
 
 class _HomeExperiencePageState extends State<HomeExperiencePage> {
+  static const _activeCharacterPreferenceKey = 'home_active_character_id';
+
   List<CharacterCard> _characters = const <CharacterCard>[];
   Map<String, int> _lastMessageAt = const <String, int>{};
   CharacterCard? _activeCharacter;
@@ -53,6 +56,8 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
   int _backgroundCount = 0;
   int _uiAssemblyCount = 0;
   bool _loading = true;
+  bool _roleSelecting = false;
+  String? _pendingRoleId;
   Object? _error;
 
   @override
@@ -67,7 +72,10 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
       final timestamps = await DatabaseService.getLatestMessageTimestamps();
       final worldBooks = await DatabaseService.getAllWorldBooks();
       final backgrounds = await BackgroundService.getAll();
-      final lastActiveId = await DatabaseService.getLastActiveCharacterId();
+      final preferences = await SharedPreferences.getInstance();
+      final persistedId = preferences.getString(_activeCharacterPreferenceKey);
+      final lastActiveId =
+          persistedId ?? await DatabaseService.getLastActiveCharacterId();
 
       final characters = rawCharacters
           .map(CharacterCard.fromDb)
@@ -159,6 +167,43 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
       MaterialPageRoute(builder: (_) => ChatPage(character: character)),
     );
     _loadHomeData();
+  }
+
+  void _openRoleSelection() {
+    final character = _activeCharacter;
+    if (character == null) {
+      _openCharacterLibrary();
+      return;
+    }
+
+    setState(() {
+      _pendingRoleId = character.id;
+      _roleSelecting = true;
+    });
+  }
+
+  void _cancelRoleSelection() {
+    if (!mounted) return;
+    setState(() {
+      _pendingRoleId = null;
+      _roleSelecting = false;
+    });
+  }
+
+  Future<void> _selectRolePlane(CharacterCard character) async {
+    if (_pendingRoleId == character.id) {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_activeCharacterPreferenceKey, character.id);
+      if (!mounted) return;
+      setState(() {
+        _activeCharacter = character;
+        _pendingRoleId = null;
+        _roleSelecting = false;
+      });
+      return;
+    }
+
+    setState(() => _pendingRoleId = character.id);
   }
 
   String _relativeTime(String characterId) {
@@ -300,7 +345,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
                 right: 72,
                 bottom: 0,
                 child: _RoleEntryHitArea(
-                  onTap: _openCharacterLibrary,
+                  onTap: _openRoleSelection,
                   child: const SizedBox.expand(),
                 ),
               ),
@@ -377,12 +422,91 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
     );
   }
 
+  List<CharacterCard> get _rolePlaneOrder {
+    final selectedId = _pendingRoleId;
+    if (selectedId == null) return const <CharacterCard>[];
+
+    final ordered = <CharacterCard>[];
+    for (final character in _characters) {
+      if (character.id == selectedId) ordered.insert(0, character);
+    }
+    for (final character in _characters) {
+      if (character.id != selectedId) ordered.add(character);
+    }
+    return ordered;
+  }
+
+  Widget _buildRoleSelectionLayer(
+    AppThemeTokens tokens, {
+    required double roleTop,
+    required double roleWidth,
+    required double roleHeight,
+  }) {
+    final planes = _rolePlaneOrder;
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            right: 0,
+            top: roleTop - 14,
+            height: roleHeight + 28,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _cancelRoleSelection,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      tokens.scrim.withValues(alpha: 0.16),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            right: 0,
+            top: roleTop,
+            height: roleHeight,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
+              physics: const BouncingScrollPhysics(),
+              itemCount: planes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final character = planes[index];
+                final active = index == 0;
+                return _RolePlane(
+                  character: character,
+                  active: active,
+                  width: active ? roleWidth : roleWidth * 0.7,
+                  height: active ? roleHeight : roleHeight * 0.7,
+                  recentLabel: _relativeTime(character.id),
+                  tokens: tokens,
+                  onTap: () => _selectRolePlane(character),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildModuleRail(AppThemeTokens tokens) {
     final entries = <_HomeModuleEntry>[
       _HomeModuleEntry(
         title: '角色库',
         icon: Icons.person_outline_rounded,
         preview: '${_characters.length} 个角色',
+        previewKind: 'people',
         onTap: _openCharacterLibrary,
         key: widget.characterTileKey,
         textKey: widget.characterTextKey,
@@ -392,6 +516,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
         title: '世界书库',
         icon: Icons.auto_stories_outlined,
         preview: '$_worldBookCount 种世界书',
+        previewKind: 'lines',
         onTap: _openWorldBookLibrary,
         key: widget.worldBookTileKey,
         textKey: widget.worldBookTextKey,
@@ -401,6 +526,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
         title: '背景图库',
         icon: Icons.image_outlined,
         preview: '$_backgroundCount 个背景',
+        previewKind: 'images',
         onTap: _openBackgroundLibrary,
         key: widget.backgroundTileKey,
         textKey: widget.backgroundTextKey,
@@ -410,6 +536,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
         title: 'UI 模组库',
         icon: Icons.auto_awesome_outlined,
         preview: '$_uiAssemblyCount 个模组',
+        previewKind: 'chips',
         onTap: _openUIAssetGallery,
         accent: const Color(0xFF536366),
       ),
@@ -434,6 +561,11 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
       builder: (context, constraints) {
         final railWidth = (constraints.maxWidth * 0.45)
             .clamp(170.0, 230.0)
+            .toDouble();
+        final roleTop = 88.0;
+        final roleHeight = 166.0;
+        final roleWidth = (constraints.maxWidth * 0.76)
+            .clamp(240.0, constraints.maxWidth - 24)
             .toDouble();
         final stageTop = math.min(320.0, constraints.maxHeight * 0.42);
         final railTop = math.max(stageTop + 110, constraints.maxHeight * 0.48);
@@ -461,7 +593,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
               child: _buildBrand(tokens),
             ),
             Positioned(
-              top: 88,
+              top: roleTop,
               left: 12,
               child: _loading
                   ? _LoadingRoleEntry(tokens: tokens)
@@ -510,6 +642,13 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
                 ],
               ),
             ),
+            if (_roleSelecting)
+              _buildRoleSelectionLayer(
+                tokens,
+                roleTop: roleTop,
+                roleWidth: roleWidth,
+                roleHeight: roleHeight,
+              ),
             if (_error != null)
               Positioned(
                 left: 24,
@@ -534,6 +673,7 @@ class _HomeModuleEntry {
     required this.title,
     required this.icon,
     required this.preview,
+    required this.previewKind,
     required this.onTap,
     required this.accent,
     this.key,
@@ -543,6 +683,7 @@ class _HomeModuleEntry {
   final String title;
   final IconData icon;
   final String preview;
+  final String previewKind;
   final VoidCallback onTap;
   final Color accent;
   final GlobalKey? key;
@@ -557,36 +698,16 @@ class _ModulePreviewTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return PhysicalShape(
       key: entry.key,
-      height: 84,
-      decoration: BoxDecoration(
-        color: tokens.surfaceElevated,
-        border: Border.all(color: tokens.outline),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(tokens.radiusMedium),
-          topRight: Radius.circular(tokens.radiusSmall),
-          bottomLeft: Radius.circular(tokens.radiusMedium),
-          bottomRight: Radius.circular(tokens.radiusSmall),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: tokens.shadow,
-            blurRadius: tokens.elevationLow * 2,
-            offset: const Offset(4, 5),
-          ),
-        ],
-      ),
+      clipper: _SlantedSurfaceClipper(),
+      color: tokens.surfaceElevated,
+      shadowColor: tokens.shadow,
+      elevation: tokens.elevationLow,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: entry.onTap,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(tokens.radiusMedium),
-            topRight: Radius.circular(tokens.radiusSmall),
-            bottomLeft: Radius.circular(tokens.radiusMedium),
-            bottomRight: Radius.circular(tokens.radiusSmall),
-          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 8, 7),
             child: Column(
@@ -613,29 +734,11 @@ class _ModulePreviewTile extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
-                Row(
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: entry.accent, width: 1.3),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        entry.preview,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: tokens.textMuted,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ),
-                  ],
+                _ModulePreviewVisual(
+                  kind: entry.previewKind,
+                  label: entry.preview,
+                  color: entry.accent,
+                  textColor: tokens.textMuted,
                 ),
                 const SizedBox(height: 3),
                 Container(height: 1, color: entry.accent.withValues(alpha: 0.55)),
@@ -648,6 +751,169 @@ class _ModulePreviewTile extends StatelessWidget {
   }
 }
 
+class _ModulePreviewVisual extends StatelessWidget {
+  const _ModulePreviewVisual({
+    required this.kind,
+    required this.label,
+    required this.color,
+    required this.textColor,
+  });
+
+  final String kind;
+  final String label;
+  final Color color;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final glyphs = switch (kind) {
+      'people' => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PreviewGlyph(type: 'person', color: color),
+            const SizedBox(width: 3),
+            _PreviewGlyph(type: 'person', color: color),
+            const SizedBox(width: 3),
+            _PreviewGlyph(type: 'person', color: color),
+          ],
+        ),
+      'images' => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PreviewGlyph(type: 'image', color: color),
+            const SizedBox(width: 3),
+            _PreviewGlyph(type: 'image', color: color),
+            const SizedBox(width: 3),
+            _PreviewGlyph(type: 'image', color: color),
+          ],
+        ),
+      'lines' => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 24, height: 3, decoration: BoxDecoration(color: color.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(4))),
+            const SizedBox(width: 4),
+            Container(width: 14, height: 3, decoration: BoxDecoration(color: color.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(4))),
+          ],
+        ),
+      'chips' => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PreviewChip(label: 'SCENE', color: color),
+            const SizedBox(width: 4),
+            _PreviewChip(label: 'OPEN', color: color),
+          ],
+        ),
+      _ => const SizedBox.shrink(),
+    };
+
+    return Row(
+      children: [
+        glyphs,
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: textColor, fontSize: 9),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PreviewChip extends StatelessWidget {
+  const _PreviewChip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.65)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 7, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+}
+
+class _PreviewGlyph extends StatelessWidget {
+  const _PreviewGlyph({required this.type, required this.color});
+
+  final String type;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 16,
+      height: 14,
+      child: CustomPaint(painter: _PreviewGlyphPainter(type, color)),
+    );
+  }
+}
+
+class _PreviewGlyphPainter extends CustomPainter {
+  const _PreviewGlyphPainter(this.type, this.color);
+
+  final String type;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.25
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    if (type == 'person') {
+      paint.style = PaintingStyle.fill;
+      canvas.drawCircle(const Offset(8, 3.5), 2.4, paint);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          const Rect.fromLTWH(3.3, 7, 9.4, 6),
+          const Radius.circular(3),
+        ),
+        paint,
+      );
+      return;
+    }
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(0.8, 0.8, 14.4, 12.2),
+        const Radius.circular(2),
+      ),
+      paint,
+    );
+    paint.style = PaintingStyle.fill;
+    canvas.drawCircle(const Offset(11.4, 4), 1.2, paint);
+    final mountain = Path()
+      ..moveTo(2.2, 11.1)
+      ..lineTo(5.8, 6.8)
+      ..lineTo(8.2, 9.1)
+      ..lineTo(10.2, 7.1)
+      ..lineTo(13.7, 11.1)
+      ..close();
+    canvas.drawPath(mountain, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PreviewGlyphPainter oldDelegate) {
+    return oldDelegate.type != type || oldDelegate.color != color;
+  }
+}
+
 class _RoleEntryHitArea extends StatelessWidget {
   const _RoleEntryHitArea({super.key, required this.onTap, required this.child});
 
@@ -657,6 +923,135 @@ class _RoleEntryHitArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: child);
+  }
+}
+
+class _RolePlane extends StatelessWidget {
+  const _RolePlane({
+    required this.character,
+    required this.active,
+    required this.width,
+    required this.height,
+    required this.recentLabel,
+    required this.tokens,
+    required this.onTap,
+  });
+
+  final CharacterCard character;
+  final bool active;
+  final double width;
+  final double height;
+  final String recentLabel;
+  final AppThemeTokens tokens;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final imagePath = character.cardImagePath;
+    final hasImage = imagePath.isNotEmpty && File(imagePath).existsSync();
+    final fallback = active ? tokens.accent : tokens.surfaceElevated;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        width: width,
+        height: height,
+        child: PhysicalShape(
+          clipper: _SlantedSurfaceClipper(),
+          color: fallback,
+          shadowColor: tokens.shadow,
+          elevation: active ? 4 : 1,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (hasImage)
+                Image.file(File(imagePath), fit: BoxFit.cover)
+              else
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: active
+                          ? [tokens.accent, tokens.accentStrong]
+                          : [
+                              tokens.surfaceElevated,
+                              tokens.surfaceInteractive,
+                            ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      active
+                          ? tokens.accentStrong.withValues(alpha: 0.72)
+                          : Colors.black.withValues(alpha: 0.2),
+                      Colors.black.withValues(alpha: active ? 0.28 : 0.08),
+                    ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                ),
+              ),
+              IgnorePointer(
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: active ? 25 : 15,
+                      left: active ? 24 : 15,
+                      child: Text(
+                        recentLabel,
+                        style: TextStyle(
+                          color: active ? Colors.white70 : tokens.textMuted,
+                          fontSize: active ? 9 : 8,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: active ? 44 : 32,
+                      left: active ? 24 : 15,
+                      right: 12,
+                      child: Text(
+                        character.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: active ? Colors.white : tokens.textPrimary,
+                          fontSize: active ? 32 : 20,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: active ? -1.5 : -0.6,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: active ? 24 : 15,
+                      right: 12,
+                      bottom: active ? 20 : 13,
+                      child: Text(
+                        '${character.title} · $recentLabel',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: active ? Colors.white70 : tokens.textMuted,
+                          fontSize: active ? 11 : 8,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
