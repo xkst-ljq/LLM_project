@@ -359,16 +359,14 @@
       .module-preview { display: flex; align-items: center; gap: 5px; min-width: 0; margin: 1px 8px 0 3px; overflow: hidden; color: var(--module-muted); font-size: 9px; white-space: nowrap; }
       .module-arrow { color: var(--module-accent); font-size: 18px; }
       .preview-text { overflow: hidden; text-overflow: ellipsis; }
-      .preview-avatar { flex: 0 0 14px; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.58); border-radius: 50%; background: var(--preview); }
-      .preview-avatar-a { --preview: #9aa7ff; }
-      .preview-avatar-b { --preview: #d99591; }
-      .preview-avatar-c { --preview: #77c9bb; }
+      .preview-person { position: relative; flex: 0 0 15px; width: 15px; height: 15px; color: var(--module-accent); opacity: 0.86; }
+      .preview-person::before { content: ""; position: absolute; top: 0; left: 5px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+      .preview-person::after { content: ""; position: absolute; right: 1px; bottom: 0; left: 1px; height: 8px; border-radius: 7px 7px 3px 3px; background: currentColor; }
+      .preview-image { position: relative; flex: 0 0 17px; width: 17px; height: 14px; border: 1.5px solid var(--module-accent); border-radius: 3px; opacity: 0.86; }
+      .preview-image::before { content: ""; position: absolute; top: 2px; right: 2px; width: 3px; height: 3px; border-radius: 50%; background: var(--module-accent); }
+      .preview-image::after { content: ""; position: absolute; right: 2px; bottom: 2px; left: 2px; height: 5px; background: var(--module-accent); clip-path: polygon(0 100%, 35% 28%, 58% 72%, 76% 44%, 100% 100%); }
       .preview-line { display: block; flex: 0 0 20px; height: 4px; border-radius: 99px; background: var(--module-accent); opacity: 0.52; }
       .preview-line.wide { flex-basis: 31px; }
-      .preview-swatch { flex: 0 0 17px; width: 17px; height: 14px; border-radius: 4px; background: var(--preview); }
-      .preview-swatch-a { --preview: #7782df; }
-      .preview-swatch-b { --preview: #d6b27a; }
-      .preview-swatch-c { --preview: #6ebdb0; }
       .preview-chip { padding: 3px 5px; border: 1px solid var(--line); border-radius: 5px; color: var(--module-muted); font-size: 7px; font-weight: 800; letter-spacing: 0.06em; }
       .rail-scroll-hint { position: absolute; right: 1px; bottom: 1px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; background: var(--canvas); color: var(--muted); font-size: 12px; pointer-events: none; }
 
@@ -417,9 +415,9 @@
         null: { name: 'Noct', title: '未命名世界', context: '新体验等待建立', symbol: '○' },
       };
       const modules = [
-        { name: '角色库', symbol: '♟', action: 'roles', preview: '<span class="preview-avatar preview-avatar-a"></span><span class="preview-avatar preview-avatar-b"></span><span class="preview-avatar preview-avatar-c"></span><span class="preview-text">3 个角色</span>' },
+        { name: '角色库', symbol: '♟', action: 'roles', preview: '<span class="preview-person"></span><span class="preview-person"></span><span class="preview-person"></span><span class="preview-text">3 个角色</span>' },
         { name: '世界书库', symbol: '◇', action: 'worlds', preview: '<span class="preview-line wide"></span><span class="preview-line"></span><span class="preview-text">3 种世界书</span>' },
-        { name: '背景图库', symbol: '▧', action: 'backgrounds', preview: '<span class="preview-swatch preview-swatch-a"></span><span class="preview-swatch preview-swatch-b"></span><span class="preview-swatch preview-swatch-c"></span><span class="preview-text">6 个背景</span>' },
+        { name: '背景图库', symbol: '▧', action: 'backgrounds', preview: '<span class="preview-image"></span><span class="preview-image"></span><span class="preview-image"></span><span class="preview-text">6 个背景</span>' },
         { name: 'UI 模组库', symbol: '✦', action: 'ui', preview: '<span class="preview-chip">SCENE</span><span class="preview-chip">OPENING</span><span class="preview-text">4 个模组</span>' },
       ];
 
