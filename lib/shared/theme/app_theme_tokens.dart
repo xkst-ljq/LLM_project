@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
   const AppThemeTokens({
     required this.canvas,
+    required this.canvasDeep,
     required this.surface,
     required this.surfaceElevated,
     required this.surfaceGlass,
@@ -26,6 +27,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     required this.warning,
     required this.danger,
     required this.info,
+    required this.stage,
     required this.focusRing,
     required this.scrim,
     required this.shadow,
@@ -53,6 +55,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
   const AppThemeTokens.day()
       : this(
           canvas: const Color(0xFFF4F2EE),
+          canvasDeep: const Color(0xFFEDF1F0),
           surface: const Color(0xFFFFFFFF),
           surfaceElevated: const Color(0xFFFBFAF7),
           surfaceGlass: const Color(0xB8FFFFFF),
@@ -70,6 +73,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
           warning: const Color(0xFFB8751A),
           danger: const Color(0xFFC54848),
           info: const Color(0xFF3976B8),
+          stage: const Color(0xFF69BDB4),
           focusRing: const Color(0xFF5867D8),
           scrim: const Color(0x6B000000),
           shadow: const Color(0x24000000),
@@ -97,6 +101,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
   const AppThemeTokens.night()
       : this(
           canvas: const Color(0xFF0B0E13),
+          canvasDeep: const Color(0xFF101823),
           surface: const Color(0xFF131820),
           surfaceElevated: const Color(0xFF1B212B),
           surfaceGlass: const Color(0xB8131820),
@@ -114,6 +119,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
           warning: const Color(0xFFF0B35A),
           danger: const Color(0xFFFF817E),
           info: const Color(0xFF80B8F0),
+          stage: const Color(0xFF79D4C7),
           focusRing: const Color(0xFFB9C0FF),
           scrim: const Color(0x85000000),
           shadow: const Color(0x66000000),
@@ -138,6 +144,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
         );
 
   final Color canvas;
+  final Color canvasDeep;
   final Color surface;
   final Color surfaceElevated;
   final Color surfaceGlass;
@@ -159,6 +166,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
   final Color warning;
   final Color danger;
   final Color info;
+  final Color stage;
   final Color focusRing;
   final Color scrim;
   final Color shadow;
@@ -192,6 +200,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
   @override
   AppThemeTokens copyWith({
     Color? canvas,
+    Color? canvasDeep,
     Color? surface,
     Color? surfaceElevated,
     Color? surfaceGlass,
@@ -209,6 +218,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     Color? warning,
     Color? danger,
     Color? info,
+    Color? stage,
     Color? focusRing,
     Color? scrim,
     Color? shadow,
@@ -233,6 +243,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
   }) {
     return AppThemeTokens(
       canvas: canvas ?? this.canvas,
+      canvasDeep: canvasDeep ?? this.canvasDeep,
       surface: surface ?? this.surface,
       surfaceElevated: surfaceElevated ?? this.surfaceElevated,
       surfaceGlass: surfaceGlass ?? this.surfaceGlass,
@@ -250,6 +261,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
       warning: warning ?? this.warning,
       danger: danger ?? this.danger,
       info: info ?? this.info,
+      stage: stage ?? this.stage,
       focusRing: focusRing ?? this.focusRing,
       scrim: scrim ?? this.scrim,
       shadow: shadow ?? this.shadow,
@@ -286,6 +298,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
 
     return AppThemeTokens(
       canvas: color(canvas, other.canvas),
+      canvasDeep: color(canvasDeep, other.canvasDeep),
       surface: color(surface, other.surface),
       surfaceElevated: color(surfaceElevated, other.surfaceElevated),
       surfaceGlass: color(surfaceGlass, other.surfaceGlass),
@@ -303,6 +316,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
       warning: color(warning, other.warning),
       danger: color(danger, other.danger),
       info: color(info, other.info),
+      stage: color(stage, other.stage),
       focusRing: color(focusRing, other.focusRing),
       scrim: color(scrim, other.scrim),
       shadow: color(shadow, other.shadow),

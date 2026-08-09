@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/character_card.dart';
 import '../services/background_service.dart';
 import '../services/database_service.dart';
+import '../shared/theme/app_theme_manager.dart';
 import '../shared/theme/app_theme_tokens.dart';
 import 'background_library_page.dart';
 import 'character_library_page.dart';
@@ -46,8 +49,19 @@ class HomeExperiencePage extends StatefulWidget {
   State<HomeExperiencePage> createState() => _HomeExperiencePageState();
 }
 
-class _HomeExperiencePageState extends State<HomeExperiencePage> {
+class _HomeExperiencePageState extends State<HomeExperiencePage>
+    with TickerProviderStateMixin {
   static const _activeCharacterPreferenceKey = 'home_active_character_id';
+
+  // Entrance choreography timings, mapped from the HTML prototype.
+  static const _brandBegin = 0.044;
+  static const _themeBegin = 0.100;
+  static const _roleBegin = 0.150;
+  static const _stageBegin = 0.294;
+  static const _railBegin = 0.383;
+  static const _itemBase = 0.433;
+  static const _itemStep = 0.056;
+  static const _span = 0.34;
 
   List<CharacterCard> _characters = const <CharacterCard>[];
   Map<String, int> _lastMessageAt = const <String, int>{};
@@ -58,12 +72,34 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
   bool _loading = true;
   bool _roleSelecting = false;
   String? _pendingRoleId;
+  String? _promotingRoleId;
   Object? _error;
+
+  late final AnimationController _entrance;
+  late final AnimationController _cover;
+  bool _entranceReady = false;
+  Timer? _promoteTimer;
 
   @override
   void initState() {
     super.initState();
+    _entrance = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _cover = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 16),
+    )..repeat(reverse: true);
     _loadHomeData();
+  }
+
+  @override
+  void dispose() {
+    _promoteTimer?.cancel();
+    _entrance.dispose();
+    _cover.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHomeData() async {
@@ -114,13 +150,23 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
         _loading = false;
         _error = null;
       });
+      _scheduleEntrance();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = error;
       });
+      _scheduleEntrance();
     }
+  }
+
+  void _scheduleEntrance() {
+    if (_entranceReady) return;
+    _entranceReady = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _entrance.forward();
+    });
   }
 
   Future<void> _openCharacterLibrary() async {
@@ -184,8 +230,10 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
 
   void _cancelRoleSelection() {
     if (!mounted) return;
+    _promoteTimer?.cancel();
     setState(() {
       _pendingRoleId = null;
+      _promotingRoleId = null;
       _roleSelecting = false;
     });
   }
@@ -198,12 +246,20 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
       setState(() {
         _activeCharacter = character;
         _pendingRoleId = null;
+        _promotingRoleId = null;
         _roleSelecting = false;
       });
       return;
     }
 
-    setState(() => _pendingRoleId = character.id);
+    _promoteTimer?.cancel();
+    setState(() {
+      _pendingRoleId = character.id;
+      _promotingRoleId = character.id;
+    });
+    _promoteTimer = Timer(const Duration(milliseconds: 420), () {
+      if (mounted) setState(() => _promotingRoleId = null);
+    });
   }
 
   String _relativeTime(String characterId) {
@@ -231,35 +287,42 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
   }
 
   Widget _buildBrand(AppThemeTokens tokens) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: tokens.accent,
-            borderRadius: BorderRadius.circular(2),
-            boxShadow: [
-              BoxShadow(
-                color: tokens.accent.withValues(alpha: 0.42),
-                blurRadius: 10,
-              ),
-            ],
+    return _Staggered(
+      animation: _entrance,
+      begin: _brandBegin,
+      end: (_brandBegin + _span).clamp(0.0, 1.0),
+      offset: const Offset(0, -8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _BrandMark(color: tokens.accent, colorSoft: tokens.accentSoft),
+          const SizedBox(width: 9),
+          Text(
+            'LLM PROJECT',
+            style: TextStyle(
+              color: tokens.accent,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.5,
+            ),
           ),
-          transform: Matrix4.rotationZ(math.pi / 4),
-        ),
-        const SizedBox(width: 9),
-        Text(
-          'LLM PROJECT',
-          style: TextStyle(
-            color: tokens.accent,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
-          ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopActions(AppThemeTokens tokens) {
+    final themeManager = context.watch<AppThemeManager>();
+    return _Staggered(
+      animation: _entrance,
+      begin: _themeBegin,
+      end: (_themeBegin + _span).clamp(0.0, 1.0),
+      offset: const Offset(0, -8),
+      child: _ThemeToggleButton(
+        night: themeManager.isNight,
+        onPressed: themeManager.toggle,
+        tokens: tokens,
+      ),
     );
   }
 
@@ -277,92 +340,182 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
         : _homeState == HomeState.resume
             ? 'CONTINUE EXPERIENCE'
             : 'FIRST EXPERIENCE';
+    final title = empty ? '开始第一次体验' : character.name;
+    final detail = empty
+        ? '从角色库导入或创建一个角色'
+        : character.description.trim().isEmpty
+            ? (_homeState == HomeState.resume
+                ? '距上次聊天 ${_relativeTime(character.id)}'
+                : '开始新体验')
+            : character.description.trim();
+
+    final cover = hasImage
+        ? Image.file(File(imagePath), fit: BoxFit.cover)
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [tokens.accent, tokens.accentStrong],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          );
 
     return SizedBox(
       width: roleWidth,
       height: roleHeight,
-      child: ClipPath(
-        clipper: _SlantedSurfaceClipper(),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: hasImage
-                  ? Image.file(File(imagePath), fit: BoxFit.cover)
-                  : DecoratedBox(
+      child: Stack(
+        children: [
+          // Hard offset shadow backing (12px 17px plane) behind the slanted card.
+          Positioned.fill(
+            child: Transform.translate(
+              offset: const Offset(12, 17),
+              child: ClipPath(
+                clipper: _SlantedSurfaceClipper(),
+                child: ColoredBox(
+                  color: tokens.accent.withValues(alpha: 0.10),
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: PhysicalShape(
+              clipper: _SlantedSurfaceClipper(),
+              color: tokens.surfaceElevated,
+              shadowColor: tokens.shadow,
+              elevation: 6,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  AnimatedBuilder(
+                    animation: _cover,
+                    builder: (context, child) {
+                      final t = Curves.easeInOut.transform(_cover.value);
+                      return Opacity(
+                        opacity: 0.91 + 0.09 * t,
+                        child: Transform.scale(
+                          scale: 1.015 + 0.025 * t,
+                          child: Transform.translate(
+                            offset: Offset(-1.5 * t, -0.6 * t),
+                            child: child,
+                          ),
+                        ),
+                      );
+                    },
+                    child: cover,
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [tokens.accent, tokens.accentStrong],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                          colors: [
+                            tokens.accentStrong.withValues(alpha: 0.88),
+                            Colors.black.withValues(alpha: 0.32),
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
                         ),
                       ),
                     ),
+                  ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _ConcentricRingsPainter(
+                          ringColor: Colors.white.withValues(alpha: 1.0),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (empty)
+                    Positioned(
+                      right: 26,
+                      top: 27,
+                      child: RotatedBox(
+                        quarterTurns: 1,
+                        child: Text(
+                          'START HERE',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.52),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.4,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Positioned(
+                      right: 32,
+                      top: 27,
+                      child: Text(
+                        '01',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.6,
+                        ),
+                      ),
+                    ),
+                  if (empty)
+                    Positioned.fill(
+                      child: _RoleEntryHitArea(
+                        onTap: _openCharacterLibrary,
+                        child: _roleText(
+                          tokens,
+                          stateLabel: stateLabel,
+                          title: title,
+                          detail: detail,
+                        ),
+                      ),
+                    )
+                  else ...[
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: _roleText(
+                          tokens,
+                          stateLabel: stateLabel,
+                          title: title,
+                          detail: detail,
+                          titleKey: widget.chatTextKey,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      right: 72,
+                      bottom: 0,
+                      child: _RoleEntryHitArea(
+                        onTap: _openRoleSelection,
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ],
+                  Positioned(
+                    right: 29,
+                    bottom: 17,
+                    child: empty
+                        ? IgnorePointer(
+                            child: _EnterChatButton(
+                              onPressed: null,
+                              color: tokens.onAccent,
+                              foreground: tokens.textPrimary,
+                            ),
+                          )
+                        : _EnterChatButton(
+                            key: widget.chatTileKey,
+                            onPressed: _openChat,
+                            color: tokens.onAccent,
+                            foreground: tokens.textPrimary,
+                          ),
+                  ),
+                ],
+              ),
             ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      tokens.accentStrong.withValues(alpha: 0.88),
-                      Colors.black.withValues(alpha: 0.32),
-                    ],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                ),
-              ),
-            ),
-            if (empty)
-              Positioned.fill(
-                child: _RoleEntryHitArea(
-                  onTap: _openCharacterLibrary,
-                  child: _roleText(
-                    tokens,
-                    stateLabel: stateLabel,
-                    title: '开始第一次体验',
-                    detail: '从角色库导入或创建一个角色',
-                    showEnter: false,
-                  ),
-                ),
-              )
-            else ...[
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: _roleText(
-                    tokens,
-                    stateLabel: stateLabel,
-                    title: character.name,
-                    detail:
-                        '${character.name} · ${character.description.trim().isEmpty ? '当前角色' : character.description.trim()}',
-                    showEnter: true,
-                    titleKey: widget.chatTextKey,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                top: 0,
-                right: 72,
-                bottom: 0,
-                child: _RoleEntryHitArea(
-                  onTap: _openRoleSelection,
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            ],
-            if (!empty)
-              Positioned(
-                right: 29,
-                bottom: 17,
-                child: _EnterChatButton(
-                  key: widget.chatTileKey,
-                  onPressed: _openChat,
-                  color: tokens.onAccent,
-                  foreground: tokens.textPrimary,
-                ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -372,7 +525,6 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
     required String stateLabel,
     required String title,
     required String detail,
-    required bool showEnter,
     GlobalKey? titleKey,
   }) {
     return Stack(
@@ -409,7 +561,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
         ),
         Positioned(
           left: 24,
-          right: showEnter ? 94 : 24,
+          right: 94,
           bottom: 20,
           child: Text(
             detail,
@@ -444,58 +596,74 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
   }) {
     final planes = _rolePlaneOrder;
     return Positioned.fill(
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            top: roleTop - 14,
-            height: roleHeight + 28,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _cancelRoleSelection,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      tokens.scrim.withValues(alpha: 0.16),
-                      Colors.transparent,
-                    ],
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 330),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) {
+          return Opacity(
+            opacity: value,
+            child: Transform.scale(
+              scale: 0.96 + 0.04 * value,
+              alignment: Alignment.topLeft,
+              child: child,
+            ),
+          );
+        },
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: roleTop - 14,
+              height: roleHeight + 28,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _cancelRoleSelection,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        tokens.scrim.withValues(alpha: 0.16),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: 12,
-            right: 0,
-            top: roleTop,
-            height: roleHeight,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.zero,
-              physics: const BouncingScrollPhysics(),
-              itemCount: planes.length,
-              separatorBuilder: (context, index) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final character = planes[index];
-                final active = index == 0;
-                return _RolePlane(
-                  character: character,
-                  active: active,
-                  width: active ? roleWidth : roleWidth * 0.7,
-                  height: active ? roleHeight : roleHeight * 0.7,
-                  recentLabel: _relativeTime(character.id),
-                  tokens: tokens,
-                  onTap: () => _selectRolePlane(character),
-                );
-              },
+            Positioned(
+              left: 12,
+              right: 0,
+              top: roleTop,
+              height: roleHeight,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.zero,
+                physics: const BouncingScrollPhysics(),
+                itemCount: planes.length,
+                separatorBuilder: (context, index) => const SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  final character = planes[index];
+                  final active = index == 0;
+                  return _RolePlane(
+                    character: character,
+                    active: active,
+                    promoting: active && _promotingRoleId == character.id,
+                    width: active ? roleWidth : roleWidth * 0.7,
+                    height: active ? roleHeight : roleHeight * 0.7,
+                    recentLabel: _relativeTime(character.id),
+                    tokens: tokens,
+                    onTap: () => _selectRolePlane(character),
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -504,8 +672,10 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
     final entries = <_HomeModuleEntry>[
       _HomeModuleEntry(
         title: '角色库',
-        icon: Icons.person_outline_rounded,
-        preview: '${_characters.length} 个角色',
+        symbol: '♟',
+        preview: _characters.isEmpty
+            ? '从这里开始 · 导入或创建'
+            : '${_characters.length} 个角色',
         previewKind: 'people',
         onTap: _openCharacterLibrary,
         key: widget.characterTileKey,
@@ -514,7 +684,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
       ),
       _HomeModuleEntry(
         title: '世界书库',
-        icon: Icons.auto_stories_outlined,
+        symbol: '◇',
         preview: '$_worldBookCount 种世界书',
         previewKind: 'lines',
         onTap: _openWorldBookLibrary,
@@ -524,7 +694,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
       ),
       _HomeModuleEntry(
         title: '背景图库',
-        icon: Icons.image_outlined,
+        symbol: '▧',
         preview: '$_backgroundCount 个背景',
         previewKind: 'images',
         onTap: _openBackgroundLibrary,
@@ -534,7 +704,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
       ),
       _HomeModuleEntry(
         title: 'UI 模组库',
-        icon: Icons.auto_awesome_outlined,
+        symbol: '✦',
         preview: '$_uiAssemblyCount 个模组',
         previewKind: 'chips',
         onTap: _openUIAssetGallery,
@@ -542,13 +712,67 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
       ),
     ];
 
-    return ListView.separated(
-      padding: const EdgeInsets.only(right: 4, bottom: 16),
-      itemCount: entries.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 8),
-      itemBuilder: (context, index) => _ModulePreviewTile(
-        entry: entries[index],
-        tokens: tokens,
+    return _Staggered(
+      animation: _entrance,
+      begin: _railBegin,
+      end: (_railBegin + _span).clamp(0.0, 1.0),
+      offset: const Offset(22, 0),
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 10, bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'MODULES',
+                      style: TextStyle(
+                        color: tokens.textSecondary,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.4,
+                      ),
+                    ),
+                    Text(
+                      entries.length.toString().padLeft(2, '0'),
+                      style: TextStyle(
+                        color: tokens.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.only(right: 4, bottom: 16),
+                  itemCount: entries.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final begin =
+                        (_itemBase + index * _itemStep).clamp(0.0, 1.0);
+                    return _Staggered(
+                      animation: _entrance,
+                      begin: begin,
+                      end: (begin + _span).clamp(0.0, 1.0),
+                      offset: const Offset(18, 0),
+                      child: _ModulePreviewTile(entry: entries[index], tokens: tokens),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            right: 1,
+            bottom: 1,
+            child: _RailScrollHint(tokens: tokens),
+          ),
+        ],
       ),
     );
   }
@@ -556,6 +780,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -568,22 +793,67 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
             .clamp(240.0, constraints.maxWidth - 24)
             .toDouble();
         final stageTop = math.min(320.0, constraints.maxHeight * 0.42);
-        final railTop = math.max(stageTop + 110, constraints.maxHeight * 0.48);
+        final railHeight = (constraints.maxHeight * 0.48)
+            .clamp(200.0, double.infinity)
+            .toDouble();
+        final railBottom = 12.0 + bottomInset;
+        final lineSoft = tokens.outline.withValues(alpha: 0.55);
 
         return Stack(
           children: [
             Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: tokens.canvas,
-                  gradient: RadialGradient(
-                    center: const Alignment(-0.8, 0.7),
-                    radius: 1.2,
-                    colors: [
-                      tokens.success.withValues(alpha: 0.08),
-                      tokens.canvas,
-                    ],
+              child: RepaintBoundary(
+                child: _HomeBackground(tokens: tokens),
+              ),
+            ),
+            Positioned(
+              top: stageTop,
+              left: 12,
+              right: railWidth + 15,
+              bottom: railBottom,
+              child: _Staggered(
+                animation: _entrance,
+                begin: _stageBegin,
+                end: (_stageBegin + _span).clamp(0.0, 1.0),
+                offset: const Offset(0, 13),
+                scaleFrom: 0.96,
+                child: RepaintBoundary(
+                  child: _AvatarStage(
+                    tokens: tokens,
+                    empty: _activeCharacter == null,
                   ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: roleTop,
+              left: 12,
+              child: _Staggered(
+                animation: _entrance,
+                begin: _roleBegin,
+                end: (_roleBegin + _span).clamp(0.0, 1.0),
+                offset: const Offset(-24, -8),
+                child: _loading
+                    ? _LoadingRoleEntry(tokens: tokens)
+                    : _buildRoleEntry(tokens, constraints),
+              ),
+            ),
+            Positioned(
+              top: null,
+              right: 12,
+              bottom: railBottom,
+              width: railWidth,
+              height: railHeight,
+              child: _buildModuleRail(tokens),
+            ),
+            Positioned(
+              top: constraints.maxHeight * 0.43,
+              right: 0,
+              child: Opacity(
+                opacity: 0.52,
+                child: _EdgeGestureHint(
+                  accent: tokens.accent,
+                  line: lineSoft.withValues(alpha: 0.6),
                 ),
               ),
             ),
@@ -593,54 +863,9 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
               child: _buildBrand(tokens),
             ),
             Positioned(
-              top: roleTop,
-              left: 12,
-              child: _loading
-                  ? _LoadingRoleEntry(tokens: tokens)
-                  : _buildRoleEntry(tokens, constraints),
-            ),
-            Positioned(
-              top: stageTop,
-              left: 12,
-              right: railWidth + 15,
-              bottom: 12,
-              child: _AvatarStage(tokens: tokens, empty: _activeCharacter == null),
-            ),
-            Positioned(
-              top: railTop,
-              right: 10,
-              bottom: 12,
-              width: railWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 10, bottom: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'MODULES',
-                          style: TextStyle(
-                            color: tokens.textSecondary,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.4,
-                          ),
-                        ),
-                        Text(
-                          '04',
-                          style: TextStyle(
-                            color: tokens.textMuted,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(child: _buildModuleRail(tokens)),
-                ],
-              ),
+              top: 14,
+              right: 18,
+              child: _buildTopActions(tokens),
             ),
             if (_roleSelecting)
               _buildRoleSelectionLayer(
@@ -671,7 +896,7 @@ enum HomeState { loading, empty, readyToStart, resume, selectingRole, error }
 class _HomeModuleEntry {
   const _HomeModuleEntry({
     required this.title,
-    required this.icon,
+    required this.symbol,
     required this.preview,
     required this.previewKind,
     required this.onTap,
@@ -681,7 +906,7 @@ class _HomeModuleEntry {
   });
 
   final String title;
-  final IconData icon;
+  final String symbol;
   final String preview;
   final String previewKind;
   final VoidCallback onTap;
@@ -696,59 +921,117 @@ class _ModulePreviewTile extends StatelessWidget {
   final _HomeModuleEntry entry;
   final AppThemeTokens tokens;
 
+  static const _radius = BorderRadius.only(
+    topLeft: Radius.circular(13),
+    topRight: Radius.circular(6),
+    bottomRight: Radius.circular(13),
+    bottomLeft: Radius.circular(6),
+  );
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       key: entry.key,
       height: 84,
-      child: PhysicalShape(
-        clipper: _SlantedSurfaceClipper(),
-      color: tokens.surfaceElevated,
-      shadowColor: tokens.shadow,
-      elevation: tokens.elevationLow,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: entry.onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 8, 7),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(entry.icon, color: entry.accent, size: 20),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: Text(
-                        entry.title,
-                        key: entry.textKey,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: tokens.textPrimary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tokens.surface,
+          borderRadius: _radius,
+          border: Border.all(color: tokens.outline.withValues(alpha: 0.6)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color.fromRGBO(48, 60, 84, 0.07),
+              offset: const Offset(5, 6),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: _radius,
+            onTap: entry.onTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(9, 8, 7, 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      _ModuleSymbol(glyph: entry.symbol, color: entry.accent),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          entry.title,
+                          key: entry.textKey,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: tokens.textPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
+                      Text(
+                        '›',
+                        style: TextStyle(
+                          color: entry.accent,
+                          fontSize: 18,
+                          height: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  _ModulePreviewVisual(
+                    kind: entry.previewKind,
+                    label: entry.preview,
+                    color: entry.accent,
+                    textColor: tokens.textMuted,
+                  ),
+                  const SizedBox(height: 3),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 3, right: 2),
+                    child: Container(
+                      height: 1,
+                      color: entry.accent.withValues(alpha: 0.55),
                     ),
-                    Icon(Icons.chevron_right, color: entry.accent, size: 19),
-                  ],
-                ),
-                const Spacer(),
-                _ModulePreviewVisual(
-                  kind: entry.previewKind,
-                  label: entry.preview,
-                  color: entry.accent,
-                  textColor: tokens.textMuted,
-                ),
-                const SizedBox(height: 3),
-                Container(height: 1, color: entry.accent.withValues(alpha: 0.55)),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ModuleSymbol extends StatelessWidget {
+  const _ModuleSymbol({required this.glyph, required this.color});
+
+  final String glyph;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        border: Border.all(color: color),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(9),
+          topRight: Radius.circular(4),
+          bottomRight: Radius.circular(9),
+          bottomLeft: Radius.circular(4),
+        ),
+      ),
+      child: Text(
+        glyph,
+        style: TextStyle(color: color, fontSize: 14),
       ),
     );
   }
@@ -933,6 +1216,7 @@ class _RolePlane extends StatelessWidget {
   const _RolePlane({
     required this.character,
     required this.active,
+    required this.promoting,
     required this.width,
     required this.height,
     required this.recentLabel,
@@ -942,6 +1226,7 @@ class _RolePlane extends StatelessWidget {
 
   final CharacterCard character;
   final bool active;
+  final bool promoting;
   final double width;
   final double height;
   final String recentLabel;
@@ -954,7 +1239,7 @@ class _RolePlane extends StatelessWidget {
     final hasImage = imagePath.isNotEmpty && File(imagePath).existsSync();
     final fallback = active ? tokens.accent : tokens.surfaceElevated;
 
-    return GestureDetector(
+    Widget card = GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
@@ -966,7 +1251,7 @@ class _RolePlane extends StatelessWidget {
           clipper: _SlantedSurfaceClipper(),
           color: fallback,
           shadowColor: tokens.shadow,
-          elevation: active ? 4 : 1,
+          elevation: active ? 5 : 1,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1001,6 +1286,16 @@ class _RolePlane extends StatelessWidget {
                   ),
                 ),
               ),
+              if (active)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _ConcentricRingsPainter(
+                        ringColor: Colors.white.withValues(alpha: 1.0),
+                      ),
+                    ),
+                  ),
+                ),
               IgnorePointer(
                 child: Stack(
                   children: [
@@ -1055,33 +1350,46 @@ class _RolePlane extends StatelessWidget {
         ),
       ),
     );
+
+    if (active && promoting) {
+      card = TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.96, end: 1.0),
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) {
+          return Transform.scale(scale: value, child: child);
+        },
+        child: card,
+      );
+    }
+
+    return card;
   }
 }
 
 class _EnterChatButton extends StatelessWidget {
-  const _EnterChatButton({super.key, required this.onPressed, required this.color, required this.foreground});
+  const _EnterChatButton({
+    super.key,
+    required this.onPressed,
+    required this.color,
+    required this.foreground,
+  });
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final Color color;
   final Color foreground;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        customBorder: const CircleBorder(),
+    return GestureDetector(
+      onTap: onPressed,
+      child: ClipPath(
+        clipper: _ParallelogramClipper(),
         child: Container(
           width: 49,
           height: 38,
           alignment: Alignment.center,
-          decoration: ShapeDecoration(
-            color: color,
-            shape: const BeveledRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(9)),
-            ),
-          ),
+          color: color,
           child: Icon(Icons.arrow_forward_rounded, color: foreground, size: 23),
         ),
       ),
@@ -1130,75 +1438,135 @@ class _AvatarStage extends StatefulWidget {
 }
 
 class _AvatarStageState extends State<_AvatarStage>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+    with TickerProviderStateMixin {
+  late final AnimationController _breathe;
+  late final AnimationController _orbit;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _breathe = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 6),
+    )..repeat(reverse: true);
+    _orbit = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 9),
     )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _breathe.dispose();
+    _orbit.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final stage = widget.tokens.stage;
     return AnimatedBuilder(
-      animation: _controller,
+      animation: Listenable.merge([_breathe, _orbit]),
       builder: (context, child) {
-        final t = Curves.easeInOut.transform(_controller.value);
+        final b = Curves.easeInOut.transform(_breathe.value);
+        final o = Curves.easeInOut.transform(_orbit.value);
         return Stack(
           alignment: Alignment.bottomCenter,
           children: [
             Opacity(
-              opacity: 0.08 + t * 0.08,
-              child: Container(
-                width: 200 + t * 12,
-                height: 125 + t * 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      widget.tokens.success.withValues(alpha: 0.24),
-                      Colors.transparent,
-                    ],
+              opacity: 0.55 + 0.45 * b,
+              child: Transform.scale(
+                scale: 0.96 + 0.09 * b,
+                child: Container(
+                  width: 205,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        stage.withValues(alpha: 0.16),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
             Transform.rotate(
-              angle: -0.14 + t * 0.05,
+              angle: -0.227 + o * 0.105,
               child: Container(
-                width: 158 + t * 5,
-                height: 55 + t * 2,
+                width: 158 + b * 5,
+                height: 55 + b * 2,
                 decoration: BoxDecoration(
-                  border: Border.all(
-                    color: widget.tokens.success.withValues(alpha: 0.35),
-                  ),
+                  border: Border.all(color: stage.withValues(alpha: 0.42)),
                   borderRadius: const BorderRadius.all(
                     Radius.elliptical(80, 28),
                   ),
                 ),
               ),
             ),
-            Positioned(
-              bottom: 3,
-              child: Text(
-                widget.empty ? 'YOUR STAGE · RESERVED' : 'AVATAR STAGE',
-                style: TextStyle(
-                  color: widget.tokens.textMuted,
-                  fontSize: 8,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.4,
+            Transform.rotate(
+              angle: 0.384,
+              child: Container(
+                width: 158 - 44,
+                height: 55 + 32,
+                decoration: BoxDecoration(
+                  border: Border.all(color: stage.withValues(alpha: 0.18)),
+                  borderRadius: BorderRadius.all(
+                    Radius.elliptical((158 - 44) / 2, (55 + 32) / 2),
+                  ),
                 ),
               ),
+            ),
+            Transform.rotate(
+              angle: -0.489,
+              child: Container(
+                width: 158 + 42,
+                height: 55 - 26,
+                decoration: BoxDecoration(
+                  border: Border.all(color: stage.withValues(alpha: 0.18)),
+                  borderRadius: BorderRadius.all(
+                    Radius.elliptical((158 + 42) / 2, (55 - 26) / 2),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 3,
+              child: widget.empty
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'YOUR STAGE',
+                          style: TextStyle(
+                            color: stage,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          '等待第一个角色登场',
+                          style: TextStyle(
+                            color: widget.tokens.textMuted,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      'AVATAR STAGE · RESERVED',
+                      style: TextStyle(
+                        color: widget.tokens.textMuted,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.4,
+                      ),
+                    ),
             ),
           ],
         );
@@ -1222,4 +1590,390 @@ class _SlantedSurfaceClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(covariant _SlantedSurfaceClipper oldClipper) => false;
+}
+
+class _ParallelogramClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    return Path()
+      ..moveTo(size.width * 0.13, 0)
+      ..lineTo(size.width, size.height * 0.10)
+      ..lineTo(size.width * 0.88, size.height)
+      ..lineTo(0, size.height * 0.88)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant _ParallelogramClipper oldClipper) => false;
+}
+
+class _ConcentricRingsPainter extends CustomPainter {
+  const _ConcentricRingsPainter({required this.ringColor});
+
+  final Color ringColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width - 107, 22);
+    void ring(double radius, double alpha) {
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = ringColor.withValues(alpha: alpha),
+      );
+    }
+
+    ring(86, 0.17);
+    ring(86 + 18, 0.035);
+    ring(86 + 42, 0.025);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ConcentricRingsPainter oldDelegate) {
+    return oldDelegate.ringColor != ringColor;
+  }
+}
+
+class _DiagonalRingsPainter extends CustomPainter {
+  const _DiagonalRingsPainter({required this.line});
+
+  final Color line;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Rect.fromLTWH(
+      size.width * 0.21,
+      size.height * 0.19,
+      size.width * 1.15,
+      size.height * 0.45,
+    );
+    canvas.save();
+    canvas.translate(rect.center.dx, rect.center.dy);
+    canvas.rotate(-57 * math.pi / 180);
+
+    void ellipse(double inset, double alpha) {
+      final r = Rect.fromCenter(
+        center: Offset.zero,
+        width: rect.width + inset * 2,
+        height: rect.height + inset * 2,
+      );
+      canvas.drawOval(
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = line.withValues(alpha: alpha),
+      );
+    }
+
+    ellipse(0, 0.6);
+    ellipse(25, 0.3);
+    ellipse(75, 0.18);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _DiagonalRingsPainter oldDelegate) {
+    return oldDelegate.line != line;
+  }
+}
+
+class _DiagonalLinePainter extends CustomPainter {
+  const _DiagonalLinePainter({required this.line});
+
+  final Color line;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final half = size.width * 0.75;
+    final angle = -57 * math.pi / 180;
+    final from = Offset(size.width * 0.5 - half * math.cos(angle),
+        size.height * 0.5 - half * math.sin(angle));
+    final to = Offset(size.width * 0.5 + half * math.cos(angle),
+        size.height * 0.5 + half * math.sin(angle));
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..shader = LinearGradient(
+        colors: [Colors.transparent, line, Colors.transparent],
+      ).createShader(Rect.fromPoints(from, to));
+    canvas.drawLine(from, to, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DiagonalLinePainter oldDelegate) {
+    return oldDelegate.line != line;
+  }
+}
+
+class _HomeBackground extends StatelessWidget {
+  const _HomeBackground({required this.tokens});
+
+  final AppThemeTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    final lineSoft = tokens.textPrimary.withValues(alpha: 0.09);
+    final diagonalLine = tokens.textPrimary.withValues(alpha: 0.5);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: tokens.canvas,
+            gradient: RadialGradient(
+              center: const Alignment(-0.92, 0.52),
+              radius: 1.2,
+              colors: [
+                tokens.stage.withValues(alpha: 0.11),
+                tokens.canvas,
+              ],
+            ),
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.transparent, tokens.canvasDeep],
+              stops: const [0.6, 1.0],
+            ),
+          ),
+        ),
+        CustomPaint(painter: _DiagonalRingsPainter(line: lineSoft)),
+        CustomPaint(painter: _DiagonalLinePainter(line: diagonalLine)),
+      ],
+    );
+  }
+}
+
+class _Staggered extends StatelessWidget {
+  const _Staggered({
+    required this.animation,
+    required this.begin,
+    required this.end,
+    required this.offset,
+    this.scaleFrom = 1.0,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final double begin;
+  final double end;
+  final Offset offset;
+  final double scaleFrom;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final raw = (animation.value - begin) / (end - begin);
+        final t = Curves.easeOutCubic.transform(raw.clamp(0.0, 1.0));
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: offset * (1 - t),
+            child: Transform.scale(
+              scale: scaleFrom + (1.0 - scaleFrom) * t,
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+class _BrandMark extends StatefulWidget {
+  const _BrandMark({required this.color, required this.colorSoft});
+
+  final Color color;
+  final Color colorSoft;
+
+  @override
+  State<_BrandMark> createState() => _BrandMarkState();
+}
+
+class _BrandMarkState extends State<_BrandMark>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(_controller.value);
+        return Opacity(
+          opacity: 0.72 + 0.28 * t,
+          child: Container(
+            width: 8,
+            height: 8,
+            transform: Matrix4.rotationZ(math.pi / 4),
+            decoration: BoxDecoration(
+              color: widget.color,
+              borderRadius: BorderRadius.circular(2),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withValues(alpha: 0.45 + 0.55 * t),
+                  blurRadius: 5 + 11 * t,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ThemeToggleButton extends StatelessWidget {
+  const _ThemeToggleButton({
+    required this.night,
+    required this.onPressed,
+    required this.tokens,
+  });
+
+  final bool night;
+  final VoidCallback onPressed;
+  final AppThemeTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: Container(
+          width: 35,
+          height: 35,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: tokens.surface,
+            border: Border.all(color: tokens.outline),
+          ),
+          child: Icon(
+            night ? Icons.wb_sunny_rounded : Icons.nightlight_round,
+            size: 16,
+            color: tokens.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RailScrollHint extends StatelessWidget {
+  const _RailScrollHint({required this.tokens});
+
+  final AppThemeTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: 22,
+        height: 22,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: tokens.outline),
+          color: tokens.canvas,
+        ),
+        child: Text(
+          '⌄',
+          style: TextStyle(color: tokens.textMuted, fontSize: 12),
+        ),
+      ),
+    );
+  }
+}
+
+class _EdgeGestureHint extends StatefulWidget {
+  const _EdgeGestureHint({required this.accent, required this.line});
+
+  final Color accent;
+  final Color line;
+
+  @override
+  State<_EdgeGestureHint> createState() => _EdgeGestureHintState();
+}
+
+class _EdgeGestureHintState extends State<_EdgeGestureHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final phase = _controller.value;
+        double pulse;
+        if (phase < 0.7) {
+          pulse = 0.12;
+        } else if (phase < 0.84) {
+          pulse = 0.12 + 0.73 * (phase - 0.7) / 0.14;
+        } else {
+          pulse = 0.85 - 0.73 * (phase - 0.84) / 0.16;
+        }
+        return IgnorePointer(
+          child: Container(
+            width: 15,
+            height: 72,
+            decoration: BoxDecoration(
+              border: Border(left: BorderSide(color: widget.line)),
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                width: 1,
+                height: 48,
+                color: widget.accent.withValues(alpha: pulse),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
