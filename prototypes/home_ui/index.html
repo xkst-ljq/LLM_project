@@ -159,6 +159,56 @@
       .top-action:hover { color: var(--text); background: var(--surface-solid); transform: translateY(-2px); }
       .top-action:active { transform: scale(0.92); }
 
+      /* Entrance choreography: the home screen assembles from its stage geometry. */
+      .screen:not(.ready) .brand,
+      .screen:not(.ready) .top-actions,
+      .screen:not(.ready) .role-panel,
+      .screen:not(.ready) .avatar-stage,
+      .screen:not(.ready) .module-rail {
+        opacity: 0;
+      }
+      .screen:not(.ready) .brand,
+      .screen:not(.ready) .top-actions { transform: translateY(-8px); }
+      .screen:not(.ready) .role-panel { transform: translate(-24px, -8px); }
+      .screen:not(.ready) .avatar-stage { transform: translateY(13px) scale(0.96); }
+      .screen:not(.ready) .module-rail { transform: translateX(22px); }
+      .screen.ready .brand,
+      .screen.ready .top-actions,
+      .screen.ready .role-panel,
+      .screen.ready .avatar-stage,
+      .screen.ready .module-rail {
+        opacity: 1;
+        transform: none;
+        transition: opacity 360ms var(--ease), transform 520ms var(--ease);
+      }
+      .screen.ready .brand { transition-delay: 40ms; }
+      .screen.ready .top-actions { transition-delay: 90ms; }
+      .screen.ready .role-panel { transition-delay: 135ms; }
+      .screen.ready .avatar-stage { transition-delay: 265ms; }
+      .screen.ready .module-rail { transition-delay: 345ms; }
+      .module-item { opacity: 0; transform: translateX(18px); }
+      .screen.ready .module-item { opacity: 1; transform: none; transition: opacity 300ms var(--ease), transform 380ms var(--ease), border-color 180ms var(--ease), background-color 180ms var(--ease), box-shadow 180ms var(--ease); }
+      .screen.ready .module-item:nth-child(1) { transition-delay: 390ms; }
+      .screen.ready .module-item:nth-child(2) { transition-delay: 435ms; }
+      .screen.ready .module-item:nth-child(3) { transition-delay: 480ms; }
+      .screen.ready .module-item:nth-child(4) { transition-delay: 525ms; }
+      .screen.ready .module-item:nth-child(5) { transition-delay: 570ms; }
+      .screen.ready .module-item:nth-child(6) { transition-delay: 615ms; }
+      .module-item.activating { transform: translateX(-4px) scale(0.965) !important; border-color: var(--module-accent); }
+
+      .screen.experience-entering .role-panel { z-index: 10; transform: translate(14px, 90px) scale(1.12); filter: brightness(1.12); box-shadow: 0 0 0 999px var(--canvas), 0 0 80px var(--accent); transition: transform 520ms var(--ease), filter 360ms var(--ease), box-shadow 520ms var(--ease); }
+      .screen.experience-entering .module-rail { opacity: 0.22; transform: translateX(16px); transition: opacity 300ms var(--ease), transform 420ms var(--ease); }
+      .screen.experience-entering .avatar-stage { opacity: 0.12; transform: scale(1.08); transition: opacity 300ms var(--ease), transform 520ms var(--ease); }
+
+      .stage-glow { animation: stage-breathe 6s ease-in-out infinite; }
+      .stage-ring { animation: stage-orbit 9s ease-in-out infinite; }
+      @keyframes stage-breathe { 0%, 100% { opacity: 0.62; transform: translateX(-50%) scale(0.96); } 50% { opacity: 1; transform: translateX(-50%) scale(1.05); } }
+      @keyframes stage-orbit { 0%, 100% { transform: translateX(-50%) rotate(-13deg) scale(0.98); } 50% { transform: translateX(-50%) rotate(-7deg) scale(1.04); } }
+
+      .edge-gesture-hint { position: absolute; z-index: 7; top: 43%; right: 0; display: grid; place-items: center; width: 15px; height: 72px; border-left: 1px solid var(--line); color: var(--quiet); opacity: 0.52; font-size: 12px; pointer-events: none; }
+      .edge-gesture-hint::before { content: ""; position: absolute; top: 12px; bottom: 12px; left: -1px; border-left: 1px solid var(--accent); opacity: 0.7; animation: edge-pulse 3.8s ease-in-out infinite; }
+      @keyframes edge-pulse { 0%, 70%, 100% { opacity: 0.12; transform: scaleY(0.45); } 84% { opacity: 0.85; transform: scaleY(1); } }
+
       /* The role surface is deliberately geometric, not a literal wireframe box. */
       .role-panel {
         position: absolute;
@@ -285,6 +335,20 @@
       .module-arrow { color: var(--module-accent); font-size: 18px; }
       .rail-scroll-hint { position: absolute; right: 1px; bottom: 1px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; background: var(--canvas); color: var(--muted); font-size: 12px; pointer-events: none; }
 
+      .settings-backdrop { position: fixed; z-index: 20; inset: 0; display: none; background: rgba(3,5,9,0.42); backdrop-filter: blur(4px); }
+      .settings-backdrop.show { display: block; }
+      .settings-drawer { position: fixed; z-index: 21; top: 0; right: 0; bottom: 0; width: min(350px, 88vw); padding: max(24px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom)); border-left: 1px solid var(--line); background: var(--surface-solid); box-shadow: -24px 0 70px rgba(0,0,0,0.24); transform: translateX(105%); transition: transform 300ms var(--ease); }
+      .settings-drawer.show { transform: translateX(0); }
+      .settings-drawer .drawer-handle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+      .settings-drawer .drawer-kicker { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: 0.17em; }
+      .settings-drawer h2 { margin: 7px 0 0; color: var(--text); font-size: 23px; letter-spacing: -0.05em; }
+      .settings-close { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; font-size: 22px; }
+      .settings-drawer p { margin: 18px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+      .settings-list { display: grid; gap: 0; margin-top: 25px; }
+      .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 58px; border-bottom: 1px solid var(--line); color: var(--text); font-size: 13px; }
+      .settings-row span:last-child { color: var(--quiet); font-size: 18px; }
+      .settings-theme { color: var(--accent) !important; cursor: pointer; }
+
       .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; }
       .toast.show { opacity: 1; transform: translateY(0); }
 
@@ -300,6 +364,12 @@
   </head>
   <body data-theme="day">
     <div class="device" id="device"></div>
+    <div class="settings-backdrop" id="settingsBackdrop"></div>
+    <aside class="settings-drawer" id="settingsDrawer" aria-label="设置面板">
+      <div class="drawer-handle"><div><div class="drawer-kicker">BACKSTAGE</div><h2>设置</h2></div><button class="settings-close" id="settingsClose" type="button" aria-label="关闭设置">×</button></div>
+      <p>从右侧边缘侧滑打开这里。设置属于体验的后台层，不占据角色舞台。</p>
+      <div class="settings-list"><div class="settings-row"><span>界面主题</span><span class="settings-theme" id="settingsTheme" role="button" tabindex="0">Day / Night</span></div><div class="settings-row"><span>API 配置</span><span>›</span></div><div class="settings-row"><span>用户设定</span><span>›</span></div><div class="settings-row"><span>Prompt 策略</span><span>›</span></div></div>
+    </aside>
     <div class="toast" id="toast" role="status"></div>
 
     <script>
@@ -318,8 +388,13 @@
 
       let currentRole = 'mira';
       let theme = 'day';
+      let edgeStartX = null;
       const device = document.getElementById('device');
       const toast = document.getElementById('toast');
+      const settingsDrawer = document.getElementById('settingsDrawer');
+      const settingsBackdrop = document.getElementById('settingsBackdrop');
+      const settingsClose = document.getElementById('settingsClose');
+      const settingsTheme = document.getElementById('settingsTheme');
 
       function moduleMarkup(item) {
         return `<button class="module-item" data-action="${item.action}" type="button"><span class="module-symbol">${item.symbol}</span><span class="module-copy"><strong>${item.name}</strong><span>${item.sub}</span></span><span class="module-arrow">›</span></button>`;
@@ -327,26 +402,62 @@
 
       function screenMarkup() {
         const role = roles[currentRole];
-        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button><button class="top-action" data-action="more" type="button" aria-label="打开更多">···</button></div><button class="role-panel" data-action="enter" type="button"><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><span class="role-enter">→</span></button><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
+        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><button class="role-panel" data-action="enter" type="button"><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><span class="role-enter">→</span></button><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
       }
 
       function renderScreen() {
         device.innerHTML = screenMarkup();
-        device.querySelectorAll('[data-action]').forEach(element => element.addEventListener('click', () => handleAction(element.dataset.action)));
+        const screen = device.querySelector('.screen');
+        requestAnimationFrame(() => requestAnimationFrame(() => screen.classList.add('ready')));
+        device.querySelectorAll('[data-action]').forEach(element => element.addEventListener('click', () => {
+          const action = element.dataset.action;
+          if (element.classList.contains('module-item')) {
+            element.classList.add('activating');
+            window.setTimeout(() => handleAction(action), 130);
+          } else {
+            handleAction(action);
+          }
+        }));
       }
 
       function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200); }
+      function openSettings() { settingsDrawer.classList.add('show'); settingsBackdrop.classList.add('show'); }
+      function closeSettings() { settingsDrawer.classList.remove('show'); settingsBackdrop.classList.remove('show'); }
       function toggleTheme() { theme = theme === 'day' ? 'night' : 'day'; document.body.dataset.theme = theme; renderScreen(); }
       function handleAction(action) {
         if (action === 'theme') toggleTheme();
-        else if (action === 'more') showToast('更多设置可以从这里展开');
-        else if (action === 'enter') showToast(`进入 ${roles[currentRole].name} 的体验`);
-        else if (action === 'roles') showToast('打开角色库页面');
+        else if (action === 'enter') {
+          const screen = device.querySelector('.screen');
+          screen.classList.add('experience-entering');
+          window.setTimeout(() => {
+            screen.classList.remove('experience-entering');
+            showToast(`进入 ${roles[currentRole].name} 的体验`);
+          }, 520);
+        } else if (action === 'roles') showToast('打开角色库页面');
         else if (action === 'worlds') showToast('世界书库：保存世界、地点、组织与规则');
         else if (action === 'backgrounds') showToast('背景图库：选择当前体验的舞台氛围');
         else if (action === 'ui') showToast('UI 模组库：配置角色专属界面');
-        else if (action === 'modes') showToast('体验模式：聊天、Galgame、RPG、互动小说');
       }
+
+      device.addEventListener('pointerdown', event => {
+        const rect = device.getBoundingClientRect();
+        if (event.clientX - rect.left > rect.width - 34) {
+          edgeStartX = event.clientX;
+          device.setPointerCapture?.(event.pointerId);
+        }
+      });
+      device.addEventListener('pointerup', event => {
+        if (edgeStartX == null) return;
+        const distance = edgeStartX - event.clientX;
+        edgeStartX = null;
+        if (distance > 42) openSettings();
+      });
+      device.addEventListener('pointercancel', () => { edgeStartX = null; });
+      settingsClose.addEventListener('click', closeSettings);
+      settingsBackdrop.addEventListener('click', closeSettings);
+      settingsTheme.addEventListener('click', toggleTheme);
+      settingsTheme.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') toggleTheme(); });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettings(); });
 
       renderScreen();
     </script>
