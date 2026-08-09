@@ -403,34 +403,44 @@
       .settings-row span:last-child { color: var(--quiet); font-size: 18px; }
       .settings-theme { color: var(--accent) !important; cursor: pointer; }
 
-      .recent-backdrop { position: fixed; z-index: 22; inset: 0; display: none; background: rgba(4, 6, 11, 0.46); backdrop-filter: blur(7px); }
-      .recent-backdrop.show { display: block; }
-      .recent-sheet { position: fixed; z-index: 23; right: 0; bottom: 0; left: 0; width: min(430px, 100vw); min-height: 340px; margin: auto; padding: 11px 17px max(22px, env(safe-area-inset-bottom)); border: 1px solid var(--line); border-bottom: 0; border-radius: 28px 28px 0 0; background: var(--surface-solid); box-shadow: 0 -24px 80px rgba(0, 0, 0, 0.3); transform: translateY(105%); transition: transform 340ms var(--ease); }
-      .recent-sheet.show { transform: translateY(0); }
-      .recent-handle { width: 38px; height: 4px; margin: 0 auto 18px; border-radius: 99px; background: var(--quiet); }
-      .recent-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
-      .recent-heading h2 { margin: 0; font-size: 21px; letter-spacing: -0.05em; }
-      .recent-heading p { margin-top: 4px; color: var(--muted); font-size: 11px; }
-      .recent-heading .recent-close { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; font-size: 22px; }
-      .recent-deck { display: flex; gap: 10px; align-items: end; min-height: 194px; margin-top: 20px; padding: 5px 4px 12px; overflow-x: auto; scrollbar-width: none; }
-      .recent-deck::-webkit-scrollbar { display: none; }
-      .recent-role { position: relative; flex: 0 0 112px; height: 164px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px 8px 17px 8px; background: linear-gradient(145deg, #2c3855, #6b7caf); color: white; cursor: pointer; text-align: left; transform: translateY(8px); transition: transform 240ms var(--ease), border-color 240ms var(--ease), box-shadow 240ms var(--ease), filter 240ms var(--ease); }
-      .recent-role::before { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255,255,255,0.17), transparent 35%, rgba(4,7,14,0.72)); }
-      .recent-role::after { content: ""; position: absolute; right: -17px; top: -20px; width: 72px; height: 72px; border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; }
-      .recent-role[data-role="mira"] { background-image: linear-gradient(160deg, rgba(47, 57, 138, 0.2), rgba(8, 10, 20, 0.68)), url("./assets/mira-cover.png"); background-position: center 24%; background-size: cover; }
-      .recent-role[data-role="lume"] { background: linear-gradient(145deg, #572d3c, #bb7a69); }
-      .recent-role[data-role="riven"] { background: linear-gradient(145deg, #123b40, #398a81); }
-      .recent-role[data-role="null"] { background: linear-gradient(145deg, #394150, #7b8492); }
-      .recent-role.active { flex-basis: 126px; height: 182px; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 18px 35px rgba(84, 98, 210, 0.25); transform: translateY(0); }
-      .recent-role:hover { filter: brightness(1.08); transform: translateY(-3px); }
-      .recent-role.active:hover { transform: translateY(-3px); }
-      .recent-role-content { position: absolute; z-index: 1; right: 13px; bottom: 13px; left: 13px; }
-      .recent-role-content strong { display: block; font-size: 16px; font-weight: 800; }
-      .recent-role-content span { display: block; margin-top: 4px; overflow: hidden; color: rgba(255,255,255,0.7); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-      .recent-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 1px; color: var(--muted); font-size: 11px; }
-      .recent-library { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 11px; font-weight: 750; }
+      .role-picker-backdrop { position: fixed; z-index: 22; inset: 0; display: none; background: rgba(5, 8, 15, 0.48); backdrop-filter: blur(6px); }
+      .role-picker-backdrop.show { display: block; animation: picker-backdrop-in 360ms var(--ease) both; }
+      @keyframes picker-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+      .role-picker { position: fixed; z-index: 23; top: 112px; right: 0; left: 0; width: min(410px, calc(100vw - 24px)); height: 575px; margin: auto; overflow: hidden; clip-path: polygon(0 0, 94% 0, 100% 8%, 94% 100%, 3% 96%, 0 89%); border: 0; background: linear-gradient(130deg, var(--accent), var(--accent-deep)); color: white; box-shadow: 0 26px 80px rgba(0, 0, 0, 0.34); opacity: 0; pointer-events: none; transform: translate(-105px, -75px) scale(0.32); transform-origin: 16% 12%; transition: opacity 180ms var(--ease), transform 440ms var(--ease); }
+      .role-picker.show { opacity: 1; pointer-events: auto; transform: translate(0, 0) scale(1); }
+      .role-picker::before { content: ""; position: absolute; z-index: -2; inset: 0; background: linear-gradient(140deg, rgba(255,255,255,0.12), transparent 43%, rgba(3, 7, 18, 0.6)); }
+      .role-picker::after { content: ""; position: absolute; z-index: -1; right: -50px; top: -42px; width: 220px; height: 220px; border: 1px solid rgba(255,255,255,0.18); border-radius: 50%; box-shadow: 0 0 0 22px rgba(255,255,255,0.035), 0 0 0 56px rgba(255,255,255,0.025); pointer-events: none; }
+      .role-picker[data-role="mira"] { background: linear-gradient(112deg, rgba(44, 52, 132, 0.94), rgba(42, 48, 112, 0.78)); }
+      .role-picker[data-role="lume"] { background: linear-gradient(112deg, rgba(94, 42, 61, 0.95), rgba(118, 69, 83, 0.82)); }
+      .role-picker[data-role="riven"] { background: linear-gradient(112deg, rgba(13, 83, 87, 0.95), rgba(32, 117, 109, 0.82)); }
+      .picker-cover { position: absolute; z-index: -1; inset: 0; background: linear-gradient(150deg, rgba(21, 30, 88, 0.08), rgba(8, 10, 20, 0.74)); opacity: 0.42; background-size: cover; background-position: center 23%; }
+      .role-picker[data-role="mira"] .picker-cover { background-image: linear-gradient(150deg, rgba(32, 42, 134, 0.22), rgba(6, 8, 18, 0.78)), url("./assets/mira-cover.png"); }
+      .picker-top { display: flex; align-items: start; justify-content: space-between; padding: 22px 22px 0; }
+      .picker-kicker { color: rgba(255,255,255,0.62); font-size: 9px; font-weight: 850; letter-spacing: 0.17em; }
+      .picker-title { margin-top: 6px; font-size: 22px; font-weight: 780; letter-spacing: -0.05em; }
+      .picker-close { display: grid; place-items: center; width: 37px; height: 37px; border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; background: rgba(255,255,255,0.08); color: white; cursor: pointer; font-size: 21px; }
+      .picker-deck { position: absolute; top: 78px; right: 17px; bottom: 78px; left: 17px; }
+      .picker-card { position: absolute; width: 185px; height: 300px; overflow: hidden; border: 1px solid rgba(255,255,255,0.26); border-radius: 20px 10px 20px 10px; background: linear-gradient(145deg, #2c3855, #6b7caf); color: white; cursor: pointer; text-align: left; box-shadow: 0 20px 45px rgba(0,0,0,0.2); transition: transform 360ms var(--ease), opacity 260ms var(--ease), filter 260ms var(--ease), border-color 260ms var(--ease); }
+      .picker-card::before { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255,255,255,0.17), transparent 33%, rgba(4,7,14,0.76)); }
+      .picker-card::after { content: ""; position: absolute; right: -24px; top: -20px; width: 84px; height: 84px; border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; }
+      .picker-card[data-role="mira"] { background-image: linear-gradient(160deg, rgba(47, 57, 138, 0.15), rgba(8, 10, 20, 0.68)), url("./assets/mira-cover.png"); background-position: center 24%; background-size: cover; }
+      .picker-card[data-role="lume"] { background: linear-gradient(145deg, #572d3c, #bb7a69); }
+      .picker-card[data-role="riven"] { background: linear-gradient(145deg, #123b40, #398a81); }
+      .picker-card[data-role="null"] { background: linear-gradient(145deg, #394150, #7b8492); }
+      .picker-card.back-one { left: 8px; top: 48px; transform: rotate(-7deg) scale(0.84); opacity: 0.56; filter: saturate(0.72); }
+      .picker-card.back-two { right: 8px; top: 65px; transform: rotate(7deg) scale(0.84); opacity: 0.56; filter: saturate(0.72); }
+      .picker-card.back-three { left: 34px; top: 28px; transform: rotate(-3deg) scale(0.91); opacity: 0.7; filter: saturate(0.84); }
+      .picker-card.current { z-index: 3; top: 20px; left: 50%; transform: translateX(-50%) scale(1); border-color: rgba(255,255,255,0.68); box-shadow: 0 0 0 1px rgba(255,255,255,0.22), 0 28px 65px rgba(0,0,0,0.33); }
+      .picker-card:hover { filter: brightness(1.1) saturate(1); }
+      .picker-card.current:hover { transform: translateX(-50%) translateY(-3px); }
+      .picker-card-content { position: absolute; z-index: 1; right: 16px; bottom: 16px; left: 16px; }
+      .picker-card-content strong { display: block; font-size: 23px; font-weight: 800; letter-spacing: -0.05em; }
+      .picker-card-content span { display: block; margin-top: 5px; overflow: hidden; color: rgba(255,255,255,0.74); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+      .picker-enter { position: absolute; z-index: 2; right: 15px; bottom: 15px; display: grid; place-items: center; width: 43px; height: 35px; border: 0; clip-path: polygon(12% 0, 100% 10%, 87% 100%, 0 88%); background: white; color: #1c2230; cursor: pointer; font-size: 21px; }
+      .picker-foot { position: absolute; right: 21px; bottom: 25px; left: 21px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: rgba(255,255,255,0.68); font-size: 10px; }
+      .picker-library { border: 0; background: transparent; color: white; cursor: pointer; font-size: 10px; font-weight: 750; }
 
-      .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; }
+      .toast {      .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; }
       .toast.show { opacity: 1; transform: translateY(0); }
 
       @media (max-height: 750px) {
@@ -451,8 +461,8 @@
       <p>从右侧边缘侧滑打开这里。设置属于体验的后台层，不占据角色舞台。</p>
       <div class="settings-list"><div class="settings-row"><span>界面主题</span><span class="settings-theme" id="settingsTheme" role="button" tabindex="0">Day / Night</span></div><div class="settings-row"><span>API 配置</span><span>›</span></div><div class="settings-row"><span>用户设定</span><span>›</span></div><div class="settings-row"><span>Prompt 策略</span><span>›</span></div></div>
     </aside>
-    <div class="recent-backdrop" id="recentBackdrop"></div>
-    <aside class="recent-sheet" id="recentSheet" aria-label="最近聊过的角色"></aside>
+    <div class="role-picker-backdrop" id="rolePickerBackdrop"></div>
+    <section class="role-picker" id="rolePicker" aria-label="最近聊过的角色"></section>
     <div class="toast" id="toast" role="status"></div>
 
     <script>
@@ -478,8 +488,8 @@
       const settingsBackdrop = document.getElementById('settingsBackdrop');
       const settingsClose = document.getElementById('settingsClose');
       const settingsTheme = document.getElementById('settingsTheme');
-      const recentSheet = document.getElementById('recentSheet');
-      const recentBackdrop = document.getElementById('recentBackdrop');
+      const rolePicker = document.getElementById('rolePicker');
+      const rolePickerBackdrop = document.getElementById('rolePickerBackdrop');
 
       function moduleMarkup(item) {
         return `<button class="module-item" data-action="${item.action}" type="button"><span class="module-head"><span class="module-symbol">${item.symbol}</span><span class="module-copy"><strong>${item.name}</strong></span><span class="module-arrow">›</span></span><span class="module-preview">${item.preview}</span></button>`;
@@ -490,27 +500,40 @@
         return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><div class="role-panel"><button class="role-cover-hit" data-action="recent-roles" type="button" aria-label="查看最近聊过的角色"></button><span class="role-cover"></span><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><button class="role-enter" data-action="enter" type="button" aria-label="进入当前角色聊天">→</button></div><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
       }
 
-      function recentRoleMarkup(id, role) {
-        return `<button class="recent-role ${id === currentRole ? 'active' : ''}" data-role="${id}" type="button"><span class="recent-role-content"><strong>${role.name}</strong><span>${role.title}</span></span></button>`;
+      function pickerRoleMarkup(id, role, position) {
+        const current = id === currentRole ? ' current' : ` ${position}`;
+        const enter = id === currentRole ? '<span class="picker-enter" data-action="enter" role="button" tabindex="0" aria-label="进入当前角色聊天">→</span>' : '';
+        return `<button class="picker-card${current}" data-role="${id}" type="button"><span class="picker-card-content"><strong>${role.name}</strong><span>${role.title}</span></span>${enter}</button>`;
       }
 
-      function openRecentRoles() {
-        recentSheet.innerHTML = `<div class="recent-handle"></div><div class="recent-heading"><div><h2>最近聊过的角色</h2><p>选择角色只会切换当前体验，不会直接进入聊天</p></div><button class="recent-close" data-action="close-recent" type="button" aria-label="关闭最近角色">×</button></div><div class="recent-deck">${Object.entries(roles).map(([id, role]) => recentRoleMarkup(id, role)).join('')}</div><div class="recent-foot"><span>当前：${roles[currentRole].name}</span><button class="recent-library" data-action="all-roles" type="button">全部角色库 →</button></div>`;
-        recentSheet.classList.add('show');
-        recentBackdrop.classList.add('show');
-        recentSheet.querySelector('[data-action="close-recent"]').addEventListener('click', closeRecentRoles);
-        recentSheet.querySelector('[data-action="all-roles"]').addEventListener('click', () => { closeRecentRoles(); showToast('打开角色库页面'); });
-        recentSheet.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', () => {
+      function openRolePicker() {
+        const entries = Object.entries(roles);
+        const current = entries.find(([id]) => id === currentRole);
+        const others = entries.filter(([id]) => id !== currentRole).slice(0, 3);
+        const ordered = current ? [current, ...others] : entries;
+        const positions = ['current', 'back-one', 'back-two', 'back-three'];
+        rolePicker.innerHTML = `<span class="picker-cover"></span><div class="picker-top"><div><div class="picker-kicker">RECENT ROLES</div><div class="picker-title">最近聊过的角色</div></div><button class="picker-close" data-action="close-picker" type="button" aria-label="关闭角色台">×</button></div><div class="picker-deck">${ordered.map(([id, role], index) => pickerRoleMarkup(id, role, positions[index])).join('')}</div><div class="picker-foot"><span>点击后方角色切换当前体验</span><button class="picker-library" data-action="all-roles" type="button">全部角色库 →</button></div>`;
+        rolePicker.dataset.role = currentRole;
+        rolePicker.classList.add('show');
+        rolePickerBackdrop.classList.add('show');
+        rolePicker.querySelector('[data-action="close-picker"]').addEventListener('click', closeRolePicker);
+        rolePicker.querySelector('[data-action="all-roles"]').addEventListener('click', () => { closeRolePicker(); showToast('打开角色库页面'); });
+        rolePicker.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', event => {
+          if (event.target.closest('[data-action="enter"]')) return;
           currentRole = element.dataset.role;
-          closeRecentRoles();
-          renderScreen();
-          showToast(`已切换到 ${roles[currentRole].name}`);
+          openRolePicker();
+          showToast(`已聚焦 ${roles[currentRole].name}`);
         }));
+        rolePicker.querySelector('[data-action="enter"]')?.addEventListener('click', event => {
+          event.stopPropagation();
+          closeRolePicker();
+          handleAction('enter');
+        });
       }
 
-      function closeRecentRoles() {
-        recentSheet.classList.remove('show');
-        recentBackdrop.classList.remove('show');
+      function closeRolePicker() {
+        rolePicker.classList.remove('show');
+        rolePickerBackdrop.classList.remove('show');
       }
 
       function renderScreen() {
@@ -534,7 +557,7 @@
       function toggleTheme() { theme = theme === 'day' ? 'night' : 'day'; document.body.dataset.theme = theme; renderScreen(); }
       function handleAction(action) {
         if (action === 'theme') toggleTheme();
-        else if (action === 'recent-roles') openRecentRoles();
+        else if (action === 'recent-roles') openRolePicker();
         else if (action === 'enter') {
           const screen = device.querySelector('.screen');
           screen.classList.add('experience-entering');
@@ -564,10 +587,10 @@
       device.addEventListener('pointercancel', () => { edgeStartX = null; });
       settingsClose.addEventListener('click', closeSettings);
       settingsBackdrop.addEventListener('click', closeSettings);
-      recentBackdrop.addEventListener('click', closeRecentRoles);
+      rolePickerBackdrop.addEventListener('click', closeRolePicker);
       settingsTheme.addEventListener('click', toggleTheme);
       settingsTheme.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') toggleTheme(); });
-      document.addEventListener('keydown', event => { if (event.key === 'Escape') { closeSettings(); closeRecentRoles(); } });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') { closeSettings(); closeRolePicker(); } });
 
       renderScreen();
     </script>
