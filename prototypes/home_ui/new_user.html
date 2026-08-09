@@ -87,7 +87,8 @@
       @keyframes module-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
 
       .brand { position: absolute; z-index: 7; top: max(17px, env(safe-area-inset-top)); left: 22px; display: flex; align-items: center; gap: 9px; color: var(--accent); font-size: 13px; font-weight: 850; letter-spacing: 0.12em; }
-      .brand-mark { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); transform: rotate(45deg); box-shadow: 0 0 12px var(--accent); }
+      .brand-mark { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); transform: rotate(45deg); box-shadow: 0 0 12px var(--accent); animation: brand-status-breathe 4.2s ease-in-out infinite; }
+      @keyframes brand-status-breathe { 0%, 100% { opacity: 0.72; box-shadow: 0 0 5px var(--accent); } 50% { opacity: 1; box-shadow: 0 0 16px var(--accent), 0 0 25px var(--accent-soft); } }
       .top-actions { position: absolute; z-index: 8; top: max(14px, env(safe-area-inset-top)); right: 18px; }
       .top-action { display: grid; place-items: center; width: 35px; height: 35px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; transition: transform 180ms var(--ease), color 180ms var(--ease), background-color 180ms var(--ease); }
       .top-action:hover { color: var(--text); background: var(--canvas-deep); transform: translateY(-2px); }
