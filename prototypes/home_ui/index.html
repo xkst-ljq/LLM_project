@@ -232,6 +232,30 @@
         box-shadow: 12px 17px 0 rgba(64, 78, 178, 0.08), 0 19px 35px rgba(67, 79, 170, 0.18);
         transition: transform 230ms var(--ease), filter 230ms var(--ease), box-shadow 230ms var(--ease);
       }
+      .role-cover {
+        position: absolute;
+        z-index: 0;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(112deg, rgba(44, 52, 132, 0.86), rgba(42, 48, 112, 0.3) 58%, rgba(12, 15, 27, 0.52));
+        background-position: center;
+        background-size: cover;
+        animation: role-cover-breathe 16s ease-in-out infinite;
+        transform-origin: 58% 50%;
+      }
+      .screen[data-role="mira"] .role-cover {
+        background-image:
+          linear-gradient(112deg, rgba(44, 52, 132, 0.82), rgba(42, 48, 112, 0.27) 58%, rgba(12, 15, 27, 0.5)),
+          url("./assets/mira-cover.png");
+        background-position: center 24%;
+        background-size: cover;
+      }
+      .screen[data-role="lume"] .role-cover { background-image: linear-gradient(112deg, rgba(92, 43, 61, 0.84), rgba(93, 54, 73, 0.24) 58%, rgba(21, 12, 22, 0.55)); }
+      .screen[data-role="riven"] .role-cover { background-image: linear-gradient(112deg, rgba(17, 87, 91, 0.84), rgba(26, 115, 108, 0.24) 58%, rgba(7, 22, 25, 0.55)); }
+      @keyframes role-cover-breathe {
+        0%, 100% { opacity: 0.91; transform: scale(1.015) translate3d(0, 0, 0); }
+        50% { opacity: 1; transform: scale(1.04) translate3d(-1.5%, -0.6%, 0); }
+      }
       .role-panel::before {
         content: "";
         position: absolute;
@@ -253,15 +277,6 @@
         font-weight: 900;
         letter-spacing: 0.16em;
       }
-      .screen[data-role="mira"] .role-panel {
-        background-image:
-          linear-gradient(112deg, rgba(44, 52, 132, 0.88), rgba(42, 48, 112, 0.3) 58%, rgba(12, 15, 27, 0.5)),
-          url("./assets/mira-cover.png");
-        background-position: center 24%;
-        background-size: cover;
-      }
-      .screen[data-role="lume"] .role-panel { background-image: linear-gradient(112deg, rgba(92, 43, 61, 0.86), rgba(93, 54, 73, 0.24) 58%, rgba(21, 12, 22, 0.55)); }
-      .screen[data-role="riven"] .role-panel { background-image: linear-gradient(112deg, rgba(17, 87, 91, 0.86), rgba(26, 115, 108, 0.24) 58%, rgba(7, 22, 25, 0.55)); }
       .role-panel:hover { filter: brightness(1.06); transform: translate(2px, -2px); box-shadow: 15px 20px 0 rgba(64, 78, 178, 0.08), 0 25px 42px rgba(67, 79, 170, 0.23); }
       .role-panel:active { transform: scale(0.98); }
       .role-kicker { position: absolute; z-index: 1; top: 25px; left: 24px; color: rgba(255,255,255,0.62); font-size: 9px; font-weight: 850; letter-spacing: 0.18em; }
@@ -413,7 +428,7 @@
 
       function screenMarkup() {
         const role = roles[currentRole];
-        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><button class="role-panel" data-action="enter" type="button"><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><span class="role-enter">→</span></button><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
+        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><button class="role-panel" data-action="enter" type="button"><span class="role-cover"></span><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><span class="role-enter">→</span></button><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
       }
 
       function renderScreen() {
