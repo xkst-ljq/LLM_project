@@ -285,26 +285,6 @@
       .module-arrow { color: var(--module-accent); font-size: 18px; }
       .rail-scroll-hint { position: absolute; right: 1px; bottom: 1px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; background: var(--canvas); color: var(--muted); font-size: 12px; pointer-events: none; }
 
-      .sheet-backdrop { position: fixed; z-index: 20; inset: 0; display: none; background: rgba(3,5,9,0.48); backdrop-filter: blur(4px); }
-      .sheet-backdrop.show { display: block; }
-      .sheet { position: fixed; z-index: 21; right: 0; bottom: 0; left: 0; width: min(430px, 100vw); max-height: 76svh; margin: auto; padding: 11px 18px max(21px, env(safe-area-inset-bottom)); overflow-y: auto; border: 1px solid var(--line); border-bottom: 0; border-radius: 27px 27px 0 0; background: var(--surface); box-shadow: 0 -24px 70px rgba(0,0,0,0.3); backdrop-filter: blur(20px); transform: translateY(105%); transition: transform 300ms var(--ease); }
-      .sheet.show { transform: translateY(0); }
-      .sheet-handle { width: 37px; height: 4px; margin: 0 auto 18px; border-radius: 99px; background: var(--quiet); }
-      .sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-      .sheet-heading h2 { margin: 0; font-size: 21px; letter-spacing: -0.04em; }
-      .sheet-heading p { margin-top: 4px; color: var(--muted); font-size: 11px; }
-      .sheet-close { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 25px; }
-      .sheet-roles { display: grid; gap: 8px; margin-top: 20px; }
-      .sheet-role { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 65px; padding: 8px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); color: var(--text); cursor: pointer; text-align: left; }
-      .sheet-role.active { border-color: var(--accent); background: var(--accent-soft); }
-      .sheet-role-art { flex: 0 0 47px; width: 47px; height: 47px; border-radius: 13px; background: var(--role-gradient); }
-      .sheet-role[data-role="mira"] .sheet-role-art { --role-gradient: linear-gradient(135deg, #b9c3ff, #334577); }
-      .sheet-role[data-role="lume"] .sheet-role-art { --role-gradient: linear-gradient(135deg, #ffd4ab, #7c4153); }
-      .sheet-role[data-role="riven"] .sheet-role-art { --role-gradient: linear-gradient(135deg, #9ce3d3, #27686b); }
-      .sheet-role[data-role="null"] .sheet-role-art { --role-gradient: linear-gradient(135deg, #c4c8d7, #555c6c); }
-      .sheet-role-copy strong { display: block; font-size: 14px; }
-      .sheet-role-copy span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
-      .sheet-role-arrow { margin-left: auto; color: var(--quiet); font-size: 20px; }
       .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; }
       .toast.show { opacity: 1; transform: translateY(0); }
 
@@ -320,8 +300,6 @@
   </head>
   <body data-theme="day">
     <div class="device" id="device"></div>
-    <div class="sheet-backdrop" id="sheetBackdrop"></div>
-    <div class="sheet" id="sheet"></div>
     <div class="toast" id="toast" role="status"></div>
 
     <script>
@@ -336,15 +314,11 @@
         { name: '世界书库', sub: '世界、地点与设定', symbol: '◇', action: 'worlds' },
         { name: '背景图库', sub: '为体验选择背景', symbol: '▱', action: 'backgrounds' },
         { name: 'UI 模组库', sub: '角色专属界面', symbol: '✦', action: 'ui' },
-        { name: '体验模式', sub: '聊天、RPG、互动小说', symbol: '◈', action: 'modes' },
-        { name: '体验档案', sub: '备份与恢复', symbol: '□', action: 'archive' },
       ];
 
       let currentRole = 'mira';
       let theme = 'day';
       const device = document.getElementById('device');
-      const sheet = document.getElementById('sheet');
-      const sheetBackdrop = document.getElementById('sheetBackdrop');
       const toast = document.getElementById('toast');
 
       function moduleMarkup(item) {
@@ -361,35 +335,19 @@
         device.querySelectorAll('[data-action]').forEach(element => element.addEventListener('click', () => handleAction(element.dataset.action)));
       }
 
-      function roleSheetMarkup() {
-        return `<div class="sheet-handle"></div><div class="sheet-heading"><div><h2>角色台</h2><p>选择角色，更新当前角色卡</p></div><button class="sheet-close" data-action="close" type="button">×</button></div><div class="sheet-roles">${Object.entries(roles).map(([id, role]) => `<button class="sheet-role ${id === currentRole ? 'active' : ''}" data-role="${id}" type="button"><span class="sheet-role-art"></span><span class="sheet-role-copy"><strong>${role.name}</strong><span>${role.title} · ${role.context}</span></span><span class="sheet-role-arrow">›</span></button>`).join('')}</div>`;
-      }
-
-      function openRoleSheet() {
-        sheet.innerHTML = roleSheetMarkup();
-        sheet.classList.add('show');
-        sheetBackdrop.classList.add('show');
-        sheet.querySelector('[data-action="close"]').addEventListener('click', closeSheet);
-        sheet.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', () => { currentRole = element.dataset.role; closeSheet(); renderScreen(); showToast(`已将 ${roles[currentRole].name} 放入当前角色卡`); }));
-      }
-
-      function closeSheet() { sheet.classList.remove('show'); sheetBackdrop.classList.remove('show'); }
       function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200); }
       function toggleTheme() { theme = theme === 'day' ? 'night' : 'day'; document.body.dataset.theme = theme; renderScreen(); }
       function handleAction(action) {
         if (action === 'theme') toggleTheme();
         else if (action === 'more') showToast('更多设置可以从这里展开');
         else if (action === 'enter') showToast(`进入 ${roles[currentRole].name} 的体验`);
-        else if (action === 'roles') openRoleSheet();
+        else if (action === 'roles') showToast('打开角色库页面');
         else if (action === 'worlds') showToast('世界书库：保存世界、地点、组织与规则');
         else if (action === 'backgrounds') showToast('背景图库：选择当前体验的舞台氛围');
         else if (action === 'ui') showToast('UI 模组库：配置角色专属界面');
         else if (action === 'modes') showToast('体验模式：聊天、Galgame、RPG、互动小说');
-        else if (action === 'archive') showToast('体验档案：备份与恢复');
       }
 
-      sheetBackdrop.addEventListener('click', closeSheet);
-      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeSheet(); });
       renderScreen();
     </script>
   </body>
