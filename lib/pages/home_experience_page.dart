@@ -649,15 +649,18 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                 itemBuilder: (context, index) {
                   final character = planes[index];
                   final active = index == 0;
-                  return _RolePlane(
-                    character: character,
-                    active: active,
-                    promoting: active && _promotingRoleId == character.id,
-                    width: active ? roleWidth : roleWidth * 0.7,
-                    height: active ? roleHeight : roleHeight * 0.7,
-                    recentLabel: _relativeTime(character.id),
-                    tokens: tokens,
-                    onTap: () => _selectRolePlane(character),
+                  return Align(
+                    alignment: Alignment.center,
+                    child: _RolePlane(
+                      character: character,
+                      active: active,
+                      promoting: active && _promotingRoleId == character.id,
+                      width: active ? roleWidth : roleWidth * 0.7,
+                      height: active ? roleHeight : roleHeight * 0.7,
+                      recentLabel: _relativeTime(character.id),
+                      tokens: tokens,
+                      onTap: () => _selectRolePlane(character),
+                    ),
                   );
                 },
               ),
@@ -1644,6 +1647,9 @@ class _DiagonalRingsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Mirrors .screen::before in the HTML prototype: a large ellipse that
+    // starts 21% in from the left edge, extends 36% past the right edge,
+    // and sits from 19% to 64% of the height, rotated -57deg about center.
     final rect = Rect.fromLTWH(
       size.width * 0.21,
       size.height * 0.19,
@@ -1654,7 +1660,7 @@ class _DiagonalRingsPainter extends CustomPainter {
     canvas.translate(rect.center.dx, rect.center.dy);
     canvas.rotate(-57 * math.pi / 180);
 
-    void ellipse(double inset, double alpha) {
+    void ellipse(double inset) {
       final r = Rect.fromCenter(
         center: Offset.zero,
         width: rect.width + inset * 2,
@@ -1665,13 +1671,13 @@ class _DiagonalRingsPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1
-          ..color = line.withValues(alpha: alpha),
+          ..color = line,
       );
     }
 
-    ellipse(0, 0.6);
-    ellipse(25, 0.3);
-    ellipse(75, 0.18);
+    ellipse(0);
+    ellipse(25);
+    ellipse(75);
     canvas.restore();
   }
 
@@ -1688,12 +1694,14 @@ class _DiagonalLinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final half = size.width * 0.75;
-    final angle = -57 * math.pi / 180;
-    final from = Offset(size.width * 0.5 - half * math.cos(angle),
-        size.height * 0.5 - half * math.sin(angle));
-    final to = Offset(size.width * 0.5 + half * math.cos(angle),
-        size.height * 0.5 + half * math.sin(angle));
+    // Mirrors .screen::after in the HTML prototype: a 150%-wide, 1px line
+    // centered around (55%, 50%) and rotated -57deg.
+    const angle = -57 * math.pi / 180;
+    final halfWidth = size.width * 0.75;
+    final center = Offset(size.width * 0.55, size.height * 0.5);
+    final dir = Offset(math.cos(angle), math.sin(angle));
+    final from = center - dir * halfWidth;
+    final to = center + dir * halfWidth;
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
@@ -1716,8 +1724,11 @@ class _HomeBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lineSoft = tokens.textPrimary.withValues(alpha: 0.09);
-    final diagonalLine = tokens.textPrimary.withValues(alpha: 0.5);
+    // The HTML prototype draws its ring decoration with a faint dark line in
+    // day and a faint light line in night; textPrimary flips correctly for
+    // both, so we derive the decorative line from it rather than from outline.
+    final rings = tokens.textPrimary.withValues(alpha: 0.24);
+    final diagonal = tokens.textPrimary.withValues(alpha: 0.55);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1726,9 +1737,9 @@ class _HomeBackground extends StatelessWidget {
             color: tokens.canvas,
             gradient: RadialGradient(
               center: const Alignment(-0.92, 0.52),
-              radius: 1.2,
+              radius: 0.9,
               colors: [
-                tokens.stage.withValues(alpha: 0.11),
+                tokens.stage.withValues(alpha: 0.14),
                 tokens.canvas,
               ],
             ),
@@ -1744,8 +1755,14 @@ class _HomeBackground extends StatelessWidget {
             ),
           ),
         ),
-        CustomPaint(painter: _DiagonalRingsPainter(line: lineSoft)),
-        CustomPaint(painter: _DiagonalLinePainter(line: diagonalLine)),
+        Opacity(
+          opacity: 0.45,
+          child: CustomPaint(painter: _DiagonalRingsPainter(line: rings)),
+        ),
+        Opacity(
+          opacity: 0.5,
+          child: CustomPaint(painter: _DiagonalLinePainter(line: diagonal)),
+        ),
       ],
     );
   }
