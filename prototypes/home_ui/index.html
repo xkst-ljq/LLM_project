@@ -406,11 +406,11 @@
       .role-picker-backdrop { position: fixed; z-index: 22; display: none; height: 196px; background: radial-gradient(ellipse at center, rgba(5, 8, 15, 0.2) 0%, rgba(5, 8, 15, 0.11) 62%, transparent 100%); backdrop-filter: blur(2px); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 13%, black 84%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0%, black 13%, black 84%, transparent 100%); }
       .role-picker-backdrop.show { display: block; animation: picker-backdrop-in 260ms var(--ease) both; }
       @keyframes picker-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
-      .role-picker { position: fixed; z-index: 23; width: 430px; height: 166px; overflow: visible; color: white; opacity: 0; pointer-events: none; transform: translateY(8px) scale(0.96); transform-origin: 12px 0; transition: opacity 150ms var(--ease), transform 330ms var(--ease); }
+      .role-picker { position: fixed; z-index: 23; width: 430px; height: var(--role-card-height, 166px); overflow: visible; color: white; opacity: 0; pointer-events: none; transform: translateY(8px) scale(0.96); transform-origin: 0 0; transition: opacity 150ms var(--ease), transform 330ms var(--ease); }
       .role-picker.show { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
-      .picker-deck { position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 0 12px; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; }
+      .picker-deck { position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 0; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; }
       .picker-deck::-webkit-scrollbar { display: none; }
-      .picker-card { position: relative; flex: 0 0 var(--role-card-small-width, 228px); height: 116px; overflow: hidden; clip-path: polygon(0 0, 94% 0, 100% 12%, 92% 100%, 2% 94%); border: 0; background: linear-gradient(145deg, #424fb4, #8791e2); color: white; cursor: pointer; scroll-snap-align: start; text-align: left; opacity: 0.5; transform: translateY(0) scale(0.96); filter: saturate(0.7); transition: flex-basis 330ms var(--ease), height 330ms var(--ease), transform 300ms var(--ease), opacity 250ms var(--ease), filter 250ms var(--ease), box-shadow 250ms var(--ease); }
+      .picker-card { position: relative; flex: 0 0 var(--role-card-small-width, 228px); height: var(--role-card-small-height, 116px); overflow: hidden; clip-path: polygon(0 0, 94% 0, 100% 12%, 92% 100%, 2% 94%); border: 0; background: linear-gradient(145deg, #424fb4, #8791e2); color: white; cursor: pointer; scroll-snap-align: start; text-align: left; opacity: 0.5; transform: translateY(0) scale(0.96); filter: saturate(0.7); transition: flex-basis 330ms var(--ease), height 330ms var(--ease), transform 300ms var(--ease), opacity 250ms var(--ease), filter 250ms var(--ease), box-shadow 250ms var(--ease); }
       .picker-card::before { content: ""; position: absolute; z-index: 1; inset: 0; background: linear-gradient(112deg, rgba(255,255,255,0.1), transparent 48%, rgba(4,7,14,0.35)); pointer-events: none; }
       .picker-card[data-role="mira"] { background: linear-gradient(112deg, rgba(44,52,132,0.86), rgba(42,48,112,0.55)); }
       .picker-card[data-role="lume"] { background: linear-gradient(145deg, #613244, #c18072); }
@@ -418,8 +418,10 @@
       .picker-card[data-role="null"] { background: linear-gradient(145deg, #414b5c, #8992a1); }
       .picker-card .role-cover { z-index: 0; animation: none; }
       .picker-card[data-role="mira"] .role-cover { background-image: linear-gradient(112deg, rgba(44,52,132,0.58), rgba(18,22,58,0.5)), url("./assets/mira-cover.png"); background-position: center 24%; background-size: cover; }
-      .picker-card.active { flex-basis: var(--role-card-width, 327px); height: 166px; opacity: 1; transform: translateY(0) scale(1); filter: saturate(1); box-shadow: 0 0 0 1px rgba(255,255,255,0.5), 0 16px 30px rgba(0,0,0,0.2); }
+      .picker-card.active { flex-basis: var(--role-card-width, 327px); height: var(--role-card-height, 166px); opacity: 1; transform: translateY(0) scale(1); filter: saturate(1); box-shadow: 0 0 0 1px rgba(255,255,255,0.5), 0 16px 30px rgba(0,0,0,0.2); }
       .picker-card:hover { opacity: 0.94; filter: saturate(1); }
+      .picker-card.promoting { animation: picker-promote 360ms var(--ease); }
+      @keyframes picker-promote { 0% { filter: saturate(0.7); opacity: 0.5; } 45% { filter: saturate(1.2) brightness(1.08); } 100% { filter: saturate(1); opacity: 1; } }
       .picker-card .role-kicker, .picker-card .role-name, .picker-card .role-context { z-index: 2; }
       .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; }
       .toast.show { opacity: 1; transform: translateY(0); }
@@ -488,18 +490,22 @@
       }
 
       function positionRolePicker() {
-        const rect = device.getBoundingClientRect();
-        const left = rect.left + device.clientLeft;
-        const top = rect.top + device.clientTop;
-        const width = device.clientWidth;
-        rolePicker.style.top = `${top + 119}px`;
-        rolePicker.style.left = `${left}px`;
-        rolePicker.style.width = `${width}px`;
-        rolePicker.style.setProperty('--role-card-width', `${width * 0.76}px`);
-        rolePicker.style.setProperty('--role-card-small-width', `${width * 0.53}px`);
-        rolePickerBackdrop.style.top = `${top + 104}px`;
-        rolePickerBackdrop.style.left = `${left}px`;
-        rolePickerBackdrop.style.width = `${width}px`;
+        const deviceRect = device.getBoundingClientRect();
+        const source = device.querySelector('.role-panel');
+        if (!source) return;
+        const sourceRect = source.getBoundingClientRect();
+        const contentRight = deviceRect.left + device.clientLeft + device.clientWidth;
+        const roleWidth = sourceRect.width;
+        rolePicker.style.top = `${sourceRect.top}px`;
+        rolePicker.style.left = `${sourceRect.left}px`;
+        rolePicker.style.width = `${contentRight - sourceRect.left}px`;
+        rolePicker.style.setProperty('--role-card-width', `${roleWidth}px`);
+        rolePicker.style.setProperty('--role-card-height', `${sourceRect.height}px`);
+        rolePicker.style.setProperty('--role-card-small-width', `${roleWidth * 0.7}px`);
+        rolePicker.style.setProperty('--role-card-small-height', `${sourceRect.height * 0.7}px`);
+        rolePickerBackdrop.style.top = `${sourceRect.top - 15}px`;
+        rolePickerBackdrop.style.left = `${sourceRect.left - 10}px`;
+        rolePickerBackdrop.style.width = `${contentRight - sourceRect.left + 10}px`;
       }
 
       function openRolePicker() {
@@ -523,9 +529,19 @@
             showToast(`已将 ${roles[currentRole].name} 换到主页`);
             return;
           }
+
+          const deck = rolePicker.querySelector('.picker-deck');
+          const previous = deck.querySelector('.picker-card.active');
+          const selected = deck.querySelector(`[data-role="${id}"]`);
+          if (!selected) return;
+          previous?.classList.remove('active');
           pickerSelection = id;
-          openRolePicker();
-          showToast(`已聚焦 ${roles[pickerSelection].name}，再次点击以换上主页`);
+          deck.prepend(selected);
+          selected.classList.add('active', 'promoting');
+          deck.scrollLeft = 0;
+          window.setTimeout(() => selected.classList.remove('promoting'), 380);
+          rolePicker.dataset.role = id;
+          showToast(`已聚焦 ${roles[pickerSelection].name}，再次点击以换到主页`);
         }));
       }
 
