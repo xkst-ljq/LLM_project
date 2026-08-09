@@ -403,7 +403,7 @@
       .settings-row span:last-child { color: var(--quiet); font-size: 18px; }
       .settings-theme { color: var(--accent) !important; cursor: pointer; }
 
-      .role-picker-backdrop { position: fixed; z-index: 22; display: none; width: 430px; height: 196px; background: rgba(5, 8, 15, 0.2); backdrop-filter: blur(2px); }
+      .role-picker-backdrop { position: fixed; z-index: 22; display: none; height: 196px; background: radial-gradient(ellipse at center, rgba(5, 8, 15, 0.2) 0%, rgba(5, 8, 15, 0.11) 62%, transparent 100%); backdrop-filter: blur(2px); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 13%, black 84%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0%, black 13%, black 84%, transparent 100%); }
       .role-picker-backdrop.show { display: block; animation: picker-backdrop-in 260ms var(--ease) both; }
       @keyframes picker-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
       .role-picker { position: fixed; z-index: 23; width: 430px; height: 166px; overflow: visible; color: white; opacity: 0; pointer-events: none; transform: translateY(8px) scale(0.96); transform-origin: 12px 0; transition: opacity 150ms var(--ease), transform 330ms var(--ease); }
@@ -461,6 +461,7 @@
       ];
 
       let currentRole = 'mira';
+      let pickerSelection = null;
       let theme = 'day';
       let edgeStartX = null;
       const device = document.getElementById('device');
@@ -482,40 +483,54 @@
       }
 
       function pickerRoleMarkup(id, role) {
-        const active = id === currentRole ? ' active' : '';
+        const active = id === pickerSelection ? ' active' : '';
         return `<div class="picker-card${active}" data-role="${id}" role="button" tabindex="0"><span class="role-cover"></span><span class="role-kicker">${role.recentLabel}</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span></div>`;
       }
 
       function positionRolePicker() {
         const rect = device.getBoundingClientRect();
-        rolePicker.style.top = `${rect.top + 119}px`;
-        rolePicker.style.left = `${rect.left}px`;
-        rolePicker.style.width = `${rect.width}px`;
-        rolePicker.style.setProperty('--role-card-width', `${rect.width * 0.76}px`);
-        rolePicker.style.setProperty('--role-card-small-width', `${rect.width * 0.53}px`);
-        rolePickerBackdrop.style.top = `${rect.top + 104}px`;
-        rolePickerBackdrop.style.left = `${rect.left}px`;
-        rolePickerBackdrop.style.width = `${rect.width}px`;
+        const left = rect.left + device.clientLeft;
+        const top = rect.top + device.clientTop;
+        const width = device.clientWidth;
+        rolePicker.style.top = `${top + 119}px`;
+        rolePicker.style.left = `${left}px`;
+        rolePicker.style.width = `${width}px`;
+        rolePicker.style.setProperty('--role-card-width', `${width * 0.76}px`);
+        rolePicker.style.setProperty('--role-card-small-width', `${width * 0.53}px`);
+        rolePickerBackdrop.style.top = `${top + 104}px`;
+        rolePickerBackdrop.style.left = `${left}px`;
+        rolePickerBackdrop.style.width = `${width}px`;
       }
 
       function openRolePicker() {
+        pickerSelection ??= currentRole;
         positionRolePicker();
         const recentOrder = ['mira', 'lume', 'riven', 'null'];
-        const orderedIds = [currentRole, ...recentOrder.filter(id => id !== currentRole)];
+        // 初次打开时左侧仍是最新角色；选中旧角色后，它会吸附到原始角色卡位置。
+        const orderedIds = [pickerSelection, ...recentOrder.filter(id => id !== pickerSelection)];
         const ordered = orderedIds.map(id => [id, roles[id]]);
         rolePicker.innerHTML = `<div class="picker-deck">${ordered.map(([id, role]) => pickerRoleMarkup(id, role)).join('')}</div>`;
-        rolePicker.dataset.role = currentRole;
+        rolePicker.dataset.role = pickerSelection;
         rolePicker.classList.add('show');
         rolePickerBackdrop.classList.add('show');
-        rolePicker.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', event => {
-          if (event.target.closest('[data-action="picker-enter"]')) return;
-          currentRole = element.dataset.role;
+        rolePicker.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', () => {
+          const id = element.dataset.role;
+          if (id === pickerSelection) {
+            currentRole = pickerSelection;
+            pickerSelection = null;
+            closeRolePicker();
+            renderScreen();
+            showToast(`已将 ${roles[currentRole].name} 换到主页`);
+            return;
+          }
+          pickerSelection = id;
           openRolePicker();
-          showToast(`已聚焦 ${roles[currentRole].name}`);
+          showToast(`已聚焦 ${roles[pickerSelection].name}，再次点击以换上主页`);
         }));
       }
 
       function closeRolePicker() {
+        pickerSelection = null;
         rolePicker.classList.remove('show');
         rolePickerBackdrop.classList.remove('show');
       }
