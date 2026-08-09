@@ -164,7 +164,6 @@
       .screen:not(.ready) .brand,
       .screen:not(.ready) .top-actions,
         .screen:not(.ready) .role-panel,
-        .screen:not(.ready) .last-dialogue,
         .screen:not(.ready) .avatar-stage,
       .screen:not(.ready) .module-rail {
         opacity: 0;
@@ -172,7 +171,6 @@
       .screen:not(.ready) .brand,
       .screen:not(.ready) .top-actions { transform: translateY(-8px); }
       .screen:not(.ready) .role-panel { transform: translate(-24px, -8px); }
-      .screen:not(.ready) .last-dialogue { transform: translateY(8px); }
       .screen:not(.ready) .avatar-stage { transform: translateY(13px) scale(0.96); }
       .screen:not(.ready) .module-rail { transform: translateX(22px); }
       .screen.ready .brand,
@@ -187,7 +185,6 @@
       .screen.ready .brand { transition-delay: 40ms; }
       .screen.ready .top-actions { transition-delay: 90ms; }
       .screen.ready .role-panel { transition-delay: 135ms; }
-      .screen.ready .last-dialogue { opacity: 1; transform: none; transition: opacity 300ms var(--ease), transform 360ms var(--ease); transition-delay: 205ms; }
       .screen.ready .avatar-stage { transition-delay: 265ms; }
       .screen.ready .module-rail { transition-delay: 345ms; }
       .module-item { opacity: 0; transform: translateX(18px); }
@@ -213,38 +210,6 @@
       .edge-gesture-hint::before { content: ""; position: absolute; top: 12px; bottom: 12px; left: -1px; border-left: 1px solid var(--accent); opacity: 0.7; animation: edge-pulse 3.8s ease-in-out infinite; }
       @keyframes edge-pulse { 0%, 70%, 100% { opacity: 0.12; transform: scaleY(0.45); } 84% { opacity: 0.85; transform: scaleY(1); } }
 
-      .last-dialogue {
-        position: absolute;
-        z-index: 5;
-        top: 64px;
-        left: 28px;
-        display: grid;
-        gap: 3px;
-        width: min(245px, 64%);
-        padding: 7px 11px 8px;
-        border: 1px solid var(--line);
-        border-radius: 12px 12px 12px 4px;
-        background: var(--surface);
-        color: var(--text);
-        box-shadow: 0 8px 20px rgba(37, 46, 64, 0.08);
-        backdrop-filter: blur(12px);
-        pointer-events: none;
-      }
-      .last-dialogue::after {
-        content: "";
-        position: absolute;
-        left: 15px;
-        bottom: -6px;
-        width: 10px;
-        height: 10px;
-        border-right: 1px solid var(--line);
-        border-bottom: 1px solid var(--line);
-        background: var(--surface);
-        transform: skewY(-30deg) rotate(25deg);
-      }
-      .dialogue-meta { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: 0.08em; }
-      .dialogue-line { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-
       /* The role surface is deliberately geometric, not a literal wireframe box. */
       .role-panel {
         position: absolute;
@@ -263,7 +228,7 @@
         background-position: center;
         background-size: cover;
         color: white;
-        cursor: pointer;
+        cursor: default;
         text-align: left;
         box-shadow: 12px 17px 0 rgba(64, 78, 178, 0.08), 0 19px 35px rgba(67, 79, 170, 0.18);
         transition: transform 230ms var(--ease), filter 230ms var(--ease), box-shadow 230ms var(--ease);
@@ -292,6 +257,25 @@
         0%, 100% { opacity: 0.91; transform: scale(1.015) translate3d(0, 0, 0); }
         50% { opacity: 1; transform: scale(1.04) translate3d(-1.5%, -0.6%, 0); }
       }
+      .role-cover-hit {
+        position: absolute;
+        z-index: 1;
+        inset: 0 72px 0 0;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+      }
+      .role-kicker,
+      .role-name,
+      .role-context { pointer-events: none; }
+      .role-enter {
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        transition: transform 160ms var(--ease), filter 160ms var(--ease);
+      }
+      .role-enter:hover { filter: brightness(0.95); transform: scale(1.06); }
+      .role-enter:active { transform: scale(0.92); }
       .role-panel::before {
         content: "";
         position: absolute;
@@ -419,6 +403,33 @@
       .settings-row span:last-child { color: var(--quiet); font-size: 18px; }
       .settings-theme { color: var(--accent) !important; cursor: pointer; }
 
+      .recent-backdrop { position: fixed; z-index: 22; inset: 0; display: none; background: rgba(4, 6, 11, 0.46); backdrop-filter: blur(7px); }
+      .recent-backdrop.show { display: block; }
+      .recent-sheet { position: fixed; z-index: 23; right: 0; bottom: 0; left: 0; width: min(430px, 100vw); min-height: 340px; margin: auto; padding: 11px 17px max(22px, env(safe-area-inset-bottom)); border: 1px solid var(--line); border-bottom: 0; border-radius: 28px 28px 0 0; background: var(--surface-solid); box-shadow: 0 -24px 80px rgba(0, 0, 0, 0.3); transform: translateY(105%); transition: transform 340ms var(--ease); }
+      .recent-sheet.show { transform: translateY(0); }
+      .recent-handle { width: 38px; height: 4px; margin: 0 auto 18px; border-radius: 99px; background: var(--quiet); }
+      .recent-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+      .recent-heading h2 { margin: 0; font-size: 21px; letter-spacing: -0.05em; }
+      .recent-heading p { margin-top: 4px; color: var(--muted); font-size: 11px; }
+      .recent-heading .recent-close { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; font-size: 22px; }
+      .recent-deck { display: flex; gap: 10px; align-items: end; min-height: 194px; margin-top: 20px; padding: 5px 4px 12px; overflow-x: auto; scrollbar-width: none; }
+      .recent-deck::-webkit-scrollbar { display: none; }
+      .recent-role { position: relative; flex: 0 0 112px; height: 164px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px 8px 17px 8px; background: linear-gradient(145deg, #2c3855, #6b7caf); color: white; cursor: pointer; text-align: left; transform: translateY(8px); transition: transform 240ms var(--ease), border-color 240ms var(--ease), box-shadow 240ms var(--ease), filter 240ms var(--ease); }
+      .recent-role::before { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255,255,255,0.17), transparent 35%, rgba(4,7,14,0.72)); }
+      .recent-role::after { content: ""; position: absolute; right: -17px; top: -20px; width: 72px; height: 72px; border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; }
+      .recent-role[data-role="mira"] { background-image: linear-gradient(160deg, rgba(47, 57, 138, 0.2), rgba(8, 10, 20, 0.68)), url("./assets/mira-cover.png"); background-position: center 24%; background-size: cover; }
+      .recent-role[data-role="lume"] { background: linear-gradient(145deg, #572d3c, #bb7a69); }
+      .recent-role[data-role="riven"] { background: linear-gradient(145deg, #123b40, #398a81); }
+      .recent-role[data-role="null"] { background: linear-gradient(145deg, #394150, #7b8492); }
+      .recent-role.active { flex-basis: 126px; height: 182px; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 18px 35px rgba(84, 98, 210, 0.25); transform: translateY(0); }
+      .recent-role:hover { filter: brightness(1.08); transform: translateY(-3px); }
+      .recent-role.active:hover { transform: translateY(-3px); }
+      .recent-role-content { position: absolute; z-index: 1; right: 13px; bottom: 13px; left: 13px; }
+      .recent-role-content strong { display: block; font-size: 16px; font-weight: 800; }
+      .recent-role-content span { display: block; margin-top: 4px; overflow: hidden; color: rgba(255,255,255,0.7); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+      .recent-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 1px; color: var(--muted); font-size: 11px; }
+      .recent-library { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 11px; font-weight: 750; }
+
       .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; }
       .toast.show { opacity: 1; transform: translateY(0); }
 
@@ -440,14 +451,16 @@
       <p>从右侧边缘侧滑打开这里。设置属于体验的后台层，不占据角色舞台。</p>
       <div class="settings-list"><div class="settings-row"><span>界面主题</span><span class="settings-theme" id="settingsTheme" role="button" tabindex="0">Day / Night</span></div><div class="settings-row"><span>API 配置</span><span>›</span></div><div class="settings-row"><span>用户设定</span><span>›</span></div><div class="settings-row"><span>Prompt 策略</span><span>›</span></div></div>
     </aside>
+    <div class="recent-backdrop" id="recentBackdrop"></div>
+    <aside class="recent-sheet" id="recentSheet" aria-label="最近聊过的角色"></aside>
     <div class="toast" id="toast" role="status"></div>
 
     <script>
       const roles = {
-        mira: { name: 'Mira', title: '夜航观测员', context: '夜航列车 · 第 04 节', lastChat: '距上次聊天 2 小时 14 分', lastLine: '你终于回来了。', symbol: '◒' },
-        lume: { name: 'Lume', title: '余烬里的信使', context: '灰港 · 雨夜档案', lastChat: '距上次聊天 1 天', lastLine: '雨还没有停。', symbol: '✧' },
-        riven: { name: 'Riven', title: '潮汐协议', context: '深海节点 · 12:47', lastChat: '距上次聊天 3 天', lastLine: '节点仍在等待回应。', symbol: '◇' },
-        null: { name: 'Noct', title: '未命名世界', context: '新体验等待建立', lastChat: '尚未开始聊天', lastLine: '等待第一个故事发生。', symbol: '○' },
+        mira: { name: 'Mira', title: '夜航观测员', context: '夜航列车 · 第 04 节', symbol: '◒' },
+        lume: { name: 'Lume', title: '余烬里的信使', context: '灰港 · 雨夜档案', symbol: '✧' },
+        riven: { name: 'Riven', title: '潮汐协议', context: '深海节点 · 12:47', symbol: '◇' },
+        null: { name: 'Noct', title: '未命名世界', context: '新体验等待建立', symbol: '○' },
       };
       const modules = [
         { name: '角色库', symbol: '♟', action: 'roles', preview: '<span class="preview-person"></span><span class="preview-person"></span><span class="preview-person"></span><span class="preview-text">3 个角色</span>' },
@@ -465,6 +478,8 @@
       const settingsBackdrop = document.getElementById('settingsBackdrop');
       const settingsClose = document.getElementById('settingsClose');
       const settingsTheme = document.getElementById('settingsTheme');
+      const recentSheet = document.getElementById('recentSheet');
+      const recentBackdrop = document.getElementById('recentBackdrop');
 
       function moduleMarkup(item) {
         return `<button class="module-item" data-action="${item.action}" type="button"><span class="module-head"><span class="module-symbol">${item.symbol}</span><span class="module-copy"><strong>${item.name}</strong></span><span class="module-arrow">›</span></span><span class="module-preview">${item.preview}</span></button>`;
@@ -472,7 +487,30 @@
 
       function screenMarkup() {
         const role = roles[currentRole];
-        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><div class="last-dialogue"><span class="dialogue-meta">${role.lastChat}</span><span class="dialogue-line">“${role.lastLine}”</span></div><button class="role-panel" data-action="enter" type="button"><span class="role-cover"></span><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><span class="role-enter">→</span></button><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
+        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><div class="role-panel"><button class="role-cover-hit" data-action="recent-roles" type="button" aria-label="查看最近聊过的角色"></button><span class="role-cover"></span><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><button class="role-enter" data-action="enter" type="button" aria-label="进入当前角色聊天">→</button></div><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
+      }
+
+      function recentRoleMarkup(id, role) {
+        return `<button class="recent-role ${id === currentRole ? 'active' : ''}" data-role="${id}" type="button"><span class="recent-role-content"><strong>${role.name}</strong><span>${role.title}</span></span></button>`;
+      }
+
+      function openRecentRoles() {
+        recentSheet.innerHTML = `<div class="recent-handle"></div><div class="recent-heading"><div><h2>最近聊过的角色</h2><p>选择角色只会切换当前体验，不会直接进入聊天</p></div><button class="recent-close" data-action="close-recent" type="button" aria-label="关闭最近角色">×</button></div><div class="recent-deck">${Object.entries(roles).map(([id, role]) => recentRoleMarkup(id, role)).join('')}</div><div class="recent-foot"><span>当前：${roles[currentRole].name}</span><button class="recent-library" data-action="all-roles" type="button">全部角色库 →</button></div>`;
+        recentSheet.classList.add('show');
+        recentBackdrop.classList.add('show');
+        recentSheet.querySelector('[data-action="close-recent"]').addEventListener('click', closeRecentRoles);
+        recentSheet.querySelector('[data-action="all-roles"]').addEventListener('click', () => { closeRecentRoles(); showToast('打开角色库页面'); });
+        recentSheet.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', () => {
+          currentRole = element.dataset.role;
+          closeRecentRoles();
+          renderScreen();
+          showToast(`已切换到 ${roles[currentRole].name}`);
+        }));
+      }
+
+      function closeRecentRoles() {
+        recentSheet.classList.remove('show');
+        recentBackdrop.classList.remove('show');
       }
 
       function renderScreen() {
@@ -496,6 +534,7 @@
       function toggleTheme() { theme = theme === 'day' ? 'night' : 'day'; document.body.dataset.theme = theme; renderScreen(); }
       function handleAction(action) {
         if (action === 'theme') toggleTheme();
+        else if (action === 'recent-roles') openRecentRoles();
         else if (action === 'enter') {
           const screen = device.querySelector('.screen');
           screen.classList.add('experience-entering');
@@ -525,9 +564,10 @@
       device.addEventListener('pointercancel', () => { edgeStartX = null; });
       settingsClose.addEventListener('click', closeSettings);
       settingsBackdrop.addEventListener('click', closeSettings);
+      recentBackdrop.addEventListener('click', closeRecentRoles);
       settingsTheme.addEventListener('click', toggleTheme);
       settingsTheme.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') toggleTheme(); });
-      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettings(); });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') { closeSettings(); closeRecentRoles(); } });
 
       renderScreen();
     </script>
