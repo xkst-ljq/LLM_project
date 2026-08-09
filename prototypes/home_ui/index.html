@@ -507,7 +507,7 @@
 
       function openRolePicker(focusRole = null) {
         const ordered = ['mira', 'lume', 'riven', 'null'].map(id => [id, roles[id]]);
-        rolePicker.innerHTML = `<span class="picker-cover"></span><div class="picker-top"><div><div class="picker-kicker">RECENT ROLES · NEWEST FIRST</div><div class="picker-title">最近聊过的角色</div></div><button class="picker-close" data-action="close-picker" type="button" aria-label="关闭角色台">×</button></div><div class="picker-deck">${ordered.map(([id, role]) => pickerRoleMarkup(id, role)).join('')}</div><div class="picker-foot"><span>向右滑动查看更早的角色</span><button class="picker-library" data-action="all-roles" type="button">全部角色库 →</button></div>`;
+        rolePicker.innerHTML = `<span class="picker-cover"></span><div class="picker-top"><div><div class="picker-kicker">RECENT ROLES · NEWEST FIRST</div><div class="picker-title">最近聊过的角色</div></div><button class="picker-close" data-action="close-picker" type="button" aria-label="关闭角色台">×</button></div><div class="picker-deck">${ordered.map(([id, role]) => pickerRoleMarkup(id, role)).join('')}</div><div class="picker-foot"><span>横向滑动查看更早的角色</span><button class="picker-library" data-action="all-roles" type="button">全部角色库 →</button></div>`;
         rolePicker.dataset.role = currentRole;
         rolePicker.classList.add('show');
         rolePickerBackdrop.classList.add('show');
