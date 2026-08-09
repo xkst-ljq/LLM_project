@@ -406,15 +406,11 @@
       .role-picker-backdrop { position: fixed; z-index: 22; inset: 0; display: none; background: rgba(5, 8, 15, 0.48); backdrop-filter: blur(6px); }
       .role-picker-backdrop.show { display: block; animation: picker-backdrop-in 360ms var(--ease) both; }
       @keyframes picker-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
-      .role-picker { position: fixed; z-index: 23; top: 104px; right: 0; left: 0; width: 100%; height: 356px; margin: auto; overflow: visible; color: white; opacity: 0; pointer-events: none; transform: translateY(-12px); transition: opacity 180ms var(--ease), transform 360ms var(--ease); }
-      .role-picker.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
-      .picker-top { position: absolute; z-index: 5; top: 0; right: 20px; left: 20px; display: flex; align-items: start; justify-content: space-between; }
-      .picker-kicker { color: rgba(255,255,255,0.68); font-size: 9px; font-weight: 850; letter-spacing: 0.17em; }
-      .picker-title { margin-top: 6px; color: white; font-size: 22px; font-weight: 780; letter-spacing: -0.05em; }
-      .picker-close { display: grid; place-items: center; width: 37px; height: 37px; border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; background: rgba(5,8,15,0.25); color: white; cursor: pointer; font-size: 21px; }
-      .picker-deck { position: absolute; top: 54px; right: 0; bottom: 61px; left: 0; display: flex; align-items: start; gap: 10px; padding: 0 15px 12px; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; }
+      .role-picker { position: fixed; z-index: 23; top: 101px; right: 0; left: 0; width: 100%; height: 334px; margin: auto; overflow: visible; color: white; opacity: 0; pointer-events: none; transform: translate(0, 10px) scale(0.92); transform-origin: 10% 0; transition: opacity 160ms var(--ease), transform 380ms var(--ease); }
+      .role-picker.show { opacity: 1; pointer-events: auto; transform: translate(0, 0) scale(1); }
+      .picker-deck { position: absolute; top: 8px; right: 0; bottom: 54px; left: 0; display: flex; align-items: start; gap: 10px; padding: 0 15px 12px; overflow-x: auto; overflow-y: visible; scroll-snap-type: x proximity; scrollbar-width: none; }
       .picker-deck::-webkit-scrollbar { display: none; }
-      .picker-card { position: relative; flex: 0 0 min(76vw, 327px); height: 166px; overflow: hidden; clip-path: polygon(0 0, 94% 0, 100% 12%, 92% 100%, 2% 94%); border: 0; background: linear-gradient(145deg, #424fb4, #8791e2); color: white; cursor: pointer; scroll-snap-align: start; text-align: left; opacity: 0.56; transform: translateY(13px) scale(0.96); filter: saturate(0.72); transition: transform 300ms var(--ease), opacity 250ms var(--ease), filter 250ms var(--ease), box-shadow 250ms var(--ease); }
+      .picker-card { position: relative; flex: 0 0 min(76vw, 327px); height: 166px; overflow: hidden; clip-path: polygon(0 0, 94% 0, 100% 12%, 92% 100%, 2% 94%); border: 0; background: linear-gradient(145deg, #424fb4, #8791e2); color: white; cursor: pointer; scroll-snap-align: start; text-align: left; opacity: 0.54; transform: translateY(11px) scale(0.96); filter: saturate(0.72); transition: flex-basis 330ms var(--ease), height 330ms var(--ease), transform 300ms var(--ease), opacity 250ms var(--ease), filter 250ms var(--ease), box-shadow 250ms var(--ease); }
       .picker-card::before { content: ""; position: absolute; z-index: 1; inset: 0; background: linear-gradient(112deg, rgba(255,255,255,0.1), transparent 48%, rgba(4,7,14,0.35)); pointer-events: none; }
       .picker-card[data-role="mira"] { background: linear-gradient(112deg, rgba(44,52,132,0.86), rgba(42,48,112,0.55)); }
       .picker-card[data-role="lume"] { background: linear-gradient(145deg, #613244, #c18072); }
@@ -422,8 +418,8 @@
       .picker-card[data-role="null"] { background: linear-gradient(145deg, #414b5c, #8992a1); }
       .picker-card .role-cover { z-index: 0; animation: none; }
       .picker-card[data-role="mira"] .role-cover { background-image: linear-gradient(112deg, rgba(44,52,132,0.58), rgba(18,22,58,0.5)), url("./assets/mira-cover.png"); background-position: center 24%; background-size: cover; }
-      .picker-card.active { opacity: 1; transform: translateY(0) scale(1); filter: saturate(1); box-shadow: 0 0 0 1px rgba(255,255,255,0.5), 0 20px 40px rgba(0,0,0,0.25); }
-      .picker-card:hover { opacity: 0.94; filter: saturate(1); transform: translateY(-3px) scale(0.98); }
+      .picker-card.active { flex-basis: min(88vw, 378px); height: 208px; opacity: 1; transform: translateY(0) scale(1); filter: saturate(1); box-shadow: 0 0 0 1px rgba(255,255,255,0.5), 0 20px 40px rgba(0,0,0,0.25); }
+      .picker-card:hover { opacity: 0.94; filter: saturate(1); transform: translateY(-3px); }
       .picker-card.active:hover { transform: translateY(-3px) scale(1); }
       .picker-card .role-kicker, .picker-card .role-name, .picker-card .role-context { z-index: 2; }
       .picker-card .role-enter { z-index: 4; }
@@ -498,11 +494,10 @@
 
       function openRolePicker(focusRole = null) {
         const ordered = ['mira', 'lume', 'riven', 'null'].map(id => [id, roles[id]]);
-        rolePicker.innerHTML = `<div class="picker-top"><div><div class="picker-kicker">RECENT ROLES · NEWEST FIRST</div><div class="picker-title">最近聊过的角色</div></div><button class="picker-close" data-action="close-picker" type="button" aria-label="关闭角色台">×</button></div><div class="picker-deck">${ordered.map(([id, role]) => pickerRoleMarkup(id, role)).join('')}</div><div class="picker-foot"><span>最新在左 · 横向滑动查看更早角色</span><button class="picker-library" data-action="all-roles" type="button">全部角色库 →</button></div>`;
+        rolePicker.innerHTML = `<div class="picker-deck">${ordered.map(([id, role]) => pickerRoleMarkup(id, role)).join('')}</div><div class="picker-foot"><span>最新在左 · 横向滑动查看更早角色</span><button class="picker-library" data-action="all-roles" type="button">全部角色库 →</button></div>`;
         rolePicker.dataset.role = currentRole;
         rolePicker.classList.add('show');
         rolePickerBackdrop.classList.add('show');
-        rolePicker.querySelector('[data-action="close-picker"]').addEventListener('click', closeRolePicker);
         rolePicker.querySelector('[data-action="all-roles"]').addEventListener('click', () => { closeRolePicker(); showToast('打开角色库页面'); });
         rolePicker.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', event => {
           if (event.target.closest('[data-action="picker-enter"]')) return;
