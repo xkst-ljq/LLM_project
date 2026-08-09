@@ -953,6 +953,7 @@ class _ModulePreviewTile extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(9, 8, 7, 7),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
@@ -982,7 +983,7 @@ class _ModulePreviewTile extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 12),
                   _ModulePreviewVisual(
                     kind: entry.previewKind,
                     label: entry.preview,
