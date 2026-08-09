@@ -163,14 +163,16 @@
       /* Entrance choreography: the home screen assembles from its stage geometry. */
       .screen:not(.ready) .brand,
       .screen:not(.ready) .top-actions,
-      .screen:not(.ready) .role-panel,
-      .screen:not(.ready) .avatar-stage,
+        .screen:not(.ready) .role-panel,
+        .screen:not(.ready) .last-dialogue,
+        .screen:not(.ready) .avatar-stage,
       .screen:not(.ready) .module-rail {
         opacity: 0;
       }
       .screen:not(.ready) .brand,
       .screen:not(.ready) .top-actions { transform: translateY(-8px); }
       .screen:not(.ready) .role-panel { transform: translate(-24px, -8px); }
+      .screen:not(.ready) .last-dialogue { transform: translateY(8px); }
       .screen:not(.ready) .avatar-stage { transform: translateY(13px) scale(0.96); }
       .screen:not(.ready) .module-rail { transform: translateX(22px); }
       .screen.ready .brand,
@@ -185,6 +187,7 @@
       .screen.ready .brand { transition-delay: 40ms; }
       .screen.ready .top-actions { transition-delay: 90ms; }
       .screen.ready .role-panel { transition-delay: 135ms; }
+      .screen.ready .last-dialogue { opacity: 1; transform: none; transition: opacity 300ms var(--ease), transform 360ms var(--ease); transition-delay: 205ms; }
       .screen.ready .avatar-stage { transition-delay: 265ms; }
       .screen.ready .module-rail { transition-delay: 345ms; }
       .module-item { opacity: 0; transform: translateX(18px); }
@@ -209,6 +212,38 @@
       .edge-gesture-hint { position: absolute; z-index: 7; top: 43%; right: 0; display: grid; place-items: center; width: 15px; height: 72px; border-left: 1px solid var(--line); color: var(--quiet); opacity: 0.52; font-size: 12px; pointer-events: none; }
       .edge-gesture-hint::before { content: ""; position: absolute; top: 12px; bottom: 12px; left: -1px; border-left: 1px solid var(--accent); opacity: 0.7; animation: edge-pulse 3.8s ease-in-out infinite; }
       @keyframes edge-pulse { 0%, 70%, 100% { opacity: 0.12; transform: scaleY(0.45); } 84% { opacity: 0.85; transform: scaleY(1); } }
+
+      .last-dialogue {
+        position: absolute;
+        z-index: 5;
+        top: 64px;
+        left: 28px;
+        display: grid;
+        gap: 3px;
+        width: min(245px, 64%);
+        padding: 7px 11px 8px;
+        border: 1px solid var(--line);
+        border-radius: 12px 12px 12px 4px;
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: 0 8px 20px rgba(37, 46, 64, 0.08);
+        backdrop-filter: blur(12px);
+        pointer-events: none;
+      }
+      .last-dialogue::after {
+        content: "";
+        position: absolute;
+        left: 15px;
+        bottom: -6px;
+        width: 10px;
+        height: 10px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+        transform: skewY(-30deg) rotate(25deg);
+      }
+      .dialogue-meta { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: 0.08em; }
+      .dialogue-line { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 
       /* The role surface is deliberately geometric, not a literal wireframe box. */
       .role-panel {
@@ -409,10 +444,10 @@
 
     <script>
       const roles = {
-        mira: { name: 'Mira', title: '夜航观测员', context: '夜航列车 · 第 04 节', symbol: '◒' },
-        lume: { name: 'Lume', title: '余烬里的信使', context: '灰港 · 雨夜档案', symbol: '✧' },
-        riven: { name: 'Riven', title: '潮汐协议', context: '深海节点 · 12:47', symbol: '◇' },
-        null: { name: 'Noct', title: '未命名世界', context: '新体验等待建立', symbol: '○' },
+        mira: { name: 'Mira', title: '夜航观测员', context: '夜航列车 · 第 04 节', lastChat: '距上次聊天 2 小时 14 分', lastLine: '你终于回来了。', symbol: '◒' },
+        lume: { name: 'Lume', title: '余烬里的信使', context: '灰港 · 雨夜档案', lastChat: '距上次聊天 1 天', lastLine: '雨还没有停。', symbol: '✧' },
+        riven: { name: 'Riven', title: '潮汐协议', context: '深海节点 · 12:47', lastChat: '距上次聊天 3 天', lastLine: '节点仍在等待回应。', symbol: '◇' },
+        null: { name: 'Noct', title: '未命名世界', context: '新体验等待建立', lastChat: '尚未开始聊天', lastLine: '等待第一个故事发生。', symbol: '○' },
       };
       const modules = [
         { name: '角色库', symbol: '♟', action: 'roles', preview: '<span class="preview-person"></span><span class="preview-person"></span><span class="preview-person"></span><span class="preview-text">3 个角色</span>' },
@@ -437,7 +472,7 @@
 
       function screenMarkup() {
         const role = roles[currentRole];
-        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><button class="role-panel" data-action="enter" type="button"><span class="role-cover"></span><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><span class="role-enter">→</span></button><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
+        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button></div><span class="edge-gesture-hint" aria-hidden="true">‹</span><div class="last-dialogue"><span class="dialogue-meta">${role.lastChat}</span><span class="dialogue-line">“${role.lastLine}”</span></div><button class="role-panel" data-action="enter" type="button"><span class="role-cover"></span><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><span class="role-enter">→</span></button><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
       }
 
       function renderScreen() {
