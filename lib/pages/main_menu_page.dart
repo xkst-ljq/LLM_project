@@ -16,7 +16,6 @@ import 'home_experience_page.dart';
 import 'prompt_settings_page.dart';
 import 'settings_menu_page.dart';
 import 'tutorial_home_page.dart';
-import 'ui_asset_gallery.dart';
 import 'user_settings_page.dart';
 import 'world_book_library_page.dart';
 

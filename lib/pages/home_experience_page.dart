@@ -479,7 +479,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
               padding: EdgeInsets.zero,
               physics: const BouncingScrollPhysics(),
               itemCount: planes.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              separatorBuilder: (context, index) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
                 final character = planes[index];
                 final active = index == 0;
@@ -545,7 +545,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage> {
     return ListView.separated(
       padding: const EdgeInsets.only(right: 4, bottom: 16),
       itemCount: entries.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) => _ModulePreviewTile(
         entry: entries[index],
         tokens: tokens,
@@ -915,7 +915,7 @@ class _PreviewGlyphPainter extends CustomPainter {
 }
 
 class _RoleEntryHitArea extends StatelessWidget {
-  const _RoleEntryHitArea({super.key, required this.onTap, required this.child});
+  const _RoleEntryHitArea({required this.onTap, required this.child});
 
   final VoidCallback onTap;
   final Widget child;
@@ -1035,7 +1035,7 @@ class _RolePlane extends StatelessWidget {
                       right: 12,
                       bottom: active ? 20 : 13,
                       child: Text(
-                        '${character.title} · $recentLabel',
+                        '${character.name} · $recentLabel',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
