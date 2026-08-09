@@ -430,6 +430,24 @@ class DatabaseService {
     await db.delete('characters', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// 获取每个角色最近一条消息的时间戳。
+  ///
+  /// 主页用它排序「最近体验」角色，同时避免为每个角色单独查询消息表。
+  static Future<Map<String, int>> getLatestMessageTimestamps() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT character_id, MAX(timestamp) AS latest_timestamp '
+      'FROM messages GROUP BY character_id',
+    );
+    final result = <String, int>{};
+    for (final row in rows) {
+      final id = row['character_id'] as String?;
+      final timestamp = row['latest_timestamp'] as int?;
+      if (id != null && timestamp != null) result[id] = timestamp;
+    }
+    return result;
+  }
+
   /// 获取最近有对话记录的角色 ID
   static Future<String?> getLastActiveCharacterId() async {
     final db = await database;

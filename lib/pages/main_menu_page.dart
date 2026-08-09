@@ -12,6 +12,7 @@ import 'background_library_page.dart';
 import 'backup_restore_page.dart';
 import 'character_library_page.dart';
 import 'chat_page.dart';
+import 'home_experience_page.dart';
 import 'prompt_settings_page.dart';
 import 'settings_menu_page.dart';
 import 'tutorial_home_page.dart';
@@ -38,7 +39,6 @@ class _MainMenuPageState extends State<MainMenuPage>
   bool _hasAskedGuideThisSession = false;
   _MainGuidePhase _guidePhase = _MainGuidePhase.none;
 
-  final _homeListKey = GlobalKey();
   final _chatTileKey = GlobalKey();
   final _characterTileKey = GlobalKey();
   final _worldBookTileKey = GlobalKey();
@@ -580,95 +580,15 @@ class _MainMenuPageState extends State<MainMenuPage>
                 children: [
                   SizedBox(
                     width: screenWidth,
-                    child: Column(
-                      children: [
-                        AppBar(
-                          title: const Text('主页'),
-                          automaticallyImplyLeading: false,
-                        ),
-                        Expanded(
-                          child: ListView(
-                            key: _homeListKey,
-                            children: [
-                              Container(
-                                key: _chatTileKey,
-                                child: ListTile(
-                                  leading: const Icon(Icons.chat),
-                                  title: Text('聊天', key: _chatTextKey),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => const ChatPage(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              Container(
-                                key: _characterTileKey,
-                                child: ListTile(
-                                  leading: const Icon(Icons.people),
-                                  title: Text('角色库', key: _characterTextKey),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const CharacterLibraryPage(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              Container(
-                                key: _worldBookTileKey,
-                                child: ListTile(
-                                  leading: const Icon(Icons.book),
-                                  title: Text('世界书库', key: _worldBookTextKey),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const WorldBookLibraryPage(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              Container(
-                                key: _backgroundTileKey,
-                                child: ListTile(
-                                  leading: const Icon(Icons.image),
-                                  title: Text('背景图库', key: _backgroundTextKey),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const BackgroundLibraryPage(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.grid_view),
-                                title: const Text('UI 模组库'),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const UIAssetGallery(),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    child: HomeExperiencePage(
+                      chatTileKey: _chatTileKey,
+                      characterTileKey: _characterTileKey,
+                      worldBookTileKey: _worldBookTileKey,
+                      backgroundTileKey: _backgroundTileKey,
+                      chatTextKey: _chatTextKey,
+                      characterTextKey: _characterTextKey,
+                      worldBookTextKey: _worldBookTextKey,
+                      backgroundTextKey: _backgroundTextKey,
                     ),
                   ),
 
