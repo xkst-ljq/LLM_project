@@ -3,63 +3,59 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>LLM Project · Stage and Module Rail</title>
+    <title>LLM Project · Geometric Stage</title>
     <style>
       :root {
         color-scheme: light;
-        --canvas: #fbfbfa;
-        --canvas-soft: #f2f7f7;
-        --text: #20232b;
-        --muted: #7a808b;
-        --quiet: #a6abb3;
-        --line: #d3d6d9;
-        --route: #8d9299;
-        --route-active: #5264d7;
-        --brand: #5663bd;
-        --role-card: #5d68c4;
-        --role-card-dark: #4d59af;
-        --role-text: #ffffff;
-        --rail-bg: #dffbfa;
-        --rail-line: #c3eeed;
-        --module-1: #d6b97e;
-        --module-2: #76a6ee;
-        --module-3: #ef7f83;
-        --module-4: #596568;
-        --module-5: #a98bd7;
-        --module-6: #61bba9;
-        --module-text: #ffffff;
-        --dot: #7fd8be;
-        --surface: rgba(255,255,255,0.8);
-        --shadow: 0 24px 70px rgba(48, 53, 68, 0.16);
+        --canvas: #f8f9f7;
+        --canvas-deep: #edf1f0;
+        --text: #20232c;
+        --muted: #737984;
+        --quiet: #a4aab1;
+        --line: rgba(39, 47, 63, 0.17);
+        --line-soft: rgba(39, 47, 63, 0.09);
+        --accent: #5b67c5;
+        --accent-deep: #4653ae;
+        --accent-soft: rgba(91, 103, 197, 0.12);
+        --stage-color: #69bdb4;
+        --surface: rgba(255, 255, 255, 0.74);
+        --surface-solid: #ffffff;
+        --module-text: #303542;
+        --module-muted: #89909a;
+        --shadow: 0 22px 65px rgba(49, 56, 70, 0.14);
         --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+        --module-a: #bf9b5b;
+        --module-b: #5e8dda;
+        --module-c: #d96e73;
+        --module-d: #4b5a5d;
+        --module-e: #8f75be;
+        --module-f: #4b9b8e;
       }
 
       [data-theme="night"] {
         color-scheme: dark;
-        --canvas: #0b0f17;
-        --canvas-soft: #111a25;
-        --text: #f3f5fb;
-        --muted: #a2aab8;
-        --quiet: #697486;
-        --line: rgba(210, 221, 255, 0.22);
-        --route: rgba(206, 214, 232, 0.56);
-        --route-active: #9ca9ff;
-        --brand: #aeb8ff;
-        --role-card: #5c6bd0;
-        --role-card-dark: #3d4a9c;
-        --role-text: #ffffff;
-        --rail-bg: rgba(26, 69, 82, 0.78);
-        --rail-line: rgba(130, 226, 218, 0.35);
-        --module-1: #9b7d49;
-        --module-2: #4e7fbd;
-        --module-3: #b95d69;
-        --module-4: #39484b;
-        --module-5: #765e9d;
-        --module-6: #3d897d;
-        --module-text: #ffffff;
-        --dot: #83e5c9;
-        --surface: rgba(19, 25, 36, 0.78);
-        --shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+        --canvas: #0b1018;
+        --canvas-deep: #101823;
+        --text: #f2f4fa;
+        --muted: #a5adba;
+        --quiet: #687486;
+        --line: rgba(214, 223, 255, 0.23);
+        --line-soft: rgba(214, 223, 255, 0.11);
+        --accent: #a4aeff;
+        --accent-deep: #7e8af1;
+        --accent-soft: rgba(164, 174, 255, 0.16);
+        --stage-color: #79d4c7;
+        --surface: rgba(22, 29, 40, 0.74);
+        --surface-solid: #161d29;
+        --module-text: #edf1fb;
+        --module-muted: #98a2b2;
+        --shadow: 0 25px 75px rgba(0, 0, 0, 0.4);
+        --module-a: #b08b4b;
+        --module-b: #5f8ed9;
+        --module-c: #d26c76;
+        --module-d: #5c6b6e;
+        --module-e: #9475c7;
+        --module-f: #4fafa0;
       }
 
       * { box-sizing: border-box; }
@@ -70,13 +66,13 @@
         min-height: 100svh;
         margin: 0;
         overflow: hidden;
-        background: radial-gradient(circle at 50% 0%, rgba(112, 131, 224, 0.12), transparent 34rem), var(--canvas);
+        background: radial-gradient(circle at 50% 0%, rgba(104, 118, 215, 0.13), transparent 34rem), var(--canvas);
         color: var(--text);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
         transition: background-color 260ms var(--ease), color 260ms var(--ease);
       }
       button { font: inherit; }
-      button:focus-visible { outline: 2px solid var(--route-active); outline-offset: 3px; }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
       .device {
         position: relative;
@@ -99,59 +95,60 @@
         height: 100%;
         overflow: hidden;
         background:
-          radial-gradient(ellipse at 17% 65%, rgba(115, 192, 183, 0.08), transparent 13rem),
-          linear-gradient(145deg, transparent 0 62%, var(--canvas-soft) 100%),
+          radial-gradient(ellipse at 4% 76%, rgba(105, 189, 180, 0.11), transparent 14rem),
+          linear-gradient(145deg, transparent 0 60%, var(--canvas-deep) 100%),
           var(--canvas);
         isolation: isolate;
       }
       .screen::before {
         content: "";
         position: absolute;
-        z-index: -1;
-        inset: 0;
-        opacity: 0.38;
+        z-index: -3;
+        top: 19%;
+        right: -36%;
+        width: 115%;
+        height: 45%;
+        border: 1px solid var(--line-soft);
+        border-radius: 50%;
+        transform: rotate(-57deg);
+        box-shadow: 0 0 0 24px transparent, 0 0 0 25px var(--line-soft), 0 0 0 74px transparent, 0 0 0 75px var(--line-soft);
+        opacity: 0.45;
         pointer-events: none;
-        background-image: radial-gradient(var(--line) 0.6px, transparent 0.6px);
-        background-size: 18px 18px;
-        mask-image: linear-gradient(140deg, black, transparent 56%);
+      }
+      .screen::after {
+        content: "";
+        position: absolute;
+        z-index: -2;
+        top: 50%;
+        left: -20%;
+        width: 150%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--line), transparent);
+        transform: rotate(-57deg);
+        opacity: 0.5;
+        pointer-events: none;
       }
 
       .brand {
         position: absolute;
-        z-index: 5;
-        top: max(18px, env(safe-area-inset-top));
+        z-index: 8;
+        top: max(17px, env(safe-area-inset-top));
         left: 22px;
-        color: var(--brand);
-        font-family: "Comic Sans MS", "Bradley Hand", cursive;
-        font-size: 20px;
-        font-weight: 800;
-        letter-spacing: 0.04em;
-        transform: rotate(-2deg);
-      }
-      .brand::after {
-        content: "";
-        display: block;
-        width: 57px;
-        height: 3px;
-        margin: 3px 0 0 4px;
-        border-radius: 99px;
-        background: var(--brand);
-        opacity: 0.28;
-        transform: rotate(-3deg);
-      }
-      .top-actions {
-        position: absolute;
-        z-index: 6;
-        top: max(16px, env(safe-area-inset-top));
-        right: 18px;
         display: flex;
-        gap: 7px;
+        align-items: center;
+        gap: 9px;
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 850;
+        letter-spacing: 0.12em;
       }
+      .brand-mark { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); transform: rotate(45deg); box-shadow: 0 0 12px var(--accent); }
+      .top-actions { position: absolute; z-index: 8; top: max(14px, env(safe-area-inset-top)); right: 18px; display: flex; gap: 7px; }
       .top-action {
         display: grid;
         place-items: center;
-        width: 36px;
-        height: 36px;
+        width: 35px;
+        height: 35px;
         border: 1px solid var(--line);
         border-radius: 50%;
         background: var(--surface);
@@ -159,231 +156,147 @@
         cursor: pointer;
         transition: transform 180ms var(--ease), color 180ms var(--ease), background-color 180ms var(--ease);
       }
-      .top-action:hover { color: var(--text); background: var(--canvas-soft); transform: translateY(-2px); }
+      .top-action:hover { color: var(--text); background: var(--surface-solid); transform: translateY(-2px); }
       .top-action:active { transform: scale(0.92); }
 
+      /* The role surface is deliberately geometric, not a literal wireframe box. */
       .role-panel {
         position: absolute;
-        z-index: 4;
-        top: 117px;
+        z-index: 5;
+        top: 119px;
         left: 12px;
-        width: 74%;
-        height: 157px;
-        padding: 24px 22px;
+        width: 76%;
+        height: 166px;
+        padding: 25px 24px;
         overflow: hidden;
-        clip-path: polygon(0 0, 94% 0, 100% 12%, 94% 100%, 2% 94%);
-        background: linear-gradient(125deg, var(--role-card), var(--role-card-dark));
-        color: var(--role-text);
+        clip-path: polygon(0 0, 94% 0, 100% 12%, 92% 100%, 2% 94%);
+        border: 0;
+        background:
+          linear-gradient(112deg, rgba(255,255,255,0.11), transparent 46%),
+          linear-gradient(128deg, var(--accent), var(--accent-deep));
+        color: white;
         cursor: pointer;
         text-align: left;
-        box-shadow: 10px 14px 0 rgba(46, 55, 143, 0.08), 0 18px 30px rgba(61, 72, 169, 0.18);
-        transition: transform 240ms var(--ease), filter 240ms var(--ease), box-shadow 240ms var(--ease);
+        box-shadow: 12px 17px 0 rgba(64, 78, 178, 0.08), 0 19px 35px rgba(67, 79, 170, 0.18);
+        transition: transform 230ms var(--ease), filter 230ms var(--ease), box-shadow 230ms var(--ease);
       }
       .role-panel::before {
         content: "";
         position: absolute;
-        top: -48px;
-        right: 32px;
-        width: 160px;
-        height: 160px;
-        border: 1px solid rgba(255,255,255,0.13);
+        top: -64px;
+        right: 21px;
+        width: 172px;
+        height: 172px;
+        border: 1px solid rgba(255,255,255,0.17);
         border-radius: 50%;
+        box-shadow: 0 0 0 18px rgba(255,255,255,0.035), 0 0 0 42px rgba(255,255,255,0.025);
       }
       .role-panel::after {
-        content: "CURRENT EXPERIENCE";
+        content: "01";
         position: absolute;
-        right: 33px;
+        right: 32px;
         top: 27px;
-        color: rgba(255,255,255,0.45);
-        font-size: 8px;
-        font-weight: 800;
+        color: rgba(255,255,255,0.5);
+        font-size: 9px;
+        font-weight: 900;
         letter-spacing: 0.16em;
-        writing-mode: vertical-rl;
       }
-      .role-panel:hover { filter: brightness(1.06); transform: translate(2px, -2px); box-shadow: 13px 17px 0 rgba(46, 55, 143, 0.08), 0 23px 36px rgba(61, 72, 169, 0.22); }
+      .role-panel:hover { filter: brightness(1.06); transform: translate(2px, -2px); box-shadow: 15px 20px 0 rgba(64, 78, 178, 0.08), 0 25px 42px rgba(67, 79, 170, 0.23); }
       .role-panel:active { transform: scale(0.98); }
-      .role-kicker { position: relative; z-index: 1; color: rgba(255,255,255,0.58); font-size: 9px; font-weight: 800; letter-spacing: 0.18em; }
-      .role-name { position: relative; z-index: 1; margin-top: 9px; font-size: 30px; font-weight: 760; letter-spacing: -0.05em; }
-      .role-context { position: relative; z-index: 1; margin-top: 4px; color: rgba(255,255,255,0.72); font-size: 11px; }
-      .role-arrow {
+      .role-kicker { position: relative; z-index: 1; color: rgba(255,255,255,0.58); font-size: 9px; font-weight: 850; letter-spacing: 0.18em; }
+      .role-name { position: relative; z-index: 1; margin-top: 8px; font-size: 32px; font-weight: 780; letter-spacing: -0.06em; }
+      .role-context { position: relative; z-index: 1; margin-top: 5px; color: rgba(255,255,255,0.73); font-size: 11px; }
+      .role-enter {
         position: absolute;
         z-index: 2;
-        right: 31px;
-        bottom: 16px;
+        right: 29px;
+        bottom: 17px;
         display: grid;
         place-items: center;
-        width: 61px;
-        height: 34px;
-        border: 5px solid rgba(255,255,255,0.86);
-        border-radius: 12px 15px 9px 12px;
-        background: rgba(255,255,255,0.92);
-        color: #151923;
-        font-size: 25px;
+        width: 49px;
+        height: 38px;
+        clip-path: polygon(13% 0, 100% 10%, 88% 100%, 0 88%);
+        background: white;
+        color: #1c2230;
+        font-size: 23px;
         line-height: 1;
-        transform: rotate(-2deg);
       }
-
-      .route {
-        position: absolute;
-        z-index: 1;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        overflow: visible;
-        pointer-events: none;
-      }
-      .route-shadow { fill: none; stroke: var(--canvas); stroke-width: 6; opacity: 0.75; }
-      .route-line { fill: none; stroke: var(--route); stroke-width: 1.4; }
-      .route-dash { fill: none; stroke: var(--route-active); stroke-width: 1.5; stroke-dasharray: 9 10; opacity: 0.76; }
-      .route-node { fill: var(--route-active); opacity: 0.9; }
-      .route-node-ring { fill: none; stroke: var(--route-active); stroke-width: 1; opacity: 0.45; }
 
       .avatar-stage {
         position: absolute;
-        z-index: 0;
-        top: 315px;
+        z-index: 1;
+        top: 320px;
         right: 45%;
-        bottom: 18px;
-        left: 18px;
+        bottom: 16px;
+        left: 13px;
         pointer-events: none;
       }
-      .stage-orbit {
-        position: absolute;
-        left: 50%;
-        bottom: 10%;
-        width: 150px;
-        height: 52px;
-        border: 1px solid var(--line);
-        border-radius: 50%;
-        opacity: 0.36;
-        transform: translateX(-50%) rotate(-12deg);
-      }
-      .stage-orbit::before, .stage-orbit::after { content: ""; position: absolute; border: 1px solid var(--line); border-radius: 50%; }
-      .stage-orbit::before { inset: -16px 25px; transform: rotate(15deg); }
-      .stage-orbit::after { inset: 12px -18px; transform: rotate(-26deg); }
-      .stage-label {
-        position: absolute;
-        left: 50%;
-        bottom: calc(10% - 24px);
-        color: var(--quiet);
-        font-size: 8px;
-        font-weight: 800;
-        letter-spacing: 0.16em;
-        opacity: 0.7;
-        transform: translateX(-50%);
-        white-space: nowrap;
-      }
-      .stage-light {
-        position: absolute;
-        left: 50%;
-        bottom: 7%;
-        width: 180px;
-        height: 120px;
-        border-radius: 50%;
-        background: radial-gradient(ellipse, rgba(117, 199, 191, 0.12), transparent 68%);
-        filter: blur(8px);
-        transform: translateX(-50%);
-      }
+      .stage-glow { position: absolute; left: 50%; bottom: 13%; width: 205px; height: 140px; border-radius: 50%; background: radial-gradient(ellipse, rgba(105, 189, 180, 0.16), transparent 68%); filter: blur(11px); transform: translateX(-50%); }
+      .stage-ring { position: absolute; left: 50%; bottom: 11%; width: 158px; height: 55px; border: 1px solid rgba(105, 189, 180, 0.42); border-radius: 50%; transform: translateX(-50%) rotate(-13deg); }
+      .stage-ring::before, .stage-ring::after { content: ""; position: absolute; border: 1px solid rgba(105, 189, 180, 0.19); border-radius: 50%; }
+      .stage-ring::before { inset: -16px 22px; transform: rotate(22deg); }
+      .stage-ring::after { inset: 13px -21px; transform: rotate(-28deg); }
+      .stage-caption { position: absolute; left: 50%; bottom: 7%; color: var(--quiet); font-size: 8px; font-weight: 800; letter-spacing: 0.18em; opacity: 0.72; transform: translateX(-50%); white-space: nowrap; }
 
       .module-rail {
         position: absolute;
-        z-index: 3;
-        right: 10px;
-        bottom: max(20px, env(safe-area-inset-bottom));
+        z-index: 6;
+        right: 12px;
+        bottom: max(22px, env(safe-area-inset-bottom));
         width: 45%;
-        height: 46%;
+        height: 48%;
         overflow: hidden;
-        clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%, 0 8%);
-        border: 1px solid var(--rail-line);
-        background: var(--rail-bg);
-        box-shadow: -10px 12px 0 rgba(98, 183, 183, 0.08), 0 18px 35px rgba(29, 96, 104, 0.1);
+        padding: 4px 0 4px 4px;
       }
-      .rail-inner {
-        height: 100%;
-        padding: 23px 11px 15px 17px;
-        overflow-y: auto;
-        scrollbar-width: none;
-      }
-      .rail-inner::-webkit-scrollbar { display: none; }
-      .rail-heading {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 6px;
-        margin: 0 5px 12px;
-        color: rgba(37, 87, 90, 0.72);
-        font-size: 9px;
-        font-weight: 900;
-        letter-spacing: 0.15em;
-      }
-      [data-theme="night"] .rail-heading { color: rgba(202, 250, 245, 0.7); }
-      .rail-heading span:last-child { font-size: 13px; letter-spacing: 0; }
-      .module-list { display: grid; gap: 11px; }
-      .module-card {
+      .rail-head { display: flex; align-items: center; justify-content: space-between; margin: 0 8px 10px 12px; color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: 0.15em; }
+      .rail-head .rail-count { color: var(--quiet); font-size: 11px; letter-spacing: 0; }
+      .module-list { display: grid; gap: 7px; height: calc(100% - 27px); padding: 2px 4px 14px 0; overflow-y: auto; scrollbar-width: none; }
+      .module-list::-webkit-scrollbar { display: none; }
+      .module-item {
         position: relative;
-        display: flex;
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) 17px;
         align-items: center;
-        gap: 10px;
-        width: 100%;
-        min-height: 69px;
-        padding: 10px 10px 10px 21px;
-        overflow: hidden;
-        clip-path: polygon(10% 0, 100% 0, 91% 100%, 0 100%);
-        border: 0;
+        gap: 8px;
+        min-height: 62px;
+        padding: 6px 7px 6px 8px;
+        border: 1px solid var(--line-soft);
+        border-radius: 13px 6px 13px 6px;
+        background: var(--surface);
         color: var(--module-text);
         cursor: pointer;
         text-align: left;
-        box-shadow: 3px 5px 0 rgba(25, 40, 48, 0.12);
-        transition: transform 180ms var(--ease), filter 180ms var(--ease);
+        box-shadow: 5px 6px 0 rgba(48, 60, 84, 0.05);
+        transition: transform 180ms var(--ease), border-color 180ms var(--ease), background-color 180ms var(--ease), box-shadow 180ms var(--ease);
       }
-      .module-card::before { content: ""; position: absolute; inset: 0; opacity: 0.15; background: linear-gradient(115deg, rgba(255,255,255,0.84), transparent 42%); pointer-events: none; }
-      .module-card:hover { filter: brightness(1.08); transform: translateX(-3px); }
-      .module-card:active { transform: scale(0.97); }
-      .module-card:nth-child(1) { background: var(--module-1); }
-      .module-card:nth-child(2) { background: var(--module-2); }
-      .module-card:nth-child(3) { background: var(--module-3); }
-      .module-card:nth-child(4) { background: var(--module-4); }
-      .module-card:nth-child(5) { background: var(--module-5); }
-      .module-card:nth-child(6) { background: var(--module-6); }
-      .module-dot { position: relative; z-index: 1; flex: 0 0 14px; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.35); border-radius: 50%; background: var(--dot); box-shadow: 0 0 9px rgba(150,255,220,0.35); }
-      .module-copy { position: relative; z-index: 1; min-width: 0; }
-      .module-copy strong { display: block; overflow: hidden; font-size: 13px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
-      .module-copy span { display: block; margin-top: 3px; color: rgba(255,255,255,0.7); font-size: 9px; }
-      .module-arrow { position: relative; z-index: 1; margin-left: auto; padding-left: 3px; color: rgba(255,255,255,0.82); font-size: 18px; }
-      .rail-fade { position: absolute; z-index: 2; right: 0; bottom: 0; left: 0; height: 26px; background: linear-gradient(transparent, var(--rail-bg)); pointer-events: none; }
-      .rail-scroll-cue { position: absolute; z-index: 3; right: 8px; bottom: 8px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--rail-line); border-radius: 50%; background: var(--rail-bg); color: var(--route-active); font-size: 13px; pointer-events: none; }
+      .module-item::after { content: ""; position: absolute; right: 9px; bottom: 0; left: 54px; height: 1px; background: var(--module-accent); opacity: 0.6; }
+      .module-item:hover { border-color: var(--module-accent); background: var(--surface-solid); box-shadow: 7px 9px 0 rgba(48, 60, 84, 0.07); transform: translateX(-3px); }
+      .module-item:active { transform: scale(0.97); }
+      .module-item:nth-child(1) { --module-accent: var(--module-a); }
+      .module-item:nth-child(2) { --module-accent: var(--module-b); }
+      .module-item:nth-child(3) { --module-accent: var(--module-c); }
+      .module-item:nth-child(4) { --module-accent: var(--module-d); }
+      .module-item:nth-child(5) { --module-accent: var(--module-e); }
+      .module-item:nth-child(6) { --module-accent: var(--module-f); }
+      .module-symbol { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--module-accent); border-radius: 9px 4px 9px 4px; background: color-mix(in srgb, var(--module-accent) 15%, transparent); color: var(--module-accent); font-size: 14px; }
+      .module-copy { min-width: 0; }
+      .module-copy strong { display: block; overflow: hidden; color: var(--module-text); font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+      .module-copy span { display: block; overflow: hidden; margin-top: 4px; color: var(--module-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+      .module-arrow { color: var(--module-accent); font-size: 18px; }
+      .rail-scroll-hint { position: absolute; right: 1px; bottom: 1px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; background: var(--canvas); color: var(--muted); font-size: 12px; pointer-events: none; }
 
-      .sheet-backdrop { position: fixed; z-index: 20; inset: 0; display: none; background: rgba(3,5,9,0.5); backdrop-filter: blur(4px); }
+      .sheet-backdrop { position: fixed; z-index: 20; inset: 0; display: none; background: rgba(3,5,9,0.48); backdrop-filter: blur(4px); }
       .sheet-backdrop.show { display: block; }
-      .sheet {
-        position: fixed;
-        z-index: 21;
-        right: 0;
-        bottom: 0;
-        left: 0;
-        width: min(430px, 100vw);
-        max-height: 76svh;
-        margin: auto;
-        padding: 11px 18px max(21px, env(safe-area-inset-bottom));
-        overflow-y: auto;
-        border: 1px solid var(--line);
-        border-bottom: 0;
-        border-radius: 28px 28px 0 0;
-        background: var(--surface);
-        box-shadow: 0 -24px 70px rgba(0,0,0,0.3);
-        backdrop-filter: blur(20px);
-        transform: translateY(105%);
-        transition: transform 300ms var(--ease);
-      }
+      .sheet { position: fixed; z-index: 21; right: 0; bottom: 0; left: 0; width: min(430px, 100vw); max-height: 76svh; margin: auto; padding: 11px 18px max(21px, env(safe-area-inset-bottom)); overflow-y: auto; border: 1px solid var(--line); border-bottom: 0; border-radius: 27px 27px 0 0; background: var(--surface); box-shadow: 0 -24px 70px rgba(0,0,0,0.3); backdrop-filter: blur(20px); transform: translateY(105%); transition: transform 300ms var(--ease); }
       .sheet.show { transform: translateY(0); }
-      .sheet-handle { width: 38px; height: 4px; margin: 0 auto 18px; border-radius: 99px; background: var(--quiet); }
+      .sheet-handle { width: 37px; height: 4px; margin: 0 auto 18px; border-radius: 99px; background: var(--quiet); }
       .sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
       .sheet-heading h2 { margin: 0; font-size: 21px; letter-spacing: -0.04em; }
       .sheet-heading p { margin-top: 4px; color: var(--muted); font-size: 11px; }
       .sheet-close { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 25px; }
       .sheet-roles { display: grid; gap: 8px; margin-top: 20px; }
-      .sheet-role { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 65px; padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--text); cursor: pointer; text-align: left; }
-      .sheet-role.active { border-color: var(--route-active); background: var(--canvas-soft); }
+      .sheet-role { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 65px; padding: 8px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); color: var(--text); cursor: pointer; text-align: left; }
+      .sheet-role.active { border-color: var(--accent); background: var(--accent-soft); }
       .sheet-role-art { flex: 0 0 47px; width: 47px; height: 47px; border-radius: 13px; background: var(--role-gradient); }
       .sheet-role[data-role="mira"] .sheet-role-art { --role-gradient: linear-gradient(135deg, #b9c3ff, #334577); }
       .sheet-role[data-role="lume"] .sheet-role-art { --role-gradient: linear-gradient(135deg, #ffd4ab, #7c4153); }
@@ -392,15 +305,13 @@
       .sheet-role-copy strong { display: block; font-size: 14px; }
       .sheet-role-copy span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
       .sheet-role-arrow { margin-left: auto; color: var(--quiet); font-size: 20px; }
-      .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; backdrop-filter: blur(15px); }
+      .toast { position: fixed; z-index: 40; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); left: 18px; width: min(394px, calc(100vw - 36px)); margin: auto; padding: 12px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity 190ms var(--ease), transform 190ms var(--ease); font-size: 12px; text-align: center; }
       .toast.show { opacity: 1; transform: translateY(0); }
 
       @media (max-height: 750px) {
-        .role-panel { top: 94px; height: 137px; padding-top: 20px; }
-        .avatar-stage { top: 286px; }
-        .module-rail { height: 43%; }
-        .scene-area { bottom: 265px; }
-        .identity { bottom: 225px; }
+        .role-panel { top: 93px; height: 150px; }
+        .avatar-stage { top: 296px; }
+        .module-rail { height: 44%; }
       }
       @media (prefers-reduced-motion: reduce) {
         *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
@@ -420,75 +331,54 @@
         riven: { name: 'Riven', title: '潮汐协议', context: '深海节点 · 12:47', symbol: '◇' },
         null: { name: 'Noct', title: '未命名世界', context: '新体验等待建立', symbol: '○' },
       };
-
       const modules = [
-        { id: 'characters', name: '角色库', sub: '选择与管理角色', action: 'roles' },
-        { id: 'worlds', name: '世界书库', sub: '世界、地点与设定', action: 'worlds' },
-        { id: 'backgrounds', name: '背景图库', sub: '为体验选择背景', action: 'backgrounds' },
-        { id: 'ui', name: 'UI 模组库', sub: '角色专属界面', action: 'ui' },
-        { id: 'modes', name: '体验模式', sub: '聊天、RPG、互动小说', action: 'modes' },
-        { id: 'archive', name: '体验档案', sub: '备份与恢复', action: 'archive' },
+        { name: '角色库', sub: '选择与管理角色', symbol: '◎', action: 'roles' },
+        { name: '世界书库', sub: '世界、地点与设定', symbol: '◇', action: 'worlds' },
+        { name: '背景图库', sub: '为体验选择背景', symbol: '▱', action: 'backgrounds' },
+        { name: 'UI 模组库', sub: '角色专属界面', symbol: '✦', action: 'ui' },
+        { name: '体验模式', sub: '聊天、RPG、互动小说', symbol: '◈', action: 'modes' },
+        { name: '体验档案', sub: '备份与恢复', symbol: '□', action: 'archive' },
       ];
 
       let currentRole = 'mira';
       let theme = 'day';
-      let sheetOpen = false;
-
       const device = document.getElementById('device');
       const sheet = document.getElementById('sheet');
       const sheetBackdrop = document.getElementById('sheetBackdrop');
       const toast = document.getElementById('toast');
 
       function moduleMarkup(item) {
-        return `<button class="module-card" data-action="${item.action}" type="button"><span class="module-dot"></span><span class="module-copy"><strong>${item.name}</strong><span>${item.sub}</span></span><span class="module-arrow">›</span></button>`;
+        return `<button class="module-item" data-action="${item.action}" type="button"><span class="module-symbol">${item.symbol}</span><span class="module-copy"><strong>${item.name}</strong><span>${item.sub}</span></span><span class="module-arrow">›</span></button>`;
       }
 
       function screenMarkup() {
         const role = roles[currentRole];
-        return `<div class="screen" data-role="${currentRole}">
-          <div class="brand">LLM Project</div>
-          <div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button><button class="top-action" data-action="more" type="button" aria-label="打开更多">···</button></div>
-          <button class="role-panel" data-action="enter" type="button"><div class="role-kicker">CURRENT ROLE</div><div class="role-name">${role.name}</div><div class="role-context">${role.title} · ${role.context}</div><span class="role-arrow">→</span></button>
-          <svg class="route" viewBox="0 0 430 900" preserveAspectRatio="none" aria-hidden="true"><path class="route-shadow" d="M 320 268 C 332 350, 308 440, 252 555"></path><path class="route-line" d="M 320 268 C 332 350, 308 440, 252 555"></path><path class="route-dash" d="M 326 268 C 338 350, 314 440, 258 555"></path><circle class="route-node-ring" cx="320" cy="268" r="7"></circle><circle class="route-node" cx="252" cy="555" r="3"></circle></svg>
-          <div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-light"></div><div class="stage-orbit"></div><div class="stage-label">AVATAR STAGE · RESERVED</div></div>
-          <section class="module-rail" aria-label="功能模块轨道"><div class="rail-inner"><div class="rail-heading"><span>MODULE RAIL</span><span>↕</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div></div><div class="rail-fade"></div><div class="rail-scroll-cue">⌄</div></section>
-        </div>`;
+        return `<div class="screen" data-role="${currentRole}"><div class="brand"><span class="brand-mark"></span>LLM PROJECT</div><div class="top-actions"><button class="top-action" data-action="theme" type="button" aria-label="切换主题">${theme === 'day' ? '☾' : '☼'}</button><button class="top-action" data-action="more" type="button" aria-label="打开更多">···</button></div><button class="role-panel" data-action="enter" type="button"><span class="role-kicker">CURRENT ROLE</span><span class="role-name">${role.name}</span><span class="role-context">${role.title} · ${role.context}</span><span class="role-enter">→</span></button><div class="avatar-stage" aria-label="未来 Live2D / 3D 角色看板区域"><div class="stage-glow"></div><div class="stage-ring"></div><div class="stage-caption">AVATAR STAGE · RESERVED</div></div><section class="module-rail" aria-label="功能模块轨道"><div class="rail-head"><span>MODULES</span><span class="rail-count">${modules.length.toString().padStart(2, '0')}</span></div><div class="module-list">${modules.map(moduleMarkup).join('')}</div><div class="rail-scroll-hint">⌄</div></section></div>`;
+      }
+
+      function renderScreen() {
+        device.innerHTML = screenMarkup();
+        device.querySelectorAll('[data-action]').forEach(element => element.addEventListener('click', () => handleAction(element.dataset.action)));
       }
 
       function roleSheetMarkup() {
-        return `<div class="sheet-handle"></div><div class="sheet-heading"><div><h2>角色台</h2><p>选择角色，更新左侧看板和当前体验</p></div><button class="sheet-close" data-action="close" type="button">×</button></div><div class="sheet-roles">${Object.entries(roles).map(([id, role]) => `<button class="sheet-role ${id === currentRole ? 'active' : ''}" data-role="${id}" type="button"><span class="sheet-role-art"></span><span class="sheet-role-copy"><strong>${role.name}</strong><span>${role.title} · ${role.context}</span></span><span class="sheet-role-arrow">›</span></button>`).join('')}</div>`;
+        return `<div class="sheet-handle"></div><div class="sheet-heading"><div><h2>角色台</h2><p>选择角色，更新当前角色卡</p></div><button class="sheet-close" data-action="close" type="button">×</button></div><div class="sheet-roles">${Object.entries(roles).map(([id, role]) => `<button class="sheet-role ${id === currentRole ? 'active' : ''}" data-role="${id}" type="button"><span class="sheet-role-art"></span><span class="sheet-role-copy"><strong>${role.name}</strong><span>${role.title} · ${role.context}</span></span><span class="sheet-role-arrow">›</span></button>`).join('')}</div>`;
       }
 
       function openRoleSheet() {
         sheet.innerHTML = roleSheetMarkup();
         sheet.classList.add('show');
         sheetBackdrop.classList.add('show');
-        sheetOpen = true;
-        bindSheet();
+        sheet.querySelector('[data-action="close"]').addEventListener('click', closeSheet);
+        sheet.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', () => { currentRole = element.dataset.role; closeSheet(); renderScreen(); showToast(`已将 ${roles[currentRole].name} 放入当前角色卡`); }));
       }
 
-      function closeSheet() {
-        sheet.classList.remove('show');
-        sheetBackdrop.classList.remove('show');
-        sheetOpen = false;
-      }
-
-      function showToast(message) {
-        toast.textContent = message;
-        toast.classList.add('show');
-        clearTimeout(showToast.timer);
-        showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200);
-      }
-
-      function toggleTheme() {
-        theme = theme === 'day' ? 'night' : 'day';
-        document.body.dataset.theme = theme;
-        renderScreen();
-      }
-
+      function closeSheet() { sheet.classList.remove('show'); sheetBackdrop.classList.remove('show'); }
+      function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 2200); }
+      function toggleTheme() { theme = theme === 'day' ? 'night' : 'day'; document.body.dataset.theme = theme; renderScreen(); }
       function handleAction(action) {
         if (action === 'theme') toggleTheme();
-        else if (action === 'more') showToast('更多设置将在右上角展开');
+        else if (action === 'more') showToast('更多设置可以从这里展开');
         else if (action === 'enter') showToast(`进入 ${roles[currentRole].name} 的体验`);
         else if (action === 'roles') openRoleSheet();
         else if (action === 'worlds') showToast('世界书库：保存世界、地点、组织与规则');
@@ -496,25 +386,6 @@
         else if (action === 'ui') showToast('UI 模组库：配置角色专属界面');
         else if (action === 'modes') showToast('体验模式：聊天、Galgame、RPG、互动小说');
         else if (action === 'archive') showToast('体验档案：备份与恢复');
-      }
-
-      function bindScreen() {
-        device.querySelectorAll('[data-action]').forEach(element => element.addEventListener('click', () => handleAction(element.dataset.action)));
-      }
-
-      function bindSheet() {
-        sheet.querySelectorAll('[data-role]').forEach(element => element.addEventListener('click', () => {
-          currentRole = element.dataset.role;
-          closeSheet();
-          renderScreen();
-          showToast(`已将 ${roles[currentRole].name} 放入当前角色卡`);
-        }));
-        sheet.querySelector('[data-action="close"]')?.addEventListener('click', closeSheet);
-      }
-
-      function renderScreen() {
-        device.innerHTML = screenMarkup();
-        bindScreen();
       }
 
       sheetBackdrop.addEventListener('click', closeSheet);
