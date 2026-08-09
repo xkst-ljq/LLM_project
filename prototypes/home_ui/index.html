@@ -331,11 +331,10 @@
       .module-item {
         position: relative;
         display: grid;
-        grid-template-columns: 34px minmax(0, 1fr) 17px;
-        align-items: center;
-        gap: 8px;
-        min-height: 62px;
-        padding: 6px 7px 6px 8px;
+        grid-template-rows: auto minmax(22px, 1fr);
+        gap: 5px;
+        min-height: 84px;
+        padding: 9px 7px 8px 9px;
         border: 1px solid var(--line-soft);
         border-radius: 13px 6px 13px 6px;
         background: var(--surface);
@@ -345,20 +344,31 @@
         box-shadow: 5px 6px 0 rgba(48, 60, 84, 0.05);
         transition: transform 180ms var(--ease), border-color 180ms var(--ease), background-color 180ms var(--ease), box-shadow 180ms var(--ease);
       }
-      .module-item::after { content: ""; position: absolute; right: 9px; bottom: 0; left: 54px; height: 1px; background: var(--module-accent); opacity: 0.6; }
+      .module-item::after { content: ""; position: absolute; right: 9px; bottom: 0; left: 12px; height: 1px; background: var(--module-accent); opacity: 0.6; }
       .module-item:hover { border-color: var(--module-accent); background: var(--surface-solid); box-shadow: 7px 9px 0 rgba(48, 60, 84, 0.07); transform: translateX(-3px); }
       .module-item:active { transform: scale(0.97); }
       .module-item:nth-child(1) { --module-accent: var(--module-a); }
       .module-item:nth-child(2) { --module-accent: var(--module-b); }
       .module-item:nth-child(3) { --module-accent: var(--module-c); }
       .module-item:nth-child(4) { --module-accent: var(--module-d); }
-      .module-item:nth-child(5) { --module-accent: var(--module-e); }
-      .module-item:nth-child(6) { --module-accent: var(--module-f); }
+      .module-head { display: grid; grid-template-columns: 30px minmax(0, 1fr) 17px; align-items: center; gap: 7px; min-width: 0; }
       .module-symbol { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--module-accent); border-radius: 9px 4px 9px 4px; background: color-mix(in srgb, var(--module-accent) 15%, transparent); color: var(--module-accent); font-size: 14px; }
       .module-copy { min-width: 0; }
       .module-copy strong { display: block; overflow: hidden; color: var(--module-text); font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-      .module-copy span { display: block; overflow: hidden; margin-top: 4px; color: var(--module-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+      .module-preview { display: flex; align-items: center; gap: 5px; min-width: 0; margin: 1px 8px 0 3px; overflow: hidden; color: var(--module-muted); font-size: 9px; white-space: nowrap; }
       .module-arrow { color: var(--module-accent); font-size: 18px; }
+      .preview-text { overflow: hidden; text-overflow: ellipsis; }
+      .preview-avatar { flex: 0 0 14px; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.58); border-radius: 50%; background: var(--preview); }
+      .preview-avatar-a { --preview: #9aa7ff; }
+      .preview-avatar-b { --preview: #d99591; }
+      .preview-avatar-c { --preview: #77c9bb; }
+      .preview-line { display: block; flex: 0 0 20px; height: 4px; border-radius: 99px; background: var(--module-accent); opacity: 0.52; }
+      .preview-line.wide { flex-basis: 31px; }
+      .preview-swatch { flex: 0 0 17px; width: 17px; height: 14px; border-radius: 4px; background: var(--preview); }
+      .preview-swatch-a { --preview: #7782df; }
+      .preview-swatch-b { --preview: #d6b27a; }
+      .preview-swatch-c { --preview: #6ebdb0; }
+      .preview-chip { padding: 3px 5px; border: 1px solid var(--line); border-radius: 5px; color: var(--module-muted); font-size: 7px; font-weight: 800; letter-spacing: 0.06em; }
       .rail-scroll-hint { position: absolute; right: 1px; bottom: 1px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; background: var(--canvas); color: var(--muted); font-size: 12px; pointer-events: none; }
 
       .settings-backdrop { position: fixed; z-index: 20; inset: 0; display: none; background: rgba(3,5,9,0.42); backdrop-filter: blur(4px); }
@@ -406,10 +416,10 @@
         null: { name: 'Noct', title: '未命名世界', context: '新体验等待建立', symbol: '○' },
       };
       const modules = [
-        { name: '角色库', sub: '选择与管理角色', symbol: '◎', action: 'roles' },
-        { name: '世界书库', sub: '世界、地点与设定', symbol: '◇', action: 'worlds' },
-        { name: '背景图库', sub: '为体验选择背景', symbol: '▱', action: 'backgrounds' },
-        { name: 'UI 模组库', sub: '角色专属界面', symbol: '✦', action: 'ui' },
+        { name: '角色库', symbol: '◎', action: 'roles', preview: '<span class="preview-avatar preview-avatar-a"></span><span class="preview-avatar preview-avatar-b"></span><span class="preview-avatar preview-avatar-c"></span><span class="preview-text">3 个角色</span>' },
+        { name: '世界书库', symbol: '◇', action: 'worlds', preview: '<span class="preview-line wide"></span><span class="preview-line"></span><span class="preview-text">12 条设定</span>' },
+        { name: '背景图库', symbol: '▱', action: 'backgrounds', preview: '<span class="preview-swatch preview-swatch-a"></span><span class="preview-swatch preview-swatch-b"></span><span class="preview-swatch preview-swatch-c"></span><span class="preview-text">6 个背景</span>' },
+        { name: 'UI 模组库', symbol: '✦', action: 'ui', preview: '<span class="preview-chip">SCENE</span><span class="preview-chip">OPENING</span><span class="preview-text">4 个模组</span>' },
       ];
 
       let currentRole = 'mira';
@@ -423,7 +433,7 @@
       const settingsTheme = document.getElementById('settingsTheme');
 
       function moduleMarkup(item) {
-        return `<button class="module-item" data-action="${item.action}" type="button"><span class="module-symbol">${item.symbol}</span><span class="module-copy"><strong>${item.name}</strong><span>${item.sub}</span></span><span class="module-arrow">›</span></button>`;
+        return `<button class="module-item" data-action="${item.action}" type="button"><span class="module-head"><span class="module-symbol">${item.symbol}</span><span class="module-copy"><strong>${item.name}</strong></span><span class="module-arrow">›</span></span><span class="module-preview">${item.preview}</span></button>`;
       }
 
       function screenMarkup() {
