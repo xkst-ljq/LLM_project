@@ -2140,11 +2140,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _runDeferredHeavyInit() async {
-    // 兼容旧调用：转发到分片版本
-    return _runDeferredHeavyInitChunked();
-  }
-
   Future<void> _ensureOpeningGreetingForEmptyHistory() async {
     if (_currentCharacter == null) return;
 
