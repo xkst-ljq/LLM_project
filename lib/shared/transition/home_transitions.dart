@@ -12,7 +12,7 @@ import '../theme/app_theme_tokens.dart';
 class HomeTransitions {
   static const _moduleDuration = Duration(milliseconds: 440);
   static const _moduleReverseDuration = Duration(milliseconds: 300);
-  static const _roleDuration = Duration(milliseconds: 560);
+  static const _roleDuration = Duration(milliseconds: 700);
   static const _roleReverseDuration = Duration(milliseconds: 360);
 
   /// 模块轨道 -> 资产库（角色/世界书/背景/UI模组）

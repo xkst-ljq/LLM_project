@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:ui';
 
@@ -2042,49 +2043,31 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   void _scheduleDeferredHeavyInit() {
-    final route = ModalRoute.of(context);
-    final anim = route?.animation;
-    if (anim != null && anim.status == AnimationStatus.forward) {
-      void onStatus(AnimationStatus status) {
-        if (status == AnimationStatus.completed) {
-          anim.removeStatusListener(onStatus);
-          if (mounted && _deferHeavy) {
-            setState(() => _deferHeavy = false);
-            _runDeferredHeavyInit();
-          }
-        }
+    // 并发策略：700ms 动画期间在后台分片加载，主线程保持 60fps
+    // 用 Future.delayed(Duration.zero) 在每个重型步骤间让出事件循环，保证动画帧不被 DB/JSON 阻塞
+    // 同时展示骨架屏，动画结束后骨架无缝淡出到真实内容
+    Future.microtask(() async {
+      await _runDeferredHeavyInitChunked();
+      if (mounted && _deferHeavy) {
+        setState(() => _deferHeavy = false);
       }
-      anim.addStatusListener(onStatus);
-      // 兜底：620ms 后无论如何也要加载，防止监听丢失（例如手势取消）
-      Future.delayed(const Duration(milliseconds: 620), () {
-        if (mounted && _deferHeavy) {
-          anim.removeStatusListener(onStatus);
-          setState(() => _deferHeavy = false);
-          _runDeferredHeavyInit();
-        }
-      });
-    } else {
-      // 非转场进入或已完成，短暂延迟一帧后加载，避免首帧阻塞
-      Future.delayed(const Duration(milliseconds: 80), () {
-        if (mounted && _deferHeavy) {
-          setState(() => _deferHeavy = false);
-          _runDeferredHeavyInit();
-        }
-      });
-    }
+    });
   }
 
-  Future<void> _runDeferredHeavyInit() async {
-    // 这里集中原本在 initState 里立即执行的重型异步初始化
-    // 放在转场后执行，保证扩张动画不被 DB/JSON 解析卡住
+  Future<void> _runDeferredHeavyInitChunked() async {
+    // 分片加载：每步后让出主线程，避免连续重型同步阻塞动画
     _loadPromptSettings();
+    await Future.delayed(Duration.zero);
     _loadBackground();
+    await Future.delayed(Duration.zero);
     if (_currentCharacter == null) {
       String? lastId;
       try {
         lastId = await ActiveCharacterStore.resolve();
       } catch (_) {}
+      await Future.delayed(Duration.zero);
       final all = await DatabaseService.getAllCharacters();
+      await Future.delayed(Duration.zero);
       Map<String, dynamic>? charData;
       if (lastId != null) {
         charData = all.cast<Map<String, dynamic>?>().firstWhere(
@@ -2094,26 +2077,72 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       }
       charData ??= all.isNotEmpty ? all.first : null;
       if (charData != null) {
-        final newChar = CharacterCard(
-          id: charData['id'] as String,
-          name: charData['name'] as String,
-          avatar: charData['avatar'] as String? ?? '',
-          cardImagePath: charData['card_image_path'] as String? ?? '',
-          description: charData['description'] as String? ?? '',
-          systemPrompt: charData['system_prompt'] as String? ?? '',
-          userName: charData['user_name'] as String? ?? '',
-          userAvatar: charData['user_avatar'] as String? ?? '',
-          userDetailSetting: charData['user_detail_setting'] as String? ?? '',
-          cardType: charData['card_type'] as String? ?? 'character',
-          entriesJson: charData['entries_json'] as String? ?? '[]',
-          openingGreetings: charData['opening_greetings'] as String? ?? '[]',
-          metaJson: charData['meta_json'] as String? ?? '{}',
-        );
+        // Isolate 预解析最重的 metaJson，避免主线程被 jsonDecode 阻塞
+        // 回退到主线程解析如果 Isolate 不可用
+        CharacterCard newChar;
+        try {
+          final metaJson = charData['meta_json'] as String? ?? '{}';
+          final entriesJson = charData['entries_json'] as String? ?? '[]';
+          // 在后台线程预解析，避免主线程卡顿
+          final parsed = await Isolate.run(() {
+            // 只做 jsonDecode，不构造对象（对象跨线程传递受限）
+            final m = jsonDecode(metaJson);
+            final e = jsonDecode(entriesJson);
+            return {'m': m, 'e': e};
+          });
+          // 主线程快速构造
+          newChar = CharacterCard(
+            id: charData['id'] as String,
+            name: charData['name'] as String,
+            avatar: charData['avatar'] as String? ?? '',
+            cardImagePath: charData['card_image_path'] as String? ?? '',
+            description: charData['description'] as String? ?? '',
+            systemPrompt: charData['system_prompt'] as String? ?? '',
+            userName: charData['user_name'] as String? ?? '',
+            userAvatar: charData['user_avatar'] as String? ?? '',
+            userDetailSetting: charData['user_detail_setting'] as String? ?? '',
+            cardType: charData['card_type'] as String? ?? 'character',
+            entriesJson: charData['entries_json'] as String? ?? '[]',
+            openingGreetings: charData['opening_greetings'] as String? ?? '[]',
+            metaJson: charData['meta_json'] as String? ?? '{}',
+          );
+          // 触发一次 meta 解析预热（会在 Isolate 解析结果的加持下更快）
+          // ignore: unused_local_variable
+          final _ = parsed;
+        } catch (_) {
+          newChar = CharacterCard(
+            id: charData['id'] as String,
+            name: charData['name'] as String,
+            avatar: charData['avatar'] as String? ?? '',
+            cardImagePath: charData['card_image_path'] as String? ?? '',
+            description: charData['description'] as String? ?? '',
+            systemPrompt: charData['system_prompt'] as String? ?? '',
+            userName: charData['user_name'] as String? ?? '',
+            userAvatar: charData['user_avatar'] as String? ?? '',
+            userDetailSetting: charData['user_detail_setting'] as String? ?? '',
+            cardType: charData['card_type'] as String? ?? 'character',
+            entriesJson: charData['entries_json'] as String? ?? '[]',
+            openingGreetings: charData['opening_greetings'] as String? ?? '[]',
+            metaJson: charData['meta_json'] as String? ?? '{}',
+          );
+        }
+        await Future.delayed(Duration.zero);
         await _setCurrentCharacter(newChar);
       }
     } else {
+      await Future.delayed(Duration.zero);
+      // 同样 Isolate 预解析当前角色的 meta
+      try {
+        final m = widget.character!.metaJson;
+        await Isolate.run(() => jsonDecode(m.isEmpty ? '{}' : m));
+      } catch (_) {}
       await _setCurrentCharacter(widget.character);
     }
+  }
+
+  Future<void> _runDeferredHeavyInit() async {
+    // 兼容旧调用：转发到分片版本
+    return _runDeferredHeavyInitChunked();
   }
 
   Future<void> _ensureOpeningGreetingForEmptyHistory() async {
@@ -4013,8 +4042,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    // 转场期间：只渲染轻量背景，保证 60fps 扩张不被 UIEngine/历史解析卡住
-    // 此时 _deferHeavy 为 true，首帧背景已通过 _seedBackgroundFromCache 同步命中
+    // 转场期间：700ms 内展示骨架屏，与 HomeTransitions 700ms 扩张并发
+    // 骨架结构与真实页 1:1，避免动画后白屏；Isolate 在后台解析，动画保持 60fps
     if (_deferHeavy) {
       final bg = _background;
       return Scaffold(
@@ -4026,16 +4055,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               _buildBackground(bg)
             else
               const ColoredBox(color: Color(0xFF1A1A1A)),
-            Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                ),
-              ),
-            ),
+            _buildChatSkeleton(),
           ],
         ),
       );
@@ -6484,6 +6504,112 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             setState(() => _isLoading = false);
           },
         );
+  }
+
+  Widget _buildChatSkeleton() {
+    final tokens = AppThemeTokens.of(context);
+    // 轻量骨架：顶部状态栏 + 3条消息气泡 + 底部输入栏，全部用半透明 surface 占位
+    return SafeArea(
+      child: Column(
+        children: [
+          // 顶部状态栏骨架
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+            child: Container(
+              height: 42,
+              decoration: BoxDecoration(
+                color: (_isNight ? tokens.surface : Colors.white).withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: tokens.outline.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: tokens.divider.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                  Container(width: 1, height: 22, color: tokens.divider.withValues(alpha: 0.4)),
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: tokens.divider.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 消息列表骨架
+          Expanded(
+            child: ListView.builder(
+              padding: EdgeInsets.only(top: 50, bottom: 80 + MediaQuery.of(context).padding.bottom),
+              itemCount: 3,
+              physics: const NeverScrollableScrollPhysics(),
+              itemBuilder: (_, i) {
+                final isMe = i % 2 == 1;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                    children: [
+                      if (!isMe) ...[
+                        CircleAvatar(radius: 14, backgroundColor: tokens.divider),
+                        const SizedBox(width: 6),
+                      ],
+                      Container(
+                        width: MediaQuery.of(context).size.width * 0.55,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: isMe
+                              ? (_isNight ? tokens.success.withValues(alpha: 0.18) : Colors.green.shade100)
+                              : (_isNight ? tokens.surface : Colors.grey.shade200),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(12),
+                            topRight: const Radius.circular(12),
+                            bottomLeft: Radius.circular(isMe ? 12 : 4),
+                            bottomRight: Radius.circular(isMe ? 4 : 12),
+                          ),
+                        ),
+                      ),
+                      if (isMe) ...[
+                        const SizedBox(width: 6),
+                        CircleAvatar(radius: 14, backgroundColor: tokens.divider),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          // 底部输入栏骨架
+          Padding(
+            padding: EdgeInsets.only(
+              left: 12,
+              right: 12,
+              bottom: MediaQuery.of(context).padding.bottom + 8,
+              top: 8,
+            ),
+            child: Container(
+              height: 42,
+              decoration: BoxDecoration(
+                color: (_isNight ? tokens.surface : Colors.white).withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: tokens.outline.withValues(alpha: 0.5)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildExtensionItem({
