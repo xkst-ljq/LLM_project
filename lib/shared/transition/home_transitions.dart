@@ -377,19 +377,24 @@ class HomeTransitions {
     required Widget page,
     Future<void>? loadingFuture,
   }) {
-    if (MediaQuery.disableAnimationsOf(context) || sourceKey == null) {
-      return MaterialPageRoute<T>(builder: (_) => page);
-    }
+    // 调试：即使 disableAnimations 也强制展示，sourceKey 取不到时用屏幕中心 fallback，保证动画必现
     final tokens = AppThemeTokens.of(context);
-    final renderObject = sourceKey.currentContext?.findRenderObject();
     Rect? sourceRect;
-    if (renderObject is RenderBox && renderObject.hasSize) {
-      final offset = renderObject.localToGlobal(Offset.zero);
-      sourceRect = offset & renderObject.size;
+    if (sourceKey != null) {
+      final renderObject = sourceKey.currentContext?.findRenderObject();
+      if (renderObject is RenderBox && renderObject.hasSize) {
+        final offset = renderObject.localToGlobal(Offset.zero);
+        sourceRect = offset & renderObject.size;
+      }
     }
-    if (sourceRect == null) {
-      return MaterialPageRoute<T>(builder: (_) => page);
-    }
+    // Fallback：居中 120x80，保证动画必现（用于调试 sourceKey 未挂载的情况）
+    final screenSizeFallback = MediaQuery.of(context).size;
+    sourceRect ??= Rect.fromLTWH(
+      screenSizeFallback.width / 2 - 60,
+      screenSizeFallback.height / 2 - 80,
+      120,
+      80,
+    );
     final screenSize = MediaQuery.of(context).size;
     final fullRect = Offset.zero & screenSize;
     // 中间态：88%屏宽居中，高度等比 1.08
@@ -580,7 +585,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
           cardOpacity = b < 0.72 ? 1.0 : (1 - (b - 0.72) / 0.28).clamp(0.0, 1.0);
         }
 
-        final scrimOpacity = (stageT < 0.257 ? stageT / 0.257 * 0.18 : 0.18).clamp(0.0, 0.14);
+        final scrimOpacity = (stageT < 0.257 ? stageT / 0.257 * 0.24 : 0.24).clamp(0.0, 0.14);
         final capsuleOpacity = stageT < 0.257
             ? 0.0
             : stageT < 0.45
@@ -626,7 +631,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
                                 begin: const Alignment(-1, -0.55),
                                 end: const Alignment(1, 0.55),
                                 colors: [
-                                  widget.tokens.accentStrong.withValues(alpha: 0.88),
+                                  widget.tokens.accentStrong.withValues(alpha: 0.95),
                                   widget.tokens.accentStrong.withValues(alpha: 0.30),
                                   Colors.black.withValues(alpha: 0.50),
                                 ],
@@ -653,7 +658,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
                 left: widget.intermediateRect.left + widget.intermediateRect.width * 0.11,
                 top: widget.intermediateRect.bottom + 12,
                 width: widget.intermediateRect.width * 0.78,
-                height: 28,
+                height: 36,
                 child: Opacity(
                   opacity: capsuleOpacity,
                   child: ClipRRect(
@@ -662,7 +667,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
                       filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.14),
+                          color: Colors.white.withValues(alpha: 0.22),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: _StagedDotsTrack(
@@ -693,7 +698,7 @@ class _StagedDotsTrack extends StatelessWidget {
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
         const iconSize = 10.0;
-        const dotSize = 3.2;
+        const dotSize = 4.0;
         final trackLeft = iconSize + 8;
         final trackRight = iconSize + 8;
         final trackWidth = w - trackLeft - trackRight;
@@ -703,7 +708,7 @@ class _StagedDotsTrack extends StatelessWidget {
             Positioned(
               left: trackLeft,
               right: trackRight,
-              child: Container(height: 1, color: accent.withValues(alpha: 0.14)),
+              child: Container(height: 1.5, color: accent.withValues(alpha: 0.22)),
             ),
             Positioned(
               left: 6,
