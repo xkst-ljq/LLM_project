@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme_tokens.dart';
@@ -364,6 +366,65 @@ class HomeTransitions {
   }
 }
 
+
+  /// 角色入口 -> 聊天（三段式舞台，带冷调蒙版与外置超细胶囊）
+  ///
+  /// 时序：180ms 初次扩张到 88%中间态 → 胶囊淡入+三点循环（与 Isolate 并发）→ 加载完成后 280ms 全屏扩张
+  /// - 蒙版：冷调 #0F1A2A 14% + blur 8，缓缓盖住 HomeBackground/ModuleRail/Stage
+  /// - 胶囊：卡片正下方 12px，外置悬浮，宽卡片×0.78/高20/pill，无描边无实色，仅 白6/255+blur10 细长
+  /// - 三点：2.6px accent 0.62 + 6px光晕，1.35s easeInOut 0.1s错峰，2s静止循环
+  static Route<T> stagedRole<T>({
+    required BuildContext context,
+    required GlobalKey? sourceKey,
+    required Widget page,
+    Future<void>? loadingFuture,
+  }) {
+    if (MediaQuery.disableAnimationsOf(context) || sourceKey == null) {
+      return MaterialPageRoute<T>(builder: (_) => page);
+    }
+    final tokens = AppThemeTokens.of(context);
+    final renderObject = sourceKey.currentContext?.findRenderObject();
+    Rect? sourceRect;
+    if (renderObject is RenderBox && renderObject.hasSize) {
+      final offset = renderObject.localToGlobal(Offset.zero);
+      sourceRect = offset & renderObject.size;
+    }
+    if (sourceRect == null) {
+      return MaterialPageRoute<T>(builder: (_) => page);
+    }
+    final screenSize = MediaQuery.of(context).size;
+    final fullRect = Offset.zero & screenSize;
+    // 中间态：88%屏宽居中，高度等比 1.08
+    final intermediateWidth = screenSize.width * 0.88;
+    final intermediateHeight = sourceRect.height * 1.08;
+    final intermediateLeft = (screenSize.width - intermediateWidth) / 2;
+    final intermediateTop = sourceRect.top + (sourceRect.height - intermediateHeight) / 2 - 8;
+    final intermediateRect = Rect.fromLTWH(
+      intermediateLeft,
+      intermediateTop,
+      intermediateWidth,
+      intermediateHeight,
+    );
+
+    return PageRouteBuilder<T>(
+      transitionDuration: const Duration(milliseconds: 1100),
+      reverseTransitionDuration: _roleReverseDuration,
+      opaque: true,
+      pageBuilder: (ctx, _, secondaryAnimation) => page,
+      transitionsBuilder: (ctx, animation, secondaryAnimation, child) {
+        return _StagedRoleTransition(
+          animation: animation,
+          sourceRect: sourceRect!,
+          intermediateRect: intermediateRect,
+          fullRect: fullRect,
+          tokens: tokens,
+          loadingFuture: loadingFuture,
+          child: child,
+        );
+      },
+    );
+  }
+
 /// 斜切面 -> 矩形的插值 Clipper
 ///
 /// 斜切 5 点（来自 _SlantedSurfaceClipper）：
@@ -415,6 +476,296 @@ class _SlantedToRectClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant _SlantedToRectClipper oldClipper) =>
       oldClipper.progress != progress;
+}
+
+
+class _StagedRoleTransition extends StatefulWidget {
+  const _StagedRoleTransition({
+    required this.animation,
+    required this.sourceRect,
+    required this.intermediateRect,
+    required this.fullRect,
+    required this.tokens,
+    required this.child,
+    this.loadingFuture,
+  });
+
+  final Animation<double> animation;
+  final Rect sourceRect;
+  final Rect intermediateRect;
+  final Rect fullRect;
+  final AppThemeTokens tokens;
+  final Widget child;
+  final Future<void>? loadingFuture;
+
+  @override
+  State<_StagedRoleTransition> createState() => _StagedRoleTransitionState();
+}
+
+class _StagedRoleTransitionState extends State<_StagedRoleTransition>
+    with TickerProviderStateMixin {
+  late final AnimationController _stageController;
+  late final AnimationController _dotsController;
+  bool _loadingDone = false;
+  bool _minHoldDone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _stageController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _dotsController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+
+    if (widget.loadingFuture != null) {
+      widget.loadingFuture!.whenComplete(() {
+        if (mounted) setState(() => _loadingDone = true);
+        _tryFinish();
+      });
+    } else {
+      _loadingDone = true;
+    }
+
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (mounted) {
+        setState(() => _minHoldDone = true);
+        _tryFinish();
+      }
+    });
+
+    _stageController.animateTo(0.257, duration: const Duration(milliseconds: 180), curve: Curves.easeOutCubic);
+  }
+
+  void _tryFinish() {
+    if (_loadingDone && _minHoldDone && mounted) {
+      Future.delayed(const Duration(milliseconds: 220), () {
+        if (mounted) {
+          _stageController.animateTo(1.0, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _stageController.dispose();
+    _dotsController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final curved = CurvedAnimation(parent: widget.animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+    return AnimatedBuilder(
+      animation: Listenable.merge([widget.animation, _stageController, _dotsController]),
+      builder: (context, _) {
+        final routeT = curved.value;
+        final stageT = _stageController.value;
+
+        Rect cardRect;
+        double clipT;
+        double cardOpacity;
+        if (stageT <= 0.257) {
+          final a = stageT / 0.257;
+          cardRect = Rect.lerp(widget.sourceRect, widget.intermediateRect, Curves.easeOutCubic.transform(a))!;
+          clipT = a * 0.45;
+          cardOpacity = 1.0;
+        } else {
+          final b = (stageT - 0.257) / 0.743;
+          cardRect = Rect.lerp(widget.intermediateRect, widget.fullRect, Curves.easeOutCubic.transform(b))!;
+          clipT = 0.45 + b * 0.55;
+          cardOpacity = b < 0.72 ? 1.0 : (1 - (b - 0.72) / 0.28).clamp(0.0, 1.0);
+        }
+
+        final scrimOpacity = (stageT < 0.257 ? stageT / 0.257 * 0.18 : 0.18).clamp(0.0, 0.14);
+        final capsuleOpacity = stageT < 0.257
+            ? 0.0
+            : stageT < 0.45
+                ? (stageT - 0.257) / 0.193
+                : stageT > 0.92
+                    ? (1 - (stageT - 0.92) / 0.08).clamp(0.0, 1.0)
+                    : 1.0;
+        final pageOpacity = routeT < 0.32 ? 0.0 : ((routeT - 0.32) / 0.68).clamp(0.0, 1.0);
+
+        return Stack(
+          children: [
+            Opacity(opacity: pageOpacity, child: widget.child),
+            if (scrimOpacity > 0.01)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(color: const Color(0xFF0F1A2A).withValues(alpha: scrimOpacity * 1.3)),
+                  ),
+                ),
+              ),
+            if (cardOpacity > 0.01)
+              Positioned.fromRect(
+                rect: cardRect,
+                child: Opacity(
+                  opacity: cardOpacity,
+                  child: ClipPath(
+                    clipper: _SlantedToRectClipper(progress: clipT),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [widget.tokens.accent, widget.tokens.accentStrong],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: const Alignment(-1, -0.55),
+                                end: const Alignment(1, 0.55),
+                                colors: [
+                                  widget.tokens.accentStrong.withValues(alpha: 0.88),
+                                  widget.tokens.accentStrong.withValues(alpha: 0.30),
+                                  Colors.black.withValues(alpha: 0.50),
+                                ],
+                                stops: const [0.0, 0.58, 1.0],
+                              ),
+                            ),
+                          ),
+                          Opacity(
+                            opacity: (1 - stageT * 1.2).clamp(0.0, 1.0),
+                            child: CustomPaint(
+                              painter: _ConcentricRingsForTransition(
+                                ringColor: Colors.white.withValues(alpha: 1.0),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (capsuleOpacity > 0.01)
+              Positioned(
+                left: widget.intermediateRect.left + widget.intermediateRect.width * 0.11,
+                top: widget.intermediateRect.bottom + 12,
+                width: widget.intermediateRect.width * 0.78,
+                height: 28,
+                child: Opacity(
+                  opacity: capsuleOpacity,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: _StagedDotsTrack(
+                          dotsController: _dotsController,
+                          accent: widget.tokens.accent,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _StagedDotsTrack extends StatelessWidget {
+  const _StagedDotsTrack({required this.dotsController, required this.accent});
+  final AnimationController dotsController;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final h = constraints.maxHeight;
+        const iconSize = 10.0;
+        const dotSize = 3.2;
+        final trackLeft = iconSize + 8;
+        final trackRight = iconSize + 8;
+        final trackWidth = w - trackLeft - trackRight;
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned(
+              left: trackLeft,
+              right: trackRight,
+              child: Container(height: 1, color: accent.withValues(alpha: 0.14)),
+            ),
+            Positioned(
+              left: 6,
+              child: Icon(Icons.play_arrow_rounded, size: 12, color: accent.withValues(alpha: 0.72)),
+            ),
+            Positioned(
+              right: 6,
+              child: Icon(Icons.person_rounded, size: 12, color: accent.withValues(alpha: 0.72)),
+            ),
+            AnimatedBuilder(
+              animation: dotsController,
+              builder: (context, _) {
+                final cycle = dotsController.value;
+                double cycleT;
+                if (cycle < 0.845) {
+                  cycleT = cycle / 0.845;
+                } else {
+                  return const SizedBox.shrink();
+                }
+                return Stack(
+                  children: List.generate(3, (i) {
+                    final startOffset = i * 0.074;
+                    final localT = (cycleT - startOffset).clamp(0.0, 1.0);
+                    if (localT <= 0 || localT >= 1) {
+                      return const SizedBox.shrink();
+                    }
+                    final posT = Curves.easeInOutCubic.transform(localT);
+                    final x = trackLeft + posT * trackWidth;
+                    final scale = 1.0 + 0.28 * (1 - (posT - 0.5).abs() * 2).clamp(0.0, 1.0);
+                    final alpha = 0.62 + 0.13 * (1 - (posT - 0.5).abs() * 2).clamp(0.0, 1.0);
+                    return Positioned(
+                      left: x - dotSize / 2,
+                      top: h / 2 - dotSize / 2,
+                      child: Transform.scale(
+                        scale: scale,
+                        child: Container(
+                          width: dotSize,
+                          height: dotSize,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: alpha),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: accent.withValues(alpha: 0.18),
+                                blurRadius: 4,
+                                spreadRadius: 0.5,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _ConcentricRingsForTransition extends CustomPainter {
