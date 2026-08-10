@@ -12,6 +12,7 @@ import '../services/world_book_asset_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'world_book_edit_overlay.dart';
 
 class WorldBookImportPreview {
