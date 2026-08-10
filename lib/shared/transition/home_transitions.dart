@@ -364,8 +364,6 @@ class HomeTransitions {
       },
     );
   }
-}
-
 
   /// 角色入口 -> 聊天（三段式舞台，带冷调蒙版与外置超细胶囊）
   ///
@@ -424,6 +422,7 @@ class HomeTransitions {
       },
     );
   }
+}
 
 /// 斜切面 -> 矩形的插值 Clipper
 ///
