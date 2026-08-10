@@ -10,9 +10,9 @@ import '../theme/app_theme_tokens.dart';
 /// - 支持减少动效，尊重 `MediaQuery.disableAnimationsOf`
 /// - 时长：module 380ms / role 520ms，曲线 easeOutCubic
 class HomeTransitions {
-  static const _moduleDuration = Duration(milliseconds: 380);
+  static const _moduleDuration = Duration(milliseconds: 440);
   static const _moduleReverseDuration = Duration(milliseconds: 300);
-  static const _roleDuration = Duration(milliseconds: 520);
+  static const _roleDuration = Duration(milliseconds: 560);
   static const _roleReverseDuration = Duration(milliseconds: 360);
 
   /// 模块轨道 -> 资产库（角色/世界书/背景/UI模组）
@@ -44,14 +44,23 @@ class HomeTransitions {
           reverseCurve: Curves.easeInCubic,
         );
 
-        // 目标页本身：淡入 + 轻微上移，避免生硬出现。
+        // 目标页：延迟淡入，让扩张卡片先充分展示（解决“打开不明显”）
+        // 打开时 0-28% 卡片独自扩张，页面才开始淡入；关闭时页面保持到 62% 才开始淡出
         final pageFade = FadeTransition(
-          opacity: curved,
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: const Interval(0.28, 1.0, curve: Curves.easeOutCubic),
+            reverseCurve: const Interval(0.0, 0.72, curve: Curves.easeInCubic),
+          ),
           child: SlideTransition(
             position: Tween<Offset>(
-              begin: const Offset(0, 0.04),
+              begin: const Offset(0, 0.06),
               end: Offset.zero,
-            ).animate(curved),
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: const Interval(0.28, 1.0, curve: Curves.easeOutCubic),
+              reverseCurve: const Interval(0.0, 0.72, curve: Curves.easeInCubic),
+            )),
             child: child,
           ),
         );
@@ -84,32 +93,39 @@ class HomeTransitions {
                 if (t < 0.02 && animation.status == AnimationStatus.dismissed) {
                   return const SizedBox.shrink();
                 }
-                // 结束阶段提前消失，让 page 完全透出。
-                if (t > 0.92) {
+                // 扩张卡片保持到 96% 再消失，之前过早隐藏导致“打开不明显”
+                if (t > 0.96) {
                   return const SizedBox.shrink();
                 }
 
                 final screenSize = MediaQuery.of(ctx2).size;
                 final fullRect = Offset.zero & screenSize;
-                // 前 12% 做一个按压回弹：复刻 HTML 的 .activating scale 0.965
-                double pressT = 0;
-                if (t < 0.12) {
-                  pressT = (t / 0.12) * 0.035;
+                // 按压回弹：0-16% 内缩到 0.94，17-28% 回弹到 1.0，之后保持 1.0
+                // 原 0.035 太轻看不见，现在 0.06 更有“摁下去”的反馈
+                double pressScale = 1.0;
+                if (t < 0.16) {
+                  pressScale = 1 - (t / 0.16) * 0.06;
+                } else if (t < 0.28) {
+                  final r = (t - 0.16) / 0.12;
+                  pressScale = 0.94 + 0.06 * Curves.easeOutBack.transform(r);
                 }
-                final pressScale = 1 - pressT;
                 final rect = Rect.lerp(sourceRect!, fullRect, t)!;
 
-                // 圆角从 13/6 -> 0
+                // 圆角 13/6 -> 0，前 55% 保持圆角，后 45% 快速抹平，形变更有节奏
+                final radiusT = (t < 0.55 ? 0.0 : (t - 0.55) / 0.45).clamp(0.0, 1.0);
                 const beginRadius = BorderRadius.only(
                   topLeft: Radius.circular(13),
                   topRight: Radius.circular(6),
                   bottomRight: Radius.circular(13),
                   bottomLeft: Radius.circular(6),
                 );
-                final radius = BorderRadius.lerp(beginRadius, BorderRadius.zero, t)!;
+                final radius = BorderRadius.lerp(beginRadius, BorderRadius.zero, radiusT)!;
 
-                // 扩张过程中的透明度：起点不透明，随扩张渐隐。
-                final overlayOpacity = (1 - t).clamp(0.0, 1.0);
+                // 扩张卡片保持不透明到 62% 再快速淡出，解决“打开不明显”
+                // 之前 (1-t) 在 t=0.5 就半透明，扩张过程被页面盖住
+                final overlayOpacity = t < 0.62
+                    ? 1.0
+                    : (1 - (t - 0.62) / 0.38).clamp(0.0, 1.0);
                 // 避免在 pop 初期闪现：pop 时 t=1->0，overlayOpacity 0->1 正好反向淡入
                 // 这里保持同样的逻辑，pop 时会从透明渐现再收缩，符合预期。
 
@@ -229,7 +245,8 @@ class HomeTransitions {
         final pageFade = FadeTransition(
           opacity: CurvedAnimation(
             parent: animation,
-            curve: const Interval(0.18, 1.0, curve: Curves.easeOutCubic),
+            curve: const Interval(0.32, 1.0, curve: Curves.easeOutCubic),
+            reverseCurve: const Interval(0.0, 0.68, curve: Curves.easeInCubic),
           ),
           child: child,
         );
@@ -258,8 +275,8 @@ class HomeTransitions {
                 if (t < 0.02 && animation.status == AnimationStatus.dismissed) {
                   return const SizedBox.shrink();
                 }
-                // 最后一个阶段隐藏 overlay，让聊天页完全透出
-                if (t > 0.88) {
+                // 扩张卡片保持到 96% 再消失，之前 0.88 过早隐藏
+                if (t > 0.96) {
                   return const SizedBox.shrink();
                 }
 
@@ -282,8 +299,8 @@ class HomeTransitions {
                 // 斜切 -> 矩形的插值
                 final clipT = t;
 
-                // 整体透明度：扩张时保持不透明，结束前快速淡出
-                final opacity = t < 0.65 ? 1.0 : (1 - (t - 0.65) / 0.35).clamp(0.0, 1.0);
+                // 保持不透明到 68% 再快速淡出，之前 0.65 过早
+                final opacity = t < 0.68 ? 1.0 : (1 - (t - 0.68) / 0.32).clamp(0.0, 1.0);
 
                 return Positioned.fromRect(
                   rect: rect,
