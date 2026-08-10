@@ -518,7 +518,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
     );
     _dotsController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3550),
+      duration: const Duration(milliseconds: 1800),
     )..repeat();
 
     if (widget.loadingFuture != null) {
@@ -530,7 +530,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
       _loadingDone = true;
     }
 
-    Future.delayed(const Duration(milliseconds: 380), () {
+    Future.delayed(const Duration(milliseconds: 900), () {
       if (mounted) {
         setState(() => _minHoldDone = true);
         _tryFinish();
@@ -581,7 +581,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
           cardOpacity = b < 0.72 ? 1.0 : (1 - (b - 0.72) / 0.28).clamp(0.0, 1.0);
         }
 
-        final scrimOpacity = (stageT < 0.257 ? stageT / 0.257 * 0.14 : 0.14).clamp(0.0, 0.14);
+        final scrimOpacity = (stageT < 0.257 ? stageT / 0.257 * 0.18 : 0.18).clamp(0.0, 0.14);
         final capsuleOpacity = stageT < 0.257
             ? 0.0
             : stageT < 0.45
@@ -599,7 +599,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
                 child: IgnorePointer(
                   child: BackdropFilter(
                     filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                    child: Container(color: const Color(0xFF0F1A2A).withValues(alpha: scrimOpacity)),
+                    child: Container(color: const Color(0xFF0F1A2A).withValues(alpha: scrimOpacity * 1.3)),
                   ),
                 ),
               ),
@@ -654,16 +654,16 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
                 left: widget.intermediateRect.left + widget.intermediateRect.width * 0.11,
                 top: widget.intermediateRect.bottom + 12,
                 width: widget.intermediateRect.width * 0.78,
-                height: 20,
+                height: 28,
                 child: Opacity(
                   opacity: capsuleOpacity,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(999),
                     child: BackdropFilter(
-                      filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
+                          color: Colors.white.withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: _StagedDotsTrack(
@@ -694,7 +694,7 @@ class _StagedDotsTrack extends StatelessWidget {
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
         const iconSize = 10.0;
-        const dotSize = 2.6;
+        const dotSize = 3.2;
         final trackLeft = iconSize + 8;
         final trackRight = iconSize + 8;
         final trackWidth = w - trackLeft - trackRight;
@@ -704,15 +704,15 @@ class _StagedDotsTrack extends StatelessWidget {
             Positioned(
               left: trackLeft,
               right: trackRight,
-              child: Container(height: 0.8, color: accent.withValues(alpha: 0.08)),
+              child: Container(height: 1, color: accent.withValues(alpha: 0.14)),
             ),
             Positioned(
               left: 6,
-              child: Icon(Icons.play_arrow_rounded, size: 10, color: accent.withValues(alpha: 0.52)),
+              child: Icon(Icons.play_arrow_rounded, size: 12, color: accent.withValues(alpha: 0.72)),
             ),
             Positioned(
               right: 6,
-              child: Icon(Icons.person_rounded, size: 10, color: accent.withValues(alpha: 0.52)),
+              child: Icon(Icons.person_rounded, size: 12, color: accent.withValues(alpha: 0.72)),
             ),
             AnimatedBuilder(
               animation: dotsController,
