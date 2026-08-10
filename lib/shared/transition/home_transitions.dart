@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -48,9 +49,6 @@ class HomeTransitions {
     );
     print('>>> module using sourceRect: $sourceRect');
     // 下面继续走 PageRouteBuilder，不再回退到 MaterialPageRoute
-
-
-    final tokens = AppThemeTokens.of(context);
     return PageRouteBuilder<T>(
       transitionDuration: _moduleDuration,
       reverseTransitionDuration: _moduleReverseDuration,
@@ -682,7 +680,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
                       filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.yellow.withValues(alpha: 0.95) // DEBUG: bright yellow capsule,
+                          color: Colors.yellow.withValues(alpha: 0.95), // DEBUG: bright yellow capsule
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: _StagedDotsTrack(
