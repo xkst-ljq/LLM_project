@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/character_card.dart';
+import '../services/active_character_store.dart';
 import '../services/background_service.dart';
 import '../services/database_service.dart';
 import '../shared/theme/app_theme_manager.dart';
@@ -51,7 +52,6 @@ class HomeExperiencePage extends StatefulWidget {
 
 class _HomeExperiencePageState extends State<HomeExperiencePage>
     with TickerProviderStateMixin {
-  static const _activeCharacterPreferenceKey = 'home_active_character_id';
 
   // Entrance choreography timings, mapped from the HTML prototype.
   static const _brandBegin = 0.044;
@@ -79,6 +79,8 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
   late final AnimationController _cover;
   bool _entranceReady = false;
   Timer? _promoteTimer;
+  late final bool _reduceMotion;
+  bool _motionInitialized = false;
 
   @override
   void initState() {
@@ -90,8 +92,25 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     _cover = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 16),
-    )..repeat(reverse: true);
+    );
     _loadHomeData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_motionInitialized) return;
+    _motionInitialized = true;
+    // 继承组件不能在 initState 里读，减少动效决策放这里。
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reduceMotion) {
+      // 减少动效：入场直接定格到最终状态，封面呼吸停在静态中值。
+      _entrance.value = 1.0;
+      _entranceReady = true;
+      _cover.value = 0.5;
+    } else {
+      _cover.repeat(reverse: true);
+    }
   }
 
   @override
@@ -108,10 +127,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       final timestamps = await DatabaseService.getLatestMessageTimestamps();
       final worldBooks = await DatabaseService.getAllWorldBooks();
       final backgrounds = await BackgroundService.getAll();
-      final preferences = await SharedPreferences.getInstance();
-      final persistedId = preferences.getString(_activeCharacterPreferenceKey);
-      final lastActiveId =
-          persistedId ?? await DatabaseService.getLastActiveCharacterId();
+      final lastActiveId = await ActiveCharacterStore.resolve();
 
       final characters = rawCharacters
           .map(CharacterCard.fromDb)
@@ -240,8 +256,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
 
   Future<void> _selectRolePlane(CharacterCard character) async {
     if (_pendingRoleId == character.id) {
-      final preferences = await SharedPreferences.getInstance();
-      await preferences.setString(_activeCharacterPreferenceKey, character.id);
+      await ActiveCharacterStore.write(character.id);
       if (!mounted) return;
       setState(() {
         _activeCharacter = character;
@@ -326,13 +341,13 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     );
   }
 
-  Widget _buildRoleEntry(AppThemeTokens tokens, BoxConstraints constraints) {
+  Widget _buildRoleEntry(
+    AppThemeTokens tokens, {
+    required double roleWidth,
+    required double roleHeight,
+  }) {
     final character = _activeCharacter;
     final empty = character == null;
-    final roleWidth = (constraints.maxWidth * 0.76)
-        .clamp(240.0, constraints.maxWidth - 24)
-        .toDouble();
-    final roleHeight = 166.0;
     final imagePath = character?.cardImagePath ?? '';
     final hasImage = imagePath.isNotEmpty && File(imagePath).existsSync();
     final stateLabel = empty
@@ -366,24 +381,14 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       height: roleHeight,
       child: Stack(
         children: [
-          // Hard offset shadow backing (12px 17px plane) behind the slanted card.
-          Positioned.fill(
-            child: Transform.translate(
-              offset: const Offset(12, 17),
-              child: ClipPath(
-                clipper: _SlantedSurfaceClipper(),
-                child: ColoredBox(
-                  color: tokens.accent.withValues(alpha: 0.10),
-                ),
-              ),
-            ),
-          ),
+          // 角色入口不保留任何投影 / 叠层模拟：直接以干净的斜切色面落在画布上。
           Positioned.fill(
             child: PhysicalShape(
               clipper: _SlantedSurfaceClipper(),
               color: tokens.surfaceElevated,
-              shadowColor: tokens.shadow,
-              elevation: 6,
+              shadowColor: Colors.transparent,
+              elevation: 0,
+              clipBehavior: Clip.antiAlias,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -408,12 +413,15 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
+                          // 对齐 HTML 的 `linear-gradient(112deg, rgba(44,52,132,0.88), rgba(42,48,112,0.3) 58%, rgba(12,15,27,0.5))`。
+                          begin: const Alignment(-1, -0.55),
+                          end: const Alignment(1, 0.55),
                           colors: [
                             tokens.accentStrong.withValues(alpha: 0.88),
-                            Colors.black.withValues(alpha: 0.32),
+                            tokens.accentStrong.withValues(alpha: 0.30),
+                            Colors.black.withValues(alpha: 0.50),
                           ],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
+                          stops: const [0.0, 0.58, 1.0],
                         ),
                       ),
                     ),
@@ -467,6 +475,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                           stateLabel: stateLabel,
                           title: title,
                           detail: detail,
+                          empty: true,
                         ),
                       ),
                     )
@@ -526,6 +535,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     required String title,
     required String detail,
     GlobalKey? titleKey,
+    bool empty = false,
   }) {
     return Stack(
       children: [
@@ -551,11 +561,11 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
             key: titleKey,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white,
-              fontSize: 32,
+              fontSize: empty ? 29 : 32,
               fontWeight: FontWeight.w800,
-              letterSpacing: -1.5,
+              letterSpacing: empty ? -1.2 : -1.5,
             ),
           ),
         ),
@@ -593,12 +603,16 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     required double roleTop,
     required double roleWidth,
     required double roleHeight,
+    required bool reduceMotion,
   }) {
     final planes = _rolePlaneOrder;
+    final fadeDuration = reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 330);
     return Positioned.fill(
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0.0, end: 1.0),
-        duration: const Duration(milliseconds: 330),
+        duration: fadeDuration,
         curve: Curves.easeOutCubic,
         builder: (context, value, child) {
           return Opacity(
@@ -620,16 +634,37 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _cancelRoleSelection,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        tokens.scrim.withValues(alpha: 0.16),
-                        Colors.transparent,
-                      ],
+                // Mirrors HTML's .role-picker-backdrop: a local band that
+                // blurs the role row, darkens the center via a radial, and
+                // fades at the top/bottom through a vertical mask.
+                child: ShaderMask(
+                  shaderCallback: (bounds) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black,
+                      Colors.black,
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.13, 0.84, 1.0],
+                  ).createShader(bounds),
+                  blendMode: BlendMode.dstIn,
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: const Alignment(0, 0.1),
+                          radius: 0.9,
+                          colors: [
+                            const Color(0x3305080F),
+                            const Color(0x1C05080F),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.62, 1.0],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -659,6 +694,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                       height: active ? roleHeight : roleHeight * 0.7,
                       recentLabel: _relativeTime(character.id),
                       tokens: tokens,
+                      reduceMotion: reduceMotion,
                       onTap: () => _selectRolePlane(character),
                     ),
                   );
@@ -683,7 +719,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
         onTap: _openCharacterLibrary,
         key: widget.characterTileKey,
         textKey: widget.characterTextKey,
-        accent: const Color(0xFFB99756),
+        accent: tokens.moduleRole,
       ),
       _HomeModuleEntry(
         title: '世界书库',
@@ -693,7 +729,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
         onTap: _openWorldBookLibrary,
         key: widget.worldBookTileKey,
         textKey: widget.worldBookTextKey,
-        accent: const Color(0xFF5E8EDB),
+        accent: tokens.moduleWorld,
       ),
       _HomeModuleEntry(
         title: '背景图库',
@@ -703,7 +739,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
         onTap: _openBackgroundLibrary,
         key: widget.backgroundTileKey,
         textKey: widget.backgroundTextKey,
-        accent: const Color(0xFFD97176),
+        accent: tokens.moduleBackground,
       ),
       _HomeModuleEntry(
         title: 'UI 模组库',
@@ -711,7 +747,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
         preview: '$_uiAssemblyCount 个模组',
         previewKind: 'chips',
         onTap: _openUIAssetGallery,
-        accent: const Color(0xFF536366),
+        accent: tokens.moduleUi,
       ),
     ];
 
@@ -758,12 +794,24 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                   itemBuilder: (context, index) {
                     final begin =
                         (_itemBase + index * _itemStep).clamp(0.0, 1.0);
+                    Widget tile = _ModulePreviewTile(
+                      entry: entries[index],
+                      tokens: tokens,
+                    );
+                    // 新用户状态：第一个模块（角色库）承担"从这里开始"的引导强调。
+                    if (_characters.isEmpty && index == 0) {
+                      tile = _ModuleFocusGuide(
+                        accent: entries[index].accent,
+                        reduceMotion: _reduceMotion,
+                        child: tile,
+                      );
+                    }
                     return _Staggered(
                       animation: _entrance,
                       begin: begin,
                       end: (begin + _span).clamp(0.0, 1.0),
                       offset: const Offset(18, 0),
-                      child: _ModulePreviewTile(entry: entries[index], tokens: tokens),
+                      child: tile,
                     );
                   },
                 ),
@@ -790,16 +838,33 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
         final railWidth = (constraints.maxWidth * 0.45)
             .clamp(170.0, 230.0)
             .toDouble();
-        final roleTop = 88.0;
-        final roleHeight = 166.0;
-        final roleWidth = (constraints.maxWidth * 0.76)
-            .clamp(240.0, constraints.maxWidth - 24)
-            .toDouble();
-        final stageTop = math.min(320.0, constraints.maxHeight * 0.42);
-        final railHeight = (constraints.maxHeight * 0.48)
-            .clamp(200.0, double.infinity)
+        // 矮屏时压缩布局，对应 index.html 的 @media (max-height: 750px)。
+        final shortScreen = constraints.maxHeight <= 750;
+        final roleHeight = shortScreen
+            ? 128.0
+            : (_activeCharacter == null ? 142.0 : 136.0);
+        // 对齐 index.html 的 .role-panel: top 119px，矮屏 93px。
+        final roleTop = shortScreen ? 93.0 : 119.0;
+        // 角色入口长度固定为上次 2:1 时的宽度（332），不再与当前高度保持
+        // 2:1 比例——块更扁更修长，只在屏幕过窄时收缩以免贴边溢出。
+        final roleWidth = (constraints.maxWidth - 40).clamp(200.0, 332.0).toDouble();
+        final stageTop = math.min(
+          shortScreen ? 296.0 : 320.0,
+          constraints.maxHeight * 0.42,
+        );
+        var railHeight = (constraints.maxHeight * (shortScreen ? 0.44 : 0.48))
+            .clamp(180.0, double.infinity)
             .toDouble();
         final railBottom = 12.0 + bottomInset;
+        // 轨道顶部不允许压到角色入口：railTop = maxHeight - railBottom - railHeight。
+        final maxRailHeight = constraints.maxHeight -
+            railBottom -
+            roleTop -
+            roleHeight -
+            12;
+        if (maxRailHeight < railHeight) {
+          railHeight = maxRailHeight.clamp(140.0, double.infinity);
+        }
         final lineSoft = tokens.outline.withValues(alpha: 0.55);
 
         return Stack(
@@ -835,10 +900,20 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                 animation: _entrance,
                 begin: _roleBegin,
                 end: (_roleBegin + _span).clamp(0.0, 1.0),
-                offset: const Offset(-24, -8),
+                // 垂直偏移仅用于入场，结束时必须精确归零，否则卡会比 HTML 原型(119)
+                // 高出一截。保持入场动感的同时避免静态残留。
+                offset: const Offset(-24, 0),
                 child: _loading
-                    ? _LoadingRoleEntry(tokens: tokens)
-                    : _buildRoleEntry(tokens, constraints),
+                    ? _LoadingRoleEntry(
+                        tokens: tokens,
+                        width: roleWidth,
+                        height: roleHeight,
+                      )
+                    : _buildRoleEntry(
+                        tokens,
+                        roleWidth: roleWidth,
+                        roleHeight: roleHeight,
+                      ),
               ),
             ),
             Positioned(
@@ -876,6 +951,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                 roleTop: roleTop,
                 roleWidth: roleWidth,
                 roleHeight: roleHeight,
+                reduceMotion: _reduceMotion,
               ),
             if (_error != null)
               Positioned(
@@ -1011,6 +1087,109 @@ class _ModulePreviewTile extends StatelessWidget {
   }
 }
 
+/// First-run emphasis for the role library module when no character exists yet.
+///
+/// Mirrors new_user.html's `module-focus`: after a short delay the first rail
+/// card nudges left twice with a soft highlight, then settles. Honored reduced
+/// motion by staying still.
+class _ModuleFocusGuide extends StatefulWidget {
+  const _ModuleFocusGuide({
+    required this.child,
+    required this.accent,
+    required this.reduceMotion,
+  });
+
+  final Widget child;
+  final Color accent;
+  final bool reduceMotion;
+
+  @override
+  State<_ModuleFocusGuide> createState() => _ModuleFocusGuideState();
+}
+
+class _ModuleFocusGuideState extends State<_ModuleFocusGuide>
+    with SingleTickerProviderStateMixin {
+  static const _playout = Duration(milliseconds: 3800);
+
+  late final AnimationController _controller;
+  Timer? _delayTimer;
+  bool _playing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 减少动效：不播放引导强调，直接静态显示。
+    _controller = AnimationController(vsync: this, duration: _playout);
+    if (widget.reduceMotion) return;
+    _controller.addStatusListener((status) {
+      if (status != AnimationStatus.completed || !mounted) return;
+      setState(() => _playing = false);
+    });
+    // Delayed start matches new_user.html's 1.1s `animation-delay`.
+    _delayTimer = Timer(const Duration(milliseconds: 1100), () {
+      if (!mounted || _playing) return;
+      _playing = true;
+      _controller.repeat(count: 2);
+    });
+  }
+
+  @override
+  void dispose() {
+    _delayTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_playing) return widget.child;
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        // Pause at rest until 30%, then nudge left twice with a soft shadow.
+        double shift = 0.0;
+        double glow = 0.0;
+        if (_controller.value >= 0.30) {
+          final pulse = (_controller.value - 0.30) % 0.35;
+          final t = pulse / 0.35;
+          if (t < 0.4) {
+            shift = -3 * (t / 0.4);
+            glow = 0.0;
+          } else if (t < 0.6) {
+            shift = -3 * (1 - (t - 0.4) / 0.2);
+            glow = 0.25 * (t - 0.4) / 0.2;
+          } else {
+            shift = 0.0;
+            glow = 0.25 * (1 - (t - 0.6) / 0.4);
+          }
+        }
+        return Transform.translate(
+          offset: Offset(shift, 0),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(13),
+                topRight: Radius.circular(6),
+                bottomRight: Radius.circular(13),
+                bottomLeft: Radius.circular(6),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.accent.withValues(alpha: glow),
+                  blurRadius: 14,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
 class _ModuleSymbol extends StatelessWidget {
   const _ModuleSymbol({required this.glyph, required this.color});
 
@@ -1033,11 +1212,91 @@ class _ModuleSymbol extends StatelessWidget {
           bottomLeft: Radius.circular(4),
         ),
       ),
-      child: Text(
-        glyph,
-        style: TextStyle(color: color, fontSize: 14),
-      ),
+      child: glyph == '♟'
+          ? CustomPaint(
+              painter: _ChessPawnPainter(color: color),
+              size: const Size(15, 17),
+            )
+          : Text(
+              glyph,
+              style: TextStyle(color: color, fontSize: 14),
+            ),
     );
+  }
+}
+
+/// A skeuomorphic chess pawn: base + body + collar + round head, shaded with a
+/// vertical linear gradient so it reads dimensional (light top-left, dark
+/// bottom-right) instead of the flat glyph the font provides.
+class _ChessPawnPainter extends CustomPainter {
+  const _ChessPawnPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    final bodyPath = Path()
+      ..moveTo(w * 0.17, h * 0.92)
+      ..quadraticBezierTo(w * 0.16, h * 0.86, w * 0.26, h * 0.84)
+      ..quadraticBezierTo(w * 0.30, h * 0.76, w * 0.34, h * 0.64)
+      ..quadraticBezierTo(w * 0.26, h * 0.52, w * 0.24, h * 0.42)
+      ..quadraticBezierTo(w * 0.23, h * 0.20, w * 0.48, h * 0.14)
+      ..quadraticBezierTo(w * 0.73, h * 0.20, w * 0.72, h * 0.42)
+      ..quadraticBezierTo(w * 0.70, h * 0.52, w * 0.62, h * 0.64)
+      ..quadraticBezierTo(w * 0.66, h * 0.76, w * 0.70, h * 0.84)
+      ..quadraticBezierTo(w * 0.80, h * 0.86, w * 0.79, h * 0.92)
+      ..close();
+
+    final bodyPaint = Paint()
+      ..shader = LinearGradient(
+        begin: const Alignment(-0.8, -0.8),
+        end: const Alignment(0.9, 0.9),
+        colors: [
+          _lighten(color, 0.35),
+          color,
+          _darken(color, 0.35),
+        ],
+      ).createShader(
+        Rect.fromLTWH(w * 0.1, h * 0.1, w * 0.8, h * 0.9),
+      );
+
+    canvas.drawPath(bodyPath, bodyPaint);
+
+    // Round head on top.
+    canvas.drawCircle(
+      Offset(w * 0.48, h * 0.10),
+      w * 0.17,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [_lighten(color, 0.55), _darken(color, 0.25)],
+        ).createShader(Rect.fromCircle(
+          center: Offset(w * 0.44, h * 0.08),
+          radius: w * 0.2,
+        )),
+    );
+
+    // Subtle rim light along the lower-left silhouette to sell the "solid"
+    // sculpted look.
+    final rimPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.white.withValues(alpha: 0.35);
+    final rim = Path()
+      ..moveTo(w * 0.22, h * 0.86)
+      ..quadraticBezierTo(w * 0.20, h * 0.80, w * 0.27, h * 0.70);
+    canvas.drawPath(rim, rimPaint);
+  }
+
+  Color _lighten(Color c, double t) => Color.lerp(c, Colors.white, t)!;
+  Color _darken(Color c, double t) => Color.lerp(c, Colors.black, t)!;
+
+  @override
+  bool shouldRepaint(covariant _ChessPawnPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
 
@@ -1225,6 +1484,7 @@ class _RolePlane extends StatelessWidget {
     required this.height,
     required this.recentLabel,
     required this.tokens,
+    required this.reduceMotion,
     required this.onTap,
   });
 
@@ -1235,6 +1495,7 @@ class _RolePlane extends StatelessWidget {
   final double height;
   final String recentLabel;
   final AppThemeTokens tokens;
+  final bool reduceMotion;
   final VoidCallback onTap;
 
   @override
@@ -1247,7 +1508,9 @@ class _RolePlane extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
         width: width,
         height: height,
@@ -1256,6 +1519,7 @@ class _RolePlane extends StatelessWidget {
           color: fallback,
           shadowColor: tokens.shadow,
           elevation: active ? 5 : 1,
+          clipBehavior: Clip.antiAlias,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1285,8 +1549,8 @@ class _RolePlane extends StatelessWidget {
                           : Colors.black.withValues(alpha: 0.2),
                       Colors.black.withValues(alpha: active ? 0.28 : 0.08),
                     ],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
+                    begin: const Alignment(-1, -0.55),
+                    end: const Alignment(1, 0.55),
                   ),
                 ),
               ),
@@ -1358,7 +1622,9 @@ class _RolePlane extends StatelessWidget {
     if (active && promoting) {
       card = TweenAnimationBuilder<double>(
         tween: Tween(begin: 0.96, end: 1.0),
-        duration: const Duration(milliseconds: 360),
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 360),
         curve: Curves.easeOutCubic,
         builder: (context, value, child) {
           return Transform.scale(scale: value, child: child);
@@ -1402,30 +1668,54 @@ class _EnterChatButton extends StatelessWidget {
 }
 
 class _LoadingRoleEntry extends StatelessWidget {
-  const _LoadingRoleEntry({required this.tokens});
+  const _LoadingRoleEntry({
+    required this.tokens,
+    required this.width,
+    required this.height,
+  });
 
   final AppThemeTokens tokens;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 300,
-      height: 150,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: tokens.surfaceElevated,
-          borderRadius: BorderRadius.circular(tokens.radiusMedium),
-        ),
-        child: Center(
-          child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: tokens.accent,
+      width: width,
+      height: height,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: PhysicalShape(
+              clipper: _SlantedSurfaceClipper(),
+              color: tokens.surfaceElevated,
+              shadowColor: tokens.shadow,
+              elevation: 6,
+              clipBehavior: Clip.antiAlias,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [tokens.accent, tokens.accentStrong],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+          Positioned.fill(
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: tokens.onAccent,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1445,6 +1735,8 @@ class _AvatarStageState extends State<_AvatarStage>
     with TickerProviderStateMixin {
   late final AnimationController _breathe;
   late final AnimationController _orbit;
+  late final bool _reduceMotion;
+  bool _motionInitialized = false;
 
   @override
   void initState() {
@@ -1452,11 +1744,26 @@ class _AvatarStageState extends State<_AvatarStage>
     _breathe = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 6),
-    )..repeat(reverse: true);
+    );
     _orbit = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 9),
-    )..repeat(reverse: true);
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_motionInitialized) return;
+    _motionInitialized = true;
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reduceMotion) {
+      _breathe.value = 0.5;
+      _orbit.value = 0.5;
+    } else {
+      _breathe.repeat(reverse: true);
+      _orbit.repeat(reverse: true);
+    }
   }
 
   @override
@@ -1477,64 +1784,88 @@ class _AvatarStageState extends State<_AvatarStage>
         return Stack(
           alignment: Alignment.bottomCenter,
           children: [
-            Opacity(
-              opacity: 0.55 + 0.45 * b,
-              child: Transform.scale(
-                scale: 0.96 + 0.09 * b,
-                child: Container(
-                  width: 205,
-                  height: 140,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        stage.withValues(alpha: 0.16),
-                        Colors.transparent,
-                      ],
+          // 同心椭圆环组：三个椭圆共享同一个中心（对应 HTML 的 .stage-ring 及其
+          // ::before/::after 用 inset 相对同一容器定位，天然同心）。呼吸/轨道
+          // 动画只改旋转角与尺寸，不移动中心。
+          Positioned(
+            bottom: 9,
+            child: SizedBox(
+              width: 206,
+              height: 92,
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  Transform.rotate(
+                    angle: -0.227 + o * 0.105,
+                    child: Container(
+                      width: 158 + b * 6,
+                      height: 55 + b * 3,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: stage.withValues(alpha: 0.42)),
+                        borderRadius: const BorderRadius.all(
+                          Radius.elliptical(80, 28),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ),
-            Transform.rotate(
-              angle: -0.227 + o * 0.105,
-              child: Container(
-                width: 158 + b * 5,
-                height: 55 + b * 2,
-                decoration: BoxDecoration(
-                  border: Border.all(color: stage.withValues(alpha: 0.42)),
-                  borderRadius: const BorderRadius.all(
-                    Radius.elliptical(80, 28),
+                  Transform.rotate(
+                    angle: 0.384 + o * 0.05,
+                    child: Container(
+                      width: 114,
+                      height: 87,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: stage.withValues(alpha: 0.18)),
+                        borderRadius: const BorderRadius.all(
+                          Radius.elliptical(57, 43.5),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
-            Transform.rotate(
-              angle: 0.384,
-              child: Container(
-                width: 158 - 44,
-                height: 55 + 32,
-                decoration: BoxDecoration(
-                  border: Border.all(color: stage.withValues(alpha: 0.18)),
-                  borderRadius: BorderRadius.all(
-                    Radius.elliptical((158 - 44) / 2, (55 + 32) / 2),
+                  Transform.rotate(
+                    angle: -0.489 - o * 0.05,
+                    child: Container(
+                      width: 200,
+                      height: 29,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: stage.withValues(alpha: 0.18)),
+                        borderRadius: const BorderRadius.all(
+                          Radius.elliptical(100, 14.5),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
-            Transform.rotate(
-              angle: -0.489,
-              child: Container(
-                width: 158 + 42,
-                height: 55 - 26,
-                decoration: BoxDecoration(
-                  border: Border.all(color: stage.withValues(alpha: 0.18)),
-                  borderRadius: BorderRadius.all(
-                    Radius.elliptical((158 + 42) / 2, (55 - 26) / 2),
+                  // HTML 式青色光源：径向渐变 + 模糊 + 呼吸，叠加在环状图案之上。
+                  // HTML 的 stage-glow 是 rgba(105,189,180,0.16) + blur(11px)，
+                  // 呼吸 0.62→1.0。放在 rings 之后绘制，即盖在环上面。
+                  Opacity(
+                    opacity: 0.62 + 0.38 * b,
+                    child: Transform.scale(
+                      scale: 0.96 + 0.09 * b,
+                      child: ImageFiltered(
+                        imageFilter: ui.ImageFilter.blur(sigmaX: 11, sigmaY: 11),
+                        child: Container(
+                          width: 205,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.all(
+                              Radius.elliptical(102.5, 70),
+                            ),
+                            gradient: RadialGradient(
+                              colors: [
+                                stage.withValues(alpha: 0.16),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
+          ),
             Positioned(
               bottom: 3,
               child: widget.empty
@@ -1648,9 +1979,10 @@ class _DiagonalRingsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Mirrors .screen::before in the HTML prototype: a large ellipse that
-    // starts 21% in from the left edge, extends 36% past the right edge,
-    // and sits from 19% to 64% of the height, rotated -57deg about center.
+    // Design target: several 1px, extremely faint light-grey ellipse hairlines,
+    // slightly scattered so they read as refined geometry rather than a solid
+    // hoop. Each ring drifts a little along the major axis instead of being
+    // perfectly concentric.
     final rect = Rect.fromLTWH(
       size.width * 0.21,
       size.height * 0.19,
@@ -1661,24 +1993,40 @@ class _DiagonalRingsPainter extends CustomPainter {
     canvas.translate(rect.center.dx, rect.center.dy);
     canvas.rotate(-57 * math.pi / 180);
 
-    void ellipse(double inset) {
-      final r = Rect.fromCenter(
-        center: Offset.zero,
-        width: rect.width + inset * 2,
-        height: rect.height + inset * 2,
-      );
-      canvas.drawOval(
-        r,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = line,
-      );
-    }
+    Rect ovalInset(double inset) => Rect.fromCenter(
+          center: Offset.zero,
+          width: rect.width + inset * 2,
+          height: rect.height + inset * 2,
+        );
 
-    ellipse(0);
-    ellipse(25);
-    ellipse(75);
+    // 设计上是两条相接的环带：内侧深灰细环、外侧浅灰粗环，中间不重合。
+    // 用 Path.combine(difference) 填充椭圆环（外椭圆挖去内椭圆）画出实心
+    // 带状区域。两带共享同一个分界半径 split，接壤处即这条椭圆。
+    Path oval(Rect r) => Path()..addOval(r);
+    final split = 30.0;
+    // 内侧深灰环：做薄，宽度约 12。
+    final innerRing = Path.combine(
+      PathOperation.difference,
+      oval(ovalInset(split)),
+      oval(ovalInset(split - 12)),
+    );
+    // 外侧浅灰环：比深灰环稍厚一些，但比之前收窄。
+    final outerRing = Path.combine(
+      PathOperation.difference,
+      oval(ovalInset(split + 40)),
+      oval(ovalInset(split)),
+    );
+
+    // 深灰做浅些、浅灰更浅，整体都是极淡的氛围线。
+    final darkFill = Paint()
+      ..style = PaintingStyle.fill
+      ..color = line.withValues(alpha: 0.09);
+    final lightFill = Paint()
+      ..style = PaintingStyle.fill
+      ..color = line.withValues(alpha: 0.04);
+
+    canvas.drawPath(innerRing, darkFill);
+    canvas.drawPath(outerRing, lightFill);
     canvas.restore();
   }
 
@@ -1728,8 +2076,15 @@ class _HomeBackground extends StatelessWidget {
     // The HTML prototype draws its ring decoration with a faint dark line in
     // day and a faint light line in night; textPrimary flips correctly for
     // both, so we derive the decorative line from it rather than from outline.
-    final rings = tokens.textPrimary.withValues(alpha: 0.24);
-    final diagonal = tokens.textPrimary.withValues(alpha: 0.55);
+    // 椭圆轨道环是背景主体（HTML --line-soft），斜线更淡（--line 的一半左右）。
+    // 环带 alpha 由 painter 内部控制，这里只决定基准颜色。
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    // 深色模式下让环带偏蓝：把近白 textPrimary 向淡蓝方向拉一点。
+    final baseLine = isNight
+        ? Color.lerp(tokens.textPrimary, const Color(0xFF9DB7FF), 0.55)!
+        : tokens.textPrimary;
+    final rings = baseLine.withValues(alpha: 0.05);
+    final diagonal = baseLine.withValues(alpha: 0.035);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1737,12 +2092,16 @@ class _HomeBackground extends StatelessWidget {
           decoration: BoxDecoration(
             color: tokens.canvas,
             gradient: RadialGradient(
+              // HTML 用 `radial-gradient(ellipse at 4% 76%, rgba(105,189,180,0.11), transparent 14rem)`：
+              // 左下角只有一小片极淡的朦胧青调光晕，14rem≈224px 后就淡出，过渡要柔和。
+              // 此前 0.11 叠在纯色上偏浑浊，压到 0.06 让氛围更轻盈。
               center: const Alignment(-0.92, 0.52),
-              radius: 0.9,
+              radius: 0.33,
               colors: [
-                tokens.stage.withValues(alpha: 0.14),
-                tokens.canvas,
+                tokens.stage.withValues(alpha: 0.06),
+                tokens.canvas.withValues(alpha: 0.0),
               ],
+              stops: const [0.0, 1.0],
             ),
           ),
         ),
@@ -1751,19 +2110,13 @@ class _HomeBackground extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Colors.transparent, tokens.canvasDeep],
+              colors: [tokens.canvas.withValues(alpha: 0.0), tokens.canvasDeep],
               stops: const [0.6, 1.0],
             ),
           ),
         ),
-        Opacity(
-          opacity: 0.45,
-          child: CustomPaint(painter: _DiagonalRingsPainter(line: rings)),
-        ),
-        Opacity(
-          opacity: 0.5,
-          child: CustomPaint(painter: _DiagonalLinePainter(line: diagonal)),
-        ),
+        CustomPaint(painter: _DiagonalRingsPainter(line: rings)),
+        CustomPaint(painter: _DiagonalLinePainter(line: diagonal)),
       ],
     );
   }
@@ -1822,6 +2175,8 @@ class _BrandMark extends StatefulWidget {
 class _BrandMarkState extends State<_BrandMark>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  late final bool _reduceMotion;
+  bool _motionInitialized = false;
 
   @override
   void initState() {
@@ -1829,7 +2184,20 @@ class _BrandMarkState extends State<_BrandMark>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4200),
-    )..repeat(reverse: true);
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_motionInitialized) return;
+    _motionInitialized = true;
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reduceMotion) {
+      _controller.value = 0.5;
+    } else {
+      _controller.repeat(reverse: true);
+    }
   }
 
   @override
@@ -1944,6 +2312,8 @@ class _EdgeGestureHint extends StatefulWidget {
 class _EdgeGestureHintState extends State<_EdgeGestureHint>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  late final bool _reduceMotion;
+  bool _motionInitialized = false;
 
   @override
   void initState() {
@@ -1951,7 +2321,20 @@ class _EdgeGestureHintState extends State<_EdgeGestureHint>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3800),
-    )..repeat();
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_motionInitialized) return;
+    _motionInitialized = true;
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reduceMotion) {
+      _controller.value = 0.84;
+    } else {
+      _controller.repeat();
+    }
   }
 
   @override

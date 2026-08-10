@@ -32,6 +32,10 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     required this.scrim,
     required this.shadow,
     required this.imageOutline,
+    required this.moduleRole,
+    required this.moduleWorld,
+    required this.moduleBackground,
+    required this.moduleUi,
     required this.space1,
     required this.space2,
     required this.space3,
@@ -78,6 +82,10 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
           scrim: const Color(0x6B000000),
           shadow: const Color(0x24000000),
           imageOutline: const Color(0x1A000000),
+          moduleRole: const Color(0xFFBF9B5B),
+          moduleWorld: const Color(0xFF5E8DDA),
+          moduleBackground: const Color(0xFFD96E73),
+          moduleUi: const Color(0xFF4B5A5D),
           space1: 4,
           space2: 8,
           space3: 12,
@@ -124,6 +132,10 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
           scrim: const Color(0x85000000),
           shadow: const Color(0x66000000),
           imageOutline: const Color(0x33FFFFFF),
+          moduleRole: const Color(0xFFB08B4B),
+          moduleWorld: const Color(0xFF5F8ED9),
+          moduleBackground: const Color(0xFFD26C76),
+          moduleUi: const Color(0xFF5C6B6E),
           space1: 4,
           space2: 8,
           space3: 12,
@@ -171,6 +183,13 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
   final Color scrim;
   final Color shadow;
   final Color imageOutline;
+
+  /// Module rail accent colors, one per library module. These stay
+  /// theme-dependent so a module's emphasis hue shifts with Day/Night.
+  final Color moduleRole;
+  final Color moduleWorld;
+  final Color moduleBackground;
+  final Color moduleUi;
 
   final double space1;
   final double space2;
@@ -223,6 +242,10 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     Color? scrim,
     Color? shadow,
     Color? imageOutline,
+    Color? moduleRole,
+    Color? moduleWorld,
+    Color? moduleBackground,
+    Color? moduleUi,
     double? space1,
     double? space2,
     double? space3,
@@ -266,6 +289,10 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
       scrim: scrim ?? this.scrim,
       shadow: shadow ?? this.shadow,
       imageOutline: imageOutline ?? this.imageOutline,
+      moduleRole: moduleRole ?? this.moduleRole,
+      moduleWorld: moduleWorld ?? this.moduleWorld,
+      moduleBackground: moduleBackground ?? this.moduleBackground,
+      moduleUi: moduleUi ?? this.moduleUi,
       space1: space1 ?? this.space1,
       space2: space2 ?? this.space2,
       space3: space3 ?? this.space3,
@@ -321,6 +348,10 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
       scrim: color(scrim, other.scrim),
       shadow: color(shadow, other.shadow),
       imageOutline: color(imageOutline, other.imageOutline),
+      moduleRole: color(moduleRole, other.moduleRole),
+      moduleWorld: color(moduleWorld, other.moduleWorld),
+      moduleBackground: color(moduleBackground, other.moduleBackground),
+      moduleUi: color(moduleUi, other.moduleUi),
       space1: value(space1, other.space1),
       space2: value(space2, other.space2),
       space3: value(space3, other.space3),

@@ -21,6 +21,7 @@ import '../models/user_profile.dart';
 import '../models/world_book_entry.dart';
 import '../modules/chat_module.dart';
 import '../services/api_config_service.dart';
+import '../services/active_character_store.dart';
 import '../services/background_service.dart';
 import '../services/database_service.dart';
 import '../services/prompt_settings_service.dart';
@@ -2035,7 +2036,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       Future.microtask(() async {
         String? lastId;
         try {
-          lastId = await DatabaseService.getLastActiveCharacterId();
+          lastId = await ActiveCharacterStore.resolve();
         } catch (_) {}
         final all = await DatabaseService.getAllCharacters();
         Map<String, dynamic>? charData;
@@ -2143,6 +2144,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     if (char == null) return;
 
     _currentCharacter = char;
+    // 与主页统一当前角色来源：聊天页内切换角色也回写同一把钥匙，
+    // 返回主页时主页能读到同一个"当前角色"。
+    await ActiveCharacterStore.write(char.id);
     // 新角色的会话副本还没读，先关掉开场白判定的闸门。
     // 不做这一步，下面那次 setState 会拿上一个角色的
     // _openingDismissed 去判断新角色。
