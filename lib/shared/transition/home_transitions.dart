@@ -27,7 +27,10 @@ class HomeTransitions {
     required Widget page,
     required Color accent,
   }) {
+    // ignore: avoid_print
+    print('>>> module called, sourceKey: $sourceKey, accent: $accent');
     if (MediaQuery.disableAnimationsOf(context) || sourceKey == null) {
+      print('>>> module fallback to MaterialPageRoute');
       return MaterialPageRoute<T>(builder: (_) => page);
     }
 
@@ -372,11 +375,16 @@ class HomeTransitions {
   /// - 胶囊：卡片正下方 12px，外置悬浮，宽卡片×0.78/高20/pill，无描边无实色，仅 白6/255+blur10 细长
   /// - 三点：2.6px accent 0.62 + 6px光晕，1.35s easeInOut 0.1s错峰，2s静止循环
   static Route<T> stagedRole<T>({
+    // DEBUG: log when called
+    // ignore: avoid_print
+    // print('>>> stagedRole called');
     required BuildContext context,
     required GlobalKey? sourceKey,
     required Widget page,
     Future<void>? loadingFuture,
   }) {
+    // ignore: avoid_print
+    print('>>> stagedRole called, sourceKey: $sourceKey, disableAnimations: ${MediaQuery.disableAnimationsOf(context)}');
     // 调试：即使 disableAnimations 也强制展示，sourceKey 取不到时用屏幕中心 fallback，保证动画必现
     final tokens = AppThemeTokens.of(context);
     Rect? sourceRect;
@@ -667,7 +675,7 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
                       filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.22),
+                          color: Colors.yellow.withValues(alpha: 0.95) // DEBUG: bright yellow capsule,
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: _StagedDotsTrack(

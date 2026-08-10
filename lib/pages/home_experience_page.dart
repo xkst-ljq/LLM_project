@@ -258,9 +258,12 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       return;
     }
 
+    // ignore: avoid_print
+    print('>>> _openChat called, character: ${character.name}, _roleEntryKey: $_roleEntryKey');
     // 外置胶囊三段式：卡片先到中间态悬停，Isolate 在后台解析，完成后才全屏
     // 预解析与 700ms 动画并发，细长胶囊在中间态循环
     final loadingFuture = _preloadForChat(character);
+    print('>>> pushing stagedRole');
     await Navigator.push<void>(
       context,
       HomeTransitions.stagedRole(
@@ -270,6 +273,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
         page: ChatPage(character: character),
       ),
     );
+    print('>>> stagedRole popped');
     _loadHomeData();
   }
 
