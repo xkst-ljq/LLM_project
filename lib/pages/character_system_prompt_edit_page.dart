@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/sub_page_backdrop.dart';
+
 class CharacterSystemPromptEditPage extends StatefulWidget {
   final String initialText;
   const CharacterSystemPromptEditPage({super.key, required this.initialText});
@@ -46,7 +48,8 @@ class _CharacterSystemPromptEditPageState
           ),
           title: const Text('角色详细设定'),
         ),
-        body: Padding(
+        body: SubPageBackdrop(
+          child: Padding(
           padding: const EdgeInsets.all(16),
           child: TextField(
             controller: _controller,
@@ -59,6 +62,7 @@ class _CharacterSystemPromptEditPageState
               border: OutlineInputBorder(),
             ),
           ),
+        ),
         ),
       ),
     );

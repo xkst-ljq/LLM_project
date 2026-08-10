@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/background_card.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 
 class BackgroundEditOverlay extends StatelessWidget {
   final BackgroundCard background;
@@ -18,7 +20,10 @@ class BackgroundEditOverlay extends StatelessWidget {
           child: Center(
             child: GestureDetector(
               onTap: () {}, // 阻止点击穿透
-              child: Container(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: SubPageBackdrop(
+                  child: Container(
                 width: MediaQuery.of(context).size.width * 0.9,
                 height: MediaQuery.of(context).size.height * 0.65,
                 decoration: BoxDecoration(
@@ -33,8 +38,10 @@ class BackgroundEditOverlay extends StatelessWidget {
                   ],
                 ),
                 child: background.isPreset
-                    ? _buildPresetEditor()
-                    : _buildCustomEditor(),
+                    ? _buildPresetEditor(context)
+                    : _buildCustomEditor(context),
+              ),
+                ),
               ),
             ),
           ),
@@ -43,44 +50,46 @@ class BackgroundEditOverlay extends StatelessWidget {
     );
   }
 
-  Widget _buildPresetEditor() {
-    return const Center(
+  Widget _buildPresetEditor(BuildContext context) {
+    final muted = AppThemeTokens.of(context).textMuted;
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.auto_awesome, size: 48, color: Colors.grey),
-          SizedBox(height: 16),
-          Text(
+          Icon(Icons.auto_awesome, size: 48, color: muted),
+          const SizedBox(height: 16),
+          const Text(
             '默认背景编辑',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             '纯色 / 渐变 / 上传\n（功能待实现）',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: muted),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCustomEditor() {
-    return const Center(
+  Widget _buildCustomEditor(BuildContext context) {
+    final muted = AppThemeTokens.of(context).textMuted;
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.image, size: 48, color: Colors.grey),
-          SizedBox(height: 16),
-          Text(
+          Icon(Icons.image, size: 48, color: muted),
+          const SizedBox(height: 16),
+          const Text(
             '自定义背景编辑',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             '名称 / 场景设定 / 预览\n（功能待实现）',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: muted),
           ),
         ],
       ),

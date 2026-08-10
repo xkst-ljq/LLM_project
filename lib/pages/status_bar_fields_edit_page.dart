@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:llm_ui_engine/llm_ui_engine.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 
 /// 状态栏字段定义编辑页。
 ///
@@ -232,7 +234,8 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
           TextButton(onPressed: _save, child: const Text('保存')),
         ],
       ),
-      body: Column(
+      body: SubPageBackdrop(
+        child: Column(
         children: [
           // 预绑定提示排在列表之上：作者进这个页面多半就是为了
           // 把 UI 里写下的名字建出来，藏在底部等于没做。
@@ -252,6 +255,7 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
                   ),
           ),
         ],
+      ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addField,
@@ -373,12 +377,13 @@ class _StatusBarFieldsEditPageState extends State<StatusBarFieldsEditPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.dashboard_customize_outlined,
-                size: 48, color: Colors.grey.shade400),
+                size: 48, color: AppThemeTokens.of(context).textMuted),
             const SizedBox(height: 12),
             Text(
               '还没有状态栏字段。\n点击下方「添加字段」创建，例如：生命、好感、地点。',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
+              style: TextStyle(
+                  color: AppThemeTokens.of(context).textSecondary),
             ),
           ],
         ),

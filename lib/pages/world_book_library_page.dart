@@ -12,6 +12,7 @@ import '../services/world_book_asset_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'world_book_edit_overlay.dart';
 
 class WorldBookImportPreview {
@@ -936,7 +937,8 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
                 ),
               ],
             ),
-            body: _worldBooks.isEmpty
+            body: SubPageBackdrop(
+              child: _worldBooks.isEmpty
                 ? const Center(child: Text('暂无世界书，点击 + 添加'))
                 : GridView.builder(
                     padding: const EdgeInsets.all(16),
@@ -991,6 +993,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
                       );
                     },
                   ),
+            ),
           ),
           if (_showGuide)
             Positioned.fill(

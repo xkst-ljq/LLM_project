@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 
 import 'background_library_page.dart';
 import 'character_library_page.dart';
@@ -52,7 +54,8 @@ class TutorialHomePage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('教程与导览'),
       ),
-      body: ListView(
+      body: SubPageBackdrop(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
@@ -146,11 +149,15 @@ class TutorialHomePage extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           const _SectionTitle('功能百科'),
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               '百科用于解释概念和使用建议；具体怎么操作请看上面的页面导览。',
-              style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
+              style: TextStyle(
+                fontSize: 13,
+                color: AppThemeTokens.of(context).textSecondary,
+                height: 1.4,
+              ),
             ),
           ),
           for (final entry in _groupArticles(_encyclopediaArticles).entries) ...[
@@ -173,6 +180,7 @@ class TutorialHomePage extends StatelessWidget {
           const SizedBox(height: 24),
         ],
       ),
+        ),
     );
   }
 }
@@ -261,7 +269,8 @@ class _EncyclopediaArticlePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(article.title)),
-      body: ListView(
+      body: SubPageBackdrop(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
@@ -271,7 +280,10 @@ class _EncyclopediaArticlePage extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             article.subtitle,
-            style: const TextStyle(color: Colors.black54, height: 1.4),
+            style: TextStyle(
+              color: AppThemeTokens.of(context).textSecondary,
+              height: 1.4,
+            ),
           ),
           const Divider(height: 28),
           Text(
@@ -280,6 +292,7 @@ class _EncyclopediaArticlePage extends StatelessWidget {
           ),
         ],
       ),
+        ),
     );
   }
 }

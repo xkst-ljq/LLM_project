@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../modules/chat_module.dart';
+import '../widgets/sub_page_backdrop.dart';
 
 class SettingsPage extends StatefulWidget {
   final VoidCallback? onBack; // 可选的回调，目前滑动面板不需要
@@ -53,7 +54,8 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     return Scaffold(
       appBar: AppBar(title: const Text('API 设置')),
-      body: Padding(
+      body: SubPageBackdrop(
+        child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
@@ -77,6 +79,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ElevatedButton(onPressed: _save, child: const Text('保存并返回')),
           ],
         ),
+      ),
       ),
     );
   }

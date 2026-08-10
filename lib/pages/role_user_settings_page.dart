@@ -2,9 +2,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/character_card.dart';
 import '../services/database_service.dart';
-import '../utils/protagonist_setting_utils.dart';
-import '../services/user_service.dart';
 import '../services/image_pick_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
+import '../services/user_service.dart';
+import '../utils/protagonist_setting_utils.dart';
 
 class RoleUserSettingsPage extends StatefulWidget {
   final CharacterCard character;
@@ -249,7 +251,8 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: SubPageBackdrop(
+        child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -380,10 +383,10 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
                     '1. 点击右上角“保存”会保存为当前人物卡的用户覆盖设定。\n'
                     '2. “恢复默认设定”会清空当前覆盖设定，并重新使用主菜单里的全局用户设定。\n'
                     '3. 人物卡没有主角默认设定，因此不会显示“保存为角色卡默认”。',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.45,
-                  color: Colors.black54,
+                  color: AppThemeTokens.of(context).textSecondary,
                 ),
               ),
             ),
@@ -391,6 +394,7 @@ class _RoleUserSettingsPageState extends State<RoleUserSettingsPage> {
             const SizedBox(height: 24),
           ],
         ),
+      ),
       ),
     );
   }
