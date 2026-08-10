@@ -71,6 +71,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
   int _uiAssemblyCount = 0;
   bool _loading = true;
   bool _roleSelecting = false;
+  bool _roleClosing = false; // 选择层淡出阶段：与入口卡淡入交叉，避免空帧闪烁。
   String? _pendingRoleId;
   String? _promotingRoleId;
   Object? _error;
@@ -251,22 +252,21 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       _pendingRoleId = null;
       _promotingRoleId = null;
       _roleSelecting = false;
+      _roleClosing = true;
+    });
+    Future<void>.delayed(_reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 260)).then((_) {
+      if (mounted) setState(() => _roleClosing = false);
     });
   }
 
-  Future<void> _selectRolePlane(CharacterCard character) async {
+  /// 第一次点击某张角色卡：聚焦并吸附到主页角色槽位（对应 HTML 第一次点击）。
+  void _focusRolePlane(CharacterCard character) {
     if (_pendingRoleId == character.id) {
-      await ActiveCharacterStore.write(character.id);
-      if (!mounted) return;
-      setState(() {
-        _activeCharacter = character;
-        _pendingRoleId = null;
-        _promotingRoleId = null;
-        _roleSelecting = false;
-      });
+      _confirmRolePlane(character);
       return;
     }
-
     _promoteTimer?.cancel();
     setState(() {
       _pendingRoleId = character.id;
@@ -274,6 +274,41 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     });
     _promoteTimer = Timer(const Duration(milliseconds: 420), () {
       if (mounted) setState(() => _promotingRoleId = null);
+    });
+  }
+
+  /// 第二次点击（或已聚焦时再点）：确认并替换主页当前角色（对应 HTML 第二次点击）。
+  Future<void> _confirmRolePlane(CharacterCard character) async {
+    if (_pendingRoleId != character.id) {
+      _focusRolePlane(character);
+      return;
+    }
+    _promoteTimer?.cancel();
+    await ActiveCharacterStore.write(character.id);
+    if (!mounted) return;
+    setState(() {
+      _activeCharacter = character;
+      _pendingRoleId = null;
+      _promotingRoleId = null;
+      // 进入"关闭中"：选择层淡出，入口卡淡入，交叉过渡避免空帧闪烁。
+      _roleSelecting = false;
+      _roleClosing = true;
+    });
+    await Future<void>.delayed(_reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 260));
+    if (!mounted) return;
+    setState(() => _roleClosing = false);
+  }
+
+  /// 滑动吸附后直接选中（对应聊天页角色切换的滑动选中）：无提升闪光，
+  /// 仅在吸附到位时替换当前聚焦角色。
+  void _swipeSelectRolePlane(CharacterCard character) {
+    if (_pendingRoleId == character.id) return;
+    _promoteTimer?.cancel();
+    setState(() {
+      _pendingRoleId = character.id;
+      _promotingRoleId = null;
     });
   }
 
@@ -299,6 +334,25 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       return HomeState.readyToStart;
     }
     return HomeState.resume;
+  }
+
+  /// 角色选择层展示的卡片：当前角色排在最前（吸附轨道初始以它为中心），
+  /// 其余保持最近聊天优先顺序。吸附以位置驱动，不再重新排序卡片。
+  List<CharacterCard> get _selectableCharacters {
+    final activeId = _activeCharacter?.id;
+    final ordered = <CharacterCard>[];
+    if (activeId != null) {
+      for (final character in _characters) {
+        if (character.id == activeId) {
+          ordered.add(character);
+          break;
+        }
+      }
+    }
+    for (final character in _characters) {
+      if (character.id != activeId) ordered.add(character);
+    }
+    return ordered;
   }
 
   Widget _buildBrand(AppThemeTokens tokens) {
@@ -399,9 +453,12 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                       return Opacity(
                         opacity: 0.91 + 0.09 * t,
                         child: Transform.scale(
+                          // 对齐 HTML `transform-origin: 58% 50%`。
                           scale: 1.015 + 0.025 * t,
-                          child: Transform.translate(
-                            offset: Offset(-1.5 * t, -0.6 * t),
+                          alignment: const FractionalOffset(0.58, 0.5),
+                          // 对齐 HTML `translate3d(-1.5%, -0.6%, 0)`，百分比按卡片自身尺寸折算。
+                          child: FractionalTranslation(
+                            translation: Offset(-0.015 * t, -0.006 * t),
                             child: child,
                           ),
                         ),
@@ -475,6 +532,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                           stateLabel: stateLabel,
                           title: title,
                           detail: detail,
+                          cardWidth: roleWidth,
                           empty: true,
                         ),
                       ),
@@ -487,6 +545,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                           stateLabel: stateLabel,
                           title: title,
                           detail: detail,
+                          cardWidth: roleWidth,
                           titleKey: widget.chatTextKey,
                         ),
                       ),
@@ -534,6 +593,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     required String stateLabel,
     required String title,
     required String detail,
+    required double cardWidth,
     GlobalKey? titleKey,
     bool empty = false,
   }) {
@@ -556,17 +616,14 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
           top: 44,
           left: 24,
           right: 34,
-          child: Text(
-            title,
+          child: _AdaptiveNameText(
+            text: title,
             key: titleKey,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: empty ? 29 : 32,
-              fontWeight: FontWeight.w800,
-              letterSpacing: empty ? -1.2 : -1.5,
-            ),
+            maxWidth: cardWidth - 24 - 34,
+            fontSize: empty ? 29 : 32,
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            letterSpacing: empty ? -1.2 : -1.5,
           ),
         ),
         Positioned(
@@ -584,41 +641,35 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     );
   }
 
-  List<CharacterCard> get _rolePlaneOrder {
-    final selectedId = _pendingRoleId;
-    if (selectedId == null) return const <CharacterCard>[];
-
-    final ordered = <CharacterCard>[];
-    for (final character in _characters) {
-      if (character.id == selectedId) ordered.insert(0, character);
-    }
-    for (final character in _characters) {
-      if (character.id != selectedId) ordered.add(character);
-    }
-    return ordered;
-  }
-
   Widget _buildRoleSelectionLayer(
     AppThemeTokens tokens, {
     required double roleTop,
     required double roleWidth,
     required double roleHeight,
     required bool reduceMotion,
+    bool closing = false,
   }) {
-    final planes = _rolePlaneOrder;
+    final planes = _selectableCharacters;
     final fadeDuration = reduceMotion
         ? Duration.zero
-        : const Duration(milliseconds: 330);
+        : const Duration(milliseconds: 260);
+    // 关闭时反向：从可见淡出到隐藏，与入口卡淡入交叉，避免空帧闪烁。
+    final opacityTween = closing
+        ? Tween<double>(begin: 1.0, end: 0.0)
+        : Tween<double>(begin: 0.0, end: 1.0);
+    final scaleTween = closing
+        ? Tween<double>(begin: 1.0, end: 0.96)
+        : Tween<double>(begin: 0.96, end: 1.0);
     return Positioned.fill(
       child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.0, end: 1.0),
+        tween: opacityTween,
         duration: fadeDuration,
         curve: Curves.easeOutCubic,
         builder: (context, value, child) {
           return Opacity(
             opacity: value,
             child: Transform.scale(
-              scale: 0.96 + 0.04 * value,
+              scale: scaleTween.transform(value),
               alignment: Alignment.topLeft,
               child: child,
             ),
@@ -670,35 +721,65 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                 ),
               ),
             ),
+            // 灰色轨道蒙版：铺满整行的软边轨道底。上下边缘渐隐过渡、右侧渐隐让
+            // 卡片带从轨道里滑出，左侧占满整行（不再留边）。
+            Positioned(
+              left: 0,
+              right: 0,
+              top: roleTop - 6,
+              height: roleHeight + 12,
+              child: IgnorePointer(
+                child: ShaderMask(
+                  // 纵向：上 / 下边缘过渡，形成软边的轨道带。
+                  shaderCallback: (bounds) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: const [
+                      Colors.transparent,
+                      Colors.black,
+                      Colors.black,
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.10, 0.90, 1.0],
+                  ).createShader(bounds),
+                  blendMode: BlendMode.dstIn,
+                  child: ShaderMask(
+                    // 横向：右侧渐隐，后面的卡带从轨道里滑出。
+                    shaderCallback: (bounds) => LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: const [
+                        Colors.black,
+                        Colors.black,
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.80, 1.0],
+                    ).createShader(bounds),
+                    blendMode: BlendMode.dstIn,
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.16),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Positioned(
               left: 12,
               right: 0,
               top: roleTop,
               height: roleHeight,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.zero,
-                physics: const BouncingScrollPhysics(),
-                itemCount: planes.length,
-                separatorBuilder: (context, index) => const SizedBox(width: 10),
-                itemBuilder: (context, index) {
-                  final character = planes[index];
-                  final active = index == 0;
-                  return Align(
-                    alignment: Alignment.center,
-                    child: _RolePlane(
-                      character: character,
-                      active: active,
-                      promoting: active && _promotingRoleId == character.id,
-                      width: active ? roleWidth : roleWidth * 0.7,
-                      height: active ? roleHeight : roleHeight * 0.7,
-                      recentLabel: _relativeTime(character.id),
-                      tokens: tokens,
-                      reduceMotion: reduceMotion,
-                      onTap: () => _selectRolePlane(character),
-                    ),
-                  );
-                },
+              child: _RoleSnapDeck(
+                characters: planes,
+                pendingRoleId: _pendingRoleId,
+                promotingRoleId: _promotingRoleId,
+                activeWidth: roleWidth,
+                activeHeight: roleHeight,
+                recentLabel: (id) => _relativeTime(id),
+                tokens: tokens,
+                reduceMotion: reduceMotion,
+                onFocused: (c) => _focusRolePlane(c),
+                onConfirmed: (c) => _confirmRolePlane(c),
+                onSwiped: (c) => _swipeSelectRolePlane(c),
               ),
             ),
           ],
@@ -896,24 +977,31 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
             Positioned(
               top: roleTop,
               left: 12,
-              child: _Staggered(
-                animation: _entrance,
-                begin: _roleBegin,
-                end: (_roleBegin + _span).clamp(0.0, 1.0),
-                // 垂直偏移仅用于入场，结束时必须精确归零，否则卡会比 HTML 原型(119)
-                // 高出一截。保持入场动感的同时避免静态残留。
-                offset: const Offset(-24, 0),
-                child: _loading
-                    ? _LoadingRoleEntry(
-                        tokens: tokens,
-                        width: roleWidth,
-                        height: roleHeight,
-                      )
-                    : _buildRoleEntry(
-                        tokens,
-                        roleWidth: roleWidth,
-                        roleHeight: roleHeight,
-                      ),
+              child: AnimatedOpacity(
+                opacity: _roleSelecting || _roleClosing ? 0.0 : 1.0,
+                duration: _reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                child: _Staggered(
+                  animation: _entrance,
+                  begin: _roleBegin,
+                  end: (_roleBegin + _span).clamp(0.0, 1.0),
+                  // 垂直偏移仅用于入场，结束时必须精确归零，否则卡会比 HTML 原型(119)
+                  // 高出一截。保持入场动感的同时避免静态残留。
+                  offset: const Offset(-24, 0),
+                  child: _loading
+                      ? _LoadingRoleEntry(
+                          tokens: tokens,
+                          width: roleWidth,
+                          height: roleHeight,
+                        )
+                      : _buildRoleEntry(
+                          tokens,
+                          roleWidth: roleWidth,
+                          roleHeight: roleHeight,
+                        ),
+                ),
               ),
             ),
             Positioned(
@@ -945,13 +1033,14 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
               right: 18,
               child: _buildTopActions(tokens),
             ),
-            if (_roleSelecting)
+            if (_roleSelecting || _roleClosing)
               _buildRoleSelectionLayer(
                 tokens,
                 roleTop: roleTop,
                 roleWidth: roleWidth,
                 roleHeight: roleHeight,
                 reduceMotion: _reduceMotion,
+                closing: _roleClosing,
               ),
             if (_error != null)
               Positioned(
@@ -1475,11 +1564,412 @@ class _RoleEntryHitArea extends StatelessWidget {
   }
 }
 
+/// 角色名字自适应：单行放不下（超过可用宽的 2/3）时字号减半并换两行，
+/// 两行行高保持与单行一致；仍放不下则省略号截断。
+class _AdaptiveNameText extends StatelessWidget {
+  const _AdaptiveNameText({
+    super.key,
+    required this.text,
+    required this.maxWidth,
+    required this.fontSize,
+    required this.color,
+    required this.fontWeight,
+    this.letterSpacing = 0,
+  });
+
+  final String text;
+  final double maxWidth;
+  final double fontSize;
+  final Color color;
+  final FontWeight fontWeight;
+  final double letterSpacing;
+
+  @override
+  Widget build(BuildContext context) {
+    TextStyle style(double size) => TextStyle(
+          color: color,
+          fontSize: size,
+          fontWeight: fontWeight,
+          letterSpacing: letterSpacing,
+          height: 1.0,
+        );
+
+    // 用单行测量：超过可用宽 2/3 就切换为半号字体的两行模式。
+    final singlePainter = TextPainter(
+      text: TextSpan(text: text, style: style(fontSize)),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: double.infinity);
+
+    final singleWidth = singlePainter.width;
+    final needsTwoLines = singleWidth > maxWidth * 2 / 3;
+    final displaySize = needsTwoLines ? fontSize / 2 : fontSize;
+    // 行高统一为 fontSize（height:1.0），两行 = 2 * fontSize = 与 fontSize*2 单行等高。
+    final lineHeight = fontSize;
+
+    if (!needsTwoLines) {
+      return Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style(displaySize),
+      );
+    }
+
+    return SizedBox(
+      height: lineHeight * 2,
+      child: Text(
+        text,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: style(displaySize),
+      ),
+    );
+  }
+}
+
+/// 角色选择层上的吸附卡片轨道。
+class _RoleSnapDeck extends StatefulWidget {
+  const _RoleSnapDeck({
+    required this.characters,
+    required this.pendingRoleId,
+    required this.promotingRoleId,
+    required this.activeWidth,
+    required this.activeHeight,
+    required this.recentLabel,
+    required this.tokens,
+    required this.reduceMotion,
+    required this.onFocused,
+    required this.onConfirmed,
+    required this.onSwiped,
+  });
+
+  final List<CharacterCard> characters;
+  final String? pendingRoleId;
+  final String? promotingRoleId;
+  final double activeWidth;
+  final double activeHeight;
+  final String Function(String characterId) recentLabel;
+  final AppThemeTokens tokens;
+  final bool reduceMotion;
+  final ValueChanged<CharacterCard> onFocused;
+  final ValueChanged<CharacterCard> onConfirmed;
+  final ValueChanged<CharacterCard> onSwiped;
+
+  @override
+  State<_RoleSnapDeck> createState() => _RoleSnapDeckState();
+}
+
+/// 角色选择层上的滑动翻页卡片轨道。
+///
+/// 卡片并排排列（统一尺寸 + 间距，能完整看到相邻卡，不重叠），选中卡位于
+/// 轨道左侧并与主页角色入口对齐（对应 HTML `.picker-card` 的
+/// `flex-basis` 缩放 + `gap: 10px`）。
+///
+/// 交互是"滑动翻页"：按住时卡片跟手移动；松手时按起始位置与松手位置判定
+/// 左滑 / 右滑，切到相邻一张卡并带过冲回弹动画（滑动距离越大，初始力越大，
+/// 越过目标卡再回弹一段，形成"刹车感"）；动画结束后选中该卡。点击任意卡片
+/// 则带吸附动画跳转到该卡片并聚焦（第一次点击），再次点击已聚焦卡片确认替换。
+class _RoleSnapDeckState extends State<_RoleSnapDeck>
+    with TickerProviderStateMixin {
+  static const double _spacing = 10;
+  static const double _inactiveScale = 0.68;
+  static const double _inactiveOpacity = 0.5;
+  static const double _flingDistance = 48; // 判定"滑动翻页"的最小位移(px)。
+  static const double _overShoot = 56; // 大滑动时越过目标卡的距离(px)。
+  static const double _tapSlop = 8; // 小于该位移当作点击，不翻页。
+
+  late AnimationController _flipCtrl;
+  double _position = 0.0; // 翻页格：0 为最左，_count-1 为最右。
+  double _dragStartX = 0.0;
+  double _dragPosition = 0.0; // 手指按住期间跟手显示的格位（可越过 0..max）。
+  bool _dragActive = false;
+  bool _tapFocusing = false;
+  int _lastSwipedIndex = -1;
+
+  int get _count => widget.characters.length;
+
+  /// 相邻两卡中心距：选中卡半宽 + 间距 + 未选中卡半宽。
+  /// 卡片按原尺寸渲染，一格即一张卡的平移距离。
+  double get _step => widget.activeWidth * (1 + _inactiveScale) / 2 + _spacing;
+
+  @override
+  void initState() {
+    super.initState();
+    _flipCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..addListener(() {
+        if (!mounted) return;
+        setState(() => _position = _flipCtrl.value);
+      })
+      ..addStatusListener(_onFlipStatus);
+  }
+
+  @override
+  void dispose() {
+    _flipCtrl.dispose();
+    super.dispose();
+  }
+
+  /// 翻页动画结束：选中当前落点的卡。点击聚焦的动画（_tapFocusing）不选中，
+  /// 只有滑动翻页（或 reduceMotion 的立即切换）才触发选中。
+  void _onFlipStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !mounted) return;
+    if (_tapFocusing) return;
+    _selectAt(_position.round().clamp(0, _count - 1));
+  }
+
+  void _selectAt(int index) {
+    if (index == _lastSwipedIndex) return;
+    final character = widget.characters[index];
+    if (character.id == widget.pendingRoleId) return;
+    _lastSwipedIndex = index;
+    widget.onSwiped(character);
+  }
+
+  /// 点击聚焦（非滑动）：动画结束后不触发滑动选中。
+  void _snapTo(int index) {
+    _flipCtrl.stop();
+    _tapFocusing = true;
+    _flipCtrl
+      ..value = _position
+      ..animateTo(
+        index.toDouble(),
+        curve: Curves.easeOutCubic,
+      ).whenComplete(() {
+        _tapFocusing = false;
+      });
+  }
+
+  void _onDragStart(DragStartDetails details) {
+    _flipCtrl.stop();
+    _dragStartX = details.localPosition.dx;
+    _dragPosition = _position;
+    _dragActive = true;
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    final deltaPx = details.localPosition.dx - _dragStartX;
+    setState(() {
+      // 跟手：左滑（deltaPx<0）→ 下一张从左侧滑向前台；右滑 → 上一张滑入。
+      // 一格对一卡。越过边界时做"拉动"阻尼：越拉越费劲，松手后弹回边缘。
+      final raw = _position.round() - deltaPx / _step;
+      _dragPosition = _rubberBand(raw);
+    });
+  }
+
+  /// 橡皮筋阻尼：范围 [0, max] 内线性跟手，越界按平方衰减，制造"拉动到头"的阻力。
+  double _rubberBand(double value) {
+    final max = _count - 1;
+    if (max <= 0) return 0.0;
+    const resist = 0.28;
+    if (value < 0) {
+      final overshoot = -value;
+      return -overshoot * overshoot * resist;
+    }
+    if (value > max) {
+      final overshoot = value - max;
+      return max + overshoot * overshoot * resist;
+    }
+    return value;
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    if (!_dragActive) return;
+    _dragActive = false;
+    final start = _position.round().clamp(0, _count - 1);
+    final totalPx = details.localPosition.dx - _dragStartX;
+    final absPx = totalPx.abs();
+    final maxPos = _count - 1;
+
+    // 越界：拉过头了，松手弹回边缘。
+    if (_dragPosition < 0 || _dragPosition > maxPos) {
+      final edge = _dragPosition < 0 ? 0.0 : maxPos.toDouble();
+      _flipCtrl
+        ..value = _dragPosition
+        ..animateTo(edge, curve: Curves.easeOutBack);
+      return;
+    }
+
+    // 位移太小 → 当作点击，不翻页。
+    if (absPx < _tapSlop) {
+      _flipCtrl.animateTo(start.toDouble());
+      return;
+    }
+
+    if (widget.reduceMotion) {
+      // 减少动效：直接定格到目标格，不过冲。
+      final dir = totalPx < 0 ? 1 : -1;
+      final target = (start + dir).clamp(0, _count - 1);
+      setState(() => _position = target.toDouble());
+      _selectAt(target);
+      return;
+    }
+
+    if (absPx < _flingDistance) {
+      // 未达到翻页阈值：松手回到原卡。
+      _flipCtrl
+        ..value = _dragPosition
+        ..animateTo(start.toDouble(), curve: Curves.easeOutCubic);
+      return;
+    }
+
+    final dir = totalPx < 0 ? 1 : -1; // 左滑 +1（下一张），右滑 -1（上一张）。
+    final target = (start + dir).clamp(0, _count - 1);
+    if (target == start) {
+      _flipCtrl
+        ..value = _dragPosition
+        ..animateTo(start.toDouble(), curve: Curves.easeOutBack);
+      return;
+    }
+
+    // 滑动距离大 → 初始力大 → 越过目标卡再回弹（刹车感）。
+    final strength = (absPx / (widget.activeWidth * 0.8)).clamp(0.0, 1.0);
+    final overshoot = _overShoot * strength;
+    _flipCtrl
+      ..value = _dragPosition
+      ..animateWith(
+        _FlipSimulation(
+          begin: _dragPosition,
+          end: target.toDouble(),
+          overshoot: overshoot / _step,
+          duration: const Duration(milliseconds: 420),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_count == 0) return const SizedBox.shrink();
+
+    final p = _dragActive ? _dragPosition : _position;
+    final selectedIdx = p.round().clamp(0, _count - 1);
+    final a = p.floor().toInt().clamp(0, _count - 1);
+    final frac = (p - a).clamp(0.0, 1.0);
+    final iw = _inactiveScale;
+    final aw = widget.activeWidth;
+
+    // 卡片 i 的渲染宽度因子：过渡段内两张卡在满宽与未选中宽之间连续插值。
+    double widthFactor(int i) {
+      if (i == a) return 1.0 - (1.0 - iw) * frac;
+      if (i == a + 1) return iw + (1.0 - iw) * frac;
+      return iw;
+    }
+
+    double wAt(int i) => aw * widthFactor(i);
+
+    // 卡片 i 相对卡片 a（左缘为 0）的左缘，按各自宽度 + 间距累计，保证并排不重叠。
+    double stripLeft(int i) {
+      var x = 0.0;
+      if (i <= a) {
+        for (var j = a - 1; j >= i; j--) {
+          x -= wAt(j) + _spacing;
+        }
+      } else {
+        for (var j = a; j < i; j++) {
+          x += wAt(j) + _spacing;
+        }
+      }
+      return x;
+    }
+
+    // 让过渡对像（a↔b）平滑地滑向左侧选中位：屏幕中心 X = 选中卡中心。
+    final ca = wAt(a) / 2;
+    final cb = wAt(a) + _spacing + wAt(a + 1) / 2;
+    final frame = aw / 2 - (ca * (1 - frac) + cb * frac);
+
+    return GestureDetector(
+      // translucent：卡片上的点击归卡片，行内空白处的点击穿透到背景遮罩取消。
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: _onDragStart,
+      onHorizontalDragUpdate: _onDragUpdate,
+      onHorizontalDragEnd: _onDragEnd,
+      child: ClipRect(
+        child: Stack(
+          children: [
+            for (var i = 0; i < _count; i++)
+              Builder(
+                builder: (context) {
+                  final w = wAt(i);
+                  final scale = widthFactor(i);
+                  final distance = (i - p).abs();
+                  final opacity = 1.0 -
+                      (1.0 - _inactiveOpacity) * distance.clamp(0.0, 1.0);
+                  final center = stripLeft(i) + w / 2 + frame;
+                  return Positioned(
+                    left: center - aw / 2,
+                    top: 0,
+                    width: aw,
+                    height: widget.activeHeight,
+                    child: _RolePlane(
+                      character: widget.characters[i],
+                      active: i == selectedIdx,
+                      promoting: i == selectedIdx &&
+                          widget.promotingRoleId == widget.characters[i].id,
+                      scale: scale,
+                      opacity: opacity,
+                      width: aw,
+                      height: widget.activeHeight,
+                      recentLabel: widget.recentLabel(widget.characters[i].id),
+                      tokens: widget.tokens,
+                      reduceMotion: widget.reduceMotion,
+                      onTap: () {
+                        if (i == selectedIdx) {
+                          widget.onConfirmed(widget.characters[i]);
+                        } else {
+                          widget.onFocused(widget.characters[i]);
+                          _snapTo(i);
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 过冲回弹的翻页模拟：先冲过目标格，再回弹到目标（刹车感）。
+class _FlipSimulation extends Simulation {
+  _FlipSimulation({
+    required this.begin,
+    required this.end,
+    required this.overshoot,
+    required Duration duration,
+  }) : _durationMs = duration.inMilliseconds;
+
+  final double begin;
+  final double end;
+  final double overshoot;
+  final int _durationMs;
+
+  @override
+  double x(double timeInSeconds) {
+    final t = (timeInSeconds * 1000 / _durationMs).clamp(0.0, 1.0);
+    if (t >= 1.0) return end;
+    // 在 easeOutCubic 基础上叠加过冲：前段快速冲向 end + overshoot，后段回落到 end。
+    final eased = Curves.easeOutCubic.transform(t);
+    return begin + (end - begin) * eased + overshoot * (1 - t) * (1 - t) * t * 4;
+  }
+
+  @override
+  bool isDone(double timeInSeconds) => timeInSeconds * 1000 >= _durationMs;
+
+  @override
+  double dx(double timeInSeconds) => 0;
+}
+
 class _RolePlane extends StatelessWidget {
   const _RolePlane({
     required this.character,
     required this.active,
     required this.promoting,
+    required this.scale,
+    required this.opacity,
     required this.width,
     required this.height,
     required this.recentLabel,
@@ -1491,12 +1981,24 @@ class _RolePlane extends StatelessWidget {
   final CharacterCard character;
   final bool active;
   final bool promoting;
+
+  /// 由 _RoleSnapDeck 逐帧驱动的缩放与透明度：拖拽 / 吸附过程无需重建动画即可跟手。
+  final double scale;
+  final double opacity;
   final double width;
   final double height;
   final String recentLabel;
   final AppThemeTokens tokens;
   final bool reduceMotion;
   final VoidCallback onTap;
+
+  // 对齐 HTML `.picker-card` 未选中态 `filter: saturate(0.7)`。
+  static const List<double> _inactiveColorMatrix = <double>[
+    0.44882, 0.21456, 0.02166, 0, 0, //
+    0.06378, 0.80064, 0.02166, 0, 0, //
+    0.06378, 0.21456, 0.35054, 0, 0, //
+    0, 0, 0, 1, 0,
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -1507,11 +2009,7 @@ class _RolePlane extends StatelessWidget {
     Widget card = GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: reduceMotion
-            ? Duration.zero
-            : const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
+      child: SizedBox(
         width: width,
         height: height,
         child: PhysicalShape(
@@ -1554,6 +2052,26 @@ class _RolePlane extends StatelessWidget {
                   ),
                 ),
               ),
+              // 对应 HTML `.picker-card::before`：左上轻微受光、右下压暗的
+              // 蒙版，让整张卡带更有“轨道/封面”的层次感。
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: const Alignment(-1, -1),
+                        end: const Alignment(1, 1),
+                        colors: [
+                          Colors.white.withValues(alpha: 0.10),
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: active ? 0.18 : 0.35),
+                        ],
+                        stops: const [0.0, 0.48, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               if (active)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -1584,16 +2102,13 @@ class _RolePlane extends StatelessWidget {
                       top: active ? 44 : 32,
                       left: active ? 24 : 15,
                       right: 12,
-                      child: Text(
-                        character.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: active ? Colors.white : tokens.textPrimary,
-                          fontSize: active ? 32 : 20,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: active ? -1.5 : -0.6,
-                        ),
+                      child: _AdaptiveNameText(
+                        text: character.name,
+                        maxWidth: width - (active ? 24 : 15) - 12,
+                        fontSize: active ? 32 : 20,
+                        color: active ? Colors.white : tokens.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: active ? -1.5 : -0.6,
                       ),
                     ),
                     Positioned(
@@ -1619,21 +2134,54 @@ class _RolePlane extends StatelessWidget {
       ),
     );
 
+    // 未选中卡片淡化 + 去饱和：对齐 HTML `.picker-card` 的
+    // `opacity: 0.5; filter: saturate(0.7)`。
+    if (!active) {
+      card = ColorFiltered(
+        colorFilter: const ColorFilter.matrix(_inactiveColorMatrix),
+        child: card,
+      );
+    }
+
+    // 点击聚焦时的提升动画：对应 HTML `.picker-card.promoting` 的
+    // `picker-promote`，带回弹缩放与一次亮度闪光。
     if (active && promoting) {
       card = TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.96, end: 1.0),
+        tween: Tween(begin: 0.0, end: 1.0),
         duration: reduceMotion
             ? Duration.zero
-            : const Duration(milliseconds: 360),
+            : const Duration(milliseconds: 420),
         curve: Curves.easeOutCubic,
         builder: (context, value, child) {
-          return Transform.scale(scale: value, child: child);
+          final promoteScale = 0.96 + 0.05 * Curves.easeOutBack.transform(value);
+          final brightness = 1.0 + 0.14 * (value < 0.5
+              ? value / 0.5
+              : (1.0 - value) / 0.5);
+          return Transform.scale(
+            scale: promoteScale,
+            child: ColorFiltered(
+              colorFilter: ColorFilter.matrix(<double>[
+                brightness, 0, 0, 0, 0,
+                0, brightness, 0, 0, 0,
+                0, 0, brightness, 0, 0,
+                0, 0, 0, 1, 0,
+              ]),
+              child: child,
+            ),
+          );
         },
         child: card,
       );
     }
 
-    return card;
+    // 整体缩放与透明度由 deck 控制：缩放以卡片中心为锚，保证吸附时左右平滑过渡。
+    return Transform.scale(
+      scale: scale,
+      child: Opacity(
+        opacity: opacity,
+        child: card,
+      ),
+    );
   }
 }
 
