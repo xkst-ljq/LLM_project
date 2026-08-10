@@ -1774,6 +1774,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   // 触发 LateInitializationError。直接初始化为 null 更安全，
   // 且全项目已按可空类型使用该字段。
   CharacterCard? _currentCharacter;
+  // 动画期间推迟重型初始化，避免阻塞 HomeTransitions 的 560ms 扩张
+  // 首帧只渲染轻量背景，让转场以 60fps 完成；重型数据在转场结束后才加载
+  bool _deferHeavy = true;
   final ScrollController _scrollController = ScrollController();
 
   /// 状态变化通知队列（4.3b）。
@@ -1940,11 +1943,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     UserService.versionNotifier.addListener(_onGlobalUserChanged);
     PromptSettingsService.versionNotifier.addListener(_onPromptSettingsChanged);
     BackgroundService.versionNotifier.addListener(_onBackgroundChanged);
-    _loadPromptSettings();
-    // 先同步吃一口缓存，保证首帧就有背景（见 _seedBackgroundFromCache）。
+    // 轻量：首帧背景同步命中，不阻塞转场（重型加载推迟到转场后）
     _seedBackgroundFromCache();
-    // 再异步校准一次，覆盖缓存未预热 / 数据刚被改过的情况。
-    _loadBackground();
 
     _animController = AnimationController(
       vsync: this,
@@ -2034,45 +2034,85 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     _currentCharacter = widget.character;
 
-    // ✅ 修复：使用 Future.microtask 确保异步初始化完成
-    if (_currentCharacter == null) {
-      Future.microtask(() async {
-        String? lastId;
-        try {
-          lastId = await ActiveCharacterStore.resolve();
-        } catch (_) {}
-        final all = await DatabaseService.getAllCharacters();
-        Map<String, dynamic>? charData;
-        if (lastId != null) {
-          charData = all.cast<Map<String, dynamic>?>().firstWhere(
-            (c) => c?['id'] == lastId,
-            orElse: () => null,
-          );
+    // 动画期间推迟重型初始化：首帧只渲染轻量背景，让 HomeTransitions 的 560ms 扩张以 60fps 完成
+    // UIEngine/历史/用户等重型解析在转场结束后才开始，避免主线程被 DB/JSON 阻塞
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduleDeferredHeavyInit();
+    });
+  }
+
+  void _scheduleDeferredHeavyInit() {
+    final route = ModalRoute.of(context);
+    final anim = route?.animation;
+    if (anim != null && anim.status == AnimationStatus.forward) {
+      void onStatus(AnimationStatus status) {
+        if (status == AnimationStatus.completed) {
+          anim.removeStatusListener(onStatus);
+          if (mounted && _deferHeavy) {
+            setState(() => _deferHeavy = false);
+            _runDeferredHeavyInit();
+          }
         }
-        charData ??= all.isNotEmpty ? all.first : null;
-        if (charData != null) {
-          final newChar = CharacterCard(
-            id: charData['id'] as String,
-            name: charData['name'] as String,
-            avatar: charData['avatar'] as String? ?? '',
-            cardImagePath: charData['card_image_path'] as String? ?? '',
-            description: charData['description'] as String? ?? '',
-            systemPrompt: charData['system_prompt'] as String? ?? '',
-            userName: charData['user_name'] as String? ?? '',
-            userAvatar: charData['user_avatar'] as String? ?? '',
-            userDetailSetting: charData['user_detail_setting'] as String? ?? '',
-            cardType: charData['card_type'] as String? ?? 'character',
-            entriesJson: charData['entries_json'] as String? ?? '[]',
-            openingGreetings: charData['opening_greetings'] as String? ?? '[]',
-            metaJson: charData['meta_json'] as String? ?? '{}',
-          );
-          await _setCurrentCharacter(newChar);
+      }
+      anim.addStatusListener(onStatus);
+      // 兜底：620ms 后无论如何也要加载，防止监听丢失（例如手势取消）
+      Future.delayed(const Duration(milliseconds: 620), () {
+        if (mounted && _deferHeavy) {
+          anim.removeStatusListener(onStatus);
+          setState(() => _deferHeavy = false);
+          _runDeferredHeavyInit();
         }
       });
     } else {
-      Future.microtask(() async {
-        await _setCurrentCharacter(widget.character);
+      // 非转场进入或已完成，短暂延迟一帧后加载，避免首帧阻塞
+      Future.delayed(const Duration(milliseconds: 80), () {
+        if (mounted && _deferHeavy) {
+          setState(() => _deferHeavy = false);
+          _runDeferredHeavyInit();
+        }
       });
+    }
+  }
+
+  Future<void> _runDeferredHeavyInit() async {
+    // 这里集中原本在 initState 里立即执行的重型异步初始化
+    // 放在转场后执行，保证扩张动画不被 DB/JSON 解析卡住
+    _loadPromptSettings();
+    _loadBackground();
+    if (_currentCharacter == null) {
+      String? lastId;
+      try {
+        lastId = await ActiveCharacterStore.resolve();
+      } catch (_) {}
+      final all = await DatabaseService.getAllCharacters();
+      Map<String, dynamic>? charData;
+      if (lastId != null) {
+        charData = all.cast<Map<String, dynamic>?>().firstWhere(
+          (c) => c?['id'] == lastId,
+          orElse: () => null,
+        );
+      }
+      charData ??= all.isNotEmpty ? all.first : null;
+      if (charData != null) {
+        final newChar = CharacterCard(
+          id: charData['id'] as String,
+          name: charData['name'] as String,
+          avatar: charData['avatar'] as String? ?? '',
+          cardImagePath: charData['card_image_path'] as String? ?? '',
+          description: charData['description'] as String? ?? '',
+          systemPrompt: charData['system_prompt'] as String? ?? '',
+          userName: charData['user_name'] as String? ?? '',
+          userAvatar: charData['user_avatar'] as String? ?? '',
+          userDetailSetting: charData['user_detail_setting'] as String? ?? '',
+          cardType: charData['card_type'] as String? ?? 'character',
+          entriesJson: charData['entries_json'] as String? ?? '[]',
+          openingGreetings: charData['opening_greetings'] as String? ?? '[]',
+          metaJson: charData['meta_json'] as String? ?? '{}',
+        );
+        await _setCurrentCharacter(newChar);
+      }
+    } else {
+      await _setCurrentCharacter(widget.character);
     }
   }
 
@@ -3973,6 +4013,33 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    // 转场期间：只渲染轻量背景，保证 60fps 扩张不被 UIEngine/历史解析卡住
+    // 此时 _deferHeavy 为 true，首帧背景已通过 _seedBackgroundFromCache 同步命中
+    if (_deferHeavy) {
+      final bg = _background;
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (bg != null)
+              _buildBackground(bg)
+            else
+              const ColoredBox(color: Color(0xFF1A1A1A)),
+            Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     final screenWidth = MediaQuery.of(context).size.width;
     final panelW = panelWidth;
 
