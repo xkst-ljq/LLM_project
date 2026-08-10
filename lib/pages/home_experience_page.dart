@@ -2255,6 +2255,7 @@ class _EnterChatButton extends StatelessWidget {
 
 class _LoadingRoleEntry extends StatelessWidget {
   const _LoadingRoleEntry({
+    super.key,
     required this.tokens,
     required this.width,
     required this.height,

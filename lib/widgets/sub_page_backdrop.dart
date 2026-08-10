@@ -62,7 +62,7 @@ class SubPageBackdrop extends StatelessWidget {
                 ),
               ),
             ),
-          if (content != null) content,
+          if (content case final c?) c,
         ],
       );
     }
@@ -98,7 +98,7 @@ class SubPageBackdrop extends StatelessWidget {
             ),
           ),
         ),
-        if (child != null) child!,
+        if (child case final c?) c,
       ],
     );
   }

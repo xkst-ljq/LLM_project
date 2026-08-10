@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme_tokens.dart';
@@ -38,7 +36,7 @@ class HomeTransitions {
       opaque: true,
       barrierColor: Colors.transparent,
       barrierDismissible: false,
-      pageBuilder: (ctx, _, __) => page,
+      pageBuilder: (ctx, _, secondaryAnimation) => page,
       transitionsBuilder: (ctx, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -220,7 +218,7 @@ class HomeTransitions {
       transitionDuration: _roleDuration,
       reverseTransitionDuration: _roleReverseDuration,
       opaque: true,
-      pageBuilder: (ctx, _, __) => page,
+      pageBuilder: (ctx, _, secondaryAnimation) => page,
       transitionsBuilder: (ctx, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
           parent: animation,
