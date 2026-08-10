@@ -23,6 +23,7 @@ import '../utils/app_feedback.dart';
 import '../utils/default_image.dart';
 import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'character_edit_page.dart';
 import 'chat_page.dart';
 
@@ -1342,7 +1343,8 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
         ),
       ),
 
-      body: NotificationListener<ScrollUpdateNotification>(
+      body: SubPageBackdrop(
+        child: NotificationListener<ScrollUpdateNotification>(
         onNotification: (notification) {
           if (_deletingIds.isNotEmpty || _expandedIds.isNotEmpty) {
             setState(() {
@@ -1561,7 +1563,8 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
           ),
         ),
           ),
-          ),
+        ),
+        ),
           if (_showGuide)
             Positioned.fill(
               child: PageGuideOverlay(

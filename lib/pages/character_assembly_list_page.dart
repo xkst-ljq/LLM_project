@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../models/character_meta.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'character_assembly_page.dart';
 
 /// 角色 UI 拼装列表页：浏览已有 UI，新建 UI（选模式后进拼装页）
@@ -267,16 +269,19 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F6F9),
+      backgroundColor: tokens.canvas,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: tokens.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded, color: Color(0xFF111116)),
+          icon: Icon(Icons.arrow_back_ios_rounded, color: tokens.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('UI 拼装方案', style: TextStyle(color: Color(0xFF111116), fontWeight: FontWeight.bold)),
+        title: Text('UI 拼装方案',
+            style: TextStyle(
+                color: tokens.textPrimary, fontWeight: FontWeight.bold)),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addNewUI,
@@ -285,16 +290,19 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('新建 UI'),
       ),
-      body: _assemblies.isEmpty
+      body: SubPageBackdrop(
+        child: _assemblies.isEmpty
           ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.dashboard_customize_rounded, size: 64, color: Colors.grey[400]),
+                  Icon(Icons.dashboard_customize_rounded, size: 64, color: tokens.textMuted),
                   const SizedBox(height: 12),
-                  Text('还没有 UI 方案', style: TextStyle(fontSize: 15, color: Colors.grey[600])),
+                  Text('还没有 UI 方案',
+                      style: TextStyle(fontSize: 15, color: tokens.textSecondary)),
                   const SizedBox(height: 4),
-                  const Text('点击下方按钮为角色创建 UI', style: TextStyle(fontSize: 12, color: Color(0xFF888896))),
+                  Text('点击下方按钮为角色创建 UI',
+                      style: TextStyle(fontSize: 12, color: tokens.textMuted)),
                 ],
               ),
             )
@@ -312,7 +320,7 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                     .any((a) => a.mode == info.mode);
                 return Card(
                   elevation: 0,
-                  color: Colors.white,
+                  color: tokens.surface,
                   margin: const EdgeInsets.only(bottom: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   child: ListTile(
@@ -328,7 +336,10 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                                   : const Color(0xFF00ACC1),
                       child: Icon(info.modeIcon, color: Colors.white, size: 20),
                     ),
-                    title: Text(info.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111116))),
+                    title: Text(info.name,
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: tokens.textPrimary)),
                     subtitle: shadowed
                         ? Text(
                             '${info.modeLabel} · 不会生效：已有同类型 UI',
@@ -336,8 +347,8 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                                 fontSize: 11, color: Color(0xFFD32F2F)),
                           )
                         : Text(info.modeLabel,
-                            style: const TextStyle(
-                                fontSize: 11, color: Color(0xFF777783))),
+                            style: TextStyle(
+                                fontSize: 11, color: tokens.textSecondary)),
                     trailing: PopupMenuButton<String>(
                       onSelected: (v) {
                         if (v == 'delete') _deleteUI(index);
@@ -351,6 +362,7 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                 );
               },
             ),
+        ),
     );
   }
 }

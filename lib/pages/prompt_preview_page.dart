@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../widgets/sub_page_backdrop.dart';
+
 class PromptPreviewData {
   final int userTurnCount;
   final bool injectedSummary;
@@ -102,7 +104,8 @@ class PromptPreviewPage extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
+      body: SubPageBackdrop(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _buildInfoCard(context),
@@ -134,6 +137,7 @@ class PromptPreviewPage extends StatelessWidget {
             ),
           ],
         ],
+      ),
       ),
     );
   }

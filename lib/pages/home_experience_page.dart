@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:isolate';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -12,6 +14,7 @@ import '../services/background_service.dart';
 import '../services/database_service.dart';
 import '../shared/theme/app_theme_manager.dart';
 import '../shared/theme/app_theme_tokens.dart';
+import '../shared/transition/home_transitions.dart';
 import 'background_library_page.dart';
 import 'character_library_page.dart';
 import 'world_book_library_page.dart';
@@ -82,6 +85,12 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
   Timer? _promoteTimer;
   late final bool _reduceMotion;
   bool _motionInitialized = false;
+
+  // 主页进入其他页的转场锚点：用于计算形变扩张的起点 Rect。
+  // 模块轨道已有外部传入的 GlobalKey（供导览高亮用），这里复用；
+  // 角色入口和 UI 模组库需要内部自建 Key。
+  final GlobalKey _roleEntryKey = GlobalKey();
+  final GlobalKey _uiModuleKey = GlobalKey();
 
   @override
   void initState() {
@@ -187,33 +196,57 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
   }
 
   Future<void> _openCharacterLibrary() async {
+    final tokens = AppThemeTokens.of(context);
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (_) => const CharacterLibraryPage()),
+      HomeTransitions.module(
+        context: context,
+        sourceKey: widget.characterTileKey,
+        accent: tokens.moduleRole,
+        page: const CharacterLibraryPage(),
+      ),
     );
     _loadHomeData();
   }
 
   Future<void> _openWorldBookLibrary() async {
+    final tokens = AppThemeTokens.of(context);
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (_) => const WorldBookLibraryPage()),
+      HomeTransitions.module(
+        context: context,
+        sourceKey: widget.worldBookTileKey,
+        accent: tokens.moduleWorld,
+        page: const WorldBookLibraryPage(),
+      ),
     );
     _loadHomeData();
   }
 
   Future<void> _openBackgroundLibrary() async {
+    final tokens = AppThemeTokens.of(context);
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (_) => const BackgroundLibraryPage()),
+      HomeTransitions.module(
+        context: context,
+        sourceKey: widget.backgroundTileKey,
+        accent: tokens.moduleBackground,
+        page: const BackgroundLibraryPage(),
+      ),
     );
     _loadHomeData();
   }
 
   Future<void> _openUIAssetGallery() async {
+    final tokens = AppThemeTokens.of(context);
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (_) => const UIAssetGallery()),
+      HomeTransitions.module(
+        context: context,
+        sourceKey: _uiModuleKey,
+        accent: tokens.moduleUi,
+        page: const UIAssetGallery(),
+      ),
     );
     _loadHomeData();
   }
@@ -225,11 +258,34 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       return;
     }
 
+    // 外置胶囊三段式：卡片先到中间态悬停，Isolate 在后台解析，完成后才全屏
+    // 预解析与 700ms 动画并发，细长胶囊在中间态循环
+    final loadingFuture = _preloadForChat(character);
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (_) => ChatPage(character: character)),
+      HomeTransitions.stagedRole(
+        context: context,
+        sourceKey: _roleEntryKey,
+        loadingFuture: loadingFuture,
+        page: ChatPage(character: character),
+      ),
     );
     _loadHomeData();
+  }
+
+  Future<void> _preloadForChat(CharacterCard character) async {
+    try {
+      final m = character.metaJson;
+      final e = character.entriesJson;
+      await Isolate.run(() {
+        // 后台预解析最重的 JSON，避免主线程在转场期间被 jsonDecode 阻塞
+        jsonDecode(m.isEmpty ? '{}' : m);
+        jsonDecode(e.isEmpty ? '[]' : e);
+        // 触发一次 meta 解析（如果 CharacterCard 有惰性缓存）
+      });
+    } catch (_) {}
+    // 让出一次事件循环，保证 60fps
+    await Future.delayed(Duration.zero);
   }
 
   void _openRoleSelection() {
@@ -431,6 +487,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
           );
 
     return SizedBox(
+      key: _roleEntryKey,
       width: roleWidth,
       height: roleHeight,
       child: Stack(
@@ -828,6 +885,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
         preview: '$_uiAssemblyCount 个模组',
         previewKind: 'chips',
         onTap: _openUIAssetGallery,
+        key: _uiModuleKey,
         accent: tokens.moduleUi,
       ),
     ];
@@ -992,6 +1050,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
                   offset: const Offset(-24, 0),
                   child: _loading
                       ? _LoadingRoleEntry(
+                          key: _roleEntryKey,
                           tokens: tokens,
                           width: roleWidth,
                           height: roleHeight,
@@ -2217,6 +2276,7 @@ class _EnterChatButton extends StatelessWidget {
 
 class _LoadingRoleEntry extends StatelessWidget {
   const _LoadingRoleEntry({
+    super.key,
     required this.tokens,
     required this.width,
     required this.height,

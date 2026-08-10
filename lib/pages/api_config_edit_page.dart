@@ -4,6 +4,7 @@ import '../models/api_config.dart';
 import '../services/api_config_service.dart';
 import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
+import '../widgets/sub_page_backdrop.dart';
 
 class ApiConfigEditPage extends StatefulWidget {
   final ApiConfig? config;
@@ -320,7 +321,8 @@ class _ApiConfigEditPageState extends State<ApiConfigEditPage> {
                 ),
               ],
             ),
-            body: SingleChildScrollView(
+            body: SubPageBackdrop(
+              child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -396,6 +398,7 @@ class _ApiConfigEditPageState extends State<ApiConfigEditPage> {
                 ],
               ),
             ),
+          ),
           ),
           if (_showGuide)
             Positioned.fill(

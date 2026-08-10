@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/prompt_settings.dart';
 import '../services/prompt_settings_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'prompt_preview_page.dart';
 
 class PromptSettingsPage extends StatefulWidget {
@@ -336,7 +338,8 @@ class _PromptSettingsPageState extends State<PromptSettingsPage> {
           ),
         ],
       ),
-      body: ListView(
+      body: SubPageBackdrop(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _buildInfoCard(),
@@ -452,6 +455,7 @@ class _PromptSettingsPageState extends State<PromptSettingsPage> {
           const SizedBox(height: 24),
         ],
       ),
+      ),
     );
   }
 }
@@ -555,9 +559,9 @@ class _PromptNumberSliderTileState extends State<PromptNumberSliderTile> {
                       const SizedBox(height: 4),
                       Text(
                         widget.description,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: Colors.black54,
+                          color: AppThemeTokens.of(context).textSecondary,
                         ),
                       ),
                     ],

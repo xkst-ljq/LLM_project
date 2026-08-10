@@ -9,6 +9,8 @@ import '../models/character_meta.dart';
 import '../services/character_draft_service.dart';
 import '../services/database_service.dart';
 import '../services/image_pick_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 import '../utils/id_utils.dart';
 import 'character_assembly_list_page.dart';
 import 'status_bar_fields_edit_page.dart';
@@ -536,7 +538,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
             ),
             Text(
               '图片会保存到本地、随角色卡导出，聊天时显示在开场白中。',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: AppThemeTokens.of(context).textMuted),
             ),
           ],
         ),
@@ -777,7 +781,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
           borderRadius: BorderRadius.circular(14),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.grey.shade300,
+              color: AppThemeTokens.of(context).surfaceInteractive,
               borderRadius: BorderRadius.circular(14),
               image: _cardImagePath.isNotEmpty
                   ? DecorationImage(
@@ -790,14 +794,16 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                 ? Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.photo, size: 34, color: Colors.grey.shade600),
+                Icon(Icons.photo,
+                    size: 34,
+                    color: AppThemeTokens.of(context).textMuted),
                 const SizedBox(height: 6),
                 Text(
                   '卡片封面\n2:3',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.grey.shade600,
+                    color: AppThemeTokens.of(context).textMuted,
                     height: 1.25,
                   ),
                 ),
@@ -813,15 +819,19 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   Widget _buildWorldBookBindPanel() {
     final bound = _worldBookId != null && _worldBookId!.isNotEmpty;
     final primaryColor = Theme.of(context).primaryColor;
+    final tokens = AppThemeTokens.of(context);
+    final textPrimary = tokens.textPrimary;
+    final textSecondary = tokens.textSecondary;
+    final textMuted = tokens.textMuted;
 
     return GestureDetector(
       onTap: _pickWorldBook,
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
+          color: tokens.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade300),
+          border: Border.all(color: tokens.outline),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -831,7 +841,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                 Icon(
                   Icons.book,
                   size: 20,
-                  color: bound ? primaryColor : Colors.grey,
+                  color: bound ? primaryColor : textMuted,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -842,7 +852,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: bound ? Colors.black87 : Colors.grey.shade700,
+                      color: bound ? textPrimary : textSecondary,
                     ),
                   ),
                 ),
@@ -857,7 +867,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
               style: TextStyle(
                 fontSize: 13,
                 height: 1.35,
-                color: bound ? Colors.black87 : Colors.grey,
+                color: bound ? textPrimary : textSecondary,
               ),
             ),
             const Spacer(),
@@ -866,12 +876,12 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
               decoration: BoxDecoration(
                 color: bound
                     ? primaryColor.withValues(alpha: 0.10)
-                    : Colors.white,
+                    : tokens.surfaceInteractive,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: bound
                       ? primaryColor.withValues(alpha: 0.25)
-                      : Colors.grey.shade300,
+                      : tokens.outline,
                 ),
               ),
               child: Text(
@@ -879,7 +889,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: bound ? primaryColor : Colors.grey.shade700,
+                  color: bound ? primaryColor : textSecondary,
                 ),
               ),
             ),
@@ -997,7 +1007,10 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
 
     if (widgets.isEmpty) {
       widgets.add(
-        const Text('未填写', style: TextStyle(fontSize: 13, color: Colors.grey)),
+        Text('未填写',
+            style: TextStyle(
+                fontSize: 13,
+                color: AppThemeTokens.of(context).textMuted)),
       );
     }
 
@@ -1011,6 +1024,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     required bool expanded,
   }) {
     final primaryColor = Theme.of(context).primaryColor;
+    final tokens = AppThemeTokens.of(context);
     final isChild = depth > 0;
 
     return Padding(
@@ -1022,12 +1036,12 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           decoration: BoxDecoration(
             color: isChild
-                ? Colors.grey.shade100
+                ? tokens.surfaceInteractive
                 : primaryColor.withValues(alpha: 0.09),
             borderRadius: BorderRadius.circular(11),
             border: Border.all(
               color: isChild
-                  ? Colors.grey.shade300
+                  ? tokens.outline
                   : primaryColor.withValues(alpha: 0.22),
             ),
           ),
@@ -1041,7 +1055,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                     Icon(
                       expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
                       size: 16,
-                      color: isChild ? Colors.grey.shade700 : primaryColor,
+                      color: isChild ? tokens.textMuted : primaryColor,
                     ),
                     const SizedBox(width: 6),
                   ],
@@ -1053,7 +1067,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: isChild ? Colors.black87 : primaryColor,
+                        color: isChild ? tokens.textPrimary : primaryColor,
                       ),
                     ),
                   ),
@@ -1063,7 +1077,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                           ? Icons.keyboard_arrow_up_rounded
                           : Icons.keyboard_arrow_down_rounded,
                       size: 17,
-                      color: Colors.grey.shade700,
+                      color: tokens.textMuted,
                     ),
                 ],
               );
@@ -1082,18 +1096,19 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     required int depth,
   }) {
     final primaryColor = Theme.of(context).primaryColor;
+    final tokens = AppThemeTokens.of(context);
     final isChild = depth > 0;
 
     return Container(
       margin: EdgeInsets.only(left: isChild ? 10.0 : 0, bottom: 10),
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
       decoration: BoxDecoration(
-        color: isChild ? Colors.white : Colors.grey.shade50,
+        color: isChild ? tokens.surface : tokens.surfaceElevated,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isChild
               ? primaryColor.withValues(alpha: 0.12)
-              : Colors.grey.shade200,
+              : tokens.divider,
         ),
         boxShadow: isChild
             ? [
@@ -1116,7 +1131,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                 decoration: BoxDecoration(
                   color: isChild
                       ? primaryColor.withValues(alpha: 0.58)
-                      : Colors.grey.shade500,
+                      : tokens.textMuted,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -1126,10 +1141,10 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                   _treeFieldLabel(entry.id, path),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                    color: tokens.textPrimary,
                   ),
                 ),
               ),
@@ -1146,12 +1161,12 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
               isDense: true,
               hintText: '请输入${_treeFieldLabel(entry.id, path)}',
               filled: true,
-              fillColor: Colors.white,
+              fillColor: tokens.surfaceInteractive,
               contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+                borderSide: BorderSide(color: tokens.outline),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -1209,8 +1224,12 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                       onTap: () {},
                       child: Material(
                         borderRadius: BorderRadius.circular(20), elevation: 16,
-                        child: Container(
-                          decoration: BoxDecoration(color: Theme
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: SubPageBackdrop(
+                            child: Container(
+                          decoration: BoxDecoration(
+                              color: Theme
                               .of(context)
                               .scaffoldBackgroundColor,
                               borderRadius: BorderRadius.circular(20)),
@@ -1253,14 +1272,16 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                                         GestureDetector(
                                             onTap: () => _pickImage(true),
                                             child: CircleAvatar(radius: 40,
-                                                backgroundColor: Colors.grey
-                                                    .shade300,
+                                                backgroundColor: AppThemeTokens
+                                                    .of(context)
+                                                    .surfaceInteractive,
                                                 backgroundImage: _avatarPath
                                                     .isNotEmpty ? FileImage(
                                                     File(_avatarPath)) : null,
                                                 child: _avatarPath.isEmpty
                                                     ? Icon(Icons.person, size: 40,
-                                                    color: Colors.grey.shade600)
+                                                    color: AppThemeTokens.of(context)
+                                                        .textMuted)
                                                     : null)),
                                         const SizedBox(width: 16),
                                         Expanded(child: Column(
@@ -1368,18 +1389,21 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                         ),
                       ),
                     ),
-                  );
-                },
-              ),
-            ],
-          ),
+                  ),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
+      ),
     );
   }
 
   Widget _buildTypeButton(String label, String type) {
     final selected = _cardType == type;
-    return GestureDetector(onTap: () => _switchCardType(type), child: Container(padding: const EdgeInsets.symmetric(vertical: 8), decoration: BoxDecoration(color: selected ? Theme.of(context).primaryColor : Colors.grey.shade200, borderRadius: BorderRadius.circular(8)), child: Center(child: Text(label, style: TextStyle(color: selected ? Colors.white : Colors.black54, fontWeight: FontWeight.bold)))));
+    final tokens = AppThemeTokens.of(context);
+    return GestureDetector(onTap: () => _switchCardType(type), child: Container(padding: const EdgeInsets.symmetric(vertical: 8), decoration: BoxDecoration(color: selected ? Theme.of(context).primaryColor : tokens.surfaceInteractive, borderRadius: BorderRadius.circular(8)), child: Center(child: Text(label, style: TextStyle(color: selected ? Colors.white : tokens.textSecondary, fontWeight: FontWeight.bold)))));
   }
 
   Widget _buildSectionHeader(String title) => Padding(padding: const EdgeInsets.only(top: 16, bottom: 8), child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)));
@@ -1395,7 +1419,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Text(hint,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: AppThemeTokens.of(context).textMuted)),
         ),
       TextField(
         controller: _tagsCtrl,
@@ -1469,15 +1495,15 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
       summary = parts.isEmpty ? '$fields.length 字段' : parts.join(' · ');
     }
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withValues(alpha: 0.04))),
+      decoration: BoxDecoration(color: AppThemeTokens.of(context).surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppThemeTokens.of(context).divider)),
       child: InkWell(borderRadius: BorderRadius.circular(12), onTap: _editStatusBarFields,
         child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(children: [
-            const Icon(Icons.speed_outlined, size: 20, color: Color(0xFF651FFF)),
+            Icon(Icons.speed_outlined, size: 20, color: AppThemeTokens.of(context).accent),
             const SizedBox(width: 6),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              const Text('状态栏', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-              Text(summary, style: const TextStyle(fontSize: 10, color: Color(0xFF888896))),
+              Text('状态栏', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppThemeTokens.of(context).textPrimary)),
+              Text(summary, style: TextStyle(fontSize: 10, color: AppThemeTokens.of(context).textMuted)),
             ])),
           ]),
         ),
@@ -1541,9 +1567,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
         : '${rules.where((r) => r.enabled).length} 条生效 / 共 ${rules.length} 条';
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppThemeTokens.of(context).surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+        border: Border.all(color: AppThemeTokens.of(context).divider),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -1559,12 +1585,15 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('文本着色',
+                  Text('文本着色',
                       style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600)),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppThemeTokens.of(context).textPrimary)),
                   Text(summary,
-                      style: const TextStyle(
-                          fontSize: 10, color: Color(0xFF888896))),
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: AppThemeTokens.of(context).textMuted)),
                 ],
               ),
             ),
@@ -1604,15 +1633,15 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
       summary = parts.join(' · ');
     }
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withValues(alpha: 0.04))),
+      decoration: BoxDecoration(color: AppThemeTokens.of(context).surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppThemeTokens.of(context).divider)),
       child: InkWell(borderRadius: BorderRadius.circular(12), onTap: _editUIAssemblyList,
         child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(children: [
-            const Icon(Icons.dashboard_customize_rounded, size: 20, color: Color(0xFF651FFF)),
+            Icon(Icons.dashboard_customize_rounded, size: 20, color: AppThemeTokens.of(context).accent),
             const SizedBox(width: 6),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              const Text('UI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-              Text(summary, style: const TextStyle(fontSize: 10, color: Color(0xFF888896))),
+              Text('UI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppThemeTokens.of(context).textPrimary)),
+              Text(summary, style: TextStyle(fontSize: 10, color: AppThemeTokens.of(context).textMuted)),
             ])),
           ]),
         ),
@@ -1660,8 +1689,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
   Widget _buildEntryCard(CharacterEntry entry) {
     final isExpanded = _expandedEntryIds.contains(entry.id);
     final enabled = entry.enabled;
+    final tokens = AppThemeTokens.of(context);
     return Card(
-      color: enabled ? null : Colors.grey.shade100,
+      color: enabled ? null : tokens.surfaceInteractive,
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         onTap: null,
@@ -1690,7 +1720,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                   Expanded(
                     child: Text(
                       entry.title,
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: enabled ? null : Colors.grey),
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: enabled ? null : tokens.textMuted),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -1701,7 +1731,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                       child: Icon(
                         Icons.edit,
                         size: 16,
-                        color: enabled ? Colors.grey : Colors.grey.shade400,
+                        color: enabled ? tokens.textMuted : tokens.textSecondary.withValues(alpha: 0.6),
                       ),
                     ),
                   // 删除按钮（仅自定义条目显示）
@@ -1720,7 +1750,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                       child: Icon(
                         isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                         size: 18,
-                        color: Colors.grey,
+                        color: tokens.textMuted,
                       ),
                     ),
                   ],
@@ -1729,7 +1759,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
               if (enabled && !isExpanded && _getEntryPreview(entry).isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 26),
-                  child: Text(_getEntryPreview(entry), style: const TextStyle(fontSize: 12, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  child: Text(_getEntryPreview(entry), style: TextStyle(fontSize: 12, color: tokens.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),
               if (enabled && isExpanded)
                 Padding(
@@ -1758,7 +1788,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                   greeting.content.isEmpty ? '空开场白' : greeting.content,
                   style: TextStyle(
                     fontSize: 14,
-                    color: greeting.content.isEmpty ? Colors.grey : null,
+                    color: greeting.content.isEmpty
+                        ? AppThemeTokens.of(context).textMuted
+                        : null,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -1767,7 +1799,9 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
               // 编辑按钮
               GestureDetector(
                 onTap: () => _editGreeting(greeting),
-                child: const Icon(Icons.edit, size: 16, color: Colors.grey),
+                child: Icon(Icons.edit,
+                    size: 16,
+                    color: AppThemeTokens.of(context).textMuted),
               ),
               const SizedBox(width: 6),
               // 删除按钮
@@ -1849,11 +1883,11 @@ class _CustomEntryEditPageState extends State<_CustomEntryEditPage> {
   @override Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('编辑自定义条目'), actions: [TextButton(onPressed: _save, child: const Text('保存'))]),
-      body: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      body: SubPageBackdrop(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         TextField(controller: _titleCtrl, decoration: const InputDecoration(labelText: '条目名称')),
         const SizedBox(height: 12),
         Expanded(child: TextField(controller: _contentCtrl, maxLines: null, expands: true, textAlignVertical: TextAlignVertical.top, decoration: const InputDecoration(labelText: '内容', border: OutlineInputBorder(), alignLabelWithHint: true))),
-      ])),
+      ]))),
     );
   }
 }

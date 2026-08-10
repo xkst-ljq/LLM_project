@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/api_config.dart';
 import '../services/api_config_service.dart';
 import '../widgets/page_guide_overlay.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'api_config_edit_page.dart';
 
 class ApiConfigPage extends StatefulWidget {
@@ -213,7 +214,8 @@ class _ApiConfigPageState extends State<ApiConfigPage> {
                 ),
               ],
             ),
-            body: _configs.isEmpty
+            body: SubPageBackdrop(
+              child: _configs.isEmpty
             ? Center(
             child: Container(
             key: _emptyHintKey,
@@ -255,6 +257,7 @@ class _ApiConfigPageState extends State<ApiConfigPage> {
                       },
                     ),
             ),
+          ),
           if (_showGuide)
             Positioned.fill(
               child: PageGuideOverlay(

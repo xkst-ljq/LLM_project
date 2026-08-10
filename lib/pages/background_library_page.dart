@@ -15,6 +15,7 @@ import '../utils/id_utils.dart';
 import '../utils/app_feedback.dart';
 import '../services/image_pick_service.dart';
 import '../widgets/page_guide_overlay.dart';
+import '../widgets/sub_page_backdrop.dart';
 
 class BackgroundImportPreview {
   final File file;
@@ -672,7 +673,8 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
                 ),
               ],
             ),
-            body: _backgrounds.isEmpty
+            body: SubPageBackdrop(
+              child: _backgrounds.isEmpty
                 ? const Center(child: Text('暂无背景，点击 + 添加'))
                 : GridView.builder(
                     padding: const EdgeInsets.all(16),
@@ -745,6 +747,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
                       );
                     },
                   ),
+            ),
           ),
           if (_showGuide)
             Positioned.fill(
