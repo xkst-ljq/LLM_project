@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
 
 /// 文本着色规则编辑页。
@@ -125,14 +127,18 @@ class _TextHighlightRulesEditPageState
           ),
         ],
       ),
-      body: ListView(
+      body: SubPageBackdrop(
+        child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
         children: [
-          const Text(
+          Text(
             '用正则表达式匹配文本片段并着色。规则按从上到下的顺序生效，'
             '靠前的先占位，后面的规则不会覆盖已着色的部分。\n'
             '着色只影响显示，不会改写内容——发给模型和存档的始终是原文。',
-            style: TextStyle(fontSize: 12, color: Color(0xFF777783), height: 1.4),
+            style: TextStyle(
+                fontSize: 12,
+                color: AppThemeTokens.of(context).textMuted,
+                height: 1.4),
           ),
           const SizedBox(height: 14),
           _buildPreview(),
@@ -145,6 +151,7 @@ class _TextHighlightRulesEditPageState
             label: const Text('添加规则'),
           ),
         ],
+      ),
       ),
     );
   }

@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import '../services/ui_composite_asset_service.dart';
 import 'package:llm_ui_engine/llm_ui_engine.dart';
 import '../services/ui_engine/ui_asset_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 
 class UIAssetGallery extends StatefulWidget {
   const UIAssetGallery({super.key});
@@ -74,7 +76,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
     final isEmpty = modules.isEmpty && composites.isEmpty;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F6F9),
+      backgroundColor: AppThemeTokens.of(context).canvas,
       appBar: AppBar(
         title: const Text('UI 模组库'),
         actions: [
@@ -85,7 +87,8 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
           ),
         ],
       ),
-      body: isEmpty
+      body: SubPageBackdrop(
+        child: isEmpty
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -135,6 +138,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
                 ],
               ],
             ),
+        ),
     );
   }
 
@@ -142,7 +146,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
         text,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
-              color: Colors.black54,
+              color: AppThemeTokens.of(context).textSecondary,
             ),
       );
 
@@ -320,32 +324,32 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: AppThemeTokens.of(ctx).surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        title: const Text(
+        title: Text(
           '删除资产',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF111116),
+            color: AppThemeTokens.of(ctx).textPrimary,
           ),
         ),
         content: Text(
           '确定从资产库删除「${c.name}」吗？\n\n'
           '已经用到角色卡里的实例不受影响，只是以后不能再从库里取用。',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
-            color: Color(0xFF555562),
+            color: AppThemeTokens.of(ctx).textSecondary,
             height: 1.4,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消',
-                style: TextStyle(color: Color(0xFF888896))),
+            child: Text('取消',
+                style: TextStyle(color: AppThemeTokens.of(ctx).textMuted)),
           ),
           FilledButton(
             style: FilledButton.styleFrom(

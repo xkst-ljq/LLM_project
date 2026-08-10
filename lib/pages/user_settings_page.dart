@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
 import '../services/user_service.dart';
 import '../services/image_pick_service.dart';
+import '../widgets/sub_page_backdrop.dart';
 
 class UserSettingsPage extends StatefulWidget {
   const UserSettingsPage({super.key});
@@ -71,7 +72,8 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
           ),
         ],
       ),
-      body: Padding(
+      body: SubPageBackdrop(
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
@@ -92,6 +94,7 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

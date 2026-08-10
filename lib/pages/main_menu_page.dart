@@ -7,6 +7,7 @@ import '../services/background_service.dart';
 import '../services/tutorial_service.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/simple_page_guide_scope.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'api_config_page.dart';
 import 'background_library_page.dart';
 import 'backup_restore_page.dart';
@@ -594,7 +595,8 @@ class _MainMenuPageState extends State<MainMenuPage>
                   SizedBox(
                     key: _settingsPanelKey,
                     width: panelW,
-                    child: Container(
+                    child: SubPageBackdrop(
+                      child: Container(
                       color: Theme.of(context).scaffoldBackgroundColor,
                       child: SettingsMenuPage(
                         onStartNewUserGuide: _startNewUserGuide,
@@ -610,6 +612,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                         backupTextKey: _backupTextKey,
                         tutorialTextKey: _tutorialTextKey,
                       ),
+                    ),
                     ),
                   ),
                 ],

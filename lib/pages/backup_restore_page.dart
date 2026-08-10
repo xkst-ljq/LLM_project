@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/backup_service.dart';
 import '../services/android_download_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 import '../utils/app_feedback.dart';
 
 class BackupRestorePage extends StatefulWidget {
@@ -296,7 +298,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       appBar: AppBar(title: const Text('备份与恢复')),
       body: Stack(
         children: [
-          ListView(
+          SubPageBackdrop(
+            child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
               Container(
@@ -398,20 +401,21 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
+                  color: AppThemeTokens.of(context).surfaceInteractive,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text(
+                child: Text(
                   '备份会自动保存到：Download / LLM Project / Backups。\n'
                       '如果系统下载目录保存失败，可在导出完成后点击“分享/保存”手动保存到其他位置。',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.black54,
+                    color: AppThemeTokens.of(context).textSecondary,
                     height: 1.4,
                   ),
                 ),
               ),
             ],
+          ),
           ),
           if (_busy)
             Positioned.fill(

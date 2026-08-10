@@ -20,6 +20,7 @@ import '../models/prompt_settings.dart';
 import '../models/user_profile.dart';
 import '../models/world_book_entry.dart';
 import '../modules/chat_module.dart';
+import '../shared/theme/app_theme_tokens.dart';
 import '../services/api_config_service.dart';
 import '../services/active_character_store.dart';
 import '../services/background_service.dart';
@@ -69,6 +70,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   List<WorldBookEntry>? _cachedWorldBookEntries;
   PromptSettings _promptSettings = PromptSettings();
   String? _cachedWorldBookId;
+
+  bool get _isNight => Theme.of(context).brightness == Brightness.dark;
   // 世界书 position=after_char 的命中条目，暂存后注入到角色设定之后。
   List<WorldBookEntry> _pendingAfterCharWorldEntries = [];
   // 会话副本覆盖层：界面交互 / 状态栏写入的变量等。
@@ -2789,13 +2792,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   /// 状态栏统一材质（毛玻璃 + 半透明白），长条与详情块共用。
   Widget _statusGlass({required Widget child, double radius = 14}) {
+    final glassColor = _isNight
+        ? AppThemeTokens.of(context).surface.withAlpha(60)
+        : Colors.white.withAlpha(60);
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withAlpha(60),
+            color: glassColor,
             borderRadius: BorderRadius.circular(radius),
           ),
           child: child,
@@ -2811,12 +2817,20 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final progress = _statusProgress(f);
     final cross =
         alignRight ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final nameColor = _isNight ? Colors.white70 : Colors.black38;
+    final valueColor = _isNight ? Colors.white : Colors.black87;
+    final trackColor =
+        _isNight ? AppThemeTokens.of(context).divider : Colors.black.withAlpha(28);
 
     final nameWidget = Text(
       f.name,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 8, color: Colors.black38, height: 1.1),
+      style: TextStyle(
+        fontSize: 8,
+        color: nameColor,
+        height: 1.1,
+      ),
     );
 
     final Widget valueLine;
@@ -2834,7 +2848,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 4,
-                backgroundColor: Colors.black.withAlpha(28),
+                backgroundColor: trackColor,
                 valueColor: AlwaysStoppedAnimation(
                     Theme.of(context).primaryColor.withAlpha(210)),
               ),
@@ -2845,10 +2859,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             '${(progress * 100).round()}%',
             maxLines: 1,
             overflow: TextOverflow.clip,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: valueColor,
                 height: 1.1),
           ),
         ],
@@ -2858,10 +2872,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         value,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w600,
-            color: Colors.black87,
+            color: valueColor,
             height: 1.1),
       );
     }
@@ -2891,7 +2905,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 child: Text(
                   '状态栏 · 点击展开',
                   style: TextStyle(
-                      fontSize: 11, color: Colors.black.withAlpha(120)),
+                      fontSize: 11,
+                      color: _isNight
+                          ? Colors.white70
+                          : Colors.black.withAlpha(120)),
                 ),
               )
             : Row(
@@ -2964,13 +2981,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   Widget _buildStatusBlock(StatusBarField f) {
     final value = _statusValueOf(f);
     final progress = _statusProgress(f);
+    final nameColor = _isNight ? Colors.white70 : Colors.black45;
+    final valueColor = _isNight ? Colors.white : Colors.black87;
 
     // 字段名称（浅色小字），数值 / 文本块共用。
     final nameWidget = Text(
       f.name,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 12, color: Colors.black45),
+      style: TextStyle(fontSize: 12, color: nameColor),
     );
 
     // 块主体内容（不含顶部滑块触摸区）。
@@ -2993,7 +3012,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   width: double.infinity,
                   child: LinearProgressIndicator(
                     value: progress,
-                    backgroundColor: Colors.black12,
+                    backgroundColor: _isNight
+                        ? AppThemeTokens.of(context).divider
+                        : Colors.black12,
                     valueColor: AlwaysStoppedAnimation(
                         Theme.of(context).primaryColor.withAlpha(200)),
                   ),
@@ -3002,10 +3023,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   '$value/${_numText(f.maxValue!)}',
                   maxLines: 1,
                   overflow: TextOverflow.clip,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white),
+                      color: _isNight ? AppThemeTokens.of(context).textPrimary : Colors.white),
                 ),
               ],
             ),
@@ -3025,10 +3046,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87),
+                color: valueColor),
           ),
         ],
       );
@@ -3036,7 +3057,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withAlpha(110),
+        color: _isNight
+            ? AppThemeTokens.of(context).surfaceElevated
+            : Colors.white.withAlpha(110),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -4167,9 +4190,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                               10,
                                                             ),
                                                             decoration: BoxDecoration(
-                                                              color: Colors
-                                                                  .grey
-                                                                  .shade200,
+                                                              color: _isNight
+                                                                  ? AppThemeTokens
+                                                                      .of(context)
+                                                                      .surface
+                                                                  : Colors.grey
+                                                                      .shade200,
                                                               borderRadius: const BorderRadius.only(
                                                                 topLeft:
                                                                 Radius.circular(
@@ -4555,14 +4581,27 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                 ),
                                                                 decoration: BoxDecoration(
                                                                   color:
-                                                                  _editingIndex ==
-                                                                      index
-                                                                      ? Colors
-                                                                      .green
-                                                                      .shade200
-                                                                      : Colors
-                                                                      .green
-                                                                      .shade100,
+                                                                  _isNight
+                                                                      ? (_editingIndex ==
+                                                                              index
+                                                                          ? AppThemeTokens
+                                                                              .of(context)
+                                                                              .success
+                                                                              .withValues(
+                                                                                  alpha: 0.28)
+                                                                          : AppThemeTokens
+                                                                              .of(context)
+                                                                              .success
+                                                                              .withValues(
+                                                                                  alpha: 0.18))
+                                                                      : _editingIndex ==
+                                                                              index
+                                                                          ? Colors
+                                                                              .green
+                                                                              .shade200
+                                                                          : Colors
+                                                                              .green
+                                                                              .shade100,
                                                                   borderRadius: const BorderRadius.only(
                                                                     topLeft:
                                                                     Radius.circular(
@@ -4582,31 +4621,64 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                     ),
                                                                   ),
                                                                 ),
-                                                                child: MarkdownBody(
-                                                                  data:
-                                                                  msg['content']!,
-                                                                  selectable: false,
-                                                                  // 用户消息不可选，避免阻挡点击
-                                                                  extensionSet: md
-                                                                      .ExtensionSet
-                                                                      .gitHubFlavored,
-                                                                  onTapLink: (text, href, title) {
-                                                                    if (href !=
-                                                                        null &&
-                                                                        href.startsWith(
-                                                                          'action://',
-                                                                        )) {
-                                                                      final action =
-                                                                      href.substring(
-                                                                        'action://'
-                                                                            .length,
-                                                                      );
-                                                                      _handleMarkdownAction(
-                                                                        action,
-                                                                      );
-                                                                    }
-                                                                  },
-                                                                ),
+                                                                child: _isNight
+                                                                    ? DefaultTextStyle(
+                                                                        style: const TextStyle(
+                                                                            color:
+                                                                                Colors.white),
+                                                                        child: MarkdownBody(
+                                                                          data:
+                                                                          msg['content']!,
+                                                                          selectable:
+                                                                              false,
+                                                                          // 用户消息不可选，避免阻挡点击
+                                                                          extensionSet:
+                                                                              md
+                                                                                  .ExtensionSet
+                                                                                  .gitHubFlavored,
+                                                                          onTapLink: (text, href, title) {
+                                                                            if (href !=
+                                                                                null &&
+                                                                                href.startsWith(
+                                                                                  'action://',
+                                                                                )) {
+                                                                              final action =
+                                                                              href.substring(
+                                                                                'action://'
+                                                                                    .length,
+                                                                              );
+                                                                              _handleMarkdownAction(
+                                                                                action,
+                                                                              );
+                                                                            }
+                                                                          },
+                                                                        ),
+                                                                      )
+                                                                    : MarkdownBody(
+                                                                        data:
+                                                                        msg['content']!,
+                                                                        selectable: false,
+                                                                        // 用户消息不可选，避免阻挡点击
+                                                                        extensionSet: md
+                                                                            .ExtensionSet
+                                                                            .gitHubFlavored,
+                                                                        onTapLink: (text, href, title) {
+                                                                          if (href !=
+                                                                              null &&
+                                                                              href.startsWith(
+                                                                                'action://',
+                                                                              )) {
+                                                                            final action =
+                                                                            href.substring(
+                                                                              'action://'
+                                                                                  .length,
+                                                                            );
+                                                                            _handleMarkdownAction(
+                                                                              action,
+                                                                            );
+                                                                          }
+                                                                        },
+                                                                      ),
                                                               ),
                                                             ),
                                                             Padding(
@@ -4983,10 +5055,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                       vertical: 7,
                                                     ),
                                                     decoration: BoxDecoration(
-                                                      color: Colors.white.withAlpha(95),
+                                                      color: _isNight
+                                                          ? AppThemeTokens.of(context)
+                                                              .surface
+                                                              .withAlpha(150)
+                                                          : Colors.white.withAlpha(95),
                                                       borderRadius: BorderRadius.circular(18),
                                                       border: Border.all(
-                                                        color: Colors.white.withAlpha(80),
+                                                        color: _isNight
+                                                            ? AppThemeTokens.of(context)
+                                                                .outline
+                                                            : Colors.white.withAlpha(80),
                                                       ),
                                                       boxShadow: [
                                                         BoxShadow(
@@ -5002,11 +5081,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                       softWrap: false,
                                                       overflow: TextOverflow.ellipsis,
                                                       textAlign: TextAlign.center,
-                                                      style: const TextStyle(
+                                                      style: TextStyle(
                                                         fontSize: 14,
                                                         height: 1.0,
                                                         fontWeight: FontWeight.bold,
-                                                        color: Colors.black87,
+                                                        color: _isNight
+                                                            ? Colors.white
+                                                            : Colors.black87,
                                                       ),
                                                     ),
                                                   ),
@@ -5060,9 +5141,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                   ),
                                                   child: Container(
                                                     decoration: BoxDecoration(
-                                                      color: Colors.white.withAlpha(
-                                                        80,
-                                                      ),
+                                                      color: _isNight
+                                                          ? AppThemeTokens.of(context)
+                                                              .surface
+                                                              .withAlpha(160)
+                                                          : Colors.white.withAlpha(
+                                                              80,
+                                                            ),
                                                       borderRadius:
                                                       BorderRadius.circular(28),
                                                       boxShadow: [
@@ -5080,9 +5165,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                       children: [
                                                         if (animValue > 0.3)
                                                           IconButton(
-                                                            icon: const Icon(
+                                                            icon: Icon(
                                                               Icons.add_outlined,
-                                                              color: Colors.grey,
+                                                              color: _isNight
+                                                                  ? Colors
+                                                                      .white70
+                                                                  : Colors.grey,
                                                             ),
                                                             onPressed: () =>
                                                                 _showExtensionMenu(
@@ -5102,15 +5190,22 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                               controller:
                                                               _msgController,
                                                               style:
-                                                              const TextStyle(
+                                                              TextStyle(
                                                                 fontSize: 15,
+                                                                color: _isNight
+                                                                    ? Colors
+                                                                        .white
+                                                                    : null,
                                                               ),
-                                                              decoration: const InputDecoration(
+                                                              decoration: InputDecoration(
                                                                 hintText: '输入消息...',
                                                                 hintStyle:
                                                                 TextStyle(
-                                                                  color: Colors
-                                                                      .grey,
+                                                                  color: _isNight
+                                                                      ? Colors
+                                                                          .white70
+                                                                      : Colors
+                                                                          .grey,
                                                                 ),
                                                                 border: InputBorder
                                                                     .none,
@@ -5512,7 +5607,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       return _buildStyledRoleplayText(text);
     }
 
-    return MarkdownBody(
+    final body = MarkdownBody(
       data: text,
       selectable: true,
       extensionSet: md.ExtensionSet.gitHubFlavored,
@@ -5522,6 +5617,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           _handleMarkdownAction(action);
         }
       },
+    );
+    if (!_isNight) return body;
+    return DefaultTextStyle(
+      style: const TextStyle(color: Colors.white),
+      child: body,
     );
   }
 
@@ -5585,7 +5685,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           padding: fhtml.HtmlPaddings.zero,
           fontSize: fhtml.FontSize(12.5),
           lineHeight: fhtml.LineHeight(1.25),
-          color: Colors.black87,
+          color: _isNight ? Colors.white : Colors.black87,
         ),
         // 标题默认很大很占高度，整体压扁。
         'h1': fhtml.Style(
@@ -5724,15 +5824,32 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 规则可由作者在「文本着色」页自定义；没配过时用内置默认四条
   /// （台词 / 心理活动 / 书名 / 系统提示），与改造前观感一致。
   Widget _buildStyledRoleplayText(String text) {
-    const baseStyle = TextStyle(
+    final night = _isNight;
+    final baseStyle = TextStyle(
       fontSize: 14,
       height: 1.45,
-      color: Colors.black87,
+      color: night ? Colors.white : Colors.black87,
       decoration: TextDecoration.none,
     );
 
-    final rules = _currentCharacter?.meta.effectiveHighlightRules ??
+    var rules = _currentCharacter?.meta.effectiveHighlightRules ??
         TextHighlightRule.defaults();
+
+    // Night 下气泡是深底：规则里的深色文字会不可读，
+    // 把带颜色的规则统一向白色插值提亮（保留作者设定的色相与字重）。
+    if (night) {
+      rules = rules
+          .map((rule) => rule.colorValue == null
+              ? rule
+              : rule.copyWith(
+                  colorValue: Color.lerp(
+                    Color(rule.colorValue!),
+                    Colors.white,
+                    0.72,
+                  )!.toARGB32(),
+                ))
+          .toList();
+    }
 
     return SelectableText.rich(
       TextHighlightEngine.buildSpan(text, rules, baseStyle),

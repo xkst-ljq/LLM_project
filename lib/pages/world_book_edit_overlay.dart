@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../models/world_book.dart';
 import '../models/world_book_entry.dart';
 import '../services/database_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 import '../utils/id_utils.dart';
 
 class WorldBookEditOverlay extends StatefulWidget {
@@ -204,7 +206,10 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                     child: Material(
                       borderRadius: BorderRadius.circular(20),
                       elevation: 16,
-                      child: Container(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: SubPageBackdrop(
+                          child: Container(
                         decoration: BoxDecoration(
                           color: Theme.of(context).scaffoldBackgroundColor,
                           borderRadius: BorderRadius.circular(20),
@@ -331,11 +336,11 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                                       margin: const EdgeInsets.only(left: 6),
                                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                                       decoration: BoxDecoration(
-                                                        color: Colors.grey.shade300,
+                                                        color: AppThemeTokens.of(context).surfaceInteractive,
                                                         borderRadius: BorderRadius.circular(4),
                                                       ),
-                                                      child: const Text('已停用',
-                                                          style: TextStyle(fontSize: 10, color: Colors.black54)),
+                                                      child: Text('已停用',
+                                                          style: TextStyle(fontSize: 10, color: AppThemeTokens.of(context).textSecondary)),
                                                     ),
                                                 ],
                                               ),
@@ -396,6 +401,8 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                       ),
                     ),
                   ),
+                ),
+                ),
                 );
               },
             ),
@@ -486,7 +493,8 @@ class _EntryEditPageState extends State<_EntryEditPage> {
           )
         ],
       ),
-      body: Padding(
+      body: SubPageBackdrop(
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -604,6 +612,7 @@ class _EntryEditPageState extends State<_EntryEditPage> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

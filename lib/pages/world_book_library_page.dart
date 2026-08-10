@@ -937,7 +937,8 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
                 ),
               ],
             ),
-            body: _worldBooks.isEmpty
+            body: SubPageBackdrop(
+              child: _worldBooks.isEmpty
                 ? const Center(child: Text('暂无世界书，点击 + 添加'))
                 : GridView.builder(
                     padding: const EdgeInsets.all(16),
@@ -992,6 +993,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
                       );
                     },
                   ),
+            ),
           ),
           if (_showGuide)
             Positioned.fill(
