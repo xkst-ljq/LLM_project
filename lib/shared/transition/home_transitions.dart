@@ -28,11 +28,27 @@ class HomeTransitions {
     required Color accent,
   }) {
     // ignore: avoid_print
-    print('>>> module called, sourceKey: $sourceKey, accent: $accent');
-    if (MediaQuery.disableAnimationsOf(context) || sourceKey == null) {
-      print('>>> module fallback to MaterialPageRoute');
-      return MaterialPageRoute<T>(builder: (_) => page);
+    print('>>> module called, sourceKey: $sourceKey, accent: $accent, disableAnimations: ${MediaQuery.disableAnimationsOf(context)}');
+    // 调试：即使 disableAnimations 也强制展示，sourceKey 取不到时用 fallback
+    final tokens = AppThemeTokens.of(context);
+    Rect? sourceRect;
+    if (sourceKey != null) {
+      final ro = sourceKey.currentContext?.findRenderObject();
+      if (ro is RenderBox && ro.hasSize) {
+        final off = ro.localToGlobal(Offset.zero);
+        sourceRect = off & ro.size;
+        print('>>> module sourceRect: $sourceRect');
+      }
     }
+    sourceRect ??= Rect.fromLTWH(
+      MediaQuery.of(context).size.width / 2 - 60,
+      MediaQuery.of(context).size.height / 2 - 40,
+      120,
+      80,
+    );
+    print('>>> module using sourceRect: $sourceRect');
+    // 下面继续走 PageRouteBuilder，不再回退到 MaterialPageRoute
+
 
     final tokens = AppThemeTokens.of(context);
     return PageRouteBuilder<T>(
@@ -70,16 +86,7 @@ class HomeTransitions {
           ),
         );
 
-        final renderObject = sourceKey.currentContext?.findRenderObject();
-        Rect? sourceRect;
-        if (renderObject is RenderBox && renderObject.hasSize) {
-          final offset = renderObject.localToGlobal(Offset.zero);
-          sourceRect = offset & renderObject.size;
-        }
-
-        if (sourceRect == null) {
-          return pageFade;
-        }
+        // sourceRect 已在外层计算并兜底，此处直接使用
 
         // 扩张蒙层：在 page 之上，从 Tile 位置形变到全屏。
         // pop 时反向：从全屏收缩回 Tile，同时 page 淡出。
