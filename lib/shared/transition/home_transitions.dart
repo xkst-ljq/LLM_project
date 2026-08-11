@@ -659,6 +659,8 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
   late final AnimationController _dotsController;
   bool _readyDone = false;
   bool _minHoldDone = false;
+  // 是否正在反向（pop 返回主页）：决定卡片是收缩回角色入口还是全屏铺开。
+  bool _isReversing = false;
 
   @override
   void initState() {
@@ -694,6 +696,21 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
     _stageController.animateTo(0.257,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutBack);
+
+    // 反向（pop 返回主页）：把 stage 从 1 拉回 0，让卡片从全屏收缩回
+    // 主页角色入口，形成与进场对称的退出动画。否则 stageT 停在 1，
+    // 返回时卡片不会收缩，只剩页面淡出——即「退出没有主页动画」。
+    widget.animation.addStatusListener((status) {
+      if (!mounted) return;
+      if (status == AnimationStatus.reverse) {
+        _isReversing = true;
+        _stageController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 360),
+          curve: Curves.easeInCubic,
+        );
+      }
+    });
   }
 
   void _tryFinish() {
@@ -821,7 +838,8 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
               ),
             // 外置悬浮玻璃胶囊：无描边无实色，双层 BackdropFilter 高斯模糊，
             // 靠透过下方蒙版/背景的模糊呈现「独立悬浮物」。
-            if (capsuleOpacity > 0.01 && capsuleWidth > 60)
+            // 反向（pop 返回）时不显示胶囊。
+            if (!_isReversing && capsuleOpacity > 0.01 && capsuleWidth > 60)
               Positioned(
                 left: capsuleLeft,
                 top: capsuleTop,
