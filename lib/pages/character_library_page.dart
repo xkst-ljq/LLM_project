@@ -113,6 +113,11 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
   final _selectedCardKey = GlobalKey();
   // 播放按钮的加载动画（旋转 + 史莱姆弹跳循环），等待 UIEngine 就绪时播放。
   late final AnimationController _playLoadingController;
+  // 等待 UIEngine 就绪：offstage 预加载一个 ChatPage 触发真实初始化，
+  // 就绪后（onReady）播放键才消失并立即放大跳转。
+  bool _launchingChat = false;
+  CharacterCard? _launchCharacter;
+  Widget? _chatPreloadHost;
   static const String _sortByKey = 'character_sort_by';
   static const String _sortAscendingKey = 'character_sort_ascending';
 
@@ -923,8 +928,9 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
   }
 
   void _openSelectedCharacterChat() {
-    final character = _getSelectedCharacter();
+    if (_launchingChat) return; // 防止重复点击
 
+    final character = _getSelectedCharacter();
     if (character == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先点击一个角色卡片')),
@@ -932,50 +938,64 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
       return;
     }
 
-    // 开始史莱姆加载动画（循环等待封面图加载）
+    _launchingChat = true;
+    _launchCharacter = character;
+    // 开始史莱姆加载动画：等待封面图 + UIEngine 就绪（按钮保持转圈）。
     _playLoadingController.repeat();
 
-    // 先在后台把封面图解码进图片缓存，加载完成后再放大跳转，
-    // 避免放大过程中封面还是空白/未加载。
-    _preloadCoverAndOpen(character);
+    // 并行：预热 DB 缓存 + 封面图，并 offstage 预加载一个 ChatPage 触发真实
+    // 初始化；等 onReady 后播放键消失并立即放大跳转。
+    _preloadForChat(character);
+    _preloadCover(character);
+    _preloadChatForReady(character);
   }
 
-  /// 预加载封面图，等它解码进图片缓存后才开始卡片放大转场。
-  ///
-  /// 用 `precacheImage` 把封面解码进 Flutter 图片缓存，放大转场里的
-  /// `Image.file` 即可命中缓存立即显示；并额外留一段最小加载时长，
-  /// 让右下角按钮先明确转圈，再放大跳转。
-  Future<void> _preloadCoverAndOpen(CharacterCard character) async {
-    // 最小加载时长：即使封面已缓存，也先让右下角转圈一小段，
-    // 让「先在右下角加载 → 再放大」的节奏清晰，但不拖慢起点。
-    final minLoad = Future<void>.delayed(const Duration(milliseconds: 350));
-
+  /// 预加载封面图，避免放大过程中封面还是空白/未加载。
+  Future<void> _preloadCover(CharacterCard character) async {
     final path = character.cardImagePath;
-    if (path.isNotEmpty) {
-      try {
-        final file = File(path);
-        if (file.existsSync()) {
-          // 把封面图解码进 Flutter 图片缓存；放大转场里的 Image.file 会命中
-          // 同一缓存，即可立即显示完整封面。
-          await precacheImage(FileImage(file), context);
-        }
-      } catch (_) {
-        // 封面加载失败不阻塞。
+    if (path.isEmpty) return;
+    try {
+      final file = File(path);
+      if (file.existsSync()) {
+        // 把封面图解码进 Flutter 图片缓存；放大转场里的 Image.file 会命中
+        // 同一缓存，即可立即显示完整封面。
+        await precacheImage(FileImage(file), context);
       }
+    } catch (_) {
+      // 封面加载失败不阻塞，转场内部有兜底（accent 渐变）。
     }
+  }
 
+  /// offstage 挂载一个 ChatPage 触发真实 UIEngine 初始化。
+  ///
+  /// ChatPage 的 onReady 在重型初始化完成后回调，那时才算「UIEngine 就绪」。
+  /// 就绪前播放键保持转圈；就绪后卸载 offstage、播放键消失、立即放大跳转。
+  void _preloadChatForReady(CharacterCard character) {
+    setState(() {
+      _chatPreloadHost = ChatPage(
+        character: character,
+        onReady: _onChatPreloaded,
+      );
+    });
+  }
+
+  void _onChatPreloaded() {
     if (!mounted) return;
 
-    // 让转圈至少停留到 minLoad 结束，保证加载反馈可见。
-    await minLoad;
+    final character = _launchCharacter;
 
-    if (!mounted) return;
+    // UIEngine 就绪：播放键消失，卸载 offstage 预加载。
+    if (_playLoadingController.isAnimating) {
+      _playLoadingController.stop();
+      _playLoadingController.value = 0;
+    }
+    setState(() => _chatPreloadHost = null);
 
-    // 封面就绪后再触发放大转场；UIEngine 由转场内部 readyFuture 等待。
-    final ready = Completer<void>();
+    if (character == null) return;
+
+    // ready 已就绪：转场用已完成的 future，放大立即连续进行、不等待。
+    final ready = Completer<void>()..complete();
     final tokens = AppThemeTokens.of(context);
-    _preloadForChat(character); // 预热 DB 查询缓存，不阻塞转场
-
     Navigator.push<void>(
       context,
       HomeTransitions.cardToChat(
@@ -984,16 +1004,10 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
         accent: tokens.accent,
         character: character,
         readyFuture: ready.future,
-        page: ChatPage(character: character, onReady: () {
-          if (!ready.isCompleted) ready.complete();
-        }),
+        page: ChatPage(character: character, onReady: () {}),
       ),
     ).then((_) {
-      // 返回角色库时停止动画
-      if (_playLoadingController.isAnimating) {
-        _playLoadingController.stop();
-        _playLoadingController.value = 0;
-      }
+      if (mounted) _launchingChat = false;
     });
   }
 
@@ -1459,6 +1473,10 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
       canPop: true,
       child: Stack(
         children: [
+          // offstage 预加载 ChatPage：触发真实 UIEngine 初始化但不显示，
+          // 就绪后（_onChatPreloaded）才移除并放大跳转。
+          if (_chatPreloadHost != null)
+            Offstage(offstage: true, child: _chatPreloadHost!),
           Scaffold(
             appBar: AppBar(
         title: const Text('角色库'),

@@ -1018,7 +1018,7 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
     super.initState();
     _stageController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 750),
+      duration: const Duration(milliseconds: 500),
     );
 
     if (widget.readyFuture != null) {
@@ -1047,7 +1047,7 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
       // 放大动画本身是唯一的运动，中途不停驻；放大末期同步淡化，聊天页随之显现。
       _stageController.animateTo(
         1.0,
-        duration: const Duration(milliseconds: 750),
+        duration: const Duration(milliseconds: 500),
         curve: Curves.easeOutCubic,
       );
     }
