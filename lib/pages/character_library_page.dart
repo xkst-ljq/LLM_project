@@ -940,20 +940,34 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
     _preloadCoverAndOpen(character);
   }
 
-  /// 预加载封面图，等它解码完成后才开始卡片放大转场。
+  /// 预加载封面图，等它解码完成并渲染出一帧后才开始卡片放大转场。
+  ///
+  /// 只用 `precacheImage` 还不够：它只保证解码进缓存，不保证 `Image` widget
+  /// 真正拿到了帧。这里用 `FileImage.resolve` 显式等到首帧，并额外留一段
+  /// 最小加载时长，让右下角按钮先明确转圈，再放大跳转。
   Future<void> _preloadCoverAndOpen(CharacterCard character) async {
+    // 最小加载时长：即使封面已缓存，也先让右下角转圈一段可见时间，
+    // 让「先在右下角加载 → 再放大」的节奏清晰。
+    final minLoad = Future<void>.delayed(const Duration(milliseconds: 700));
+
     final path = character.cardImagePath;
     if (path.isNotEmpty) {
       try {
         final file = File(path);
         if (file.existsSync()) {
-          // 解码进 Flutter 图片缓存；Image.file 在放大转场里即可立即显示。
-          await precacheImage(FileImage(file), context);
+          final provider = FileImage(file);
+          // 等封面图真正解码并 produce 出第一帧，避免放大动画启动后封面才出现。
+          await provider.resolve(ImageConfiguration.empty).toImage();
         }
       } catch (_) {
-        // 封面加载失败不阻塞，转场内部有兜底（accent 渐变）。
+        // 封面加载失败不阻塞。
       }
     }
+
+    if (!mounted) return;
+
+    // 让转圈至少停留到 minLoad 结束，保证加载反馈可见。
+    await minLoad;
 
     if (!mounted) return;
 
