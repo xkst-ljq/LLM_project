@@ -1013,16 +1013,12 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
   bool _readyDone = false;
   bool _minHoldDone = false;
 
-  /// 放大到的接近全屏点：UIEngine 就绪前卡片放大到这里即停，
-  /// 就绪后立刻走完最后一段并淡化——几乎满屏时才淡出，不逗留。
-  static const double _holdT = 0.97;
-
   @override
   void initState() {
     super.initState();
     _stageController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 600),
     );
 
     if (widget.readyFuture != null) {
@@ -1034,29 +1030,22 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
       _readyDone = true;
     }
 
-    // 极短保底：右下角加载阶段已等过封面，转场这里基本不逗留，
-    // 只兜底 ready 永远不来的情况，不让卡片卡在放大中途。
-    Future.delayed(const Duration(milliseconds: 220), () {
+    // 极短保底：只为兜底 ready 永不回调的异常，正常路径下放大由 ready 触发。
+    Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
         setState(() => _minHoldDone = true);
         _tryFinish();
       }
     });
-
-    // 预放大入场：一次快速放大到接近满屏（easeOutBack 轻微过冲像弹起）。
-    _stageController.animateTo(
-      _holdT,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutBack,
-    );
   }
 
   void _tryFinish() {
+    // 等 UIEngine 就绪后再开始**一次连续放大**到满屏：
+    // 放大动画本身是唯一的运动，中途不停驻；放大末期同步淡化，聊天页随之显现。
     if (_readyDone && _minHoldDone && mounted && _stageController.value < 1.0) {
-      // 收尾：放大到满屏的瞬间同步淡化，聊天页随之显现，一气呵成。
       _stageController.animateTo(
         1.0,
-        duration: const Duration(milliseconds: 320),
+        duration: const Duration(milliseconds: 600),
         curve: Curves.easeOutCubic,
       );
     }
@@ -1110,9 +1099,9 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
         );
 
         // 就绪后卡片淡出、页面淡入，两者同步，杜绝黑底。
-        // 淡化只在收尾阶段（holdT 0.97 → 1.0）发生：放大到满屏的瞬间同步淡出，
-        // 聊天页随之显现，不留明显停留。
-        final revealT = ((stageT - _holdT) / (1.0 - _holdT)).clamp(0.0, 1.0);
+        // 淡化只在放大的最后一段（stageT 0.90 → 1.0）发生：
+        // 放大到满屏的瞬间同步淡出，聊天页随之显现，不留明显停留。
+        final revealT = ((stageT - 0.90) / 0.10).clamp(0.0, 1.0);
         final cardOpacity = (1.0 - revealT).clamp(0.0, 1.0);
         final pageOpacity = math.min(
           routeT < 0.32 ? 0.0 : ((routeT - 0.32) / 0.68).clamp(0.0, 1.0),
