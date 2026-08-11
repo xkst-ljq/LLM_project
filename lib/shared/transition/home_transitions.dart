@@ -1013,8 +1013,9 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
   bool _readyDone = false;
   bool _minHoldDone = false;
 
-  /// 加载暂停点：UIEngine 就绪前卡片放大到全屏的约 82%，就绪后铺满。
-  static const double _holdT = 0.82;
+  /// 放大到的接近全屏点：UIEngine 就绪前卡片放大到这里即停，
+  /// 就绪后立刻走完最后一段并淡化——几乎满屏时才淡出，不逗留。
+  static const double _holdT = 0.97;
 
   @override
   void initState() {
@@ -1033,27 +1034,29 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
       _readyDone = true;
     }
 
-    // 保底 hold：再快也要让卡片先放大出中段，保证「放大 → 就绪 → 铺满」节奏完整。
-    Future.delayed(const Duration(milliseconds: 1400), () {
+    // 极短保底：右下角加载阶段已等过封面，转场这里基本不逗留，
+    // 只兜底 ready 永远不来的情况，不让卡片卡在放大中途。
+    Future.delayed(const Duration(milliseconds: 220), () {
       if (mounted) {
         setState(() => _minHoldDone = true);
         _tryFinish();
       }
     });
 
-    // 预放大入场：先快速放大到 hold 点（easeOutBack 轻微过冲像弹起）。
+    // 预放大入场：一次快速放大到接近满屏（easeOutBack 轻微过冲像弹起）。
     _stageController.animateTo(
       _holdT,
-      duration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 320),
       curve: Curves.easeOutBack,
     );
   }
 
   void _tryFinish() {
     if (_readyDone && _minHoldDone && mounted && _stageController.value < 1.0) {
+      // 收尾：放大到满屏的瞬间同步淡化，聊天页随之显现，一气呵成。
       _stageController.animateTo(
         1.0,
-        duration: const Duration(milliseconds: 360),
+        duration: const Duration(milliseconds: 320),
         curve: Curves.easeOutCubic,
       );
     }
@@ -1107,7 +1110,9 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
         );
 
         // 就绪后卡片淡出、页面淡入，两者同步，杜绝黑底。
-        final revealT = ((stageT - 0.86) / 0.14).clamp(0.0, 1.0);
+        // 淡化只在收尾阶段（holdT 0.97 → 1.0）发生：放大到满屏的瞬间同步淡出，
+        // 聊天页随之显现，不留明显停留。
+        final revealT = ((stageT - _holdT) / (1.0 - _holdT)).clamp(0.0, 1.0);
         final cardOpacity = (1.0 - revealT).clamp(0.0, 1.0);
         final pageOpacity = math.min(
           routeT < 0.32 ? 0.0 : ((routeT - 0.32) / 0.68).clamp(0.0, 1.0),
