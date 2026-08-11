@@ -165,6 +165,11 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   static const double _directionDominance = 1.3;
 
   late List<AssemblyPage> _pages;
+
+  /// 模糊背景层用的页面克隆。与 [_pages] 同时更新，build 里复用，
+  /// 避免每帧全量 toJson→fromJson 往返（打开聊天页时的主线程长任务来源）。
+  late List<AssemblyPage> _backgroundPages;
+
   late String _activePageId;
   late SessionState _session;
 
@@ -194,6 +199,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     // 先用会话副本填充组件，再建立联动与轮询，
     // 保证首帧显示的就是真实状态而不是模板默认值。
     _applySessionToUI();
+    _syncBackgroundPages();
     _setupRuntimeLinkers();
     _startChannelPolling();
   }
@@ -232,6 +238,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
         oldWidget.activePageId != widget.activePageId) {
       _restoreRuntimeState();
       _applySessionToUI();
+      _syncBackgroundPages();
       _setupRuntimeLinkers();
       _startChannelPolling();
       return;
@@ -252,6 +259,7 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
       // 表现就是「Prompt 里变了、界面不动、通知也不弹」。
       _suppressNextWriteBack = true;
       if (_applySessionToUI() && mounted) setState(() {});
+      _syncBackgroundPages();
     }
   }
 
@@ -272,6 +280,16 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
     // 未接入外部会话时使用本地临时副本，保证预览里通道逻辑同样可验证，
     // 但不会污染真实角色卡会话状态。
     _session = widget.sessionState ?? SessionState();
+    _syncBackgroundPages();
+  }
+
+  /// 重新克隆模糊背景页，让背景跟随 [_pages] 的最新内容。
+  ///
+  /// 每帧 build 里全量 toJson→fromJson 往返是打开聊天页时主线程的主要
+  /// 长任务，所以只在内容真的变化时（restore / session 应用）克隆一次并
+  /// 缓存，build 里直接复用。
+  void _syncBackgroundPages() {
+    _backgroundPages = _clonePages(_pages);
   }
 
   void _setupRuntimeLinkers() {
@@ -922,8 +940,10 @@ class _UIAssemblyRuntimeViewState extends State<UIAssemblyRuntimeView> {
   Widget build(BuildContext context) {
     final activePage = _resolveActivePage(_pages, _activePageId);
     final ancestors = _ancestorPagesFor(_pages, activePage);
-    final backgroundPages = _clonePages(_pages);
-    final backgroundActivePage = _resolveActivePage(backgroundPages, _activePageId);
+    // 背景克隆在 _restoreRuntimeState 里已缓存；这里复用，不再每帧重建。
+    final backgroundPages = _backgroundPages;
+    final backgroundActivePage =
+        _resolveActivePage(backgroundPages, _activePageId);
     final backgroundAncestors = _ancestorPagesFor(
       backgroundPages,
       backgroundActivePage,

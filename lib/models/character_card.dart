@@ -37,11 +37,24 @@ class CharacterCard {
   });
 
   /// 解析后的扩展元信息。修改后请调用 [applyMeta] 写回 [metaJson]。
-  CharacterMeta get meta => CharacterMeta.fromJsonString(metaJson);
+  ///
+  /// 惰性解析并缓存：整份 metaJson 每次访问都重解（UIEngine 组装方案 /
+  /// 状态栏字段 / 着色规则都要读它）会在转场帧里堆出肉眼可见的卡顿。
+  CharacterMeta get meta {
+    if (_metaCache != null && !_metaDirty) return _metaCache!;
+    _metaCache = CharacterMeta.fromJsonString(metaJson);
+    _metaDirty = false;
+    return _metaCache!;
+  }
+
+  CharacterMeta? _metaCache;
+  bool _metaDirty = true;
 
   /// 把修改后的 meta 写回 metaJson。
   void applyMeta(CharacterMeta value) {
     metaJson = value.toJsonString();
+    _metaCache = value;
+    _metaDirty = false;
   }
 
   /// 从数据库 map 构造（统一入口，避免各处手写遗漏字段）。

@@ -49,11 +49,18 @@ class ChatPage extends StatefulWidget {
   final bool startGuide;
   final VoidCallback? onExitGuide;
 
+  /// 重型初始化（历史 / 会话副本 / UIEngine 方案）完成、骨架即将移除时回调。
+  ///
+  /// HomeTransitions 的 stagedRole 用它精确等待 UIEngine 就绪，加载胶囊
+  /// 显示到这一刻才收尾做全屏扩张，保证打开过程零卡顿、零白屏。
+  final VoidCallback? onReady;
+
   const ChatPage({
     super.key,
     this.character,
     this.startGuide = false,
     this.onExitGuide,
+    this.onReady,
   });
 
   @override
@@ -2047,8 +2054,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 用 Future.delayed(Duration.zero) 在每个重型步骤间让出事件循环，保证动画帧不被 DB/JSON 阻塞
     // 同时展示骨架屏，动画结束后骨架无缝淡出到真实内容
     Future.microtask(() async {
-      await _runDeferredHeavyInitChunked();
-      if (mounted && _deferHeavy) {
+      try {
+        await _runDeferredHeavyInitChunked();
+      } catch (_) {
+        // 重型初始化失败也要放行 onReady：HomeTransitions 的保底 hold 结束后
+        // 会做全屏扩张收尾，若在此卡住，路由完成时卡片四周会露出黑画布，
+        // 且加载胶囊永不消失。
+      }
+      if (!mounted) return;
+      // 骨架移除后通知转场：UIEngine 已就绪，可以收尾全屏扩张。
+      widget.onReady?.call();
+      if (_deferHeavy) {
         setState(() => _deferHeavy = false);
       }
     });
@@ -3758,7 +3774,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return !OpeningGreetingState.isDismissed(_sessionState);
   }
 
-  /// 让 UI 方案判定缓存失效（开场白 + scene）。
+  /// 让 UI 方案判定缓存失效（开场白 + scene + resolveAssembly 结果）。
   ///
   /// 角色卡的 UI 方案可能在编辑器里被改过，切回聊天页要重新判定。
   void _invalidateAssemblyCaches() {
@@ -3766,6 +3782,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _openingCacheCharacterId = null;
     _sceneRunnableCache = null;
     _sceneCacheCharacterId = null;
+    ChatAssemblyMount.invalidateAssemblyResolveCache();
   }
 
   Widget _buildOpeningAssembly(Size screen) {

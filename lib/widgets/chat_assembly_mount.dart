@@ -92,6 +92,21 @@ class ChatAssemblyMount extends StatelessWidget {
   /// 一个角色卡同一 mode 只应有一个方案（opening / scene 在新建时就有唯一性
   /// 约束），这里取第一个有效的。
   static UIAssemblyInfo? resolveAssembly(CharacterMeta meta, String mode) {
+    // 结果按 (meta 实例, mode) 缓存：hasAssembly/canRun 在每次 build / 每个
+    // 消息气泡里都会被调用，逐次 jsonDecode 全部 assembly 会在打开聊天页的
+    // 转场帧里堆出肉眼可见的卡顿。CharacterCard.meta 现在缓存同一份
+    // CharacterMeta 实例，同一张卡命中缓存；applyMeta 换新实例自然失效。
+    final key = (meta, mode);
+    final cached = _resolveCache[key];
+    if (cached != null) {
+      // cached 是 [_cacheMiss]（解析过但没有）或一个 UIAssemblyInfo。
+      if (identical(cached, _cacheMiss)) return null;
+      _resolveCache.remove(key);
+      _resolveCache[key] = cached; // 命中即移到最新（LRU）
+      return cached as UIAssemblyInfo?;
+    }
+
+    UIAssemblyInfo? result;
     for (final raw in meta.uiAssemblies) {
       final info = UIAssemblyInfo.fromJsonString(raw);
       if (info.id.isEmpty) continue;
@@ -103,9 +118,30 @@ class ChatAssemblyMount extends StatelessWidget {
           continue;
         }
       }
-      return info;
+      result = info;
+      break;
     }
-    return null;
+
+    _resolveCache[key] = result ?? _cacheMiss;
+    if (_resolveCache.length > _maxResolveCache) {
+      // 淘汰最久未用（首项）。
+      final stale = _resolveCache.keys.first;
+      _resolveCache.remove(stale);
+    }
+    return result;
+  }
+
+  /// resolveAssembly 结果缓存（最近最多使用，命中即移到末尾）。
+  ///
+  /// 值为解析出的 [UIAssemblyInfo]，或 [_cacheMiss]（表示「解析过但没有」，
+  /// 与「未缓存」区分开，避免每次重复扫）。key 直接持有 CharacterMeta
+  /// 实例，缓存期内身份稳定，不会因 hash 复用串台。
+  static final Map<(CharacterMeta, String), Object> _resolveCache = {};
+  static const Object _cacheMiss = _AssemblyCacheMiss();
+  static const int _maxResolveCache = 16;
+
+  static void invalidateAssemblyResolveCache() {
+    _resolveCache.clear();
   }
 
   /// 该角色卡是否配置了此 mode 的可用 UI。
@@ -242,4 +278,9 @@ Size? assemblyDesignSize(CharacterMeta meta, String mode) {
 /// 状态栏字段的便捷访问（挂载时需要传给运行时做数值 clamp）。
 extension ChatAssemblyMountFields on CharacterMeta {
   List<StatusBarField> get mountStatusFields => statusBarFields;
+}
+
+/// [ChatAssemblyMount._resolveCache] 里区分「未缓存」与「解析过但没有」的哨兵。
+class _AssemblyCacheMiss {
+  const _AssemblyCacheMiss();
 }

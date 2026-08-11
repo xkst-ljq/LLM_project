@@ -1,8 +1,11 @@
 // ignore_for_file: avoid_print
+import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../models/character_card.dart';
 import '../theme/app_theme_tokens.dart';
 
 /// 主页进入其他页面的统一转场。
@@ -28,9 +31,6 @@ class HomeTransitions {
     required Widget page,
     required Color accent,
   }) {
-    // ignore: avoid_print
-    print('>>> module called, sourceKey: $sourceKey, accent: $accent, disableAnimations: ${MediaQuery.disableAnimationsOf(context)}');
-    // 调试：即使 disableAnimations 也强制展示，sourceKey 取不到时用 fallback
     final tokens = AppThemeTokens.of(context);
     Rect? sourceRect;
     if (sourceKey != null) {
@@ -38,7 +38,6 @@ class HomeTransitions {
       if (ro is RenderBox && ro.hasSize) {
         final off = ro.localToGlobal(Offset.zero);
         sourceRect = off & ro.size;
-        print('>>> module sourceRect: $sourceRect');
       }
     }
     sourceRect ??= Rect.fromLTWH(
@@ -47,7 +46,6 @@ class HomeTransitions {
       120,
       80,
     );
-    print('>>> module using sourceRect: $sourceRect');
     // 下面继续走 PageRouteBuilder，不再回退到 MaterialPageRoute
     return PageRouteBuilder<T>(
       transitionDuration: _moduleDuration,
@@ -375,66 +373,72 @@ class HomeTransitions {
 
   /// 角色入口 -> 聊天（三段式舞台，带冷调蒙版与外置超细胶囊）
   ///
-  /// 时序：180ms 初次扩张到 88%中间态 → 胶囊淡入+三点循环（与 Isolate 并发）→ 加载完成后 280ms 全屏扩张
-  /// - 蒙版：冷调 #0F1A2A 14% + blur 8，缓缓盖住 HomeBackground/ModuleRail/Stage
-  /// - 胶囊：卡片正下方 12px，外置悬浮，宽卡片×0.78/高20/pill，无描边无实色，仅 白6/255+blur10 细长
-  /// - 三点：2.6px accent 0.62 + 6px光晕，1.35s easeInOut 0.1s错峰，2s静止循环
+  /// 时序：180ms 初次等比例放大到中间态 → 玻璃胶囊淡入+三点循环（与
+  /// UIEngine 加载并发）→ [readyFuture] 完成后 280ms 全屏扩张。
+  /// - 等比中间态：卡片围绕中心放大 1.22 倍（不是拉宽），悬浮在胶囊与
+  ///   Avatar Stage 之间的留白，观感是「整张卡在变大」。
+  /// - 蒙版：冷调 #0F1A2A 渐现到 ~0.16 + blur 8，缓缓盖住 HomeBackground/
+  ///   ModuleRail/Stage。
+  /// - 胶囊：跟随卡片矩形同步移动/变宽（top = 卡底 + 12px，left = 卡左 +
+  ///   11% 宽，宽 = 卡宽 × 0.78），双层 BackdropFilter 高斯模糊、无描边
+  ///   无实色，靠透过下方蒙版/背景的模糊呈现「独立悬浮物」。
   static Route<T> stagedRole<T>({
-    // DEBUG: log when called
-    // ignore: avoid_print
-    // print('>>> stagedRole called');
     required BuildContext context,
     required GlobalKey? sourceKey,
+    required CharacterCard character,
     required Widget page,
-    Future<void>? loadingFuture,
+    required Color accent,
+    Future<void>? readyFuture,
   }) {
-    // ignore: avoid_print
-    print('>>> stagedRole called, sourceKey: $sourceKey, disableAnimations: ${MediaQuery.disableAnimationsOf(context)}');
-    // 调试：即使 disableAnimations 也强制展示，sourceKey 取不到时用屏幕中心 fallback，保证动画必现
+    if (MediaQuery.disableAnimationsOf(context) || sourceKey == null) {
+      return MaterialPageRoute<T>(builder: (_) => page);
+    }
+
     final tokens = AppThemeTokens.of(context);
     Rect? sourceRect;
-    if (sourceKey != null) {
-      final renderObject = sourceKey.currentContext?.findRenderObject();
-      if (renderObject is RenderBox && renderObject.hasSize) {
-        final offset = renderObject.localToGlobal(Offset.zero);
-        sourceRect = offset & renderObject.size;
-      }
+    final renderObject = sourceKey.currentContext?.findRenderObject();
+    if (renderObject is RenderBox && renderObject.hasSize) {
+      final offset = renderObject.localToGlobal(Offset.zero);
+      sourceRect = offset & renderObject.size;
     }
-    // Fallback：居中 120x80，保证动画必现（用于调试 sourceKey 未挂载的情况）
-    final screenSizeFallback = MediaQuery.of(context).size;
-    sourceRect ??= Rect.fromLTWH(
-      screenSizeFallback.width / 2 - 60,
-      screenSizeFallback.height / 2 - 80,
-      120,
-      80,
-    );
+    if (sourceRect == null) {
+      return MaterialPageRoute<T>(builder: (_) => page);
+    }
+    final src = sourceRect;
     final screenSize = MediaQuery.of(context).size;
     final fullRect = Offset.zero & screenSize;
-    // 中间态：88%屏宽居中，高度等比 1.08
-    final intermediateWidth = screenSize.width * 0.88;
-    final intermediateHeight = sourceRect.height * 1.08;
-    final intermediateLeft = (screenSize.width - intermediateWidth) / 2;
-    final intermediateTop = sourceRect.top + (sourceRect.height - intermediateHeight) / 2 - 8;
-    final intermediateRect = Rect.fromLTWH(
-      intermediateLeft,
-      intermediateTop,
-      intermediateWidth,
-      intermediateHeight,
-    );
+    // 等比中间态：围绕卡片中心放大，并**水平居中**——放大后卡片左/右边缘
+    // 离屏幕两边等距，封面图块不再偏右。
+    // 原始卡宽 332 → 放大到 396（×1.19），高度同比例，绝不再把卡片拉宽。
+    final scale = (396.0 / src.width).clamp(1.0, 1.35);
+    final intW = src.width * scale;
+    final intH = src.height * scale;
+    final intLeft = (screenSize.width - intW) / 2;
+    // 垂直：围绕源中心，再上移一点，给下方胶囊留出空间。
+    final intTop = (src.center.dy - intH / 2).clamp(40.0, src.top);
+    final intermediateRect = Rect.fromLTWH(intLeft, intTop, intW, intH);
 
+    // 路由时长必须覆盖「保底 hold + 收尾」全程：路由动画完成后 Overlay 会把
+    // 这条路由标记为 opaque，主页随即进入 offstage 不再构建（routes.dart 的
+    // _handleStatusChanged）。若路由先于收尾完成，卡片四周（还没铺满屏幕）
+    // 露出的将是 Overlay 底层的黑画布，即用户看到的黑屏。
+    // 保底 hold 1400ms + 收尾 360ms，路由给 1900ms：收尾完成后主页才被卸载，
+    // 全程「卡片 → 全屏」无缝衔接，不再有黑屏窗口。
     return PageRouteBuilder<T>(
-      transitionDuration: const Duration(milliseconds: 1100),
+      transitionDuration: const Duration(milliseconds: 1900),
       reverseTransitionDuration: _roleReverseDuration,
       opaque: true,
       pageBuilder: (ctx, _, secondaryAnimation) => page,
       transitionsBuilder: (ctx, animation, secondaryAnimation, child) {
         return _StagedRoleTransition(
           animation: animation,
-          sourceRect: sourceRect!,
+          sourceRect: src,
           intermediateRect: intermediateRect,
           fullRect: fullRect,
+          character: character,
           tokens: tokens,
-          loadingFuture: loadingFuture,
+          accent: accent,
+          readyFuture: readyFuture,
           child: child,
         );
       },
@@ -502,28 +506,104 @@ class _StagedRoleTransition extends StatefulWidget {
     required this.sourceRect,
     required this.intermediateRect,
     required this.fullRect,
+    required this.character,
     required this.tokens,
+    required this.accent,
     required this.child,
-    this.loadingFuture,
+    this.readyFuture,
   });
 
   final Animation<double> animation;
   final Rect sourceRect;
   final Rect intermediateRect;
   final Rect fullRect;
+  final CharacterCard character;
   final AppThemeTokens tokens;
+  final Color accent;
   final Widget child;
-  final Future<void>? loadingFuture;
+
+  /// 聊天页 UIEngine 就绪信号：完成后收尾做全屏扩张。
+  final Future<void>? readyFuture;
 
   @override
   State<_StagedRoleTransition> createState() => _StagedRoleTransitionState();
+}
+
+/// 转场扩张卡的忠实内容：真实封面图 + 渐变蒙层 + 同心环，复刻主页角色卡。
+///
+/// 合成纯色块的问题是「封面消失只剩一个色块」——这里直接用真实卡片素材，
+/// 放大过程中封面始终在，观感与主页角色卡完全一致。
+class _StagedRoleCardBody extends StatelessWidget {
+  const _StagedRoleCardBody({
+    required this.character,
+    required this.tokens,
+    required this.accent,
+    required this.opacity,
+  });
+
+  final CharacterCard character;
+  final AppThemeTokens tokens;
+  final Color accent;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = character.cardImagePath;
+    final hasImage = path.isNotEmpty && File(path).existsSync();
+    final cover = hasImage
+        ? Image.file(File(path), fit: BoxFit.cover)
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [tokens.accent, tokens.accentStrong],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          );
+
+    return Opacity(
+      opacity: opacity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(child: cover),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: const Alignment(-1, -0.55),
+                  end: const Alignment(1, 0.55),
+                  colors: [
+                    accent.withValues(alpha: 0.88),
+                    accent.withValues(alpha: 0.30),
+                    Colors.black.withValues(alpha: 0.50),
+                  ],
+                  stops: const [0.0, 0.58, 1.0],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _ConcentricRingsForTransition(
+                  ringColor: Colors.white.withValues(alpha: 1.0),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StagedRoleTransitionState extends State<_StagedRoleTransition>
     with TickerProviderStateMixin {
   late final AnimationController _stageController;
   late final AnimationController _dotsController;
-  bool _loadingDone = false;
+  bool _readyDone = false;
   bool _minHoldDone = false;
 
   @override
@@ -538,32 +618,35 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
       duration: const Duration(milliseconds: 1800),
     )..repeat();
 
-    if (widget.loadingFuture != null) {
-      widget.loadingFuture!.whenComplete(() {
-        if (mounted) setState(() => _loadingDone = true);
+    if (widget.readyFuture != null) {
+      widget.readyFuture!.whenComplete(() {
+        if (mounted) setState(() => _readyDone = true);
         _tryFinish();
       });
     } else {
-      _loadingDone = true;
+      _readyDone = true;
     }
 
-    Future.delayed(const Duration(milliseconds: 900), () {
+    // 保底：UIEngine 再快也要在中间态停够一瞬，保证「放大→胶囊→全屏」
+    // 三段节奏完整。1.4s 内 ready 都会等它走完再收尾。
+    Future.delayed(const Duration(milliseconds: 1400), () {
       if (mounted) {
         setState(() => _minHoldDone = true);
         _tryFinish();
       }
     });
 
-    _stageController.animateTo(0.257, duration: const Duration(milliseconds: 180), curve: Curves.easeOutCubic);
+    // 预放大入场：easeOutBack 轻微过冲，先快速放大再回落定住，像「弹起」。
+    _stageController.animateTo(0.257,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutBack);
   }
 
   void _tryFinish() {
-    if (_loadingDone && _minHoldDone && mounted) {
-      Future.delayed(const Duration(milliseconds: 220), () {
-        if (mounted) {
-          _stageController.animateTo(1.0, duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
-        }
-      });
+    if (_readyDone && _minHoldDone && mounted && _stageController.value < 1.0) {
+      _stageController.animateTo(1.0,
+          duration: const Duration(milliseconds: 360),
+          curve: Curves.easeOutCubic);
     }
   }
 
@@ -576,9 +659,13 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
 
   @override
   Widget build(BuildContext context) {
-    final curved = CurvedAnimation(parent: widget.animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+    final curved = CurvedAnimation(
+        parent: widget.animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic);
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.animation, _stageController, _dotsController]),
+      animation:
+          Listenable.merge([widget.animation, _stageController, _dotsController]),
       builder: (context, _) {
         final routeT = curved.value;
         final stageT = _stageController.value;
@@ -587,36 +674,69 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
         double clipT;
         double cardOpacity;
         if (stageT <= 0.257) {
+          // 预放大阶段：只把卡片等比放大，斜切保持主页原样（progress 0），
+          // 形状/比例绝不提前改变。
           final a = stageT / 0.257;
-          cardRect = Rect.lerp(widget.sourceRect, widget.intermediateRect, Curves.easeOutCubic.transform(a))!;
-          clipT = a * 0.45;
+          cardRect = Rect.lerp(widget.sourceRect, widget.intermediateRect,
+              Curves.easeOutCubic.transform(a))!;
+          clipT = 0.0;
           cardOpacity = 1.0;
         } else {
+          // 收尾全屏扩张：卡片从中间态放大到全屏，同时斜切抹平为矩形。
           final b = (stageT - 0.257) / 0.743;
-          cardRect = Rect.lerp(widget.intermediateRect, widget.fullRect, Curves.easeOutCubic.transform(b))!;
-          clipT = 0.45 + b * 0.55;
-          cardOpacity = b < 0.72 ? 1.0 : (1 - (b - 0.72) / 0.28).clamp(0.0, 1.0);
+          cardRect = Rect.lerp(widget.intermediateRect, widget.fullRect,
+              Curves.easeOutCubic.transform(b))!;
+          clipT = b * 0.95;
+          cardOpacity = 1.0;
         }
 
-        final scrimOpacity = (stageT < 0.257 ? stageT / 0.257 * 0.24 : 0.24).clamp(0.0, 0.14);
-        final capsuleOpacity = stageT < 0.257
+        // 收尾十字淡变：卡片淡出的同时页面淡入，两者同步走完，
+        // 全程「卡片+页面」不透明度 ≥ 1，杜绝中间露出路由的黑底黑屏。
+        final revealT = ((stageT - 0.86) / 0.14).clamp(0.0, 1.0);
+        cardOpacity = (1.0 - revealT) * cardOpacity;
+
+        // 蒙版：冷调 #0F1A2A 渐现到 ~0.16 + blur 8。这里盖住的是**主页**——
+        // 路由时长被拉长到收尾完成后才结束（见 stagedRole），主页在整个
+        // hold + 收尾期间保持 onstage，所以 blur 有真实内容可糊，不会露出
+        // Overlay 底层的黑画布。
+        final scrimOpacity = stageT < 0.257
+            ? stageT / 0.257 * 0.16
+            : stageT < 0.86
+                ? 0.16
+                : 0.16 * (1 - revealT);
+        // 胶囊：中间态（stageT 被钉在 0.257）淡入到全亮，收尾全屏时淡出。
+        // 用 (stageT - 0.20) 起点：stageT 停在 0.257 时胶囊已经在显现，hold 全程可见。
+        final capsuleOpacity = stageT < 0.20
             ? 0.0
-            : stageT < 0.45
-                ? (stageT - 0.257) / 0.193
+            : stageT < 0.40
+                ? ((stageT - 0.20) / 0.20).clamp(0.0, 1.0)
                 : stageT > 0.92
                     ? (1 - (stageT - 0.92) / 0.08).clamp(0.0, 1.0)
                     : 1.0;
-        final pageOpacity = routeT < 0.32 ? 0.0 : ((routeT - 0.32) / 0.68).clamp(0.0, 1.0);
+        // 页面淡入被 stage 完成度钳制：即使路由动画已跑完（ready 还没到），
+        // 页面也保持隐藏，卡片 + 胶囊 + 蒙版继续盖住，直到 UIEngine 真正
+        // 就绪、最终全屏扩张时才放页面出来。pop 时仍跟路由反向淡出。
+        final routeFade =
+            routeT < 0.32 ? 0.0 : ((routeT - 0.32) / 0.68).clamp(0.0, 1.0);
+        final pageOpacity = math.min(routeFade, revealT);
+
+        // 胶囊跟随当前卡片矩形等比移动/变宽：同一平面一起放大。
+        final capsuleHeight = 32.0;
+        final capsuleLeft = cardRect.left + cardRect.width * 0.11;
+        final capsuleTop = cardRect.bottom + 12;
+        final capsuleWidth = cardRect.width * 0.78;
 
         return Stack(
           children: [
             Opacity(opacity: pageOpacity, child: widget.child),
-            if (scrimOpacity > 0.01)
+            if (scrimOpacity > 0.005)
               Positioned.fill(
                 child: IgnorePointer(
                   child: BackdropFilter(
                     filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                    child: Container(color: const Color(0xFF0F1A2A).withValues(alpha: scrimOpacity * 1.3)),
+                    child: Container(
+                        color:
+                            const Color(0xFF0F1A2A).withValues(alpha: scrimOpacity)),
                   ),
                 ),
               ),
@@ -629,65 +749,60 @@ class _StagedRoleTransitionState extends State<_StagedRoleTransition>
                     clipper: _SlantedToRectClipper(progress: clipT),
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [widget.tokens.accent, widget.tokens.accentStrong],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: widget.tokens.surfaceElevated,
+                        borderRadius: BorderRadius.circular(13),
                       ),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: const Alignment(-1, -0.55),
-                                end: const Alignment(1, 0.55),
-                                colors: [
-                                  widget.tokens.accentStrong.withValues(alpha: 0.95),
-                                  widget.tokens.accentStrong.withValues(alpha: 0.30),
-                                  Colors.black.withValues(alpha: 0.50),
-                                ],
-                                stops: const [0.0, 0.58, 1.0],
-                              ),
-                            ),
-                          ),
-                          Opacity(
-                            opacity: (1 - stageT * 1.2).clamp(0.0, 1.0),
-                            child: CustomPaint(
-                              painter: _ConcentricRingsForTransition(
-                                ringColor: Colors.white.withValues(alpha: 1.0),
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(13),
+                        child: _StagedRoleCardBody(
+                          character: widget.character,
+                          tokens: widget.tokens,
+                          accent: widget.accent,
+                          opacity: 1.0,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            if (capsuleOpacity > 0.01)
+            // 外置悬浮玻璃胶囊：无描边无实色，双层 BackdropFilter 高斯模糊，
+            // 靠透过下方蒙版/背景的模糊呈现「独立悬浮物」。
+            if (capsuleOpacity > 0.01 && capsuleWidth > 60)
               Positioned(
-                left: widget.intermediateRect.left + widget.intermediateRect.width * 0.11,
-                top: widget.intermediateRect.bottom + 12,
-                width: widget.intermediateRect.width * 0.78,
-                height: 36,
+                left: capsuleLeft,
+                top: capsuleTop,
+                width: capsuleWidth,
+                height: capsuleHeight,
                 child: Opacity(
                   opacity: capsuleOpacity,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(999),
-                    child: BackdropFilter(
-                      filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.yellow.withValues(alpha: 0.95), // DEBUG: bright yellow capsule
-                          borderRadius: BorderRadius.circular(999),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: BackdropFilter(
+                            filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                            child: Container(
+                              color: widget.tokens.surfaceGlass
+                                  .withValues(alpha: 0.30),
+                            ),
+                          ),
                         ),
-                        child: _StagedDotsTrack(
-                          dotsController: _dotsController,
-                          accent: widget.tokens.accent,
+                        Positioned.fill(
+                          child: BackdropFilter(
+                            filter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                            child: Container(
+                              color: widget.tokens.surface.withValues(alpha: 0.14),
+                            ),
+                          ),
                         ),
-                      ),
+                        Positioned.fill(
+                          child: _StagedDotsTrack(
+                            dotsController: _dotsController,
+                            accent: widget.accent,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

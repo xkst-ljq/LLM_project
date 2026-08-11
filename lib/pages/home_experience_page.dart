@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:isolate';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -57,14 +55,16 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     with TickerProviderStateMixin {
 
   // Entrance choreography timings, mapped from the HTML prototype.
-  static const _brandBegin = 0.044;
-  static const _themeBegin = 0.100;
-  static const _roleBegin = 0.150;
-  static const _stageBegin = 0.294;
-  static const _railBegin = 0.383;
-  static const _itemBase = 0.433;
+  // 入场错峰：Brand 先行 → Theme → Role → Stage → Rail，像逐张翻开。
+  // 总时长 1050ms（_entrance duration），_span 是单个元素的滑动窗口。
+  static const _brandBegin = 0.000;
+  static const _themeBegin = 0.130;
+  static const _roleBegin = 0.260;
+  static const _stageBegin = 0.420;
+  static const _railBegin = 0.600;
+  static const _itemBase = 0.680;
   static const _itemStep = 0.056;
-  static const _span = 0.34;
+  static const _span = 0.30;
 
   List<CharacterCard> _characters = const <CharacterCard>[];
   Map<String, int> _lastMessageAt = const <String, int>{};
@@ -82,6 +82,10 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
   late final AnimationController _entrance;
   late final AnimationController _cover;
   bool _entranceReady = false;
+
+  /// 首次加载的完整数据快照：返回主页时复用，不再重拉 DB 造成闪烁。
+  List<CharacterCard>? _homeCacheCharacters;
+
   Timer? _promoteTimer;
   late final bool _reduceMotion;
   bool _motionInitialized = false;
@@ -97,7 +101,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
     super.initState();
     _entrance = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 1050),
     );
     _cover = AnimationController(
       vsync: this,
@@ -166,6 +170,7 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       }
 
       if (!mounted) return;
+      _homeCacheCharacters = characters;
       setState(() {
         _characters = characters;
         _lastMessageAt = timestamps;
@@ -184,6 +189,37 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
         _error = error;
       });
       _scheduleEntrance();
+    }
+  }
+
+  /// 轻量刷新：从库返回主页时只补「最近消息时间戳」，不复刻整页。
+  ///
+  /// 完整数据快照 [_homeCacheCharacters] 仍在，界面无需重拉角色 / 背景 /
+  /// 世界书，避免转场返回瞬间整页闪烁。
+  Future<void> _refreshHomeLightly() async {
+    if (_homeCacheCharacters == null) {
+      await _loadHomeData();
+      return;
+    }
+    try {
+      final timestamps = await DatabaseService.getLatestMessageTimestamps();
+      if (!mounted) return;
+      setState(() {
+        _lastMessageAt = timestamps;
+        final characters = List<CharacterCard>.from(_homeCacheCharacters!)
+          ..sort((a, b) {
+            final left = timestamps[a.id] ?? 0;
+            final right = timestamps[b.id] ?? 0;
+            if (left != right) return right.compareTo(left);
+            return a.name.compareTo(b.name);
+          });
+        _characters = characters;
+        _homeCacheCharacters = characters;
+        _loading = false;
+        _error = null;
+      });
+    } catch (_) {
+      // 轻量刷新失败不打断主页：保持现有快照即可。
     }
   }
 
@@ -258,35 +294,40 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       return;
     }
 
-    // ignore: avoid_print
-    print('>>> _openChat called, character: ${character.name}, _roleEntryKey: $_roleEntryKey');
-    // 外置胶囊三段式：卡片先到中间态悬停，Isolate 在后台解析，完成后才全屏
-    // 预解析与 700ms 动画并发，细长胶囊在中间态循环
-    final loadingFuture = _preloadForChat(character);
-    print('>>> pushing stagedRole');
+    // 外置胶囊三段式：卡片先到中间态悬停，UIEngine 在后台解析，完成后才全屏。
+    // ready 信号由 ChatPage 在重型初始化完成后回调（onReady），
+    // 转场结束前不欠主线程一屁股 DB/JSON 活。
+    final ready = Completer<void>();
+    final tokens = AppThemeTokens.of(context);
+    _preloadForChat(character); // 预热 DB 查询缓存，不阻塞转场
     await Navigator.push<void>(
       context,
       HomeTransitions.stagedRole(
         context: context,
         sourceKey: _roleEntryKey,
-        loadingFuture: loadingFuture,
-        page: ChatPage(character: character),
+        accent: tokens.accent,
+        character: character,
+        readyFuture: ready.future,
+        page: ChatPage(character: character, onReady: () {
+          if (!ready.isCompleted) ready.complete();
+        }),
       ),
     );
-    print('>>> stagedRole popped');
-    _loadHomeData();
+    _refreshHomeLightly();
   }
 
+  /// 转场前预热聊天页要用的重数据，避免转场结束后主线程被 DB/JSON 阻塞。
+  ///
+  /// 并发拉取会话副本 / 消息历史，并触发一次 [CharacterCard.meta] 解析
+  /// 预热缓存。结果不落 UI，只让后续 init 命中热缓存。
   Future<void> _preloadForChat(CharacterCard character) async {
     try {
-      final m = character.metaJson;
-      final e = character.entriesJson;
-      await Isolate.run(() {
-        // 后台预解析最重的 JSON，避免主线程在转场期间被 jsonDecode 阻塞
-        jsonDecode(m.isEmpty ? '{}' : m);
-        jsonDecode(e.isEmpty ? '[]' : e);
-        // 触发一次 meta 解析（如果 CharacterCard 有惰性缓存）
-      });
+      // 触发热 meta 解析（缓存一次，ChatPage 里 hasAssembly 不再重复解码）
+      character.meta;
+      await Future.wait([
+        DatabaseService.getSessionStateJson(character.id),
+        DatabaseService.getMessages(character.id),
+      ]);
     } catch (_) {}
     // 让出一次事件循环，保证 60fps
     await Future.delayed(Duration.zero);
@@ -496,14 +537,26 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
       height: roleHeight,
       child: Stack(
         children: [
-          // 角色入口不保留任何投影 / 叠层模拟：直接以干净的斜切色面落在画布上。
+          // 角色入口以干净斜切色面落在画布上；滑入阶段带一道长投影
+          // （shadowAlpha 随入场 0→1 渐显后衰减到常驻的 0.035），
+          // 落下后只剩轻微悬浮感，不抢内容。
           Positioned.fill(
-            child: PhysicalShape(
-              clipper: _SlantedSurfaceClipper(),
-              color: tokens.surfaceElevated,
-              shadowColor: Colors.transparent,
-              elevation: 0,
-              clipBehavior: Clip.antiAlias,
+            child: AnimatedBuilder(
+              animation: _entrance,
+              builder: (context, child) {
+                final raw = (_entrance.value - _roleBegin) / _span;
+                final t = Curves.easeOutCubic.transform(raw.clamp(0.0, 1.0));
+                final resting = 0.035;
+                final shadowAlpha = resting + 0.22 * (1 - t);
+                return PhysicalShape(
+                  clipper: _SlantedSurfaceClipper(),
+                  color: tokens.surfaceElevated,
+                  shadowColor: tokens.accent.withValues(alpha: shadowAlpha),
+                  elevation: (t < 1.0 ? 10.0 * (1 - t) + 0.1 : 0.1),
+                  clipBehavior: Clip.antiAlias,
+                  child: child,
+                );
+              },
               child: Stack(
                 fit: StackFit.expand,
                 children: [
