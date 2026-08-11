@@ -83,8 +83,9 @@
 
 - 新增聊天区语义色板（`_bubbleUser` / `_bubbleAssistant` / `_onBubblePrimary` /
   `_onBubbleMuted` / `_avatarFallback` 等），替代散落的 `_isNight ? X : Y` 三元
-- 消息气泡：Day 下用户气泡用 `accentSoft` 淡紫、助手气泡用 `surface` 白 + 描边，
-  Night 下两者统一用 `surfaceElevated`，靠描边区分，收发对比清晰且克制
+- 消息气泡：用户气泡用 `accentSoft`（Day 淡紫 / Night 深蓝紫）、
+  助手气泡用 `surface`/`surfaceElevated` + 描边，Day/Night 下收发对比均清晰可辨
+- 状态栏进度条 track 改用 `outline`、value 改用 `accent`，深色模式下不再发黑难辨
 - 用户气泡编辑态颜色、头像占位、功能图标、Tokens 标签、角色名胶囊、
   输入栏毛玻璃底色、气泡/HTML/对白高亮正文颜色均接入主题令牌
 - 输入栏与角色名胶囊改用 `surfaceGlass`，Day / Night 自动适配

@@ -83,16 +83,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   // ---- 聊天区语义色板（令牌化，替代散落的 _isNight ? X : Y）----
   // Day：用户气泡用 accentSoft 淡紫、助手气泡用 surface 白，收发对比清晰且克制；
-  // Night：两者都用 surfaceElevated，靠描边区分，避免深色下淡紫过亮刺眼。
+  // Night：用户气泡用偏亮的 accentSoft（深蓝紫）、助手气泡用 surfaceElevated（深蓝黑），
+  //        靠亮度与色相区分，避免两者同为深色发黑难辨。
   AppThemeTokens get _tokens => AppThemeTokens.of(context);
 
-  /// 用户消息气泡底色。
-  Color get _bubbleUser =>
-      _isNight ? _tokens.surfaceElevated : _tokens.accentSoft;
+  /// 用户消息气泡底色（Day/Night 均用 accentSoft：浅紫 / 深蓝紫）。
+  Color get _bubbleUser => _tokens.accentSoft;
 
   /// 用户消息处于编辑态时的气泡底色（比常态更深，提示“正在编辑”）。
   Color get _bubbleUserEditing =>
-      _isNight ? _tokens.accentStrong.withValues(alpha: 0.30)
+      _isNight ? _tokens.accent.withValues(alpha: 0.35)
                : _tokens.accent.withValues(alpha: 0.30);
 
   /// 助手消息气泡底色。
@@ -101,7 +101,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   /// 助手气泡描边：Night 下稍强，保证深底上仍有清晰边界。
   Color get _bubbleAssistantBorder =>
-      _tokens.outline.withValues(alpha: _isNight ? 0.35 : 0.55);
+      _tokens.outline.withValues(alpha: _isNight ? 0.45 : 0.55);
 
   /// 气泡正文主文字色。
   Color get _onBubblePrimary => _tokens.textPrimary;
@@ -2930,8 +2930,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         alignRight ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final nameColor = _isNight ? Colors.white70 : Colors.black38;
     final valueColor = _isNight ? Colors.white : Colors.black87;
-    final trackColor =
-        _isNight ? AppThemeTokens.of(context).divider : Colors.black.withAlpha(28);
+    final trackColor = _tokens.outline.withValues(alpha: 0.45);
 
     final nameWidget = Text(
       f.name,
@@ -2960,8 +2959,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 value: progress,
                 minHeight: 4,
                 backgroundColor: trackColor,
-                valueColor: AlwaysStoppedAnimation(
-                    Theme.of(context).primaryColor.withAlpha(210)),
+                valueColor: AlwaysStoppedAnimation(_tokens.accent),
               ),
             ),
           ),
@@ -3123,11 +3121,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   width: double.infinity,
                   child: LinearProgressIndicator(
                     value: progress,
-                    backgroundColor: _isNight
-                        ? AppThemeTokens.of(context).divider
-                        : Colors.black12,
-                    valueColor: AlwaysStoppedAnimation(
-                        Theme.of(context).primaryColor.withAlpha(200)),
+                    backgroundColor: _tokens.outline.withValues(alpha: 0.45),
+                    valueColor: AlwaysStoppedAnimation(_tokens.accent),
                   ),
                 ),
                 Text(
