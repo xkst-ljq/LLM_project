@@ -946,9 +946,9 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
   /// `Image.file` 即可命中缓存立即显示；并额外留一段最小加载时长，
   /// 让右下角按钮先明确转圈，再放大跳转。
   Future<void> _preloadCoverAndOpen(CharacterCard character) async {
-    // 最小加载时长：即使封面已缓存，也先让右下角转圈一段可见时间，
-    // 让「先在右下角加载 → 再放大」的节奏清晰。
-    final minLoad = Future<void>.delayed(const Duration(milliseconds: 700));
+    // 最小加载时长：即使封面已缓存，也先让右下角转圈一小段，
+    // 让「先在右下角加载 → 再放大」的节奏清晰，但不拖慢起点。
+    final minLoad = Future<void>.delayed(const Duration(milliseconds: 350));
 
     final path = character.cardImagePath;
     if (path.isNotEmpty) {

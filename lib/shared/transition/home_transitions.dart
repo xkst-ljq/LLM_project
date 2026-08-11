@@ -1018,7 +1018,7 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
     super.initState();
     _stageController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 750),
     );
 
     if (widget.readyFuture != null) {
@@ -1043,9 +1043,11 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
     // 等 UIEngine 就绪后再开始**一次连续放大**到满屏：
     // 放大动画本身是唯一的运动，中途不停驻；放大末期同步淡化，聊天页随之显现。
     if (_readyDone && _minHoldDone && mounted && _stageController.value < 1.0) {
+      // 等 UIEngine 就绪后再开始**一次连续放大**到满屏：
+      // 放大动画本身是唯一的运动，中途不停驻；放大末期同步淡化，聊天页随之显现。
       _stageController.animateTo(
         1.0,
-        duration: const Duration(milliseconds: 600),
+        duration: const Duration(milliseconds: 750),
         curve: Curves.easeOutCubic,
       );
     }
@@ -1099,9 +1101,9 @@ class _CardExpandTransitionState extends State<_CardExpandTransition>
         );
 
         // 就绪后卡片淡出、页面淡入，两者同步，杜绝黑底。
-        // 淡化只在放大的最后一段（stageT 0.90 → 1.0）发生：
-        // 放大到满屏的瞬间同步淡出，聊天页随之显现，不留明显停留。
-        final revealT = ((stageT - 0.90) / 0.10).clamp(0.0, 1.0);
+        // 淡化只在放大几乎到底的最后一段（stageT 0.95 → 1.0）发生：
+        // 放大到满屏的瞬间才淡出，聊天页随之显现，终点过渡很短。
+        final revealT = ((stageT - 0.95) / 0.05).clamp(0.0, 1.0);
         final cardOpacity = (1.0 - revealT).clamp(0.0, 1.0);
         final pageOpacity = math.min(
           routeT < 0.32 ? 0.0 : ((routeT - 0.32) / 0.68).clamp(0.0, 1.0),
