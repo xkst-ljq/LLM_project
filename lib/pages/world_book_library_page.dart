@@ -678,9 +678,10 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     return tags;
   }
 
-  /// 词云区域：按词频不同字号排列高频词，铺成封面中间的视觉焦点。
+  /// 词云区域：每个词用圆形气泡裹住，气泡越大语义越重（词频越高）。
   ///
-  /// 没有可统计词汇时回退为单个首字标识（保持封面不空白）。
+  /// 最多显示 9 个词；气泡按词频缩放（weight 0~1 → 直径 ~34~62）。外层用
+  /// Wrap 居中排列，高度由外层 Expanded 约束，绝不溢出到底部信息栏。
   Widget _buildCloudWordCloud(WorldBook wb, String fallbackInitial) {
     final words = _worldBookCloudWords(wb);
 
@@ -718,31 +719,61 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
       );
     }
 
-    // 词云高度固定，用 Wrap 让高频词（大字号）自然聚在上方
-    return SizedBox(
-      height: 86,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 180),
+    // 气泡直径随词频缩放：权重 1 → 62，权重 0 → 34
+    double diameter(double weight) => 34 + 28 * weight;
+
+    // FittedBox 让整个词云等比缩放到可用空间内，词泡再多也不会溢出到
+    // 下方信息栏（或产生渲染溢出错误）。
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox(
+          width: 200,
           child: Wrap(
             alignment: WrapAlignment.center,
             crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 4,
-            runSpacing: 2,
+            spacing: 6,
+            runSpacing: 6,
             children: [
-              for (final w in words)
-                Text(
-                  w.word,
-                  style: TextStyle(
+            for (final w in words)
+              Container(
+                width: diameter(w.weight),
+                height: diameter(w.weight),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(
+                    alpha: 0.14 + 0.14 * w.weight,
+                  ),
+                  border: Border.all(
                     color: Colors.white.withValues(
-                      alpha: 0.72 + 0.28 * w.weight,
+                      alpha: 0.20 + 0.16 * w.weight,
                     ),
-                    fontSize: 9 + 14 * w.weight,
-                    fontWeight:
-                        w.weight >= 0.8 ? FontWeight.bold : FontWeight.w500,
-                    height: 1.1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Text(
+                    w.word,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8 + 5 * w.weight,
+                      fontWeight:
+                          w.weight >= 0.7 ? FontWeight.bold : FontWeight.w500,
+                      height: 1.0,
+                    ),
                   ),
                 ),
+              ),
             ],
           ),
         ),
@@ -827,12 +858,16 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
                   ],
                 ),
 
-                const Spacer(),
+                const SizedBox(height: 8),
 
-                // 中间词云：展示世界书里出现最多的字眼（无内容时回退为首字标识）
-                _buildCloudWordCloud(wb, initial),
+                // 中间词云：展示世界书里出现最多的字眼（无内容时回退为首字标识）。
+                // 用 Expanded 占满顶部与底部信息之间的剩余空间，气泡随词频缩放，
+                // 高度受限，绝不会溢出到下方的名称/描述/统计栏。
+                Expanded(
+                  child: _buildCloudWordCloud(wb, initial),
+                ),
 
-                const Spacer(),
+                const SizedBox(height: 8),
 
                 // 名称
                 Text(
