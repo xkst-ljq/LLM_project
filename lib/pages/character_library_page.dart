@@ -1332,16 +1332,18 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
         ],
       ),
 
-      floatingActionButton: SizedBox(
-        key: _chatButtonGuideKey,
-        width: 54,
-        height: 54,
-        child: FloatingActionButton(
-          onPressed: _openSelectedCharacterChat,
-          backgroundColor: Theme.of(context).primaryColor,
-          child: const Icon(Icons.play_arrow_rounded, color: Colors.white),
-        ),
-      ),
+      floatingActionButton: _expandedIds.isNotEmpty
+          ? SizedBox(
+              key: _chatButtonGuideKey,
+              width: 54,
+              height: 54,
+              child: FloatingActionButton(
+                onPressed: _openSelectedCharacterChat,
+                backgroundColor: Theme.of(context).primaryColor,
+                child: const Icon(Icons.play_arrow_rounded, color: Colors.white),
+              ),
+            )
+          : null,
 
       body: SubPageBackdrop(
         child: NotificationListener<ScrollUpdateNotification>(

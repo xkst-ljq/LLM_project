@@ -79,6 +79,13 @@
 
 ### Changed
 
+#### 角色库 & 角色编辑页体验微调
+
+- 角色库的播放（进入聊天）悬浮按钮改为**选中一张角色卡片时才显示**，
+  未选中时隐藏，避免常驻按钮与"先选再进"的交互冲突
+- 角色编辑浮层面板底色由 `scaffoldBackgroundColor(canvas)` 改为 `surfaceElevated`：
+  夜间 canvas 近乎纯黑，与背后黑色遮罩叠在一起边界感弱，提亮一档让面板更突出
+
 #### 聊天页核心区 UI 令牌化（对齐主页风格 · 第一批）
 
 - 新增聊天区语义色板（`_bubbleUser` / `_bubbleAssistant` / `_onBubblePrimary` /

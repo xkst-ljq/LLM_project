@@ -1185,6 +1185,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
 
   @override
   Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
     if (_rectAnimation == null) {
       // 动画未就绪时不渲染，但确保已初始化
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1229,9 +1230,10 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
                           child: SubPageBackdrop(
                             child: Container(
                           decoration: BoxDecoration(
-                              color: Theme
-                              .of(context)
-                              .scaffoldBackgroundColor,
+                              // 用 surfaceElevated 而非 scaffoldBackgroundColor(canvas)：
+                              // 夜间 canvas 近乎纯黑，与背后 Colors.black54 遮罩叠在一起边界感弱，
+                              // 提亮一档让编辑面板在深色遮罩上更突出。
+                              color: tokens.surfaceElevated,
                               borderRadius: BorderRadius.circular(20)),
                           child: Column(
                             children: [
