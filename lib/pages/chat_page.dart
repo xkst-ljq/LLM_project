@@ -87,8 +87,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   //        靠亮度与色相区分，避免两者同为深色发黑难辨。
   AppThemeTokens get _tokens => AppThemeTokens.of(context);
 
-  /// 用户消息气泡底色（Day/Night 均用 accentSoft：浅紫 / 深蓝紫）。
-  Color get _bubbleUser => _tokens.accentSoft;
+  /// 用户消息气泡底色。
+  /// Day：accentSoft 淡紫；Night：向 accent 提亮后的蓝紫色（明显区别于深色助手气泡）。
+  Color get _bubbleUser =>
+      _isNight
+          ? Color.lerp(_tokens.accentSoft, _tokens.accent, 0.55)!
+          : _tokens.accentSoft;
 
   /// 用户消息处于编辑态时的气泡底色（比常态更深，提示“正在编辑”）。
   Color get _bubbleUserEditing =>
