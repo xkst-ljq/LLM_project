@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -680,8 +681,9 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
   /// 词云区域：每个词用圆形气泡裹住，气泡越大语义越重（词频越高）。
   ///
-  /// 最多显示 9 个词；气泡按词频缩放（weight 0~1 → 直径 ~34~62）。外层用
-  /// Wrap 居中排列，高度由外层 Expanded 约束，绝不溢出到底部信息栏。
+  /// 最多显示 9 个词，按**正六边形蜂窝**排列：语义最重（词频最高）的放中心，
+  /// 其余按圈向外展开。气泡按词频缩放（weight 0~1 → 直径 ~34~62），字号随
+  /// 气泡大小同步变化。整体用 FittedBox 等比缩放到可用空间，不溢出到信息栏。
   Widget _buildCloudWordCloud(WorldBook wb, String fallbackInitial) {
     final words = _worldBookCloudWords(wb);
 
@@ -722,61 +724,116 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     // 气泡直径随词频缩放：权重 1 → 62，权重 0 → 34
     double diameter(double weight) => 34 + 28 * weight;
 
-    // FittedBox 让整个词云等比缩放到可用空间内，词泡再多也不会溢出到
-    // 下方信息栏（或产生渲染溢出错误）。
+    // 蜂窝格子中心距（相邻气泡中心间距），留一点让气泡轻微重叠更紧凑。
+    const double cell = 44.0;
+
+    // 六边形轴向坐标的 6 个邻居方向。
+    const neighbors = <(int, int)>[
+      (1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1),
+    ];
+
+    // 生成围绕中心 (0,0) 的蜂窝坐标，按半径（圈）由近及远。语义最重的词
+    // 排在列表最前 → 放中心 (0,0)。
+    final slots = <(int, int)>[(0, 0)];
+    var ring = <(int, int)>[(0, 0)];
+    while (slots.length < words.length) {
+      final next = <(int, int)>[];
+      for (final (q, r) in ring) {
+        for (final (dq, dr) in neighbors) {
+          final n = (q + dq, r + dr);
+          if (!slots.contains(n) && !next.contains(n)) next.add(n);
+        }
+      }
+      ring = next;
+      slots.addAll(next);
+    }
+
+    // 轴向坐标 → 像素（扁平顶六边形）。cell 作为六边形尺寸。
+    Offset offsetOf(int q, int r) => Offset(
+          cell * (math.sqrt(3) * q + math.sqrt(3) / 2 * r),
+          cell * (1.5 * r),
+        );
+
+    // 计算整体外框，用于居中。
+    final positions = <Offset>[
+      for (var i = 0; i < words.length; i++) offsetOf(slots[i].$1, slots[i].$2),
+    ];
+    var minX = 0.0, maxX = 0.0, minY = 0.0, maxY = 0.0;
+    for (final p in positions) {
+      minX = math.min(minX, p.dx);
+      maxX = math.max(maxX, p.dx);
+      minY = math.min(minY, p.dy);
+      maxY = math.max(maxY, p.dy);
+    }
+    final w = maxX - minX;
+    final h = maxY - minY;
+
+    // 蜂窝整体（含气泡半径）的宽高
+    final cloudW = w + 62;
+    final cloudH = h + 62;
+
+    Widget bubble(_CloudWord word, double d) {
+      return Container(
+        width: d,
+        height: d,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.14 + 0.14 * word.weight),
+          border: Border.all(
+            color: Colors.white.withValues(
+              alpha: 0.20 + 0.16 * word.weight,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: Text(
+            word.word,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 8 + 5 * word.weight,
+              fontWeight:
+                  word.weight >= 0.7 ? FontWeight.bold : FontWeight.w500,
+              height: 1.0,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Stack 按蜂窝坐标定位气泡，中心词在最中间。
+    final cloud = SizedBox(
+      width: cloudW,
+      height: cloudH,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var i = 0; i < words.length; i++)
+            Positioned(
+              left: (positions[i].dx - minX) + 31 - diameter(words[i].weight) / 2,
+              top: (positions[i].dy - minY) + 31 - diameter(words[i].weight) / 2,
+              width: diameter(words[i].weight),
+              height: diameter(words[i].weight),
+              child: bubble(words[i], diameter(words[i].weight)),
+            ),
+        ],
+      ),
+    );
+
     return Center(
       child: FittedBox(
         fit: BoxFit.scaleDown,
-        child: SizedBox(
-          width: 200,
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-            for (final w in words)
-              Container(
-                width: diameter(w.weight),
-                height: diameter(w.weight),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(
-                    alpha: 0.14 + 0.14 * w.weight,
-                  ),
-                  border: Border.all(
-                    color: Colors.white.withValues(
-                      alpha: 0.20 + 0.16 * w.weight,
-                    ),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: Text(
-                    w.word,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 8 + 5 * w.weight,
-                      fontWeight:
-                          w.weight >= 0.7 ? FontWeight.bold : FontWeight.w500,
-                      height: 1.0,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        child: cloud,
       ),
     );
   }
