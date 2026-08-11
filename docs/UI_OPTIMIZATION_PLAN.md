@@ -27,7 +27,7 @@
 | `main_menu_page` / `home_experience_page` | 高 | 低 | 精致、成体系 | ✅ 已完成（基准） |
 | `chat_page` | 17 | ~101 | 旧、杂乱 | 🟢 核心区已令牌化（气泡/列表/输入栏） |
 | `character_library_page` | 2 | ~18 | 旧 | 🔴 第一梯队 |
-| `world_book_library_page` | 0 | ~33 | 旧 | 🔴 第一梯队 |
+| `world_book_library_page` | 3 | ~33 | 旧 | 🟢 页面级已令牌化（删除/成功/遮罩） |
 | `background_library_page` | 5 | ~105 | 旧 | 🟠 第二梯队 |
 | `prompt_settings_page` | 1 | ~8 | 旧 | 🟠 第二梯队 |
 | `user_settings_page` | 0 | 0 | 简单 | 🟠 第二梯队 |
@@ -66,8 +66,11 @@
 - 列表项套用统一 `SurfaceCard`；背景换 `SubPageBackdrop`。
 - AppBar 统一为透明融入式；按钮/弹窗用 `SubPageBlurBackdrop`。
 
-**③ `world_book_library_page.dart`（世界书）**
-- 0 处令牌引用，33 处硬编码 → 全量接入令牌；卡片与列表项统一。
+**③ `world_book_library_page.dart`（世界书）— 页面级已令牌化 ✅**
+- 页面级 UI 令牌化：删除按钮/文字（`danger`）、导入预览成功勾选（`success`）、
+  编辑浮层遮罩（`scrim`）。已用 `SubPageBackdrop` 背景 + GridView 卡片。
+- 说明：程序生成封面的白字/白色装饰保持不动——它们固定叠在有色彩封面上，
+  令牌化会破坏可读性。
 
 ### 第二梯队（跟随对齐，工作量中等）
 

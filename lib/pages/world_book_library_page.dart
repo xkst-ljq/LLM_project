@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/world_book.dart';
 import '../services/database_service.dart';
 import '../services/world_book_asset_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
 import '../utils/app_feedback.dart';
 import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
@@ -329,10 +330,13 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text(
+              leading: Icon(
+                Icons.delete,
+                color: AppThemeTokens.of(ctx).danger,
+              ),
+              title: Text(
                 '删除世界书',
-                style: TextStyle(color: Colors.red),
+                style: TextStyle(color: AppThemeTokens.of(ctx).danger),
               ),
               onTap: () {
                 Navigator.pop(ctx);
@@ -409,7 +413,11 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(
                     children: [
-                      const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      Icon(
+                        Icons.check_circle,
+                        color: AppThemeTokens.of(ctx).success,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(child: Text(e)),
                     ],
@@ -869,7 +877,10 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
               _loadWorldBooks();
               _expandedIds.remove(wb.id);
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text(
+              '删除',
+              style: TextStyle(color: AppThemeTokens.of(ctx).danger),
+            ),
           ),
         ],
       ),
@@ -897,7 +908,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
       PageRouteBuilder(
         opaque: false,
         barrierDismissible: true,
-        barrierColor: Colors.black54,
+        barrierColor: AppThemeTokens.of(context).scrim,
         barrierLabel: '关闭',
         transitionDuration: const Duration(milliseconds: 350),
         reverseTransitionDuration: const Duration(milliseconds: 300),
