@@ -1,6 +1,8 @@
 // ignore_for_file: use_build_context_synchronously
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +21,8 @@ import '../tools/character_converter/app_settings.dart';
 import '../tools/character_converter/converted_card_inserter.dart';
 import '../tools/character_converter/pipeline/pipeline.dart';
 import '../tools/character_converter/pipeline/pipeline_runner.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../shared/transition/home_transitions.dart';
 import '../utils/app_feedback.dart';
 import '../utils/default_image.dart';
 import '../utils/id_utils.dart';
@@ -69,7 +73,8 @@ class CharacterLibraryPage extends StatefulWidget {
   State<CharacterLibraryPage> createState() => _CharacterLibraryPageState();
 }
 
-class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
+class _CharacterLibraryPageState extends State<CharacterLibraryPage>
+    with TickerProviderStateMixin {
   final List<CharacterCard> _characters = [];
   final Set<String> _expandedIds = {};
   final Set<String> _deletingIds = {};
@@ -104,15 +109,29 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
   final _addButtonKey = GlobalKey();
   final _firstCardGuideKey = GlobalKey();
   final _chatButtonGuideKey = GlobalKey();
+  // 当前选中卡片放大进入聊天页的转场源 Key（仅绑定到 _expandedIds 里的那张卡）。
+  final _selectedCardKey = GlobalKey();
+  // 播放按钮的加载动画（旋转 + 史莱姆弹跳循环），等待 UIEngine 就绪时播放。
+  late final AnimationController _playLoadingController;
   static const String _sortByKey = 'character_sort_by';
   static const String _sortAscendingKey = 'character_sort_ascending';
 
   @override
   void initState() {
     super.initState();
+    _playLoadingController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4000),
+    );
     _showGuide = widget.startGuide;
     _loadSortPreference();
     _loadCharacters();
+  }
+
+  @override
+  void dispose() {
+    _playLoadingController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSortPreference() async {
@@ -847,6 +866,62 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
     }
   }
 
+  /// 播放按钮（进入聊天）。等待 UIEngine 就绪期间，按钮像史莱姆一样
+  /// 「旋转一圈 → 压扁 → 弹起 → 歇几秒」循环，就绪后由 stagedRole 转场收尾。
+  Widget _buildPlayFab() {
+    return AnimatedBuilder(
+      animation: _playLoadingController,
+      builder: (context, child) {
+        final t = _playLoadingController.value;
+        // 一次完整循环 = 旋转一圈 → 压扁 → 弹起 → 停歇（然后 repeat）
+        final spinning = _playLoadingController.isAnimating;
+        final tokens = AppThemeTokens.of(context);
+
+        // 旋转角度：0%–25% 转一整圈
+        double angle = 0;
+        // 压扁/弹起：竖向缩放（scaleY），横向略微补偿（scaleX）
+        double scaleY = 1;
+        double scaleX = 1;
+
+        if (spinning) {
+          final spin = (t / 0.25).clamp(0.0, 1.0);
+          angle = Curves.easeInOutCubic.transform(spin) * 2 * math.pi;
+
+          if (t >= 0.25 && t < 0.45) {
+            // 压扁
+            final s = ((t - 0.25) / 0.20).clamp(0.0, 1.0);
+            final e = Curves.easeInOut.transform(s);
+            scaleY = 1 - 0.28 * e;
+            scaleX = 1 + 0.14 * e;
+          } else if (t >= 0.45 && t < 0.70) {
+            // 弹起（overshoot 回弹到 1）
+            final s = ((t - 0.45) / 0.25).clamp(0.0, 1.0);
+            final e = Curves.easeOutBack.transform(s);
+            scaleY = 0.72 + 0.28 * e;
+            scaleX = 1.14 - 0.14 * e;
+          } else {
+            // 停歇 / 静止
+            scaleY = 1;
+            scaleX = 1;
+          }
+        }
+
+        return Transform.rotate(
+          angle: angle,
+          child: Transform.scale(
+            scaleX: scaleX,
+            scaleY: scaleY,
+            child: FloatingActionButton(
+              onPressed: _openSelectedCharacterChat,
+              backgroundColor: tokens.accent,
+              child: const Icon(Icons.play_arrow_rounded, color: Colors.white),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _openSelectedCharacterChat() {
     final character = _getSelectedCharacter();
 
@@ -857,10 +932,47 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
       return;
     }
 
-    Navigator.push(
+    // 开始史莱姆加载动画（循环直到 UIEngine 就绪）
+    _playLoadingController.repeat();
+
+    // 复用主页成熟转场：卡片放大 → 中间态悬停 → UIEngine 就绪后全屏。
+    // ready 信号由 ChatPage 重型初始化完成后回调（onReady）。
+    final ready = Completer<void>();
+    final tokens = AppThemeTokens.of(context);
+    _preloadForChat(character); // 预热 DB 查询缓存，不阻塞转场
+
+    Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (_) => ChatPage(character: character)),
-    );
+      HomeTransitions.stagedRole(
+        context: context,
+        sourceKey: _selectedCardKey,
+        accent: tokens.accent,
+        character: character,
+        readyFuture: ready.future,
+        page: ChatPage(character: character, onReady: () {
+          if (!ready.isCompleted) ready.complete();
+        }),
+      ),
+    ).then((_) {
+      // 返回角色库时停止动画
+      if (_playLoadingController.isAnimating) {
+        _playLoadingController.stop();
+        _playLoadingController.value = 0;
+      }
+    });
+  }
+
+  /// 转场前预热聊天页要用的重数据，避免转场结束后主线程被 DB/JSON 阻塞。
+  Future<void> _preloadForChat(CharacterCard character) async {
+    try {
+      // 触发热 meta 解析（缓存一次，ChatPage 里 hasAssembly 不再重复解码）
+      character.meta;
+      await Future.wait([
+        DatabaseService.getSessionStateJson(character.id),
+        DatabaseService.getMessages(character.id),
+      ]);
+    } catch (_) {}
+    await Future.delayed(Duration.zero);
   }
 
   void _showCreateOrImportSheet() {
@@ -1337,11 +1449,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
               key: _chatButtonGuideKey,
               width: 54,
               height: 54,
-              child: FloatingActionButton(
-                onPressed: _openSelectedCharacterChat,
-                backgroundColor: Theme.of(context).primaryColor,
-                child: const Icon(Icons.play_arrow_rounded, color: Colors.white),
-              ),
+              child: _buildPlayFab(),
             )
           : null,
 
@@ -1395,7 +1503,9 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage> {
               final isExpanded = _expandedIds.contains(character.id);
 
               return Container(
-                key: index == 0 ? _firstCardGuideKey : null,
+                key: isExpanded
+                    ? _selectedCardKey
+                    : (index == 0 ? _firstCardGuideKey : null),
                 child: AspectRatio(
                   aspectRatio: 2 / 3,
                   child: Stack(
