@@ -932,11 +932,32 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
       return;
     }
 
-    // 开始史莱姆加载动画（循环直到 UIEngine 就绪）
+    // 开始史莱姆加载动画（循环等待封面图加载）
     _playLoadingController.repeat();
 
-    // 复用主页成熟转场：卡片放大 → 中间态悬停 → UIEngine 就绪后全屏。
-    // ready 信号由 ChatPage 重型初始化完成后回调（onReady）。
+    // 先在后台把封面图解码进图片缓存，加载完成后再放大跳转，
+    // 避免放大过程中封面还是空白/未加载。
+    _preloadCoverAndOpen(character);
+  }
+
+  /// 预加载封面图，等它解码完成后才开始卡片放大转场。
+  Future<void> _preloadCoverAndOpen(CharacterCard character) async {
+    final path = character.cardImagePath;
+    if (path.isNotEmpty) {
+      try {
+        final file = File(path);
+        if (file.existsSync()) {
+          // 解码进 Flutter 图片缓存；Image.file 在放大转场里即可立即显示。
+          await precacheImage(FileImage(file), context);
+        }
+      } catch (_) {
+        // 封面加载失败不阻塞，转场内部有兜底（accent 渐变）。
+      }
+    }
+
+    if (!mounted) return;
+
+    // 封面就绪后再触发放大转场；UIEngine 由转场内部 readyFuture 等待。
     final ready = Completer<void>();
     final tokens = AppThemeTokens.of(context);
     _preloadForChat(character); // 预热 DB 查询缓存，不阻塞转场
