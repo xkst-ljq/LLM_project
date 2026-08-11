@@ -444,6 +444,60 @@ class HomeTransitions {
       },
     );
   }
+/// 角色库卡片 -> 聊天（简化直放转场）
+  ///
+  /// 与 `stagedRole` 的区别：
+  /// - 不套用主页「accent 渐变 + 同心环」封面，直接用**角色卡真实封面图**；
+  /// - 不引入「中间态居中悬停卡片 + 底部加载胶囊」，卡片从它在角色库里的
+  ///   自身位置直接放大到全屏；
+  /// - 仍保留 `readyFuture` 等待：UIEngine 就绪前卡片放大到中段暂停，
+  ///   就绪后才铺满全屏 + 页面淡入，避免加载卡顿/白屏。
+  static Route<T> cardToChat<T>({
+    required BuildContext context,
+    required GlobalKey? sourceKey,
+    required CharacterCard character,
+    required Widget page,
+    required Color accent,
+    Future<void>? readyFuture,
+  }) {
+    if (MediaQuery.disableAnimationsOf(context) || sourceKey == null) {
+      return MaterialPageRoute<T>(builder: (_) => page);
+    }
+
+    final tokens = AppThemeTokens.of(context);
+    Rect? sourceRect;
+    final renderObject = sourceKey.currentContext?.findRenderObject();
+    if (renderObject is RenderBox && renderObject.hasSize) {
+      final offset = renderObject.localToGlobal(Offset.zero);
+      sourceRect = offset & renderObject.size;
+    }
+    if (sourceRect == null) {
+      return MaterialPageRoute<T>(builder: (_) => page);
+    }
+    final src = sourceRect;
+    final screenSize = MediaQuery.of(context).size;
+    final fullRect = Offset.zero & screenSize;
+
+    return PageRouteBuilder<T>(
+      // 路由时长覆盖「保底 hold + 收尾」全程，避免收尾前主页被卸载露黑底。
+      transitionDuration: const Duration(milliseconds: 1900),
+      reverseTransitionDuration: const Duration(milliseconds: 360),
+      opaque: true,
+      pageBuilder: (ctx, _, secondaryAnimation) => page,
+      transitionsBuilder: (ctx, animation, secondaryAnimation, child) {
+        return _CardExpandTransition(
+          animation: animation,
+          sourceRect: src,
+          fullRect: fullRect,
+          character: character,
+          tokens: tokens,
+          accent: accent,
+          readyFuture: readyFuture,
+          child: child,
+        );
+      },
+    );
+  }
 }
 
 /// 斜切面 -> 矩形的插值 Clipper
@@ -925,4 +979,158 @@ class _ConcentricRingsForTransition extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ConcentricRingsForTransition oldDelegate) =>
       oldDelegate.ringColor != ringColor;
+}
+
+/// 角色卡直放转场：卡片从自身位置放大到全屏，过程中始终显示角色卡封面。
+class _CardExpandTransition extends StatefulWidget {
+  const _CardExpandTransition({
+    required this.animation,
+    required this.sourceRect,
+    required this.fullRect,
+    required this.character,
+    required this.tokens,
+    required this.accent,
+    required this.child,
+    this.readyFuture,
+  });
+
+  final Animation<double> animation;
+  final Rect sourceRect;
+  final Rect fullRect;
+  final CharacterCard character;
+  final AppThemeTokens tokens;
+  final Color accent;
+  final Widget child;
+  final Future<void>? readyFuture;
+
+  @override
+  State<_CardExpandTransition> createState() => _CardExpandTransitionState();
+}
+
+class _CardExpandTransitionState extends State<_CardExpandTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _stageController;
+  bool _readyDone = false;
+  bool _minHoldDone = false;
+
+  /// 加载暂停点：UIEngine 就绪前卡片放大到全屏的约 82%，就绪后铺满。
+  static const double _holdT = 0.82;
+
+  @override
+  void initState() {
+    super.initState();
+    _stageController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+
+    if (widget.readyFuture != null) {
+      widget.readyFuture!.whenComplete(() {
+        if (mounted) setState(() => _readyDone = true);
+        _tryFinish();
+      });
+    } else {
+      _readyDone = true;
+    }
+
+    // 保底 hold：再快也要让卡片先放大出中段，保证「放大 → 就绪 → 铺满」节奏完整。
+    Future.delayed(const Duration(milliseconds: 1400), () {
+      if (mounted) {
+        setState(() => _minHoldDone = true);
+        _tryFinish();
+      }
+    });
+
+    // 预放大入场：先快速放大到 hold 点（easeOutBack 轻微过冲像弹起）。
+    _stageController.animateTo(
+      _holdT,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutBack,
+    );
+  }
+
+  void _tryFinish() {
+    if (_readyDone && _minHoldDone && mounted && _stageController.value < 1.0) {
+      _stageController.animateTo(
+        1.0,
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _stageController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildCardBody() {
+    final path = widget.character.cardImagePath;
+    final hasImage = path.isNotEmpty && File(path).existsSync();
+    return hasImage
+        ? Image.file(File(path), fit: BoxFit.cover)
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [widget.accent, widget.accent.withValues(alpha: 0.7)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final curved = CurvedAnimation(
+      parent: widget.animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return AnimatedBuilder(
+      animation: Listenable.merge([widget.animation, _stageController]),
+      builder: (context, _) {
+        final routeT = curved.value;
+        final stageT = _stageController.value;
+
+        // 卡片从自身位置直接放大到全屏（不经过居中悬停中间态）。
+        final cardRect = Rect.lerp(
+          widget.sourceRect,
+          widget.fullRect,
+          Curves.easeInOutCubic.transform(stageT),
+        )!;
+
+        // 圆角从卡片圆角抹平到 0。
+        final radius = BorderRadius.circular(
+          14 * (1 - stageT).clamp(0.0, 1.0),
+        );
+
+        // 就绪后卡片淡出、页面淡入，两者同步，杜绝黑底。
+        final revealT = ((stageT - 0.86) / 0.14).clamp(0.0, 1.0);
+        final cardOpacity = (1.0 - revealT).clamp(0.0, 1.0);
+        final pageOpacity = math.min(
+          routeT < 0.32 ? 0.0 : ((routeT - 0.32) / 0.68).clamp(0.0, 1.0),
+          revealT,
+        );
+
+        return Stack(
+          children: [
+            Opacity(opacity: pageOpacity, child: widget.child),
+            if (cardOpacity > 0.01)
+              Positioned.fromRect(
+                rect: cardRect,
+                child: Opacity(
+                  opacity: cardOpacity,
+                  child: ClipRRect(
+                    borderRadius: radius,
+                    child: _buildCardBody(),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 }

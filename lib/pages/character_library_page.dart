@@ -943,7 +943,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
 
     Navigator.push<void>(
       context,
-      HomeTransitions.stagedRole(
+      HomeTransitions.cardToChat(
         context: context,
         sourceKey: _selectedCardKey,
         accent: tokens.accent,
