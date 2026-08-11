@@ -66,9 +66,11 @@
 - 列表项套用统一 `SurfaceCard`；背景换 `SubPageBackdrop`。
 - AppBar 统一为透明融入式；按钮/弹窗用 `SubPageBlurBackdrop`。
 
-**③ `world_book_library_page.dart`（世界书）— 页面级已令牌化 ✅**
+**③ `world_book_library_page.dart`（世界书）— 页面级已令牌化 + 词云封面 ✅**
 - 页面级 UI 令牌化：删除按钮/文字（`danger`）、导入预览成功勾选（`success`）、
   编辑浮层遮罩（`scrim`）。已用 `SubPageBackdrop` 背景 + GridView 卡片。
+- 封面中间升级为**词云**：统计所有条目标题 + 主关键词的出现频率，
+  按词频用不同字号排列高频词；无词汇时回退为首字标识。
 - 说明：程序生成封面的白字/白色装饰保持不动——它们固定叠在有色彩封面上，
   令牌化会破坏可读性。
 

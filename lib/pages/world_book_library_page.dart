@@ -613,6 +613,47 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     return String.fromCharCode(name.runes.first);
   }
 
+  /// 词云：统计所有条目标题 + 主关键词的出现频率，返回按词频降序的词列表。
+  ///
+  /// 中文不按空格分词，这里基于已经切好的「关键词」(keys) 和「条目标题」
+  /// 做统计——它们本身就是有语义的词汇，比从正文强行分词更可靠、可读。
+  /// 词频 = 标题中出现次数 + 关键词出现次数（关键词命中越多次权重越高）。
+  List<_CloudWord> _worldBookCloudWords(WorldBook wb) {
+    final freq = <String, int>{};
+
+    void bump(String word, int weight) {
+      if (word.isEmpty) return;
+      freq.update(word, (v) => v + weight, ifAbsent: () => weight);
+    }
+
+    // 所有启用的条目
+    final entries = wb.entries.where((e) => e.enabled).toList();
+    for (final e in entries) {
+      final title = e.title.trim();
+      if (title.isNotEmpty) bump(title, 3);
+
+      for (final k in e.keys) {
+        final key = k.trim();
+        if (key.isNotEmpty) bump(key, 1);
+      }
+    }
+
+    // 排序：词频降序，同频按词长降序（更具体的词更醒目）
+    final sorted = freq.entries.toList()
+      ..sort((a, b) {
+        final c = b.value.compareTo(a.value);
+        if (c != 0) return c;
+        return b.key.length.compareTo(a.key.length);
+      });
+
+    // 取前 9 个；词频越靠前权重越大
+    final maxWeight = sorted.isEmpty ? 1 : sorted.first.value;
+    return sorted
+        .take(9)
+        .map((e) => _CloudWord(e.key, e.value / maxWeight))
+        .toList();
+  }
+
   List<String> _worldBookTags(WorldBook wb) {
     final tags = <String>[];
 
@@ -635,6 +676,78 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     }
 
     return tags;
+  }
+
+  /// 词云区域：按词频不同字号排列高频词，铺成封面中间的视觉焦点。
+  ///
+  /// 没有可统计词汇时回退为单个首字标识（保持封面不空白）。
+  Widget _buildCloudWordCloud(WorldBook wb, String fallbackInitial) {
+    final words = _worldBookCloudWords(wb);
+
+    if (words.isEmpty) {
+      return Center(
+        child: Container(
+          width: 58,
+          height: 58,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.18),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.26),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Center(
+            child: Text(
+              fallbackInitial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 30,
+                fontWeight: FontWeight.bold,
+                height: 1,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 词云高度固定，用 Wrap 让高频词（大字号）自然聚在上方
+    return SizedBox(
+      height: 86,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 180),
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 4,
+            runSpacing: 2,
+            children: [
+              for (final w in words)
+                Text(
+                  w.word,
+                  style: TextStyle(
+                    color: Colors.white.withValues(
+                      alpha: 0.72 + 0.28 * w.weight,
+                    ),
+                    fontSize: 9 + 14 * w.weight,
+                    fontWeight:
+                        w.weight >= 0.8 ? FontWeight.bold : FontWeight.w500,
+                    height: 1.1,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildWorldBookCover(WorldBook wb) {
@@ -716,38 +829,8 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
                 const Spacer(),
 
-                // 中间首字标识
-                Center(
-                  child: Container(
-                    width: 58,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.18),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.26),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(
-                        initial,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                // 中间词云：展示世界书里出现最多的字眼（无内容时回退为首字标识）
+                _buildCloudWordCloud(wb, initial),
 
                 const Spacer(),
 
@@ -1020,4 +1103,10 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     );
   }
 
+}
+/// 词云中的一个词及其相对权重（0~1，词频越高越接近 1）。
+class _CloudWord {
+  final String word;
+  final double weight;
+  const _CloudWord(this.word, this.weight);
 }
