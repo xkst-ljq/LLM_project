@@ -647,10 +647,10 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
         return b.key.length.compareTo(a.key.length);
       });
 
-    // 取前 9 个；词频越靠前权重越大
+    // 取前 7 个；词频越靠前权重越大
     final maxWeight = sorted.isEmpty ? 1 : sorted.first.value;
     return sorted
-        .take(9)
+        .take(7)
         .map((e) => _CloudWord(e.key, e.value / maxWeight))
         .toList();
   }
@@ -681,9 +681,10 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
   /// 词云区域：每个词用圆形气泡裹住，气泡越大语义越重（词频越高）。
   ///
-  /// 最多显示 9 个词，按**正六边形蜂窝**排列：语义最重（词频最高）的放中心，
-  /// 其余按圈向外展开。气泡按词频缩放（weight 0~1 → 直径 ~34~62），字号随
-  /// 气泡大小同步变化。整体用 FittedBox 等比缩放到可用空间，不溢出到信息栏。
+  /// 最多显示 7 个词（中心 1 + 第一圈 6，正好一个完整蜂窝圈），按**正六边形
+  /// 蜂窝**排列：语义最重（词频最高）的放中心，其余按圈向外展开。气泡按
+  /// 词频缩放（weight 0~1 → 直径 ~34~62），字号随气泡大小同步变化。整体用
+  /// FittedBox 等比缩放到可用空间，不溢出到信息栏。
   Widget _buildCloudWordCloud(WorldBook wb, String fallbackInitial) {
     final words = _worldBookCloudWords(wb);
 
