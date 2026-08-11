@@ -80,6 +80,37 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   String? _cachedWorldBookId;
 
   bool get _isNight => Theme.of(context).brightness == Brightness.dark;
+
+  // ---- 聊天区语义色板（令牌化，替代散落的 _isNight ? X : Y）----
+  // Day：用户气泡用 accentSoft 淡紫、助手气泡用 surface 白，收发对比清晰且克制；
+  // Night：两者都用 surfaceElevated，靠描边区分，避免深色下淡紫过亮刺眼。
+  AppThemeTokens get _tokens => AppThemeTokens.of(context);
+
+  /// 用户消息气泡底色。
+  Color get _bubbleUser =>
+      _isNight ? _tokens.surfaceElevated : _tokens.accentSoft;
+
+  /// 用户消息处于编辑态时的气泡底色（比常态更深，提示“正在编辑”）。
+  Color get _bubbleUserEditing =>
+      _isNight ? _tokens.accentStrong.withValues(alpha: 0.30)
+               : _tokens.accent.withValues(alpha: 0.30);
+
+  /// 助手消息气泡底色。
+  Color get _bubbleAssistant =>
+      _isNight ? _tokens.surfaceElevated : _tokens.surface;
+
+  /// 助手气泡描边：Night 下稍强，保证深底上仍有清晰边界。
+  Color get _bubbleAssistantBorder =>
+      _tokens.outline.withValues(alpha: _isNight ? 0.35 : 0.55);
+
+  /// 气泡正文主文字色。
+  Color get _onBubblePrimary => _tokens.textPrimary;
+
+  /// 气泡辅助文字 / 图标色（时间戳、功能图标、头像占位图标等）。
+  Color get _onBubbleMuted => _tokens.textSecondary;
+
+  /// 无头像时的占位底色。
+  Color get _avatarFallback => _tokens.surfaceInteractive;
   // 世界书 position=after_char 的命中条目，暂存后注入到角色设定之后。
   List<WorldBookEntry> _pendingAfterCharWorldEntries = [];
   // 会话副本覆盖层：界面交互 / 状态栏写入的变量等。
@@ -4239,9 +4270,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                       .isNotEmpty &&
                                                                   _fileExists(_currentCharacter!.avatar)
                                                                   ? null
-                                                                  : Colors
-                                                                  .grey
-                                                                  .shade300,
+                                                                  : _avatarFallback,
                                                               backgroundImage:
                                                               _currentCharacter
                                                                   ?.avatar !=
@@ -4268,9 +4297,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                   ? Icon(
                                                                 Icons.person,
                                                                 size: 18,
-                                                                color: Colors
-                                                                    .grey
-                                                                    .shade600,
+                                                                color: _onBubbleMuted,
                                                               )
                                                                   : null,
                                                             ),
@@ -4289,12 +4316,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                               10,
                                                             ),
                                                             decoration: BoxDecoration(
-                                                              color: _isNight
-                                                                  ? AppThemeTokens
-                                                                      .of(context)
-                                                                      .surface
-                                                                  : Colors.grey
-                                                                      .shade200,
+                                                              color: _bubbleAssistant,
                                                               borderRadius: const BorderRadius.only(
                                                                 topLeft:
                                                                 Radius.circular(
@@ -4312,6 +4334,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                 Radius.circular(
                                                                   4,
                                                                 ),
+                                                              ),
+                                                              border: Border.all(
+                                                                color: _bubbleAssistantBorder,
                                                               ),
                                                             ),
                                                             // A10-3：伴生 UI 内嵌在气泡最下方，
@@ -4350,11 +4375,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                               MainAxisSize.min,
                                                               children: [
                                                                 IconButton(
-                                                                  icon: const Icon(
+                                                                  icon: Icon(
                                                                     Icons.refresh,
                                                                     size: 14,
                                                                     color:
-                                                                    Colors.grey,
+                                                                    _onBubbleMuted,
                                                                   ),
                                                                   onPressed: () =>
                                                                       _regenerateMessage(
@@ -4376,12 +4401,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                   width: 2,
                                                                 ),
                                                                 IconButton(
-                                                                  icon: const Icon(
+                                                                  icon: Icon(
                                                                     Icons
                                                                         .more_horiz,
                                                                     size: 14,
                                                                     color:
-                                                                    Colors.grey,
+                                                                    _onBubbleMuted,
                                                                   ),
                                                                   onPressed: () =>
                                                                       _continueMessage(
@@ -4430,13 +4455,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                             4,
                                                                           ),
                                                                           IconButton(
-                                                                            icon: const Icon(
+                                                                            icon: Icon(
                                                                               Icons
                                                                                   .arrow_back_ios,
                                                                               size:
                                                                               10,
                                                                               color:
-                                                                              Colors.grey,
+                                                                              _onBubbleMuted,
                                                                             ),
                                                                             onPressed: () {
                                                                               if (cur >
@@ -4461,21 +4486,21 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                           ),
                                                                           Text(
                                                                             '${cur + 1}/${greetings.length}',
-                                                                            style: const TextStyle(
+                                                                            style: TextStyle(
                                                                               fontSize:
                                                                               10,
                                                                               color:
-                                                                              Colors.grey,
+                                                                              _onBubbleMuted,
                                                                             ),
                                                                           ),
                                                                           IconButton(
-                                                                            icon: const Icon(
+                                                                            icon: Icon(
                                                                               Icons
                                                                                   .arrow_forward_ios,
                                                                               size:
                                                                               10,
                                                                               color:
-                                                                              Colors.grey,
+                                                                              _onBubbleMuted,
                                                                             ),
                                                                             onPressed: () {
                                                                               if (cur <
@@ -4533,13 +4558,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                             8,
                                                                           ),
                                                                           IconButton(
-                                                                            icon: const Icon(
+                                                                            icon: Icon(
                                                                               Icons
                                                                                   .arrow_back_ios,
                                                                               size:
                                                                               12,
                                                                               color:
-                                                                              Colors.grey,
+                                                                              _onBubbleMuted,
                                                                             ),
                                                                             onPressed: () {
                                                                               if (cur >
@@ -4577,21 +4602,21 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                           ),
                                                                           Text(
                                                                             '${cur + 1}/${versions.length}',
-                                                                            style: const TextStyle(
+                                                                            style: TextStyle(
                                                                               fontSize:
                                                                               11,
                                                                               color:
-                                                                              Colors.grey,
+                                                                              _onBubbleMuted,
                                                                             ),
                                                                           ),
                                                                           IconButton(
-                                                                            icon: const Icon(
+                                                                            icon: Icon(
                                                                               Icons
                                                                                   .arrow_forward_ios,
                                                                               size:
                                                                               12,
                                                                               color:
-                                                                              Colors.grey,
+                                                                              _onBubbleMuted,
                                                                             ),
                                                                             onPressed: () {
                                                                               if (cur <
@@ -4679,28 +4704,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                   10,
                                                                 ),
                                                                 decoration: BoxDecoration(
-                                                                  color:
-                                                                  _isNight
-                                                                      ? (_editingIndex ==
-                                                                              index
-                                                                          ? AppThemeTokens
-                                                                              .of(context)
-                                                                              .success
-                                                                              .withValues(
-                                                                                  alpha: 0.28)
-                                                                          : AppThemeTokens
-                                                                              .of(context)
-                                                                              .success
-                                                                              .withValues(
-                                                                                  alpha: 0.18))
-                                                                      : _editingIndex ==
-                                                                              index
-                                                                          ? Colors
-                                                                              .green
-                                                                              .shade200
-                                                                          : Colors
-                                                                              .green
-                                                                              .shade100,
+                                                                  color: _editingIndex ==
+                                                                          index
+                                                                      ? _bubbleUserEditing
+                                                                      : _bubbleUser,
                                                                   borderRadius: const BorderRadius.only(
                                                                     topLeft:
                                                                     Radius.circular(
@@ -4722,9 +4729,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                 ),
                                                                 child: _isNight
                                                                     ? DefaultTextStyle(
-                                                                        style: const TextStyle(
+                                                                        style: TextStyle(
                                                                             color:
-                                                                                Colors.white),
+                                                                                _onBubblePrimary),
                                                                         child: MarkdownBody(
                                                                           data:
                                                                           msg['content']!,
@@ -4788,9 +4795,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                               child: CircleAvatar(
                                                                 radius: 14,
                                                                 backgroundColor:
-                                                                Colors
-                                                                    .grey
-                                                                    .shade300,
+                                                                _avatarFallback,
                                                                 backgroundImage:
                                                                 _currentUser
                                                                     .avatarPath
@@ -4812,9 +4817,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                                   Icons
                                                                       .person,
                                                                   size: 18,
-                                                                  color: Colors
-                                                                      .grey
-                                                                      .shade600,
+                                                                  color: _onBubbleMuted,
                                                                 )
                                                                     : null,
                                                               ),
@@ -4838,10 +4841,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                             alignment:
                                                             Alignment.center,
                                                             child: IconButton(
-                                                              icon: const Icon(
+                                                              icon: Icon(
                                                                 Icons.shortcut,
                                                                 size: 14,
-                                                                color: Colors.grey,
+                                                                color: _onBubbleMuted,
                                                               ),
                                                               onPressed: () =>
                                                                   _deleteUserMessage(
@@ -5112,7 +5115,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                       'Tokens: ${_estimateTokens()}',
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: Colors.grey.shade500,
+                                        color: _onBubbleMuted,
                                       ),
                                     ),
                                   ),
@@ -5154,17 +5157,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                       vertical: 7,
                                                     ),
                                                     decoration: BoxDecoration(
-                                                      color: _isNight
-                                                          ? AppThemeTokens.of(context)
-                                                              .surface
-                                                              .withAlpha(150)
-                                                          : Colors.white.withAlpha(95),
+                                                      color: _tokens.surfaceGlass,
                                                       borderRadius: BorderRadius.circular(18),
                                                       border: Border.all(
-                                                        color: _isNight
-                                                            ? AppThemeTokens.of(context)
-                                                                .outline
-                                                            : Colors.white.withAlpha(80),
+                                                        color: _tokens.outline,
                                                       ),
                                                       boxShadow: [
                                                         BoxShadow(
@@ -5184,9 +5180,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                         fontSize: 14,
                                                         height: 1.0,
                                                         fontWeight: FontWeight.bold,
-                                                        color: _isNight
-                                                            ? Colors.white
-                                                            : Colors.black87,
+                                                        color: _onBubblePrimary,
                                                       ),
                                                     ),
                                                   ),
@@ -5240,13 +5234,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                   ),
                                                   child: Container(
                                                     decoration: BoxDecoration(
-                                                      color: _isNight
-                                                          ? AppThemeTokens.of(context)
-                                                              .surface
-                                                              .withAlpha(160)
-                                                          : Colors.white.withAlpha(
-                                                              80,
-                                                            ),
+                                                      color: _tokens.surfaceGlass,
                                                       borderRadius:
                                                       BorderRadius.circular(28),
                                                       boxShadow: [
@@ -5266,10 +5254,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                           IconButton(
                                                             icon: Icon(
                                                               Icons.add_outlined,
-                                                              color: _isNight
-                                                                  ? Colors
-                                                                      .white70
-                                                                  : Colors.grey,
+                                                              color: _onBubbleMuted,
                                                             ),
                                                             onPressed: () =>
                                                                 _showExtensionMenu(
@@ -5291,20 +5276,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                               style:
                                                               TextStyle(
                                                                 fontSize: 15,
-                                                                color: _isNight
-                                                                    ? Colors
-                                                                        .white
-                                                                    : null,
+                                                                color: _onBubblePrimary,
                                                               ),
                                                               decoration: InputDecoration(
                                                                 hintText: '输入消息...',
                                                                 hintStyle:
                                                                 TextStyle(
-                                                                  color: _isNight
-                                                                      ? Colors
-                                                                          .white70
-                                                                      : Colors
-                                                                          .grey,
+                                                                  color: _onBubbleMuted,
                                                                 ),
                                                                 border: InputBorder
                                                                     .none,
@@ -5719,7 +5697,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
     if (!_isNight) return body;
     return DefaultTextStyle(
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: _onBubblePrimary),
       child: body,
     );
   }
@@ -5784,7 +5762,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           padding: fhtml.HtmlPaddings.zero,
           fontSize: fhtml.FontSize(12.5),
           lineHeight: fhtml.LineHeight(1.25),
-          color: _isNight ? Colors.white : Colors.black87,
+          color: _onBubblePrimary,
         ),
         // 标题默认很大很占高度，整体压扁。
         'h1': fhtml.Style(
@@ -5927,7 +5905,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final baseStyle = TextStyle(
       fontSize: 14,
       height: 1.45,
-      color: night ? Colors.white : Colors.black87,
+      color: _onBubblePrimary,
       decoration: TextDecoration.none,
     );
 
@@ -6581,9 +6559,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                         width: MediaQuery.of(context).size.width * 0.55,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: isMe
-                              ? (_isNight ? tokens.success.withValues(alpha: 0.18) : Colors.green.shade100)
-                              : (_isNight ? tokens.surface : Colors.grey.shade200),
+                          color: isMe ? _bubbleUser : _bubbleAssistant,
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(12),
                             topRight: const Radius.circular(12),

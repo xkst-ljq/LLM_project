@@ -77,6 +77,20 @@
 > 不执行酒馆脚本 / 正则 / 扩展插件，只做解析、映射与保留。
 > AI 智能归类与精修对照为后续增强（005-B/C）。
 
+### Changed
+
+#### 聊天页核心区 UI 令牌化（对齐主页风格 · 第一批）
+
+- 新增聊天区语义色板（`_bubbleUser` / `_bubbleAssistant` / `_onBubblePrimary` /
+  `_onBubbleMuted` / `_avatarFallback` 等），替代散落的 `_isNight ? X : Y` 三元
+- 消息气泡：Day 下用户气泡用 `accentSoft` 淡紫、助手气泡用 `surface` 白 + 描边，
+  Night 下两者统一用 `surfaceElevated`，靠描边区分，收发对比清晰且克制
+- 用户气泡编辑态颜色、头像占位、功能图标、Tokens 标签、角色名胶囊、
+  输入栏毛玻璃底色、气泡/HTML/对白高亮正文颜色均接入主题令牌
+- 输入栏与角色名胶囊改用 `surfaceGlass`，Day / Night 自动适配
+- 骨架屏消息气泡同步更新，避免加载态与真实内容颜色跳变
+- 仅改核心聊天区（消息气泡 / 列表 / 输入栏），未动布局、交互与功能分支
+
 ---
 
 ## Demo 1.2.5
