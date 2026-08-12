@@ -103,7 +103,8 @@
 
 - 设置项按「连接与数据 / 角色与内容 / 外观与创作 / 关于」分组
 - 每组用玻璃质感卡片（`SubPageBlurBackdrop`），图标带 accent 色块底
-- 面板底色 `scaffoldBackgroundColor(canvas)` → `surfaceElevated`，与主页玻璃风格统一
+- 设置面板背景改为与主页一致的 `SubPageBackdrop` canvas 底色（移除额外 surfaceElevated），两侧背景颜色统一
+- 移除设置里的「界面主题」Day/Night 切换项（多余）
 
 #### UI 模组库主题适配
 

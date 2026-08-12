@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../shared/theme/app_theme_manager.dart';
 import '../shared/theme/app_theme_tokens.dart';
 import '../widgets/sub_page_backdrop.dart';
 import 'api_config_page.dart';
@@ -140,7 +138,6 @@ class SettingsMenuPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeManager = context.watch<AppThemeManager>();
     final tokens = AppThemeTokens.of(context);
 
     return SafeArea(
@@ -235,18 +232,6 @@ class SettingsMenuPage extends StatelessWidget {
               context,
               title: '外观与创作',
               items: [
-                _tile(
-                  context,
-                  icon: themeManager.isNight
-                      ? Icons.dark_mode_outlined
-                      : Icons.light_mode_outlined,
-                  title: '界面主题',
-                  subtitle: themeManager.isNight ? 'Night · 沉浸模式' : 'Day · 清晰模式',
-                  trailing: Switch(
-                    value: themeManager.isNight,
-                    onChanged: (_) => themeManager.toggle(),
-                  ),
-                ),
                 _tile(
                   context,
                   icon: Icons.palette,

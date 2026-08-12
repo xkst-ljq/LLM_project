@@ -596,9 +596,9 @@ class _MainMenuPageState extends State<MainMenuPage>
                   SizedBox(
                     key: _settingsPanelKey,
                     width: panelW,
+                    // 设置面板直接叠在 SubPageBackdrop 上（背景色与主页一致，
+                    // 不额外加色），让两侧背景颜色统一。
                     child: SubPageBackdrop(
-                      child: Container(
-                      color: AppThemeTokens.of(context).surfaceElevated,
                       child: SettingsMenuPage(
                         onStartNewUserGuide: _startNewUserGuide,
                         onStartSettingsGuide: _startSettingsGuide,
@@ -613,7 +613,6 @@ class _MainMenuPageState extends State<MainMenuPage>
                         backupTextKey: _backupTextKey,
                         tutorialTextKey: _tutorialTextKey,
                       ),
-                    ),
                     ),
                   ),
                 ],
