@@ -1740,14 +1740,13 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
     super.dispose();
   }
 
-  // 贴边玻璃：只圆「内侧」角，贴边的一侧直角。
-  // - nameDrawer 贴左上：右上/右下圆角
-  // - tagDrawer 贴右上：左下/右下圆角
-  // - descDrawer 贴左下：右上/右下圆角（贴底边）
+  // 贴边玻璃：与卡片拐角重合的那一角用卡片圆角（16），其余角直角贴边。
+  // - nameDrawer 贴左上：仅左上角圆角
+  // - tagDrawer 贴右上：仅右上角圆角
+  // - descDrawer 贴左下：仅左下角圆角
   @override
   Widget build(BuildContext context) {
     final isNight = Theme.of(context).brightness == Brightness.dark;
-    final tokens = AppThemeTokens.of(context);
 
     // 玻璃片颜色：亮主题深紫、暗主题浅紫
     final glassColor = isNight
@@ -1756,6 +1755,15 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
     final glassBorder = isNight
         ? const Color(0x66C9C4FF)
         : const Color(0x66B3AFFF);
+
+    // 玻璃上的文字色：与玻璃反着来——亮主题深紫玻璃→白字，暗主题浅紫玻璃→深字
+    final glassText = isNight ? const Color(0xFF1A1B2E) : Colors.white;
+    // 介绍文字：比主文字稍透一点，但保证高对比、清晰
+    final glassTextSoft =
+        isNight ? const Color(0xFF24263B) : Colors.white.withValues(alpha: 0.92);
+
+    // 卡片自身圆角
+    const cardRadius = 16.0;
 
     return AnimatedBuilder(
       animation: _controller,
@@ -1799,35 +1807,31 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
             final tags = widget.character.meta.tags;
             final desc = widget.character.description;
 
-            // 名字：贴左上，从左往右展开
+            // 名字：贴左上，仅左上角圆角，从左往右展开（scaleX，无外部位移）
             final nameDrawer = Opacity(
               opacity: t.clamp(0.0, 1.0),
-              child: Transform.translate(
-                offset: Offset(-(1 - t) * 30, 0),
-                child: Transform.scale(
-                  scaleX: t.clamp(0.0, 1.0),
-                  alignment: Alignment.centerLeft,
-                  child: glass(
-                    radius: const BorderRadius.only(
-                      topRight: Radius.circular(10),
-                      bottomRight: Radius.circular(10),
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: cardW * 0.5),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        child: Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: tokens.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
+              child: Transform.scale(
+                scaleX: t.clamp(0.0, 1.0),
+                alignment: Alignment.centerLeft,
+                child: glass(
+                  radius: BorderRadius.only(
+                    topLeft: Radius.circular(cardRadius),
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: cardW * 0.5),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: glassText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
@@ -1836,60 +1840,52 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
               ),
             );
 
-            // 标签：贴右上，从上往下展开
+            // 标签：贴右上，仅右上角圆角，从上往下展开（scaleY，无外部位移）
             final tagDrawer = Opacity(
               opacity: t.clamp(0.0, 1.0),
-              child: Transform.translate(
-                offset: Offset(0, -(1 - t) * 30),
-                child: Transform.scale(
-                  scaleY: t.clamp(0.0, 1.0),
-                  alignment: Alignment.topCenter,
-                  child: glass(
-                    radius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(10),
-                      bottomRight: Radius.circular(10),
+              child: Transform.scale(
+                scaleY: t.clamp(0.0, 1.0),
+                alignment: Alignment.topCenter,
+                child: glass(
+                  radius: BorderRadius.only(
+                    topRight: Radius.circular(cardRadius),
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: cardW * 0.5,
+                      maxHeight: cardH * 0.66,
                     ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: cardW * 0.5,
-                        maxHeight: cardH * 0.66,
-                      ),
-                      child: _buildTags(tags),
-                    ),
+                    child: _buildTags(tags, glassText: glassText, glassTextSoft: glassTextSoft),
                   ),
                 ),
               ),
             );
 
-            // 介绍：贴左下，从左往右展开
+            // 介绍：贴左下，仅左下角圆角，从左往右展开（scaleX，无外部位移）
             final descDrawer = Opacity(
               opacity: t.clamp(0.0, 1.0),
-              child: Transform.translate(
-                offset: Offset(-(1 - t) * 30, 0),
-                child: Transform.scale(
-                  scaleX: t.clamp(0.0, 1.0),
-                  alignment: Alignment.centerLeft,
-                  child: glass(
-                    radius: const BorderRadius.only(
-                      topRight: Radius.circular(10),
-                      bottomRight: Radius.circular(10),
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: cardW * 0.85),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        child: Text(
-                          desc.trim().isEmpty ? '暂无介绍' : desc,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: tokens.textSecondary,
-                            fontSize: 12,
-                            height: 1.25,
-                          ),
+              child: Transform.scale(
+                scaleX: t.clamp(0.0, 1.0),
+                alignment: Alignment.centerLeft,
+                child: glass(
+                  radius: BorderRadius.only(
+                    bottomLeft: Radius.circular(cardRadius),
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: cardW * 0.85),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        desc.trim().isEmpty ? '暂无介绍' : desc,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: glassTextSoft,
+                          fontSize: 12,
+                          height: 1.25,
                         ),
                       ),
                     ),
@@ -1915,8 +1911,11 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
   }
 
   /// 标签垂直排版：每个标签文字竖排（字符自上而下），最多两列，超出 +x。
-  Widget _buildTags(List<String> tags) {
-    final tokens = AppThemeTokens.of(context);
+  Widget _buildTags(
+    List<String> tags, {
+    required Color glassText,
+    required Color glassTextSoft,
+  }) {
     // 每列最多 4 个 → 两列最多 8 个，超出显示 +N
     const perCol = 4;
     const maxShown = perCol * 2;
@@ -1930,13 +1929,19 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
     Widget verticalText(String text, {double fontSize = 9}) {
       final chars = text.characters.toList();
       if (chars.length == 1) {
-        return Text(text, style: TextStyle(color: tokens.textPrimary, fontSize: fontSize, height: 1.1));
+        return Text(
+          text,
+          style: TextStyle(color: glassText, fontSize: fontSize, height: 1.1),
+        );
       }
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           for (final c in chars)
-            Text(c, style: TextStyle(color: tokens.textPrimary, fontSize: fontSize, height: 1.1)),
+            Text(
+              c,
+              style: TextStyle(color: glassText, fontSize: fontSize, height: 1.1),
+            ),
         ],
       );
     }
@@ -1945,7 +1950,7 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         decoration: BoxDecoration(
-          color: tokens.surfaceInteractive.withValues(alpha: 0.5),
+          color: glassTextSoft.withValues(alpha: 0.16),
           borderRadius: BorderRadius.circular(4),
         ),
         child: verticalText(text),
