@@ -543,16 +543,6 @@ class _MainMenuPageState extends State<MainMenuPage>
     }
   }
 
-  /// 与主页背景一致的椭圆环基准色（深色偏淡蓝，Day 用 textPrimary）。
-  /// 透明度由 painter 内部控制（与主页 _DiagonalRingsPainter 一致）。
-  Color _homeRingLineColor(BuildContext context) {
-    final tokens = AppThemeTokens.of(context);
-    final isNight = Theme.of(context).brightness == Brightness.dark;
-    return isNight
-        ? Color.lerp(tokens.textPrimary, const Color(0xFF9DB7FF), 0.55)!
-        : tokens.textPrimary;
-  }
-
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -613,15 +603,6 @@ class _MainMenuPageState extends State<MainMenuPage>
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // 补全主页背景的大双层椭圆环（用主页宽度作逻辑宽度，
-                          // 使圆环跨两块面板连贯）。放最底，保持清晰可见。
-                          // （暂禁用排查：疑导致圆环透到角色卡/modules 封面）
-                          // CustomPaint(
-                          //   painter: _SettingsRingPainter(
-                          //     homeWidth: screenWidth,
-                          //     line: _homeRingLineColor(context),
-                          //   ),
-                          // ),
                           // 设置内容
                           SettingsMenuPage(
                             onStartNewUserGuide: _startNewUserGuide,
@@ -695,69 +676,4 @@ class _MainMenuPageState extends State<MainMenuPage>
     ),
     );
   }
-}
-
-/// 设置面板里的主页椭圆环延续 painter。
-///
-/// 主页背景（_HomeBackground）里有一组大双层椭圆环带（内环+外环），其右端
-/// 超出主页右边界被截断。设置面板在主页右侧相邻，这里用「主页宽度」作为
-/// 逻辑宽度重新画同一椭圆，并把主页坐标平移到设置面板局部坐标，从而补全
-/// 被主页边界截掉的那段圆环，让环带跨两块面板连贯。
-class _SettingsRingPainter extends CustomPainter {
-  final double homeWidth;
-  final Color line;
-  const _SettingsRingPainter({required this.homeWidth, required this.line});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // 椭圆在主页坐标系下的位置（与 _DiagonalRingsPainter 一致）。
-    final rect = Rect.fromLTWH(
-      homeWidth * 0.21,
-      size.height * 0.19,
-      homeWidth * 1.15,
-      size.height * 0.45,
-    );
-
-    canvas.save();
-    // 主页坐标系 → 设置面板局部坐标（设置面板在主页右侧，左缘 = homeWidth）。
-    canvas.translate(-homeWidth, 0);
-    canvas.translate(rect.center.dx, rect.center.dy);
-    canvas.rotate(-57 * math.pi / 180);
-
-    Rect ovalInset(double inset) => Rect.fromCenter(
-          center: Offset.zero,
-          width: rect.width + inset * 2,
-          height: rect.height + inset * 2,
-        );
-
-    Path oval(Rect r) => Path()..addOval(r);
-    final split = 30.0;
-    // 内侧深灰环：宽度约 12。
-    final innerRing = Path.combine(
-      PathOperation.difference,
-      oval(ovalInset(split)),
-      oval(ovalInset(split - 12)),
-    );
-    // 外侧浅灰环：稍厚。
-    final outerRing = Path.combine(
-      PathOperation.difference,
-      oval(ovalInset(split + 40)),
-      oval(ovalInset(split)),
-    );
-
-    final darkFill = Paint()
-      ..style = PaintingStyle.fill
-      ..color = line.withValues(alpha: 0.09);
-    final lightFill = Paint()
-      ..style = PaintingStyle.fill
-      ..color = line.withValues(alpha: 0.04);
-
-    canvas.drawPath(innerRing, darkFill);
-    canvas.drawPath(outerRing, lightFill);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _SettingsRingPainter oldDelegate) =>
-      oldDelegate.homeWidth != homeWidth || oldDelegate.line != line;
 }
