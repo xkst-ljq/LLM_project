@@ -86,7 +86,7 @@
 
 ### 第二梯队（跟随对齐，工作量中等）
 
-**④ `background_library_page.dart`**：页面级 UI 已令牌化（删除/成功）。编辑器内部（`Colors.grey` 底色/边框、调色板预设色）保留——调色板预设色是内容，编辑器通用底色/边框留待后续统一。
+**④ `background_library_page.dart`**：页面级 UI 已令牌化（删除/成功），详细编辑页深色模式已适配（区块底/边框/辅助文字/错误红都接入令牌）。调色板预设色、背景色块/预览渐变保留（内容）。
 
 **⑤ `prompt_settings_page.dart` / `user_settings_page.dart` / `api_config_page.dart` / `api_config_edit_page.dart`**：表单类页面，统一输入框、AppBar、背景。
 

@@ -85,6 +85,10 @@
   `success`，接入主题令牌（Day / Night 自动适配）
 - 背景编辑浮层遮罩、调色板预设色、背景预览的渐变/色块等保留原样
   （内容相关，令牌化会破坏观感）
+- 背景详细编辑页深色模式适配：区块底 `grey.shade200` → `surfaceElevated`、
+  边框 `grey.shade300` → `outline`、辅助文字/图标 `grey` → `textSecondary`、
+  `grey.shade400` → `textMuted`、名称错误提示红 → `danger`；两个方向
+  指示 painter 改为接收颜色参数（不再在 paint 里取 context）
 
 #### 世界书库页面级令牌化 & 词云封面
 

@@ -787,7 +787,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
             );
           }
         } catch (_) {}
-        return Container(color: Colors.grey[300]);
+        return Container(color: AppThemeTokens.of(context).surfaceInteractive);
       case 'gradient':
         try {
           final data = jsonDecode(bg.colorValue.isEmpty ? '{}' : bg.colorValue);
@@ -850,9 +850,9 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
             );
           }
         }
-        return Container(color: Colors.grey[300]);
+        return Container(color: AppThemeTokens.of(context).surfaceInteractive);
       default:
-        return Container(color: Colors.grey[300]);
+        return Container(color: AppThemeTokens.of(context).surfaceInteractive);
     }
   }
 }
@@ -999,7 +999,10 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
           width: 48,
           child: Text(
             label,
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
+            style: TextStyle(
+              fontSize: 11,
+              color: AppThemeTokens.of(context).textSecondary,
+            ),
           ),
         ),
         Expanded(
@@ -1028,7 +1031,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
             width: width,
             height: height,
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
+              border: Border.all(color: AppThemeTokens.of(context).outline),
             ),
             child: CustomPaint(
               painter: _GradientPreviewPainter(stops: _gradientStops),
@@ -1062,7 +1065,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                       decoration: BoxDecoration(
                         color: currentColor,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(color: AppThemeTokens.of(context).outline),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1169,7 +1172,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade300),
+                            border: Border.all(color: AppThemeTokens.of(context).outline),
                           ),
                           child: Stack(
                             clipBehavior: Clip.none,
@@ -1185,6 +1188,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                                     endLeft + circleSize / 2,
                                     endTop + circleSize / 2,
                                   ),
+                                  color: AppThemeTokens.of(context).textMuted,
                                 )
                                     : _SingleStopRadialPainter(
                                   center: Offset(
@@ -1202,6 +1206,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                                         startTop + circleSize / 2,
                                       ))
                                       .distance,
+                                  color: AppThemeTokens.of(context).textMuted,
                                 ),
                                 size: Size(boxWidth, boxHeight),
                               ),
@@ -1706,13 +1711,14 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
 
   Widget _buildTab(String label, String key, {bool isFirst = false}) {
     final isActive = _activeTab == key;
+    final tokens = AppThemeTokens.of(context);
     return GestureDetector(
       onTap: () => setState(() => _activeTab = key),
       child: Container(
         width: 50,
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         decoration: BoxDecoration(
-          color: isActive ? Colors.transparent : Colors.grey.shade200,
+          color: isActive ? Colors.transparent : tokens.surfaceElevated,
           borderRadius: isFirst && !isActive
               ? const BorderRadius.only(topRight: Radius.circular(8))
               : null,
@@ -1723,7 +1729,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
             style: TextStyle(
               fontSize: 12,
               fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              color: isActive ? Theme.of(context).primaryColor : Colors.grey,
+              color: isActive ? Theme.of(context).primaryColor : tokens.textSecondary,
             ),
           ),
         ),
@@ -1801,7 +1807,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                     ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: Container(
-                        color: Colors.grey.shade200,
+                        color: AppThemeTokens.of(context).surfaceElevated,
                         padding: const EdgeInsets.all(12),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -1812,7 +1818,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                               decoration: BoxDecoration(
                                 color: _pickedColor,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.grey.shade300),
+                                border: Border.all(color: AppThemeTokens.of(context).outline),
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -1950,7 +1956,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                           child: Container(
                             height: 40,
                             decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
+                              color: AppThemeTokens.of(context).surfaceElevated,
                               borderRadius: const BorderRadius.horizontal(
                                 left: Radius.circular(20),
                                 right: Radius.circular(20),
@@ -2113,7 +2119,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                                         width: 2,
                                       )
                                           : Border.all(
-                                        color: Colors.grey.shade400,
+                                        color: AppThemeTokens.of(context).textMuted,
                                         width: 1,
                                       ),
                                     ),
@@ -2138,10 +2144,10 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                             decoration: BoxDecoration(
                               color: _gradientSubTab == 'preview'
                                   ? Theme.of(context).scaffoldBackgroundColor
-                                  : Colors.grey.shade200,
+                                  : AppThemeTokens.of(context).surfaceElevated,
                               borderRadius: BorderRadius.circular(8),
                               border: _gradientSubTab == 'preview'
-                                  ? Border.all(color: Colors.grey.shade300)
+                                  ? Border.all(color: AppThemeTokens.of(context).outline)
                                   : null,
                             ),
                             child: Text(
@@ -2241,7 +2247,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                                   Icon(
                                     Icons.cloud_upload,
                                     size: 64,
-                                    color: Colors.grey.shade400,
+                                    color: AppThemeTokens.of(context).textMuted,
                                   ),
                                   const SizedBox(height: 16),
                                   ElevatedButton.icon(
@@ -2291,7 +2297,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                   children: [
                     const Text(
                       '背景名称',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textSecondary),
                     ),
                     if (_showNameError)
                       Padding(
@@ -2299,12 +2305,15 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.red.withAlpha(25),
+                            color: AppThemeTokens.of(context).danger.withAlpha(25),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             _nameErrorText,
-                            style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                            style: TextStyle(
+                              color: AppThemeTokens.of(context).danger,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ),
@@ -2314,7 +2323,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                       child: Icon(
                         _editingName ? Icons.check : Icons.edit,
                         size: 16,
-                        color: Colors.grey,
+                        color: AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                   ],
@@ -2345,7 +2354,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                   children: [
                     const Text(
                       '场景设定',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textSecondary),
                     ),
                     const SizedBox(width: 6),
                     GestureDetector(
@@ -2353,7 +2362,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                       child: Icon(
                         _editingDesc ? Icons.check : Icons.edit,
                         size: 16,
-                        color: Colors.grey,
+                        color: AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                   ],
@@ -2372,18 +2381,21 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                     : Center(
                   child: Text(
                     _descCtrl.text.isEmpty ? '暂无场景设定' : _descCtrl.text,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
-                      color: Colors.grey,
+                      color: AppThemeTokens.of(context).textSecondary,
                     ),
                     textAlign: TextAlign.center,
                   ),
                 ),
                 const SizedBox(height: 16),
                 if (widget.background.originalImagePath.isNotEmpty) ...[
-                  const Text(
+                  Text(
                     '原图预览',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppThemeTokens.of(context).textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   ClipRRect(
@@ -2416,13 +2428,18 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
 class _SingleStopLinePainter extends CustomPainter {
   final Offset start;
   final Offset end;
+  final Color color;
 
-  _SingleStopLinePainter({required this.start, required this.end});
+  _SingleStopLinePainter({
+    required this.start,
+    required this.end,
+    required this.color,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.grey.shade400
+      ..color = color
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
     canvas.drawLine(start, end, paint);
@@ -2435,14 +2452,19 @@ class _SingleStopLinePainter extends CustomPainter {
 class _SingleStopRadialPainter extends CustomPainter {
   final Offset center;
   final double radius;
+  final Color color;
 
-  _SingleStopRadialPainter({required this.center, required this.radius});
+  _SingleStopRadialPainter({
+    required this.center,
+    required this.radius,
+    required this.color,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (radius <= 0) return;
     final paint = Paint()
-      ..color = Colors.grey.shade400
+      ..color = color
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
     canvas.drawCircle(center, radius, paint);
