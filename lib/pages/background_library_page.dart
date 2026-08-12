@@ -1720,7 +1720,10 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
         width: 50,
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         decoration: BoxDecoration(
-          color: isActive ? Colors.transparent : tokens.surfaceElevated,
+          // 选中 tab 用半透明 accent 底 + 描边，让选中态醒目且不黑
+          color: isActive
+              ? tokens.accent.withValues(alpha: 0.18)
+              : tokens.surfaceElevated,
           borderRadius: isFirst && !isActive
               ? const BorderRadius.only(topRight: Radius.circular(8))
               : null,
@@ -1731,7 +1734,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
             style: TextStyle(
               fontSize: 12,
               fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              color: isActive ? Theme.of(context).primaryColor : tokens.textSecondary,
+              color: isActive ? tokens.accent : tokens.textSecondary,
             ),
           ),
         ),
