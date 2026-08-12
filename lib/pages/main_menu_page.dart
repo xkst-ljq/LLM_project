@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -615,41 +614,11 @@ class _MainMenuPageState extends State<MainMenuPage>
                         fit: StackFit.expand,
                         children: [
                           // 补全主页背景的大双层椭圆环（用主页宽度作逻辑宽度，
-                          // 使圆环跨两块面板连贯）。
+                          // 使圆环跨两块面板连贯）。放最底，保持清晰可见。
                           CustomPaint(
                             painter: _SettingsRingPainter(
                               homeWidth: screenWidth,
                               line: _homeRingLineColor(context),
-                            ),
-                          ),
-                          // 毛玻璃层：模糊下方椭圆环/背景，配合玻璃色渐变，
-                          // 让设置面板呈现磨砂玻璃质感（左侧更实、向右渐隐），
-                          // 衔接柔和不割裂。
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: ClipRect(
-                                child: BackdropFilter(
-                                  filter: ImageFilter.blur(
-                                    sigmaX: 14,
-                                    sigmaY: 14,
-                                  ),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.centerLeft,
-                                        end: Alignment.centerRight,
-                                        colors: [
-                                          AppThemeTokens.of(context)
-                                              .surfaceGlass
-                                              .withValues(alpha: 0.55),
-                                          Colors.transparent,
-                                        ],
-                                        stops: const [0.0, 0.6],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
                             ),
                           ),
                           // 设置内容
@@ -666,6 +635,28 @@ class _MainMenuPageState extends State<MainMenuPage>
                             promptSettingsTextKey: _promptSettingsTextKey,
                             backupTextKey: _backupTextKey,
                             tutorialTextKey: _tutorialTextKey,
+                          ),
+                          // 左侧柔和衔接蒙版：很淡的玻璃色 + 宽渐变（无模糊），
+                          // 只做衔接处的柔和过渡，不影响椭圆环与设置内容的辨识。
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                    colors: [
+                                      AppThemeTokens.of(context)
+                                          .surfaceGlass
+                                          .withValues(alpha: 0.28),
+                                      Colors.transparent,
+                                      Colors.transparent,
+                                    ],
+                                    stops: const [0.0, 0.45, 1.0],
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
