@@ -116,6 +116,8 @@
 - 修复聊天设置面板未撑满高度：分组区域改用 `Expanded` 撑满可滚动，面板占满半屏高度
 - 聊天设置面板背景改为毛玻璃底：`BackdropFilter` 模糊聊天背景 + 半透明白玻璃，透出背景模糊光影、与聊天主体协调并保证文字可读
 - 进入聊天设置页时，屏幕左半的聊天主体区域用高斯模糊遮盖（随滑出动画渐强，与主页做法一致），聊天主体被盖住不可点击
+- 第二梯队表单页令牌化：prompt_settings / user_settings / backup_restore / api_config(edit) 接入主题令牌，卡片改用共享 `SurfaceCard`
+- 删除无引用的 `settings_page.dart`（早期 API 设置雏形，已被 ApiConfigPage 取代）
 - 移除主页右缘的全屏渐变蒙版（疑导致背景椭圆环透到角色卡/modules 封面），保留呼吸分隔线做交界
 
 #### UI 模组库主题适配

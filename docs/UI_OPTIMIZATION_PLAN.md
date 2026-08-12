@@ -26,14 +26,14 @@
 |---|---|---|---|---|
 | `main_menu_page` / `home_experience_page` | 高 | 低 | 精致、成体系 | ✅ 已完成（基准） |
 | `chat_page` | 17 | ~101 | 旧、杂乱 | 🟢 核心区已令牌化（气泡/列表/输入栏） |
-| `character_library_page` | 2 | ~18 | 旧 | 🔴 第一梯队 |
+| `character_library_page` | 2 | ~18 | 旧 | 🟢 交互/转场 + 选中浮层已重设计 |
 | `world_book_library_page` | 3 | ~33 | 旧 | 🟢 页面级已令牌化（删除/成功/遮罩） |
-| `background_library_page` | 9 | ~105 | 旧 | 🟢 页面级已令牌化（删除/成功） |
-| `prompt_settings_page` | 1 | ~8 | 旧 | 🟠 第二梯队 |
-| `user_settings_page` | 0 | 0 | 简单 | 🟠 第二梯队 |
-| `backup_restore_page` | — | — | 旧 | 🟠 第二梯队 |
-| `api_config_page` / `api_config_edit_page` | — | — | 旧 | 🟠 第二梯队 |
-| `settings_page` | — | — | 极简雏形 | 🟠 第二梯队 |
+| `background_library_page` | 9 | ~105 | 旧 | 🟢 页面级 + 编辑页深色已令牌化 |
+| `prompt_settings_page` | — | ~8 | 旧 | 🟢 已令牌化（SurfaceCard/文字/警告） |
+| `user_settings_page` | — | 0 | 简单 | 🟢 已令牌化（SurfaceCard 卡片） |
+| `backup_restore_page` | — | — | 旧 | 🟢 已令牌化（SurfaceCard/文字/危险色） |
+| `api_config_page` / `api_config_edit_page` | — | — | 旧 | 🟢 已令牌化（删除/状态/错误提示） |
+| `settings_page` | — | — | 极简雏形 | ❌ 已删除（无引用，被 ApiConfigPage 取代） |
 | `character_assembly_page`（含 logic_* 系列） | 部分 | 多 | 复杂编辑器 | ⚪ 第三梯队（仅接轨） |
 | `ui_studio_page`（含 editors/*） | 部分 | 多 | 复杂编辑器 | ⚪ 第三梯队（仅接轨） |
 | `ui_asset_gallery`（UI 模组库） | — | ~11 | 固定色 | 🟢 已令牌化（卡片/文字/图标） |
@@ -47,8 +47,8 @@
 
 - **A. 主题令牌完整性**：确认 `app_theme_tokens.dart` 已覆盖所需角色（canvas / surface / surfaceElevated / surfaceGlass / outline / divider / textPrimary / textSecondary / textMuted / accent / accentSoft / radius* / elevation* / space* / stage）。缺失角色在令牌层补，不要在各页面 `withValues` 硬造。
 - **B. 统一页面脚手架 Widget**（可选，推荐新建）：一个 `AppSubPage` 包装，内部自动包 `SubPageBackdrop` + 统一 AppBar + 安全区，减少各页重复。
-- **C. 统一列表项 / 卡片组件**：`SurfaceCard`（surfaceElevated + radiusMedium + outline + elevationLow），供角色库 / 世界书 / 背景库复用。
-- **D. 统一空状态 / 加载 / 空按钮**组件，风格与主页对齐。
+- **C. 统一列表项 / 卡片组件**：✅ 已建 `lib/widgets/surface_card.dart`（毛玻璃 + 半透明表面 + 描边 + 圆角），已用于 user/prompt/backup 等表单页。
+- **D. 统一空状态 / 加载 / 空按钮**组件，风格与主页对齐。✅ 已建 `lib/widgets/empty_state.dart`（图标圆 + 标题 + 副标题 + 可选操作）。
 - **E. 代码规范辅助**：把"禁止硬编码颜色"写进 `.cursorrules` / `analysis_options.yaml` 的 lint，防止回归。
 
 ---
