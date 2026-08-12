@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 
 import '../services/background_service.dart';
 import '../services/tutorial_service.dart';
+import '../services/update_checker.dart';
 import '../shared/theme/app_theme_tokens.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/simple_page_guide_scope.dart';
@@ -77,6 +78,12 @@ class _MainMenuPageState extends State<MainMenuPage>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeShowNewUserGuideDialog();
+    });
+
+    // 启动后后台检查更新（延迟一点，避免与新人导览/首帧抢时间）。
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      UpdateChecker.checkAndPrompt(context);
     });
   }
 

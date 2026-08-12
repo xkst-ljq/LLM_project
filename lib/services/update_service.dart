@@ -1,0 +1,116 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// GitHub 仓库信息：发布 Release 时 tag 用 `vX.Y.Z` 格式。
+const String kUpdateRepoOwner = 'xkst-ljq';
+const String kUpdateRepoName = 'LLM_project';
+
+/// GitHub Release 下载 / 查看页。
+String kReleasePageUrl() =>
+    'https://github.com/$kUpdateRepoOwner/$kUpdateRepoName/releases/latest';
+
+/// 更新检查结果。
+class UpdateCheckResult {
+  final bool hasUpdate;
+  final String? latestTag; // 如 "v1.3.0"
+  final String? releaseUrl;
+  const UpdateCheckResult({
+    required this.hasUpdate,
+    this.latestTag,
+    this.releaseUrl,
+  });
+}
+
+/// 更新检测服务：获取当前版本 → 请求 GitHub 最新 Release → 比较。
+class UpdateService {
+  static const String _lastNotifiedKey = 'update_last_notified_version';
+
+  /// 读取当前应用版本号（如 "1.2.6"）。
+  static Future<String> _currentVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      return info.version;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// 解析版本字符串（去掉前导 v / V），返回 [major, minor, patch]。
+  static List<int> _parseVersion(String version) {
+    final v = version.trim().replaceFirst(RegExp(r'^[vV]'), '');
+    final parts = v.split('.');
+    return [
+      parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0,
+      parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
+      parts.length > 2 ? int.tryParse(parts[2]) ?? 0 : 0,
+    ];
+  }
+
+  /// a >= b 时返回 true。
+  static bool _versionGte(List<int> a, List<int> b) {
+    for (var i = 0; i < 3; i++) {
+      if (a[i] != b[i]) return a[i] > b[i];
+    }
+    return true;
+  }
+
+  /// 请求 GitHub 最新 Release。
+  ///
+  /// 返回 null 表示请求失败或没有 Release（网络异常 / 仓库私有 / 无 tag）。
+  static Future<Map<String, dynamic>?> _fetchLatestRelease() async {
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ),
+    );
+    final url = 'https://api.github.com/repos/'
+        '$kUpdateRepoOwner/$kUpdateRepoName/releases/latest';
+    try {
+      final resp = await dio.get<Map<String, dynamic>>(url);
+      if (resp.statusCode == 200) return resp.data;
+    } catch (_) {
+      // 网络失败 / 非 200（如没有 latest release）→ 无更新。
+    }
+    return null;
+  }
+
+  /// 检查是否有新版本。结果不做记忆，只做单次判断。
+  static Future<UpdateCheckResult> check() async {
+    final current = await _currentVersion();
+    final latest = await _fetchLatestRelease();
+    if (latest == null || current.isEmpty) {
+      return const UpdateCheckResult(hasUpdate: false);
+    }
+
+    final tagName = (latest['tag_name'] as String?) ?? '';
+    if (tagName.isEmpty) {
+      return const UpdateCheckResult(hasUpdate: false);
+    }
+
+    final hasUpdate = !_versionGte(_parseVersion(current), _parseVersion(tagName));
+    return UpdateCheckResult(
+      hasUpdate: hasUpdate,
+      latestTag: tagName,
+      releaseUrl: kReleasePageUrl(),
+    );
+  }
+
+  /// 是否该提醒（避免每次启动都弹）：距上次提醒的版本有更新才提醒。
+  static Future<bool> shouldNotify(UpdateCheckResult result) async {
+    if (!result.hasUpdate || result.latestTag == null) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final last = prefs.getString(_lastNotifiedKey) ?? '';
+    // 上次提醒过的 tag 与当前相同 → 不重复提醒。
+    return last != result.latestTag;
+  }
+
+  /// 标记某版本已提醒过。
+  static Future<void> markNotified(String tag) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastNotifiedKey, tag);
+  }
+}

@@ -77,6 +77,18 @@
 > 不执行酒馆脚本 / 正则 / 扩展插件，只做解析、映射与保留。
 > AI 智能归类与精修对照为后续增强（005-B/C）。
 
+### Added
+
+#### 版本更新检测
+
+- 新增 `UpdateService`：通过 `package_info_plus` 读取当前版本，用 dio 请求
+  GitHub Releases 最新版本并比较
+- 新增 `UpdateChecker`：发现新版时弹更新提醒，点「前往更新」用 `url_launcher`
+  跳转 GitHub Release 页面（本次为跳转网页方案，应用内自动更新留作后续）
+- 触发时机：启动后 3 秒后台检查一次（避免打扰，仅提醒一次）+ 设置页
+  「关于」分组新增「检查更新」手动入口
+- 用 `shared_preferences` 记忆已提醒版本，避免每次启动重复弹窗
+
 ### Changed
 
 #### 背景库页面级令牌化

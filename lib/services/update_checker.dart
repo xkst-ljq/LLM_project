@@ -1,0 +1,96 @@
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../shared/theme/app_theme_tokens.dart';
+import 'update_service.dart';
+
+/// 更新检查的 UI 封装：弹更新提醒、跳转 Release 页。
+class UpdateChecker {
+  /// 检查更新；有新版且需要提醒时弹出提示。
+  ///
+  /// [showUpToDate] 为 true 时，即使没更新也弹"已是最新版"（用于手动检查）。
+  static Future<void> checkAndPrompt(
+    BuildContext context, {
+    bool showUpToDate = false,
+  }) async {
+    if (!context.mounted) return;
+    final result = await UpdateService.check();
+
+    if (!context.mounted) return;
+
+    if (!result.hasUpdate) {
+      if (showUpToDate) {
+        _showUpToDate(context);
+      }
+      return;
+    }
+
+    // 需要提醒（未对该版本提醒过）才弹；弹完记忆该版本。
+    final shouldNotify = await UpdateService.shouldNotify(result);
+    if (context.mounted && shouldNotify) {
+      _showUpdateDialog(context, result);
+      await UpdateService.markNotified(result.latestTag!);
+    } else if (showUpToDate && context.mounted) {
+      // 手动检查时，即使已提醒过也显示"有新版本"。
+      _showUpdateDialog(context, result);
+    }
+  }
+
+  static void _showUpToDate(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.check_circle, color: tokens.success),
+        title: const Text('已是最新版本'),
+        content: const Text('当前已经是最新版本，无需更新。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('好的'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static void _showUpdateDialog(BuildContext context, UpdateCheckResult result) {
+    final tokens = AppThemeTokens.of(context);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.system_update_alt, color: tokens.accent),
+        title: const Text('发现新版本'),
+        content: Text(
+          '检测到新版本 ${result.latestTag ?? ''}。\n\n'
+          '点击「前往更新」将打开 GitHub Release 页面，可查看更新内容并下载。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('稍后'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _openReleasePage(result.releaseUrl);
+            },
+            child: const Text('前往更新'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Future<void> _openReleasePage(String? url) async {
+    final target = url ?? kReleasePageUrl();
+    try {
+      final uri = Uri.parse(target);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      // 打不开链接时静默失败。
+    }
+  }
+}

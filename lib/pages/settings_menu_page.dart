@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/update_checker.dart';
 import '../shared/theme/app_theme_tokens.dart';
 import '../widgets/sub_page_backdrop.dart';
 import 'api_config_page.dart';
@@ -270,6 +271,16 @@ class SettingsMenuPage extends StatelessWidget {
             _groupCard(
               context,
               items: [
+                _tile(
+                  context,
+                  icon: Icons.system_update_alt,
+                  title: '检查更新',
+                  subtitle: '查看是否有新版本',
+                  onTap: () => UpdateChecker.checkAndPrompt(
+                    context,
+                    showUpToDate: true,
+                  ),
+                ),
                 _tile(
                   context,
                   icon: Icons.info,
