@@ -6,6 +6,7 @@ import '../services/backup_service.dart';
 import '../services/android_download_service.dart';
 import '../shared/theme/app_theme_tokens.dart';
 import '../widgets/sub_page_backdrop.dart';
+import '../widgets/surface_card.dart';
 import '../utils/app_feedback.dart';
 
 class BackupRestorePage extends StatefulWidget {
@@ -86,9 +87,9 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   style: const TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   '你可以在文件管理器的 Download / LLM Project / Backups 中找到它。',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textMuted),
                 ),
               ] else ...[
                 const Text('备份已生成到应用目录：'),
@@ -98,9 +99,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   style: const TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   '如果你找不到该文件，请点击“分享/保存”导出到其他位置。',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppThemeTokens.of(context).textMuted,
+                  ),
                 ),
               ],
             ],
@@ -210,9 +214,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     '导入前建议先导出一次当前数据备份。',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppThemeTokens.of(context).textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -282,7 +289,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       title: Text(
         title,
         style: TextStyle(
-          color: sensitive && value ? Colors.red : null,
+          color: sensitive && value ? AppThemeTokens.of(context).danger : null,
           fontWeight: sensitive && value ? FontWeight.w600 : null,
         ),
       ),
@@ -302,15 +309,14 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
             child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
+              SurfaceCard(
+                child: Text(
                   '完整备份用于换包名、换手机或重装迁移。角色卡/背景卡的图片式分享建议后续单独在各自库内实现。',
-                  style: TextStyle(fontSize: 13, height: 1.4),
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: AppThemeTokens.of(context).textSecondary,
+                  ),
                 ),
               ),
               _sectionTitle('基础数据'),
@@ -395,7 +401,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
               ),
               if (_lastExportPath != null) ...[
                 const SizedBox(height: 12),
-                Text('上次导出：$_lastExportPath', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text('上次导出：$_lastExportPath', style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textMuted)),
               ],
               const SizedBox(height: 24),
               Container(

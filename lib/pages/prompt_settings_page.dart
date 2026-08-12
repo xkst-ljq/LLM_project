@@ -4,6 +4,7 @@ import '../models/prompt_settings.dart';
 import '../services/prompt_settings_service.dart';
 import '../shared/theme/app_theme_tokens.dart';
 import '../widgets/sub_page_backdrop.dart';
+import '../widgets/surface_card.dart';
 import 'prompt_preview_page.dart';
 
 class PromptSettingsPage extends StatefulWidget {
@@ -262,15 +263,14 @@ class _PromptSettingsPageState extends State<PromptSettingsPage> {
         ? '这里显示当前角色实际使用的 Prompt 策略。默认情况下角色使用全局默认策略；只有开启“当前角色使用单独 Prompt 策略”后，本页修改才只影响当前角色。'
         : '这里是全局默认 Prompt 策略。所有未开启单独策略的角色都会使用这里的配置。滑动条为推荐范围，右侧数字框可手动输入自定义数值。';
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return SurfaceCard(
       child: Text(
         text,
-        style: const TextStyle(fontSize: 13, height: 1.4),
+        style: TextStyle(
+          fontSize: 13,
+          height: 1.4,
+          color: AppThemeTokens.of(context).textSecondary,
+        ),
       ),
     );
   }
@@ -280,17 +280,17 @@ class _PromptSettingsPageState extends State<PromptSettingsPage> {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      margin: const EdgeInsets.only(top: 8, bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.blueGrey.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blueGrey.withValues(alpha: 0.16)),
-      ),
-      child: const Text(
-        '当前角色正在使用全局默认 Prompt 策略。若要只调整这个角色，请开启上方开关。',
-        style: TextStyle(fontSize: 13, height: 1.4),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SurfaceCard(
+        child: Text(
+          '当前角色正在使用全局默认 Prompt 策略。若要只调整这个角色，请开启上方开关。',
+          style: TextStyle(
+            fontSize: 13,
+            height: 1.4,
+            color: AppThemeTokens.of(context).textSecondary,
+          ),
+        ),
       ),
     );
   }
@@ -530,14 +530,17 @@ class _PromptNumberSliderTileState extends State<PromptNumberSliderTile> {
     final outOfRecommended =
         value < widget.recommendedMin || value > widget.recommendedMax;
 
+    final tokens = AppThemeTokens.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: widget.enabled ? Colors.grey.shade100 : Colors.grey.shade50,
+        color: tokens.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: outOfRecommended ? Colors.orange.shade300 : Colors.grey.shade200,
+          color: outOfRecommended
+              ? tokens.warning.withValues(alpha: 0.7)
+              : tokens.outline,
         ),
       ),
       child: Opacity(
@@ -605,12 +608,18 @@ class _PromptNumberSliderTileState extends State<PromptNumberSliderTile> {
               children: [
                 Text(
                   '${widget.min}',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppThemeTokens.of(context).textMuted,
+                  ),
                 ),
                 const Spacer(),
                 Text(
                   '${widget.max}',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppThemeTokens.of(context).textMuted,
+                  ),
                 ),
               ],
             ),
@@ -618,7 +627,10 @@ class _PromptNumberSliderTileState extends State<PromptNumberSliderTile> {
               const SizedBox(height: 6),
               Text(
                 '当前值超出推荐范围 ${widget.recommendedMin}~${widget.recommendedMax}，可能导致 token 开销异常或设定保持效果下降。',
-                style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppThemeTokens.of(context).warning,
+                ),
               ),
             ],
           ],
