@@ -1865,13 +1865,17 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
                           alignment: Alignment.topCenter,
                           child: glass(
                             shape: _DrawerShape.tag,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: cardW * 0.5,
-                                maxHeight: cardH * 0.66,
-                              ),
-                              child: _buildTags(tags, glassText: glassText, glassTextSoft: glassTextSoft),
-                            ),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: cardW * 0.5,
+                            maxHeight: cardH * 0.66,
+                          ),
+                          // 底部留出斜切空间，避免底面斜切切到标签。
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 22),
+                            child: _buildTags(tags, glassText: glassText, glassTextSoft: glassTextSoft),
+                          ),
+                        ),
                           ),
                         ),
                       );
