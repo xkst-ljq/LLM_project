@@ -1733,10 +1733,12 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
       return;
     }
     // 选中状态翻转：开 → 正向，关 → 反向。
+    // 反向用 from:1.0 强制从「完全展开」收起，避免快速切换时旧卡因为
+    // 尚未完全展开（value 很小）而收起几乎不可见、看起来像「直接消失」。
     if (widget.active && !oldWidget.active) {
       _controller.forward(from: 0);
     } else if (!widget.active && oldWidget.active) {
-      _controller.reverse();
+      _controller.reverse(from: 1.0);
     }
   }
 
