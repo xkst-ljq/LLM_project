@@ -1840,26 +1840,29 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
               ),
             );
 
-            // 标签：贴右上，仅右上角圆角，从上往下展开（scaleY，无外部位移）
-            final tagDrawer = Opacity(
-              opacity: t.clamp(0.0, 1.0),
-              child: Transform.scale(
-                scaleY: t.clamp(0.0, 1.0),
-                alignment: Alignment.topCenter,
-                child: glass(
-                  radius: BorderRadius.only(
-                    topRight: Radius.circular(cardRadius),
-                  ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: cardW * 0.5,
-                      maxHeight: cardH * 0.66,
+            // 标签：贴右上，仅右上角圆角，从上往下展开（scaleY，无外部位移）。
+            // 无标签时整个抽屉不渲染（否则玻璃片描边会残留一个小点）。
+            final tagDrawer = tags.isEmpty
+                ? const SizedBox.shrink()
+                : Opacity(
+                    opacity: t.clamp(0.0, 1.0),
+                    child: Transform.scale(
+                      scaleY: t.clamp(0.0, 1.0),
+                      alignment: Alignment.topCenter,
+                      child: glass(
+                        radius: BorderRadius.only(
+                          topRight: Radius.circular(cardRadius),
+                        ),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: cardW * 0.5,
+                            maxHeight: cardH * 0.66,
+                          ),
+                          child: _buildTags(tags, glassText: glassText, glassTextSoft: glassTextSoft),
+                        ),
+                      ),
                     ),
-                    child: _buildTags(tags, glassText: glassText, glassTextSoft: glassTextSoft),
-                  ),
-                ),
-              ),
-            );
+                  );
 
             // 介绍：贴左下，仅左下角圆角，从左往右展开（scaleX，无外部位移）
             final descDrawer = Opacity(
