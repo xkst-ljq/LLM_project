@@ -1412,8 +1412,8 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
         barrierDismissible: true,
         barrierColor: Colors.black54,
         barrierLabel: '关闭',
-        transitionDuration: const Duration(milliseconds: 350),
-        reverseTransitionDuration: const Duration(milliseconds: 300),
+        transitionDuration: const Duration(milliseconds: 220),
+        reverseTransitionDuration: const Duration(milliseconds: 180),
         pageBuilder: (_, _, _) => CharacterEditOverlay(
           character: character,
           cardRect: Rect.fromLTWH(cardLeft, cardTop, cardWidth, cardHeight),

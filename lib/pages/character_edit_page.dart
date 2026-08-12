@@ -59,7 +59,7 @@ class _CharacterEditOverlayState extends State<CharacterEditOverlay>
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 350),
+      duration: const Duration(milliseconds: 240),
     );
     _nameCtrl = TextEditingController(text: widget.character.name);
     _descCtrl = TextEditingController(text: widget.character.description);
