@@ -1762,155 +1762,165 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
     final glassTextSoft =
         isNight ? const Color(0xFF24263B) : Colors.white.withValues(alpha: 0.92);
 
-    // 卡片自身圆角
-    const cardRadius = 16.0;
+        // 卡片自身圆角
+        const cardRadius = 16.0;
+        // 梯形斜切量：贴边一侧拉长，另一侧向内斜切
+        const slant = 18.0;
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final t = _anim.value;
-        if (t <= 0.001 && !widget.active) {
-          // 未选中且动画已完成反向 → 完全隐藏，节省模糊开销。
-          return const SizedBox.shrink();
-        }
+        return AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final t = _anim.value;
+            if (t <= 0.001 && !widget.active) {
+              // 未选中且动画已完成反向 → 完全隐藏，节省模糊开销。
+              return const SizedBox.shrink();
+            }
 
-        Widget glass({
-          required Widget child,
-          required BorderRadius radius,
-          Border? border,
-        }) {
-          return ClipRRect(
-            borderRadius: radius,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: glassColor,
-                  borderRadius: radius,
-                  border: border ??
-                      Border.all(color: glassBorder),
+            // 梯形玻璃片：贴卡片边缘的一侧拉长成梯形，另一侧斜切。
+            // 填充用半透明玻璃色（BackdropFilter 提供模糊），描边用
+            // CustomPainter 沿梯形路径绘制。
+            Widget glass({required Widget child, required _DrawerShape shape}) {
+              return ClipPath(
+                clipper: _TrapezoidClipper(
+                  shape: shape,
+                  slant: slant,
+                  radius: cardRadius,
                 ),
-                child: child,
-              ),
-            ),
-          );
-        }
-
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final cardW = constraints.maxWidth;
-            final cardH = constraints.maxHeight;
-
-            final name = widget.character.name.isEmpty
-                ? '未命名'
-                : widget.character.name;
-            final tags = widget.character.meta.tags;
-            final desc = widget.character.description;
-
-            // 名字：贴左上，仅左上角圆角，从左往右展开（scaleX，无外部位移）
-            final nameDrawer = Opacity(
-              opacity: t.clamp(0.0, 1.0),
-              child: Transform.scale(
-                scaleX: t.clamp(0.0, 1.0),
-                alignment: Alignment.centerLeft,
-                child: glass(
-                  radius: BorderRadius.only(
-                    topLeft: Radius.circular(cardRadius),
-                  ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: cardW * 0.5),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Container(color: glassColor),
                       ),
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: glassText,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-
-            // 标签：贴右上，仅右上角圆角，从上往下展开（scaleY，无外部位移）。
-            // 无标签时整个抽屉不渲染（否则玻璃片描边会残留一个小点）。
-            final tagDrawer = tags.isEmpty
-                ? const SizedBox.shrink()
-                : Opacity(
-                    opacity: t.clamp(0.0, 1.0),
-                    child: Transform.scale(
-                      scaleY: t.clamp(0.0, 1.0),
-                      alignment: Alignment.topCenter,
-                      child: glass(
-                        radius: BorderRadius.only(
-                          topRight: Radius.circular(cardRadius),
-                        ),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: cardW * 0.5,
-                            maxHeight: cardH * 0.66,
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: CustomPaint(
+                            painter: _TrapezoidStrokePainter(
+                              shape: shape,
+                              slant: slant,
+                              radius: cardRadius,
+                              color: glassBorder,
+                            ),
                           ),
-                          child: _buildTags(tags, glassText: glassText, glassTextSoft: glassTextSoft),
                         ),
                       ),
-                    ),
-                  );
-
-            // 介绍：贴左下，仅左下角圆角，从左往右展开（scaleX，无外部位移）
-            final descDrawer = Opacity(
-              opacity: t.clamp(0.0, 1.0),
-              child: Transform.scale(
-                scaleX: t.clamp(0.0, 1.0),
-                alignment: Alignment.centerLeft,
-                child: glass(
-                  radius: BorderRadius.only(
-                    bottomLeft: Radius.circular(cardRadius),
-                  ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: cardW * 0.85),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      child: Text(
-                        desc.trim().isEmpty ? '暂无介绍' : desc,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: glassTextSoft,
-                          fontSize: 12,
-                          height: 1.25,
-                        ),
-                      ),
-                    ),
+                      child,
+                    ],
                   ),
                 ),
-              ),
-            );
+              );
+            }
 
-            return IgnorePointer(
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(top: 0, left: 0, child: nameDrawer),
-                  Positioned(top: 0, right: 0, child: tagDrawer),
-                  Positioned(bottom: 0, left: 0, child: descDrawer),
-                ],
-              ),
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final cardW = constraints.maxWidth;
+                final cardH = constraints.maxHeight;
+
+                final name = widget.character.name.isEmpty
+                    ? '未命名'
+                    : widget.character.name;
+                final tags = widget.character.meta.tags;
+                final desc = widget.character.description;
+
+                // 名字：贴左上，梯形（顶边贴顶拉长，右下斜切），从左往右展开
+                final nameDrawer = Opacity(
+                  opacity: t.clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scaleX: t.clamp(0.0, 1.0),
+                    alignment: Alignment.centerLeft,
+                    child: glass(
+                      shape: _DrawerShape.name,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: cardW * 0.5),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: glassText,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+
+                // 标签：贴右上，梯形（右边缘贴右拉长，左下斜切），从上往下展开。
+                // 无标签时整个抽屉不渲染（否则残留小点）。
+                final tagDrawer = tags.isEmpty
+                    ? const SizedBox.shrink()
+                    : Opacity(
+                        opacity: t.clamp(0.0, 1.0),
+                        child: Transform.scale(
+                          scaleY: t.clamp(0.0, 1.0),
+                          alignment: Alignment.topCenter,
+                          child: glass(
+                            shape: _DrawerShape.tag,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: cardW * 0.5,
+                                maxHeight: cardH * 0.66,
+                              ),
+                              child: _buildTags(tags, glassText: glassText, glassTextSoft: glassTextSoft),
+                            ),
+                          ),
+                        ),
+                      );
+
+                // 介绍：贴左下，梯形（底边贴底拉长，右上斜切），从左往右展开
+                final descDrawer = Opacity(
+                  opacity: t.clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scaleX: t.clamp(0.0, 1.0),
+                    alignment: Alignment.centerLeft,
+                    child: glass(
+                      shape: _DrawerShape.desc,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: cardW * 0.85),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          child: Text(
+                            desc.trim().isEmpty ? '暂无介绍' : desc,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: glassTextSoft,
+                              fontSize: 12,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+
+                return IgnorePointer(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(top: 0, left: 0, child: nameDrawer),
+                      Positioned(top: 0, right: 0, child: tagDrawer),
+                      Positioned(bottom: 0, left: 0, child: descDrawer),
+                    ],
+                  ),
+                );
+              },
             );
           },
         );
-      },
-    );
   }
 
   /// 标签垂直排版：每个标签文字竖排（字符自上而下），最多两列，超出 +x。
@@ -1991,4 +2001,107 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
       ),
     );
   }
+}
+
+/// 选中浮层抽屉的梯形形状。
+///
+/// 贴卡片边缘的那一侧拉长成梯形，另一侧斜切：
+/// - name：贴左上 → 顶边（贴顶）拉长，右下斜切
+/// - tag：贴右上 → 右边缘（贴右）拉长，左下斜切
+/// - desc：贴左下 → 底边（贴底）拉长，右上斜切
+enum _DrawerShape { name, tag, desc }
+
+/// 梯形裁剪器：按形状生成梯形 Path（贴边角保留卡片圆角）。
+class _TrapezoidClipper extends CustomClipper<Path> {
+  final _DrawerShape shape;
+  final double slant;
+  final double radius;
+  const _TrapezoidClipper({
+    required this.shape,
+    required this.slant,
+    required this.radius,
+  });
+
+  Path _buildPath(Size s) {
+    final w = s.width;
+    final h = s.height;
+    final r = radius;
+    final sl = slant;
+
+    switch (shape) {
+      case _DrawerShape.name:
+        // 贴左上：顶边全长（贴顶），右下斜切，左上圆角
+        return Path()
+          ..moveTo(0, r)
+          ..arcToPoint(Offset(r, 0), radius: Radius.circular(r))
+          ..lineTo(w, 0)
+          ..lineTo(w - sl, h)
+          ..lineTo(0, h)
+          ..close();
+      case _DrawerShape.tag:
+        // 贴右上：右边缘全长（贴右），左下斜切，右上圆角
+        return Path()
+          ..moveTo(w - r, 0)
+          ..arcToPoint(Offset(w, r), radius: Radius.circular(r))
+          ..lineTo(w, h)
+          ..lineTo(sl, h)
+          ..lineTo(0, 0)
+          ..close();
+      case _DrawerShape.desc:
+        // 贴左下：底边全长（贴底），右上斜切，左下圆角
+        return Path()
+          ..moveTo(0, 0)
+          ..lineTo(w - sl, 0)
+          ..lineTo(w, h)
+          ..lineTo(r, h)
+          ..arcToPoint(Offset(0, h - r), radius: Radius.circular(r))
+          ..close();
+    }
+  }
+
+  @override
+  Path getClip(Size size) => _buildPath(size);
+
+  @override
+  bool shouldReclip(covariant _TrapezoidClipper oldClipper) =>
+      oldClipper.shape != shape ||
+      oldClipper.slant != slant ||
+      oldClipper.radius != radius;
+}
+
+/// 梯形描边绘制器：沿梯形 Path 画描边（贴边角保留卡片圆角）。
+class _TrapezoidStrokePainter extends CustomPainter {
+  final _DrawerShape shape;
+  final double slant;
+  final double radius;
+  final Color color;
+  const _TrapezoidStrokePainter({
+    required this.shape,
+    required this.slant,
+    required this.radius,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final clipper = _TrapezoidClipper(
+      shape: shape,
+      slant: slant,
+      radius: radius,
+    );
+    canvas.drawPath(
+      clipper.getClip(size),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrapezoidStrokePainter oldDelegate) =>
+      oldDelegate.shape != shape ||
+      oldDelegate.slant != slant ||
+      oldDelegate.radius != radius ||
+      oldDelegate.color != color;
 }
