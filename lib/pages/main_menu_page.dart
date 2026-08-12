@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 
 import '../services/background_service.dart';
 import '../services/tutorial_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/simple_page_guide_scope.dart';
 import '../widgets/sub_page_backdrop.dart';
@@ -597,7 +598,7 @@ class _MainMenuPageState extends State<MainMenuPage>
                     width: panelW,
                     child: SubPageBackdrop(
                       child: Container(
-                      color: Theme.of(context).scaffoldBackgroundColor,
+                      color: AppThemeTokens.of(context).surfaceElevated,
                       child: SettingsMenuPage(
                         onStartNewUserGuide: _startNewUserGuide,
                         onStartSettingsGuide: _startSettingsGuide,

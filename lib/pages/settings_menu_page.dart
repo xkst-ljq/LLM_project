@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../shared/theme/app_theme_manager.dart';
+import '../shared/theme/app_theme_tokens.dart';
+import '../widgets/sub_page_backdrop.dart';
 import 'api_config_page.dart';
 import 'backup_restore_page.dart';
 import 'prompt_settings_page.dart';
@@ -40,125 +42,259 @@ class SettingsMenuPage extends StatelessWidget {
     this.tutorialTextKey,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final themeManager = context.watch<AppThemeManager>();
-
-    return SafeArea(
+  /// 玻璃分组卡片：一组设置项 + 可选组标题。
+  Widget _groupCard(BuildContext context, {String? title, required List<Widget> items}) {
+    final tokens = AppThemeTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              '设置',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-          ),
-          const Divider(),
-          Container(
-            key: apiConfigTileKey,
-            child: ListTile(
-              leading: const Icon(Icons.api),
-              title: Text('API 配置', key: apiConfigTextKey),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ApiConfigPage()),
-                );
-              },
-            ),
-          ),
-          Container(
-            key: userSettingsTileKey,
-            child: ListTile(
-              leading: const Icon(Icons.person),
-              title: Text('用户设定', key: userSettingsTextKey),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const UserSettingsPage()),
-                );
-              },
-            ),
-          ),
-          Container(
-            key: promptSettingsTileKey,
-            child: ListTile(
-              leading: const Icon(Icons.tune),
-              title: Text('Prompt 策略', key: promptSettingsTextKey),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const PromptSettingsPage()),
-                );
-              },
-            ),
-          ),
-          Container(
-            key: backupTileKey,
-            child: ListTile(
-              leading: const Icon(Icons.backup),
-              title: Text('备份与恢复', key: backupTextKey),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const BackupRestorePage()),
-                );
-              },
-            ),
-          ),
-          Container(
-            key: tutorialTileKey,
-            child: ListTile(
-              leading: const Icon(Icons.school_outlined),
-              title: Text('教程与导览', key: tutorialTextKey),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => TutorialHomePage(
-                      onStartNewUserGuide: onStartNewUserGuide,
-                      onStartSettingsGuide: onStartSettingsGuide,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          ListTile(
-            leading: Icon(
-              themeManager.isNight
-                  ? Icons.dark_mode_outlined
-                  : Icons.light_mode_outlined,
-            ),
-            title: const Text('界面主题'),
-            subtitle: Text(
-              themeManager.isNight ? 'Night · 沉浸模式' : 'Day · 清晰模式',
-            ),
-            trailing: Switch(
-              value: themeManager.isNight,
-              onChanged: (_) => themeManager.toggle(),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.palette),
-            title: const Text('UI 创作工作室'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const UIStudioPage(),
+          if (title != null) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                  color: tokens.textMuted,
                 ),
-              );
-            },
-          ),
-          const Divider(),
-          const ListTile(
-            leading: Icon(Icons.info),
-            title: Text('关于'),
+              ),
+            ),
+          ],
+          SubPageBlurBackdrop(
+            child: Column(children: items),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 带图标色块的设置项。
+  Widget _tile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    Key? tileKey,
+    Key? textKey,
+    VoidCallback? onTap,
+    Widget? trailing,
+  }) {
+    final tokens = AppThemeTokens.of(context);
+    return InkWell(
+      key: tileKey,
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: tokens.accent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18, color: tokens.accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    key: textKey,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: tokens.textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: tokens.textMuted,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (trailing != null) trailing,
+            if (onTap != null && trailing == null)
+              Icon(Icons.chevron_right, size: 18, color: tokens.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final themeManager = context.watch<AppThemeManager>();
+    final tokens = AppThemeTokens.of(context);
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '设置',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: tokens.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // 连接与数据
+            _groupCard(
+              context,
+              title: '连接与数据',
+              items: [
+                _tile(
+                  context,
+                  tileKey: apiConfigTileKey,
+                  textKey: apiConfigTextKey,
+                  icon: Icons.api,
+                  title: 'API 配置',
+                  subtitle: '服务地址与密钥',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ApiConfigPage()),
+                    );
+                  },
+                ),
+                _tile(
+                  context,
+                  tileKey: backupTileKey,
+                  textKey: backupTextKey,
+                  icon: Icons.backup,
+                  title: '备份与恢复',
+                  subtitle: '导出与导入全部数据',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BackupRestorePage()),
+                    );
+                  },
+                ),
+              ],
+            ),
+
+            // 角色与内容
+            _groupCard(
+              context,
+              title: '角色与内容',
+              items: [
+                _tile(
+                  context,
+                  tileKey: userSettingsTileKey,
+                  textKey: userSettingsTextKey,
+                  icon: Icons.person,
+                  title: '用户设定',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UserSettingsPage()),
+                    );
+                  },
+                ),
+                _tile(
+                  context,
+                  tileKey: promptSettingsTileKey,
+                  textKey: promptSettingsTextKey,
+                  icon: Icons.tune,
+                  title: 'Prompt 策略',
+                  subtitle: '注入与分频策略',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PromptSettingsPage()),
+                    );
+                  },
+                ),
+              ],
+            ),
+
+            // 外观与创作
+            _groupCard(
+              context,
+              title: '外观与创作',
+              items: [
+                _tile(
+                  context,
+                  icon: themeManager.isNight
+                      ? Icons.dark_mode_outlined
+                      : Icons.light_mode_outlined,
+                  title: '界面主题',
+                  subtitle: themeManager.isNight ? 'Night · 沉浸模式' : 'Day · 清晰模式',
+                  trailing: Switch(
+                    value: themeManager.isNight,
+                    onChanged: (_) => themeManager.toggle(),
+                  ),
+                ),
+                _tile(
+                  context,
+                  icon: Icons.palette,
+                  title: 'UI 创作工作室',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const UIStudioPage(),
+                      ),
+                    );
+                  },
+                ),
+                _tile(
+                  context,
+                  tileKey: tutorialTileKey,
+                  textKey: tutorialTextKey,
+                  icon: Icons.school_outlined,
+                  title: '教程与导览',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TutorialHomePage(
+                          onStartNewUserGuide: onStartNewUserGuide,
+                          onStartSettingsGuide: onStartSettingsGuide,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+
+            // 关于
+            _groupCard(
+              context,
+              items: [
+                _tile(
+                  context,
+                  icon: Icons.info,
+                  title: '关于',
+                  subtitle: 'LLM Project',
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

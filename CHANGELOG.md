@@ -99,6 +99,12 @@
 - 渐变编辑器「预览」选中标签优化：文字/边框/背景改用 `accent` 系，
   深色下预览页选中标签清晰可见
 
+#### 主页设置面板优化（玻璃分组卡片）
+
+- 设置项按「连接与数据 / 角色与内容 / 外观与创作 / 关于」分组
+- 每组用玻璃质感卡片（`SubPageBlurBackdrop`），图标带 accent 色块底
+- 面板底色 `scaffoldBackgroundColor(canvas)` → `surfaceElevated`，与主页玻璃风格统一
+
 #### UI 模组库主题适配
 
 - 复合组件卡片背景 `white` → `surfaceElevated`、边框 → `outline`、
