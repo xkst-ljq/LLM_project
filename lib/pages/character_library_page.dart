@@ -1163,7 +1163,8 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
 
     final firstVisible = _visibleCharacters.isNotEmpty ? _visibleCharacters.first : null;
     final firstCardRect = firstVisible != null
-        ? (_rectForKey(_cardKeys[firstVisible.id]) ?? _fallbackCardRect(context))
+        ? (_rectForKey(_cardKeys.putIfAbsent(firstVisible.id, () => GlobalKey())) ??
+            _fallbackCardRect(context))
         : _fallbackCardRect(context);
     targets.add(
       PageGuideTarget(
