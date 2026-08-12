@@ -4,6 +4,7 @@ import '../models/user_profile.dart';
 import '../services/user_service.dart';
 import '../services/image_pick_service.dart';
 import '../widgets/sub_page_backdrop.dart';
+import '../widgets/surface_card.dart';
 
 class UserSettingsPage extends StatefulWidget {
   const UserSettingsPage({super.key});
@@ -73,24 +74,39 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
         ],
       ),
       body: SubPageBackdrop(
-        child: Padding(
+        child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            GestureDetector(
-              onTap: _pickAvatar,
-              child: CircleAvatar(
-                radius: 40,
-                backgroundImage: _avatarPath.isNotEmpty ? FileImage(File(_avatarPath)) : null,
-                child: _avatarPath.isEmpty ? const Icon(Icons.person, size: 50) : null,
+            SurfaceCard(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: _pickAvatar,
+                    child: CircleAvatar(
+                      radius: 40,
+                      backgroundImage: _avatarPath.isNotEmpty
+                          ? FileImage(File(_avatarPath))
+                          : null,
+                      child: _avatarPath.isEmpty
+                          ? const Icon(Icons.person, size: 50)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _pickAvatar,
+                    child: const Text('更换头像'),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            TextButton(onPressed: _pickAvatar, child: const Text('更换头像')),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: '用户昵称'),
+            SurfaceCard(
+              child: TextField(
+                controller: _nameCtrl,
+                decoration: const InputDecoration(labelText: '用户昵称'),
+              ),
             ),
           ],
         ),
