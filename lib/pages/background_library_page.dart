@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../models/background_card.dart';
 import '../services/background_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -324,7 +325,11 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(
                     children: [
-                      const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      Icon(
+                        Icons.check_circle,
+                        color: AppThemeTokens.of(ctx).success,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(child: Text(e)),
                     ],
@@ -430,10 +435,13 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
             ),
             if (!bg.isPreset)
               ListTile(
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text(
+                leading: Icon(
+                  Icons.delete,
+                  color: AppThemeTokens.of(ctx).danger,
+                ),
+                title: Text(
                   '删除背景',
-                  style: TextStyle(color: Colors.red),
+                  style: TextStyle(color: AppThemeTokens.of(ctx).danger),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -605,7 +613,10 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
               _loadBackgrounds();
               _expandedIds.remove(bg.id);
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text(
+              '删除',
+              style: TextStyle(color: AppThemeTokens.of(ctx).danger),
+            ),
           ),
         ],
       ),

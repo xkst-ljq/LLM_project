@@ -28,7 +28,7 @@
 | `chat_page` | 17 | ~101 | 旧、杂乱 | 🟢 核心区已令牌化（气泡/列表/输入栏） |
 | `character_library_page` | 2 | ~18 | 旧 | 🔴 第一梯队 |
 | `world_book_library_page` | 3 | ~33 | 旧 | 🟢 页面级已令牌化（删除/成功/遮罩） |
-| `background_library_page` | 5 | ~105 | 旧 | 🟠 第二梯队 |
+| `background_library_page` | 9 | ~105 | 旧 | 🟢 页面级已令牌化（删除/成功） |
 | `prompt_settings_page` | 1 | ~8 | 旧 | 🟠 第二梯队 |
 | `user_settings_page` | 0 | 0 | 简单 | 🟠 第二梯队 |
 | `backup_restore_page` | — | — | 旧 | 🟠 第二梯队 |
@@ -86,7 +86,7 @@
 
 ### 第二梯队（跟随对齐，工作量中等）
 
-**④ `background_library_page.dart`**：硬编码最多（~105），重点是把颜色/圆角/间距接入令牌；注意背景缩略图与预览的对比度。
+**④ `background_library_page.dart`**：页面级 UI 已令牌化（删除/成功）。编辑器内部（`Colors.grey` 底色/边框、调色板预设色）保留——调色板预设色是内容，编辑器通用底色/边框留待后续统一。
 
 **⑤ `prompt_settings_page.dart` / `user_settings_page.dart` / `api_config_page.dart` / `api_config_edit_page.dart`**：表单类页面，统一输入框、AppBar、背景。
 
