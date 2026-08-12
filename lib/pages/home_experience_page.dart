@@ -1131,15 +1131,13 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
             Positioned(
               // 主页右缘的细呼吸光带：铺满整个高度，作为主页与设置面板
               // 交界处的柔和装饰分隔线（取代原来右下角的细短呼吸灯）。
+              // 亮度由 _EdgeGestureHint 内部控制（细线低、发光源高）。
               top: 0,
               bottom: 0,
               right: 0,
-              child: Opacity(
-                opacity: 0.52,
-                child: _EdgeGestureHint(
-                  accent: tokens.accent,
-                  line: lineSoft.withValues(alpha: 0.6),
-                ),
+              child: _EdgeGestureHint(
+                accent: tokens.accent,
+                line: lineSoft.withValues(alpha: 0.6),
               ),
             ),
             Positioned(
@@ -3021,60 +3019,46 @@ class _EdgeGestureHintState extends State<_EdgeGestureHint>
       animation: _controller,
       builder: (context, child) {
         final phase = _controller.value;
-        // 呼吸脉冲：0.15（低强度）到 0.9（高强度），整体强度下降、更慢。
+        // 呼吸脉冲：0.1（低）到 1.0（高），用于发光源的强度。
         double pulse;
         if (phase < 0.72) {
-          pulse = 0.15;
+          pulse = 0.10;
         } else if (phase < 0.86) {
-          pulse = 0.15 + 0.75 * (phase - 0.72) / 0.14;
+          pulse = 0.10 + 0.90 * (phase - 0.72) / 0.14;
         } else {
-          pulse = 0.90 - 0.75 * (phase - 0.86) / 0.14;
+          pulse = 1.00 - 0.90 * (phase - 0.86) / 0.14;
         }
-        // 整条低强度细线 + 中间一段高强度呼吸发光线，都贴右边界。
+        // 一条 1px 细线贴右边界 + 中间一段高强度呼吸发光源（同样贴右边界）。
         return IgnorePointer(
-          child: Container(
-            width: 15,
+          child: SizedBox(
+            width: 1,
             height: double.infinity,
-            decoration: BoxDecoration(
-              border: Border(right: BorderSide(color: widget.line)),
-            ),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Stack(
-                fit: StackFit.expand,
-                clipBehavior: Clip.none,
-                children: [
-                  // 低强度整条细线（背景分隔线）。
-                  Container(
-                    width: 1,
-                    height: double.infinity,
-                    color: widget.accent.withValues(alpha: 0.10),
-                  ),
-                  // 中间一段高强度呼吸发光线：占约 22% 高度、居中。
-                  FractionallySizedBox(
-                    alignment: Alignment.center,
-                    widthFactor: 1.0,
-                    heightFactor: 0.22,
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Container(
-                        width: 1,
-                        height: double.infinity,
-                        decoration: BoxDecoration(
-                          color: glowColor.withValues(alpha: 0.35 + 0.55 * pulse),
-                          boxShadow: [
-                            BoxShadow(
-                              color: glowColor.withValues(alpha: 0.45 * pulse),
-                              blurRadius: 8,
-                              spreadRadius: 1,
-                            ),
-                          ],
+            child: Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.none,
+              children: [
+                // 整条低强度细线（背景分隔线）。
+                ColoredBox(color: widget.line.withValues(alpha: 0.7)),
+                // 中间一段呼吸发光源：占约 22% 高度、垂直居中，贴右边界，
+                // 光晕向右侧发散（Clip.none 允许溢出线宽）。
+                FractionallySizedBox(
+                  alignment: Alignment.center,
+                  widthFactor: 1.0,
+                  heightFactor: 0.22,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: glowColor.withValues(alpha: 0.55 + 0.45 * pulse),
+                      boxShadow: [
+                        BoxShadow(
+                          color: glowColor.withValues(alpha: 0.55 * pulse),
+                          blurRadius: 18,
+                          spreadRadius: 3,
                         ),
-                      ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );
