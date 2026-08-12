@@ -2039,13 +2039,15 @@ class _TrapezoidClipper extends CustomClipper<Path> {
           ..lineTo(0, h)
           ..close();
       case _DrawerShape.tag:
-        // 贴右上：右边缘全长（贴右），左下斜切，右上圆角
+        // 贴右上：右边缘全长（贴右，右侧贴面），底面斜切，右上圆角。
+        // 形状：(0,0) 左上 → 顶边 → 圆右上角 → 右边缘到 (w,h) →
+        //        底面斜切到 (0, h-sl) → 左边缘竖直闭合。
         return Path()
-          ..moveTo(w - r, 0)
+          ..moveTo(0, 0)
+          ..lineTo(w - r, 0)
           ..arcToPoint(Offset(w, r), radius: Radius.circular(r))
           ..lineTo(w, h)
-          ..lineTo(sl, h)
-          ..lineTo(0, 0)
+          ..lineTo(0, h - sl)
           ..close();
       case _DrawerShape.desc:
         // 贴左下：底边全长（贴底），右上斜切，左下圆角
