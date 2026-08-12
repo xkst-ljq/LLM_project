@@ -636,25 +636,34 @@ class _MainMenuPageState extends State<MainMenuPage>
                             backupTextKey: _backupTextKey,
                             tutorialTextKey: _tutorialTextKey,
                           ),
-                          // 左侧柔和衔接蒙版：很淡的玻璃色 + 宽渐变（无模糊），
-                          // 只做衔接处的柔和过渡，不影响椭圆环与设置内容的辨识。
+                          // 左侧柔和衔接蒙版：过渡带拉满整页宽度（更多缓冲），
+                          // 用浅紫→浅粉的柔色渐变弱化灰色的脏感，向右平滑渐隐。
                           Positioned.fill(
                             child: IgnorePointer(
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.centerLeft,
-                                    end: Alignment.centerRight,
-                                    colors: [
-                                      AppThemeTokens.of(context)
-                                          .surfaceGlass
-                                          .withValues(alpha: 0.28),
-                                      Colors.transparent,
-                                      Colors.transparent,
-                                    ],
-                                    stops: const [0.0, 0.45, 1.0],
-                                  ),
-                                ),
+                              child: Builder(
+                                builder: (ctx) {
+                                  final isNight =
+                                      Theme.of(ctx).brightness == Brightness.dark;
+                                  final soft =
+                                      AppThemeTokens.of(ctx).accentSoft;
+                                  final pink = isNight
+                                      ? const Color(0xFF4A3A5E)
+                                      : const Color(0xFFF6E2EC);
+                                  return DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.centerLeft,
+                                        end: Alignment.centerRight,
+                                        colors: [
+                                          soft.withValues(alpha: 0.42),
+                                          pink.withValues(alpha: 0.20),
+                                          Colors.transparent,
+                                        ],
+                                        stops: const [0.0, 0.55, 1.0],
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ),
