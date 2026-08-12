@@ -32,6 +32,7 @@ import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
 import '../services/ui_engine/status_notification.dart';
 import '../widgets/status_notification_layer.dart';
+import '../widgets/sub_page_backdrop.dart';
 import '../services/user_service.dart';
 import '../utils/protagonist_setting_utils.dart';
 import '../widgets/chat_assembly_mount.dart';
@@ -4887,78 +4888,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                             width: panelW,
                             child: Container(
                               color: Theme.of(context).scaffoldBackgroundColor,
-                              child: Column(
-                                children: [
-                                  AppBar(
-                                    title: const Text('聊天设置'),
-                                    automaticallyImplyLeading: false,
-                                  ),
-                                  Expanded(
-                                    child: ListView(
-                                      children: [
-                                        ListTile(
-                                          leading: const Icon(Icons.person),
-                                          title: const Text('用户设定'),
-                                          onTap: () {
-                                            if (_currentCharacter == null) return;
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    RoleUserSettingsPage(
-                                                      character: _currentCharacter!,
-                                                    ),
-                                              ),
-                                            ).then((_) => _loadUser()); // 返回后刷新
-                                          },
-                                        ),
-                                        ListTile(
-                                          leading: const Icon(Icons.tune),
-                                          title: const Text('Prompt 策略'),
-                                          onTap: () {
-                                            if (_currentCharacter == null) return;
-
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) => PromptSettingsPage(
-                                                  characterId: _currentCharacter!.id,
-                                                  characterName: _currentCharacter!.name,
-                                                  buildPreview: _buildPromptPreviewData,
-                                                ),
-                                              ),
-                                            ).then((_) => _loadPromptSettings());
-                                          },
-                                        ),
-                                        ListTile(
-                                          leading: const Icon(Icons.image),
-                                          title: const Text('背景设置'),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              PageRouteBuilder(
-                                                opaque: false,
-                                                // 透明路由
-                                                transitionDuration: Duration.zero,
-                                                // 无过渡动画（由内部自己做动画）
-                                                pageBuilder: (_, _, _) =>
-                                                    BackgroundPickerSheet(
-                                                      character: _currentCharacter,
-                                                    ),
-                                              ),
-                                            ).then((_) => setState(() {}));
-                                          },
-                                        ),
-                                        ListTile(
-                                          leading: const Icon(Icons.clear_all),
-                                          title: const Text('清空历史'),
-                                          onTap: _clearHistoryWithOptions,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              child: _buildChatSettingsPanel(),
                             ),
                           ),
                         ],
@@ -6493,6 +6423,169 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             setState(() => _isLoading = false);
           },
         );
+  }
+
+  /// 聊天页右侧设置面板：玻璃分组卡片风格（与主页设置页一致）。
+  Widget _buildChatSettingsPanel() {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '聊天设置',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: AppThemeTokens.of(context).textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // 角色与内容
+            _chatSettingGroup(
+              title: '角色与内容',
+              items: [
+                _chatSettingTile(
+                  icon: Icons.person,
+                  title: '用户设定',
+                  onTap: () {
+                    if (_currentCharacter == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RoleUserSettingsPage(
+                          character: _currentCharacter!,
+                        ),
+                      ),
+                    ).then((_) => _loadUser());
+                  },
+                ),
+                _chatSettingTile(
+                  icon: Icons.tune,
+                  title: 'Prompt 策略',
+                  onTap: () {
+                    if (_currentCharacter == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PromptSettingsPage(
+                          characterId: _currentCharacter!.id,
+                          characterName: _currentCharacter!.name,
+                          buildPreview: _buildPromptPreviewData,
+                        ),
+                      ),
+                    ).then((_) => _loadPromptSettings());
+                  },
+                ),
+              ],
+            ),
+            // 外观与数据
+            _chatSettingGroup(
+              title: '外观与数据',
+              items: [
+                _chatSettingTile(
+                  icon: Icons.image,
+                  title: '背景设置',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      PageRouteBuilder(
+                        opaque: false,
+                        transitionDuration: Duration.zero,
+                        pageBuilder: (_, _, _) =>
+                            BackgroundPickerSheet(
+                              character: _currentCharacter,
+                            ),
+                      ),
+                    ).then((_) => setState(() {}));
+                  },
+                ),
+                _chatSettingTile(
+                  icon: Icons.clear_all,
+                  title: '清空历史',
+                  isDestructive: true,
+                  onTap: _clearHistoryWithOptions,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 聊天设置的分组玻璃卡片。
+  Widget _chatSettingGroup({String? title, required List<Widget> items}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (title != null) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                  color: AppThemeTokens.of(context).textMuted,
+                ),
+              ),
+            ),
+          ],
+          SubPageBlurBackdrop(
+            child: Column(children: items),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 聊天设置的单个设置项（图标色块 + 标题 + 箭头/危险色）。
+  Widget _chatSettingTile({
+    required IconData icon,
+    required String title,
+    VoidCallback? onTap,
+    bool isDestructive = false,
+  }) {
+    final tokens = AppThemeTokens.of(context);
+    final accentColor = isDestructive ? tokens.danger : tokens.accent;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18, color: accentColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: tokens.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            if (onTap != null)
+              Icon(Icons.chevron_right, size: 18, color: tokens.textMuted),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildChatSkeleton() {
