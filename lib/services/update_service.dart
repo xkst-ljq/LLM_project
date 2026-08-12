@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,14 +36,22 @@ class UpdateService {
     }
   }
 
-  /// 解析版本字符串（去掉前导 v / V），返回 [major, minor, patch]。
+  /// 解析版本字符串，返回 [major, minor, patch]。
+  ///
+  /// 兼容多种 tag 格式：`v1.2.6`、`1.2.6`、`1.26-demo`、`1.2.5-beta.2`。
+  /// 每段取**前导数字**（如 `26-demo` → 26），非数字段按 0 处理。
   static List<int> _parseVersion(String version) {
     final v = version.trim().replaceFirst(RegExp(r'^[vV]'), '');
     final parts = v.split('.');
+    int seg(String s) {
+      final m = RegExp(r'^\d+').firstMatch(s);
+      return m == null ? 0 : int.tryParse(m.group(0)!) ?? 0;
+    }
+
     return [
-      parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0,
-      parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
-      parts.length > 2 ? int.tryParse(parts[2]) ?? 0 : 0,
+      parts.isNotEmpty ? seg(parts[0]) : 0,
+      parts.length > 1 ? seg(parts[1]) : 0,
+      parts.length > 2 ? seg(parts[2]) : 0,
     ];
   }
 
