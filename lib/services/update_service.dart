@@ -71,19 +71,35 @@ class UpdateService {
   ///
   /// 返回 null 表示请求失败或没有 Release（网络异常 / 仓库私有 / 无 tag）。
   static Future<Map<String, dynamic>?> _fetchLatestRelease() async {
+    final apiPath = 'api.github.com/repos/'
+        '$kUpdateRepoOwner/$kUpdateRepoName/releases/latest';
+    // 直连失败时依次尝试的镜像前缀（均为 GitHub API 的代理）。
+    const mirrors = <String>[
+      'https://ghproxy.com/https://',
+      'https://mirror.ghproxy.com/https://',
+    ];
+
+    final urls = <String>[
+      'https://$apiPath',
+      for (final m in mirrors) '$m$apiPath',
+    ];
+
     final dio = Dio(
       BaseOptions(
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
       ),
     );
-    final url = 'https://api.github.com/repos/'
-        '$kUpdateRepoOwner/$kUpdateRepoName/releases/latest';
-    try {
-      final resp = await dio.get<Map<String, dynamic>>(url);
-      if (resp.statusCode == 200) return resp.data;
-    } catch (_) {
-      // 网络失败 / 非 200（如没有 latest release）→ 无更新。
+
+    for (final url in urls) {
+      try {
+        final resp = await dio.get<Map<String, dynamic>>(url);
+        if (resp.statusCode == 200 && resp.data != null) {
+          return resp.data;
+        }
+      } catch (_) {
+        // 当前源失败 → 试下一个。
+      }
     }
     return null;
   }
