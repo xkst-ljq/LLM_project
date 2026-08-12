@@ -89,6 +89,11 @@
   边框 `grey.shade300` → `outline`、辅助文字/图标 `grey` → `textSecondary`、
   `grey.shade400` → `textMuted`、名称错误提示红 → `danger`；两个方向
   指示 painter 改为接收颜色参数（不再在 paint 里取 context）
+- 编辑面板容器底色 `scaffoldBackgroundColor(canvas)` → `surfaceElevated`，
+  深色模式下与背景库的深色 canvas 拉开层次
+- 修复深色下「文字太黑看不见」：渐变编辑器「预览」标签非激活色
+  `black54`、添加色点按钮图标 `black54` → `textSecondary`（深色下亮灰），
+  添加按钮底 `#E0E0E0` → `surfaceInteractive`
 
 #### 世界书库页面级令牌化 & 词云封面
 

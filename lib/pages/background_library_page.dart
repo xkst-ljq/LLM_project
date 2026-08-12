@@ -1671,7 +1671,9 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Theme.of(context).scaffoldBackgroundColor,
+                      // 用 surfaceElevated（比 canvas 亮一档）作为编辑面板底，
+                      // 深色模式下与背后背景库的深色 canvas 区分开。
+                      color: AppThemeTokens.of(context).surfaceElevated,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     padding: EdgeInsets.zero,
@@ -2000,8 +2002,8 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                                             child: Container(
                                               width: 60,
                                               height: 36,
-                                              decoration: const BoxDecoration(
-                                                color: Color(0xFFE0E0E0),
+                                              decoration: BoxDecoration(
+                                                color: AppThemeTokens.of(context).surfaceInteractive,
                                                 borderRadius:
                                                 BorderRadius.horizontal(
                                                   left: Radius.circular(18),
@@ -2010,17 +2012,17 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                                                   ),
                                                 ),
                                               ),
-                                              child: const Align(
+                                              child: Align(
                                                 alignment:
                                                 Alignment.centerRight,
                                                 child: Padding(
-                                                  padding: EdgeInsets.only(
+                                                  padding: const EdgeInsets.only(
                                                     right: 12,
                                                   ),
                                                   child: Icon(
                                                     Icons.add,
                                                     size: 16,
-                                                    color: Colors.black54,
+                                                    color: AppThemeTokens.of(context).textSecondary,
                                                   ),
                                                 ),
                                               ),
@@ -2156,7 +2158,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                                 fontSize: 11,
                                 color: _gradientSubTab == 'preview'
                                     ? Theme.of(context).primaryColor
-                                    : Colors.black54,
+                                    : AppThemeTokens.of(context).textSecondary,
                               ),
                             ),
                           ),
