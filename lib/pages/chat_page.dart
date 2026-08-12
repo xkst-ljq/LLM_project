@@ -6428,12 +6428,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// 聊天页右侧设置面板：玻璃分组卡片风格（与主页设置页一致）。
   Widget _buildChatSettingsPanel() {
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Text(
               '聊天设置',
               style: TextStyle(
                 fontSize: 24,
@@ -6441,76 +6441,86 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                 color: AppThemeTokens.of(context).textPrimary,
               ),
             ),
-            const SizedBox(height: 16),
-            // 角色与内容
-            _chatSettingGroup(
-              title: '角色与内容',
-              items: [
-                _chatSettingTile(
-                  icon: Icons.person,
-                  title: '用户设定',
-                  onTap: () {
-                    if (_currentCharacter == null) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => RoleUserSettingsPage(
-                          character: _currentCharacter!,
-                        ),
-                      ),
-                    ).then((_) => _loadUser());
-                  },
-                ),
-                _chatSettingTile(
-                  icon: Icons.tune,
-                  title: 'Prompt 策略',
-                  onTap: () {
-                    if (_currentCharacter == null) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PromptSettingsPage(
-                          characterId: _currentCharacter!.id,
-                          characterName: _currentCharacter!.name,
-                          buildPreview: _buildPromptPreviewData,
-                        ),
-                      ),
-                    ).then((_) => _loadPromptSettings());
-                  },
-                ),
-              ],
-            ),
-            // 外观与数据
-            _chatSettingGroup(
-              title: '外观与数据',
-              items: [
-                _chatSettingTile(
-                  icon: Icons.image,
-                  title: '背景设置',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        opaque: false,
-                        transitionDuration: Duration.zero,
-                        pageBuilder: (_, _, _) =>
-                            BackgroundPickerSheet(
-                              character: _currentCharacter,
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 角色与内容
+                  _chatSettingGroup(
+                    title: '角色与内容',
+                    items: [
+                      _chatSettingTile(
+                        icon: Icons.person,
+                        title: '用户设定',
+                        onTap: () {
+                          if (_currentCharacter == null) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => RoleUserSettingsPage(
+                                character: _currentCharacter!,
+                              ),
                             ),
+                          ).then((_) => _loadUser());
+                        },
                       ),
-                    ).then((_) => setState(() {}));
-                  },
-                ),
-                _chatSettingTile(
-                  icon: Icons.clear_all,
-                  title: '清空历史',
-                  isDestructive: true,
-                  onTap: _clearHistoryWithOptions,
-                ),
-              ],
+                      _chatSettingTile(
+                        icon: Icons.tune,
+                        title: 'Prompt 策略',
+                        onTap: () {
+                          if (_currentCharacter == null) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PromptSettingsPage(
+                                characterId: _currentCharacter!.id,
+                                characterName: _currentCharacter!.name,
+                                buildPreview: _buildPromptPreviewData,
+                              ),
+                            ),
+                          ).then((_) => _loadPromptSettings());
+                        },
+                      ),
+                    ],
+                  ),
+                  // 外观与数据
+                  _chatSettingGroup(
+                    title: '外观与数据',
+                    items: [
+                      _chatSettingTile(
+                        icon: Icons.image,
+                        title: '背景设置',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            PageRouteBuilder(
+                              opaque: false,
+                              transitionDuration: Duration.zero,
+                              pageBuilder: (_, _, _) =>
+                                  BackgroundPickerSheet(
+                                    character: _currentCharacter,
+                                  ),
+                            ),
+                          ).then((_) => setState(() {}));
+                        },
+                      ),
+                      _chatSettingTile(
+                        icon: Icons.clear_all,
+                        title: '清空历史',
+                        isDestructive: true,
+                        onTap: _clearHistoryWithOptions,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
