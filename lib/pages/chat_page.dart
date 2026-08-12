@@ -4886,9 +4886,21 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                           // 右侧设置面板
                           SizedBox(
                             width: panelW,
-                            child: Container(
-                              color: Theme.of(context).scaffoldBackgroundColor,
-                              child: _buildChatSettingsPanel(),
+                            // 毛玻璃底：模糊聊天页背景 + 半透明白，让设置面板
+                            // 透出背景的模糊光影、与聊天主体协调，同时保证文字可读。
+                            child: ClipRect(
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(
+                                  sigmaX: 16,
+                                  sigmaY: 16,
+                                ),
+                                child: Container(
+                                  color: AppThemeTokens.of(context)
+                                      .surfaceGlass
+                                      .withValues(alpha: 0.55),
+                                  child: _buildChatSettingsPanel(),
+                                ),
+                              ),
                             ),
                           ),
                         ],
