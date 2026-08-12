@@ -3060,14 +3060,16 @@ class _EdgeGestureHintState extends State<_EdgeGestureHint>
                       child: Container(
                         width: 1,
                         height: double.infinity,
-                        color: glowColor.withValues(alpha: 0.35 + 0.55 * pulse),
-                        boxShadow: [
-                          BoxShadow(
-                            color: glowColor.withValues(alpha: 0.45 * pulse),
-                            blurRadius: 8,
-                            spreadRadius: 1,
-                          ),
-                        ],
+                        decoration: BoxDecoration(
+                          color: glowColor.withValues(alpha: 0.35 + 0.55 * pulse),
+                          boxShadow: [
+                            BoxShadow(
+                              color: glowColor.withValues(alpha: 0.45 * pulse),
+                              blurRadius: 8,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

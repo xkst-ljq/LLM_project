@@ -127,7 +127,7 @@ class SettingsMenuPage extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) trailing,
+            ?trailing,
             if (onTap != null && trailing == null)
               Icon(Icons.chevron_right, size: 18, color: tokens.textMuted),
           ],
