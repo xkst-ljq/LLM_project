@@ -108,10 +108,10 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
   final _sortButtonKey = GlobalKey();
   final _exportButtonKey = GlobalKey();
   final _addButtonKey = GlobalKey();
-  final _firstCardGuideKey = GlobalKey();
   final _chatButtonGuideKey = GlobalKey();
-  // 当前选中卡片放大进入聊天页的转场源 Key（仅绑定到 _expandedIds 里的那张卡）。
-  final _selectedCardKey = GlobalKey();
+  // 每张卡片的稳定 GlobalKey（按角色 id 缓存）：既作列表元素 key（保持 State
+  // 稳定、不因选中切换而销毁 overlay 的收起动画），又作进入聊天的转场源。
+  final Map<String, GlobalKey> _cardKeys = {};
   // 播放按钮的加载动画（旋转 + 史莱姆弹跳循环），等待 UIEngine 就绪时播放。
   late final AnimationController _playLoadingController;
   // 等待 UIEngine 就绪：offstage 预加载一个 ChatPage 触发真实初始化，
@@ -1001,7 +1001,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
       context,
       HomeTransitions.cardToChat(
         context: context,
-        sourceKey: _selectedCardKey,
+        sourceKey: _cardKeys.putIfAbsent(character.id, () => GlobalKey()),
         accent: tokens.accent,
         character: character,
         readyFuture: ready.future,
@@ -1161,8 +1161,10 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
       ),
     ];
 
-    final firstCardRect =
-        _rectForKey(_firstCardGuideKey) ?? _fallbackCardRect(context);
+    final firstVisible = _visibleCharacters.isNotEmpty ? _visibleCharacters.first : null;
+    final firstCardRect = firstVisible != null
+        ? (_rectForKey(_cardKeys[firstVisible.id]) ?? _fallbackCardRect(context))
+        : _fallbackCardRect(context);
     targets.add(
       PageGuideTarget(
         id: 'character_card',
@@ -1557,9 +1559,9 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
               final isExpanded = _expandedIds.contains(character.id);
 
               return Container(
-                key: isExpanded
-                    ? _selectedCardKey
-                    : (index == 0 ? _firstCardGuideKey : null),
+                // 用基于角色 id 的稳定 GlobalKey：避免选中状态切换导致 element
+                // 身份变化、overlay 的 State 被销毁重建而丢失收起动画。
+                key: _cardKeys.putIfAbsent(character.id, () => GlobalKey()),
                 child: AspectRatio(
                   aspectRatio: 2 / 3,
                   child: Stack(
