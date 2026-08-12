@@ -591,15 +591,50 @@ class _MainMenuPageState extends State<MainMenuPage>
                 children: [
                   SizedBox(
                     width: screenWidth,
-                    child: HomeExperiencePage(
-                      chatTileKey: _chatTileKey,
-                      characterTileKey: _characterTileKey,
-                      worldBookTileKey: _worldBookTileKey,
-                      backgroundTileKey: _backgroundTileKey,
-                      chatTextKey: _chatTextKey,
-                      characterTextKey: _characterTextKey,
-                      worldBookTextKey: _worldBookTextKey,
-                      backgroundTextKey: _backgroundTextKey,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        HomeExperiencePage(
+                          chatTileKey: _chatTileKey,
+                          characterTileKey: _characterTileKey,
+                          worldBookTileKey: _worldBookTileKey,
+                          backgroundTileKey: _backgroundTileKey,
+                          chatTextKey: _chatTextKey,
+                          characterTextKey: _characterTextKey,
+                          worldBookTextKey: _worldBookTextKey,
+                          backgroundTextKey: _backgroundTextKey,
+                        ),
+                        // 主页右缘渐变蒙版：与设置面板左缘蒙版对称，
+                        // 让主页→设置页交界处两侧都有过渡，融合自然。
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Builder(
+                              builder: (ctx) {
+                                final isNight = Theme.of(ctx).brightness ==
+                                    Brightness.dark;
+                                final soft = AppThemeTokens.of(ctx).accentSoft;
+                                final pink = isNight
+                                    ? const Color(0xFF4A3A5E)
+                                    : const Color(0xFFF6E2EC);
+                                return DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                      colors: [
+                                        Colors.transparent,
+                                        pink.withValues(alpha: 0.12),
+                                        soft.withValues(alpha: 0.30),
+                                      ],
+                                      stops: const [0.0, 0.82, 1.0],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
