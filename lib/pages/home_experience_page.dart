@@ -1129,7 +1129,10 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
               child: _buildModuleRail(tokens),
             ),
             Positioned(
-              top: constraints.maxHeight * 0.43,
+              // 主页右缘的细呼吸光带：铺满整个高度，作为主页与设置面板
+              // 交界处的柔和装饰分隔线（取代原来右下角的细短呼吸灯）。
+              top: 0,
+              bottom: 0,
               right: 0,
               child: Opacity(
                 opacity: 0.52,
@@ -3025,7 +3028,8 @@ class _EdgeGestureHintState extends State<_EdgeGestureHint>
         return IgnorePointer(
           child: Container(
             width: 15,
-            height: 72,
+            // 铺满父容器高度（由 Positioned top:0/bottom:0 决定）。
+            height: double.infinity,
             decoration: BoxDecoration(
               border: Border(left: BorderSide(color: widget.line)),
             ),
@@ -3033,7 +3037,8 @@ class _EdgeGestureHintState extends State<_EdgeGestureHint>
               alignment: Alignment.centerLeft,
               child: Container(
                 width: 1,
-                height: 48,
+                // 呼吸线铺满全高，形成一条完整的细光带。
+                height: double.infinity,
                 color: widget.accent.withValues(alpha: pulse),
               ),
             ),
