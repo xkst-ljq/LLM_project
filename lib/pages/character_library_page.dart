@@ -1546,7 +1546,8 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
                     );
                   }
                   return GridView.builder(
-            padding: const EdgeInsets.all(16),
+            // 底部多留空白，避免选中最底部卡片时播放按钮挡住简短介绍。
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               childAspectRatio: 2 / 3,
