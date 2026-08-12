@@ -99,6 +99,13 @@
 - 渐变编辑器「预览」选中标签优化：文字/边框/背景改用 `accent` 系，
   深色下预览页选中标签清晰可见
 
+#### 世界书编辑浮层深色模式适配
+
+- 编辑面板容器底色 `scaffoldBackgroundColor(canvas)` → `surfaceElevated`，
+  与背后世界书库的深色 canvas 拉开层次
+- 辅助文字/图标 `grey` → `textSecondary`、删除红 → `danger`、条目关键词标签
+  `blue.shade50/700` → `accentSoft/accent`、添加条目图标 `blue` → `accent`
+
 #### 世界书库页面级令牌化 & 词云封面
 
 - 删除按钮 / 删除确认文字改用 `danger`、导入预览成功勾选改用 `success`、

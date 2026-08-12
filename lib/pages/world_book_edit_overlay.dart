@@ -164,7 +164,7 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
               Navigator.pop(ctx);
               setState(() => _entries.removeWhere((e) => e.id == entry.id));
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text('删除', style: TextStyle(color: AppThemeTokens.of(context).danger)),
           ),
         ],
       ),
@@ -211,7 +211,7 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                         child: SubPageBackdrop(
                           child: Container(
                         decoration: BoxDecoration(
-                          color: Theme.of(context).scaffoldBackgroundColor,
+                          color: AppThemeTokens.of(context).surfaceElevated,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Column(
@@ -227,23 +227,23 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        const Text('世界书名称', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                        Text('世界书名称', style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textSecondary)),
                                         if (_showNameError)
                                           Padding(
                                             padding: const EdgeInsets.only(top: 4),
                                             child: Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                               decoration: BoxDecoration(
-                                                color: Colors.red.withAlpha(25),
+                                                color: AppThemeTokens.of(context).danger.withAlpha(25),
                                                 borderRadius: BorderRadius.circular(4),
                                               ),
-                                              child: Text(_nameErrorText, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+                                              child: Text(_nameErrorText, style: TextStyle(color: AppThemeTokens.of(context).danger, fontSize: 12)),
                                             ),
                                           ),
                                         const SizedBox(width: 6),
                                         GestureDetector(
                                           onTap: () => setState(() => _editingName = !_editingName),
-                                          child: Icon(_editingName ? Icons.check : Icons.edit, size: 16, color: Colors.grey),
+                                          child: Icon(_editingName ? Icons.check : Icons.edit, size: 16, color: AppThemeTokens.of(context).textSecondary),
                                         ),
                                       ],
                                     ),
@@ -267,11 +267,11 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        const Text('简短描述', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                        Text('简短描述', style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textSecondary)),
                                         const SizedBox(width: 6),
                                         GestureDetector(
                                           onTap: () => setState(() => _editingDesc = !_editingDesc),
-                                          child: Icon(_editingDesc ? Icons.check : Icons.edit, size: 16, color: Colors.grey),
+                                          child: Icon(_editingDesc ? Icons.check : Icons.edit, size: 16, color: AppThemeTokens.of(context).textSecondary),
                                         ),
                                       ],
                                     ),
@@ -286,7 +286,7 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                         : Center(
                                       child: Text(
                                         _descCtrl.text.isEmpty ? '暂无描述' : _descCtrl.text,
-                                        style: const TextStyle(fontSize: 14, color: Colors.grey),
+                                        style: TextStyle(fontSize: 14, color: AppThemeTokens.of(context).textSecondary),
                                         textAlign: TextAlign.center,
                                       ),
                                     ),
@@ -298,7 +298,7 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                       children: [
                                         const Text('设定条目', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                                         IconButton(
-                                          icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                          icon: Icon(Icons.add_circle, color: AppThemeTokens.of(context).accent),
                                           onPressed: _addEntry,
                                           tooltip: '添加条目',
                                         ),
@@ -308,9 +308,9 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
 
                                     // 条目列表
                                     if (_entries.isEmpty)
-                                      const Padding(
-                                        padding: EdgeInsets.all(16),
-                                        child: Text('暂无条目，点击 + 添加', style: TextStyle(color: Colors.grey)),
+                                      Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Text('暂无条目，点击 + 添加', style: TextStyle(color: AppThemeTokens.of(context).textSecondary)),
                                       )
                                     else
                                       ListView.builder(
@@ -354,12 +354,12 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                                       child: Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                         decoration: BoxDecoration(
-                                                          color: Colors.blue.shade50,
+                                                          color: AppThemeTokens.of(context).accentSoft,
                                                           borderRadius: BorderRadius.circular(4),
                                                         ),
                                                         child: Text(
                                                           entry.keywordDisplay,
-                                                          style: TextStyle(fontSize: 10, color: Colors.blue.shade700),
+                                                          style: TextStyle(fontSize: 10, color: AppThemeTokens.of(context).accent),
                                                         ),
                                                       ),
                                                     ),
@@ -367,12 +367,12 @@ class _WorldBookEditOverlayState extends State<WorldBookEditOverlay>
                                                     entry.content.isEmpty ? '无内容' : entry.content,
                                                     maxLines: 2,
                                                     overflow: TextOverflow.ellipsis,
-                                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                                    style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textSecondary),
                                                   ),
                                                 ],
                                               ),
                                               trailing: IconButton(
-                                                icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                                icon: Icon(Icons.delete, size: 18, color: AppThemeTokens.of(context).danger),
                                                 onPressed: () => _deleteEntry(entry),
                                                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                                 padding: EdgeInsets.zero,
@@ -535,9 +535,9 @@ class _EntryEditPageState extends State<_EntryEditPage> {
                 ),
               ],
             ),
-            const Text(
+            Text(
               '关闭后此条目不会注入对话（导入的第三方卡中作者关闭的条目默认在此关闭）。',
-              style: TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(fontSize: 11, color: AppThemeTokens.of(context).textSecondary),
             ),
             const SizedBox(height: 12),
             Row(
