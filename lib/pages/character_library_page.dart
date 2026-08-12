@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -871,6 +872,216 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
     }
   }
 
+  /// 选中角色的信息浮层：三块玻璃抽屉式内容，叠加在卡片上。
+  ///
+  /// - 名字：顶部左侧，从左往右展开，宽度最多到卡片宽的 1/2，超长省略
+  /// - 标签：顶部右侧，从上往下展开（占卡片高 2/3），垂直排列、最多两列，
+  ///   超出用「+x」后缀
+  /// - 介绍：底部，从左往右展开，保持字号、最多两行，超长省略
+  ///
+  /// 用 TweenAnimationBuilder 驱动三块从各自方向滑出/展开（选中时展开，
+  /// 取消选中时收回），玻璃质感背景（半透明 + 模糊）。
+  Widget _buildSelectedOverlay(CharacterCard character) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardW = constraints.maxWidth;
+        final cardH = constraints.maxHeight;
+        final tokens = AppThemeTokens.of(context);
+
+        // 玻璃质感背景
+        Widget glass({required Widget child, BorderRadius radius = const BorderRadius.all(Radius.circular(12))}) {
+          return ClipRRect(
+            borderRadius: radius,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: tokens.surfaceGlass.withValues(alpha: 0.6),
+                  borderRadius: radius,
+                  border: Border.all(
+                    color: tokens.outline.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: child,
+              ),
+            ),
+          );
+        }
+
+        // 名字文本（省略）
+        final name = character.name.isEmpty ? '未命名' : character.name;
+        // 标签：垂直排列，最多两列，超出用 +x
+        final tags = character.meta.tags;
+        final desc = character.description;
+
+        return IgnorePointer(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            builder: (context, t, _) {
+              // 名字：从左往右展开（scaleX + slide）
+              final nameDrawer = Opacity(
+                opacity: t,
+                child: Transform.translate(
+                  offset: Offset(-(1 - t) * 40, 0),
+                  child: Transform.scale(
+                    scaleX: t,
+                    alignment: Alignment.centerLeft,
+                    child: glass(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: cardW * 0.5),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: tokens.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+
+              // 标签：从上往下展开（占 2/3 高），垂直排列两列，超出 +x
+              final tagDrawer = Opacity(
+                opacity: t,
+                child: Transform.translate(
+                  offset: Offset(0, -(1 - t) * 40),
+                  child: Transform.scale(
+                    scaleY: t,
+                    alignment: Alignment.topCenter,
+                    child: glass(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: cardW * 0.42,
+                          maxHeight: cardH * 0.66,
+                        ),
+                        child: _buildTagDrawer(tags, cardW * 0.42, cardH * 0.66),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+
+              // 介绍：底部，从左往右展开，最多两行
+              final descDrawer = Opacity(
+                opacity: t,
+                child: Transform.translate(
+                  offset: Offset(-(1 - t) * 40, 0),
+                  child: Transform.scale(
+                    scaleX: t,
+                    alignment: Alignment.centerLeft,
+                    child: glass(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: cardW * 0.85),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          child: Text(
+                            desc.trim().isEmpty ? '暂无介绍' : desc,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: tokens.textSecondary,
+                              fontSize: 12,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(top: 6, left: 6, child: nameDrawer),
+                  Positioned(top: 6, right: 6, child: tagDrawer),
+                  Positioned(bottom: 6, left: 6, right: 6, child: descDrawer),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  /// 标签抽屉：垂直排列，最多两列；超出用「+x」后缀表示。
+  Widget _buildTagDrawer(List<String> tags, double maxW, double maxH) {
+    final tokens = AppThemeTokens.of(context);
+    // 每列最多显示 3 个 → 两列最多 6 个，超出显示 +N
+    const perCol = 3;
+    const maxShown = perCol * 2;
+    final shown = tags.take(maxShown).toList();
+    final extra = tags.length - shown.length;
+
+    // 分成两列：第一列前 perCol 个，第二列剩余
+    final col1 = shown.take(perCol).toList();
+    final col2 = shown.skip(perCol).toList();
+
+    Widget chip(String text) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+          color: tokens.surfaceInteractive.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: tokens.textSecondary, fontSize: 8),
+        ),
+      );
+    }
+
+    Widget column(List<String> list) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final tg in list) Padding(padding: const EdgeInsets.only(bottom: 2), child: chip(tg)),
+        ],
+      );
+    }
+
+    if (shown.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(5),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Flexible(child: column(col1)),
+            if (col2.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Flexible(child: column(col2)),
+            ],
+            if (extra > 0) ...[
+              const SizedBox(width: 4),
+              Flexible(child: chip('+$extra')),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 播放按钮（进入聊天）。等待 UIEngine 就绪期间，按钮像史莱姆一样
   /// 「旋转一圈 → 压扁 → 弹起 → 歇几秒」循环，就绪后由 stagedRole 转场收尾。
   Widget _buildPlayFab() {
@@ -1616,69 +1827,8 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
                               ),
                             ),
                             if (isExpanded)
-                              Positioned(
-                                bottom: 0,
-                                left: 0,
-                                right: 0,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.7),
-                                    borderRadius: const BorderRadius.only(
-                                      bottomLeft: Radius.circular(16),
-                                      bottomRight: Radius.circular(16),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        character.name.isEmpty ? '未命名' : character.name,
-                                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                                      ),
-                                      if (character.description.isNotEmpty) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          character.description,
-                                          style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                      if (character.meta.tags.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Wrap(
-                                          spacing: 4,
-                                          runSpacing: 4,
-                                          children: character.meta.tags
-                                              .take(4)
-                                              .map((t) => Container(
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.white
-                                                          .withValues(
-                                                              alpha: 0.22),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              8),
-                                                    ),
-                                                    child: Text(
-                                                      t,
-                                                      style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 10),
-                                                    ),
-                                                  ))
-                                              .toList(),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
+                              Positioned.fill(
+                                child: _buildSelectedOverlay(character),
                               ),
                             if (isDeleting)
                               Positioned(

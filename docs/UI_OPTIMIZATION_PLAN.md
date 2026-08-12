@@ -62,9 +62,12 @@
 - 后续可选：背景层接入 `SubPageBackdrop`；右侧聊天设置面板；扇形角色切换面板；扩展菜单。
 - 风险点：聊天是核心路径，改完需重点回归发送、滚动、键盘避让。
 
-**② `character_library_page.dart`（角色库）**
-- 列表项套用统一 `SurfaceCard`；背景换 `SubPageBackdrop`。
-- AppBar 统一为透明融入式；按钮/弹窗用 `SubPageBlurBackdrop`。
+**② `character_library_page.dart`（角色库）— 交互/转场 + 选中浮层已重设计 ✅**
+- 已用 `SubPageBackdrop` 背景 + GridView 卡片。
+- 进入聊天交互：播放按钮选中才显示、史莱姆加载、卡片放大进入、退出收缩动画。
+- 选中角色信息浮层重设计为**三块玻璃抽屉**（名字左→右展开 1/2 宽、
+  标签上→下展开 2/3 高两列 +x、介绍左→右展开两行），带展开/收回动画。
+- 待办：列表项卡片颜色硬编码令牌化（`grey[300]` 等）。
 
 **③ `world_book_library_page.dart`（世界书）— 页面级已令牌化 + 词云封面 ✅**
 - 页面级 UI 令牌化：删除按钮/文字（`danger`）、导入预览成功勾选（`success`）、
