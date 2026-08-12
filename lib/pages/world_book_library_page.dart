@@ -1129,7 +1129,8 @@ class _HoneycombCloudState extends State<_HoneycombCloud>
     // 用整数倍频（1 / 2 / 3）：sin/cos 在一个完整循环（t: 0→2π）后回到
     // 相同值，动画 repeat 时位置连续，不会在重置瞬间闪烁。
     _freqs = [
-      for (var i = 0; i < widget.words.length; i++) 1 + rng.nextInt(3),
+      for (var i = 0; i < widget.words.length; i++)
+        (1 + rng.nextInt(3)).toDouble(),
     ];
   }
 
