@@ -3031,10 +3031,11 @@ class _EdgeGestureHintState extends State<_EdgeGestureHint>
             // 铺满父容器高度（由 Positioned top:0/bottom:0 决定）。
             height: double.infinity,
             decoration: BoxDecoration(
-              border: Border(left: BorderSide(color: widget.line)),
+              border: Border(right: BorderSide(color: widget.line)),
             ),
             child: Align(
-              alignment: Alignment.centerLeft,
+              // 呼吸线贴最右边界，正好落在主页与设置面板的交界线上。
+              alignment: Alignment.centerRight,
               child: Container(
                 width: 1,
                 // 呼吸线铺满全高，形成一条完整的细光带。
