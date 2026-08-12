@@ -4923,6 +4923,38 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       );
                     },
                   ),
+                  // 进入设置页时，用高斯模糊遮盖屏幕左半的聊天主体区域
+                  // （与主页做法一致），随滑出动画渐强；聊天主体被盖住不可点击。
+                  AnimatedBuilder(
+                    animation: _animController,
+                    builder: (context, _) {
+                      final v = _animController.value;
+                      return Positioned(
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        right: panelW * v,
+                        child: IgnorePointer(
+                          child: Opacity(
+                            opacity: (v * 0.95).clamp(0.0, 1.0),
+                            child: ClipRect(
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(
+                                  sigmaX: 18,
+                                  sigmaY: 18,
+                                ),
+                                child: ColoredBox(
+                                  color: AppThemeTokens.of(context)
+                                      .scrim
+                                      .withValues(alpha: 0.12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   //扇形面板
                   if (_showFanPanel)
                     Positioned.fill(
