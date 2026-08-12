@@ -615,12 +615,13 @@ class _MainMenuPageState extends State<MainMenuPage>
                         children: [
                           // 补全主页背景的大双层椭圆环（用主页宽度作逻辑宽度，
                           // 使圆环跨两块面板连贯）。放最底，保持清晰可见。
-                          CustomPaint(
-                            painter: _SettingsRingPainter(
-                              homeWidth: screenWidth,
-                              line: _homeRingLineColor(context),
-                            ),
-                          ),
+                          // （暂禁用排查：疑导致圆环透到角色卡/modules 封面）
+                          // CustomPaint(
+                          //   painter: _SettingsRingPainter(
+                          //     homeWidth: screenWidth,
+                          //     line: _homeRingLineColor(context),
+                          //   ),
+                          // ),
                           // 设置内容
                           SettingsMenuPage(
                             onStartNewUserGuide: _startNewUserGuide,
