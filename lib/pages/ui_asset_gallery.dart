@@ -89,16 +89,16 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
       ),
       body: SubPageBackdrop(
         child: isEmpty
-          ? const Center(
+          ? Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
                 child: Text(
                   '还没有保存的资产。\n'
                   '在 UI 工作台拼好积木后点「保存」，就会出现在这里。',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
-                    color: Color(0xFF888896),
+                    color: AppThemeTokens.of(context).textSecondary,
                     height: 1.5,
                   ),
                 ),
@@ -122,9 +122,9 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
                 if (composites.isNotEmpty) ...[
                   _sectionTitle('复合组件'),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     '按设计时的原始比例展示，可直接在卡片里试用交互。',
-                    style: TextStyle(fontSize: 11, color: Color(0xFF888896)),
+                    style: TextStyle(fontSize: 11, color: AppThemeTokens.of(context).textSecondary),
                   ),
                   const SizedBox(height: 12),
                   // 每个复合件独占一行：它们尺寸各异，塞进 Wrap 会因为
@@ -199,9 +199,9 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppThemeTokens.of(context).surfaceElevated,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0x14000000)),
+            border: Border.all(color: AppThemeTokens.of(context).outline),
           ),
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -245,7 +245,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
                 ),
               ),
               const SizedBox(height: 8),
-              const Divider(height: 1, color: Color(0x0F000000)),
+              Divider(height: 1, color: AppThemeTokens.of(context).divider),
               const SizedBox(height: 6),
               Row(
                 children: [
@@ -258,10 +258,10 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
                           c.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF111116),
+                            color: AppThemeTokens.of(context).textPrimary,
                           ),
                         ),
                         Text(
@@ -274,9 +274,9 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
                               : '${natural.width.toStringAsFixed(0)}×'
                                   '${natural.height.toStringAsFixed(0)}'
                                   '  ·  ${c.children.length} 个元件',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
-                            color: Color(0xFF888896),
+                            color: AppThemeTokens.of(context).textSecondary,
                           ),
                         ),
                       ],
@@ -285,19 +285,19 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
                   InkWell(
                     onTap: () => _exportComposite(c),
                     borderRadius: BorderRadius.circular(6),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
                       child: Icon(Icons.ios_share_rounded,
-                          size: 17, color: Color(0xFF00897B)),
+                          size: 17, color: AppThemeTokens.of(context).accent),
                     ),
                   ),
                   InkWell(
                     onTap: () => _confirmDeleteComposite(c),
                     borderRadius: BorderRadius.circular(6),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
                       child: Icon(Icons.delete_outline_rounded,
-                          size: 18, color: Color(0xFFFF4081)),
+                          size: 18, color: AppThemeTokens.of(context).danger),
                     ),
                   ),
                 ],
@@ -353,7 +353,7 @@ class _UIAssetGalleryState extends State<UIAssetGallery> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFF4081),
+              backgroundColor: AppThemeTokens.of(ctx).danger,
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text(

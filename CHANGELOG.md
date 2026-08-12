@@ -99,6 +99,14 @@
 - 渐变编辑器「预览」选中标签优化：文字/边框/背景改用 `accent` 系，
   深色下预览页选中标签清晰可见
 
+#### UI 模组库主题适配
+
+- 复合组件卡片背景 `white` → `surfaceElevated`、边框 → `outline`、
+  分隔线 → `divider`、名称文字 `#111116` → `textPrimary`、
+  尺寸说明/空状态文字 `#888896` → `textSecondary`
+- 分享图标 `#00897B` → `accent`、删除图标 `#FF4081` → `danger`、
+  删除确认按钮底 `#FF4081` → `danger`（白字保留）
+
 #### 世界书编辑浮层深色模式适配
 
 - 编辑面板容器底色 `scaffoldBackgroundColor(canvas)` → `surfaceElevated`，

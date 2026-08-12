@@ -36,6 +36,7 @@
 | `settings_page` | — | — | 极简雏形 | 🟠 第二梯队 |
 | `character_assembly_page`（含 logic_* 系列） | 部分 | 多 | 复杂编辑器 | ⚪ 第三梯队（仅接轨） |
 | `ui_studio_page`（含 editors/*） | 部分 | 多 | 复杂编辑器 | ⚪ 第三梯队（仅接轨） |
+| `ui_asset_gallery`（UI 模组库） | — | ~11 | 固定色 | 🟢 已令牌化（卡片/文字/图标） |
 | `tutorial_home_page` | — | — | 简单 | ⚪ 第三梯队（仅接轨） |
 
 ---
