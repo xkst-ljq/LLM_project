@@ -722,121 +722,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
       );
     }
 
-    // 气泡直径随词频缩放：权重 1 → 62，权重 0 → 34
-    double diameter(double weight) => 34 + 28 * weight;
-
-    // 蜂窝格子中心距（相邻气泡中心间距），留一点让气泡轻微重叠更紧凑。
-    const double cell = 44.0;
-
-    // 六边形轴向坐标的 6 个邻居方向。
-    const neighbors = <(int, int)>[
-      (1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1),
-    ];
-
-    // 生成围绕中心 (0,0) 的蜂窝坐标，按半径（圈）由近及远。语义最重的词
-    // 排在列表最前 → 放中心 (0,0)。
-    final slots = <(int, int)>[(0, 0)];
-    var ring = <(int, int)>[(0, 0)];
-    while (slots.length < words.length) {
-      final next = <(int, int)>[];
-      for (final (q, r) in ring) {
-        for (final (dq, dr) in neighbors) {
-          final n = (q + dq, r + dr);
-          if (!slots.contains(n) && !next.contains(n)) next.add(n);
-        }
-      }
-      ring = next;
-      slots.addAll(next);
-    }
-
-    // 轴向坐标 → 像素（扁平顶六边形）。cell 作为六边形尺寸。
-    Offset offsetOf(int q, int r) => Offset(
-          cell * (math.sqrt(3) * q + math.sqrt(3) / 2 * r),
-          cell * (1.5 * r),
-        );
-
-    // 计算整体外框，用于居中。
-    final positions = <Offset>[
-      for (var i = 0; i < words.length; i++) offsetOf(slots[i].$1, slots[i].$2),
-    ];
-    var minX = 0.0, maxX = 0.0, minY = 0.0, maxY = 0.0;
-    for (final p in positions) {
-      minX = math.min(minX, p.dx);
-      maxX = math.max(maxX, p.dx);
-      minY = math.min(minY, p.dy);
-      maxY = math.max(maxY, p.dy);
-    }
-    final w = maxX - minX;
-    final h = maxY - minY;
-
-    // 蜂窝整体（含气泡半径）的宽高
-    final cloudW = w + 62;
-    final cloudH = h + 62;
-
-    Widget bubble(_CloudWord word, double d) {
-      return Container(
-        width: d,
-        height: d,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.14 + 0.14 * word.weight),
-          border: Border.all(
-            color: Colors.white.withValues(
-              alpha: 0.20 + 0.16 * word.weight,
-            ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 3),
-          child: Text(
-            word.word,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 8 + 5 * word.weight,
-              fontWeight:
-                  word.weight >= 0.7 ? FontWeight.bold : FontWeight.w500,
-              height: 1.0,
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Stack 按蜂窝坐标定位气泡，中心词在最中间。
-    final cloud = SizedBox(
-      width: cloudW,
-      height: cloudH,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (var i = 0; i < words.length; i++)
-            Positioned(
-              left: (positions[i].dx - minX) + 31 - diameter(words[i].weight) / 2,
-              top: (positions[i].dy - minY) + 31 - diameter(words[i].weight) / 2,
-              width: diameter(words[i].weight),
-              height: diameter(words[i].weight),
-              child: bubble(words[i], diameter(words[i].weight)),
-            ),
-        ],
-      ),
-    );
-
-    return Center(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: cloud,
-      ),
-    );
+    return _HoneycombCloud(words: words);
   }
 
   Widget _buildWorldBookCover(WorldBook wb) {
@@ -1202,4 +1088,184 @@ class _CloudWord {
   final String word;
   final double weight;
   const _CloudWord(this.word, this.weight);
+}
+
+/// 词云蜂窝：每个词用圆形气泡裹住、按正六边形排列，气泡越大语义越重。
+///
+/// 自包含一个循环动画控制器，让每个气泡按各自随机相位/幅度轻微浮动，
+/// 营造"随机浮动"的活泼感。气泡大小随词频缩放，字号随气泡大小变化。
+class _HoneycombCloud extends StatefulWidget {
+  final List<_CloudWord> words;
+  const _HoneycombCloud({required this.words});
+
+  @override
+  State<_HoneycombCloud> createState() => _HoneycombCloudState();
+}
+
+class _HoneycombCloudState extends State<_HoneycombCloud>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _floatController;
+  // 每个气泡独立的浮动相位 / 幅度 / 频率，使运动看起来随机错落。
+  late final List<double> _phases;
+  late final List<double> _amplitudes;
+  late final List<double> _freqs;
+
+  @override
+  void initState() {
+    super.initState();
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4000),
+    )..repeat();
+
+    final rng = math.Random(42);
+    _phases = [
+      for (var i = 0; i < widget.words.length; i++)
+        rng.nextDouble() * 2 * math.pi,
+    ];
+    _amplitudes = [
+      for (var i = 0; i < widget.words.length; i++) 2.5 + rng.nextDouble() * 3,
+    ];
+    _freqs = [
+      for (var i = 0; i < widget.words.length; i++)
+        0.8 + rng.nextDouble() * 0.9,
+    ];
+  }
+
+  @override
+  void dispose() {
+    _floatController.dispose();
+    super.dispose();
+  }
+
+  // 气泡直径随词频缩放：权重 1 → 62，权重 0 → 34
+  double _diameter(double weight) => 34 + 28 * weight;
+
+  // 六边形轴向坐标的 6 个邻居方向。
+  static const List<(int, int)> _neighbors = [
+    (1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final words = widget.words;
+
+    // 生成围绕中心 (0,0) 的蜂窝坐标，按半径（圈）由近及远。
+    final slots = <(int, int)>[(0, 0)];
+    var ring = <(int, int)>[(0, 0)];
+    while (slots.length < words.length) {
+      final next = <(int, int)>[];
+      for (final (q, r) in ring) {
+        for (final (dq, dr) in _neighbors) {
+          final n = (q + dq, r + dr);
+          if (!slots.contains(n) && !next.contains(n)) next.add(n);
+        }
+      }
+      ring = next;
+      slots.addAll(next);
+    }
+
+    // 蜂窝格子中心距。
+    const double cell = 44.0;
+
+    // 轴向坐标 → 像素（扁平顶六边形）。
+    Offset offsetOf(int q, int r) => Offset(
+          cell * (math.sqrt(3) * q + math.sqrt(3) / 2 * r),
+          cell * (1.5 * r),
+        );
+
+    final positions = <Offset>[
+      for (var i = 0; i < words.length; i++) offsetOf(slots[i].$1, slots[i].$2),
+    ];
+    var minX = 0.0, maxX = 0.0, minY = 0.0, maxY = 0.0;
+    for (final p in positions) {
+      minX = math.min(minX, p.dx);
+      maxX = math.max(maxX, p.dx);
+      minY = math.min(minY, p.dy);
+      maxY = math.max(maxY, p.dy);
+    }
+    final cloudW = (maxX - minX) + 62;
+    final cloudH = (maxY - minY) + 62;
+
+    Widget bubble(_CloudWord word, double d) {
+      return Container(
+        width: d,
+        height: d,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.14 + 0.14 * word.weight),
+          border: Border.all(
+            color: Colors.white.withValues(
+              alpha: 0.20 + 0.16 * word.weight,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: Text(
+            word.word,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 8 + 5 * word.weight,
+              fontWeight:
+                  word.weight >= 0.7 ? FontWeight.bold : FontWeight.w500,
+              height: 1.0,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _floatController,
+      builder: (context, _) {
+        final t = _floatController.value * 2 * math.pi;
+        return Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: SizedBox(
+              width: cloudW,
+              height: cloudH,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (var i = 0; i < words.length; i++)
+                    Positioned(
+                      left: (positions[i].dx - minX) +
+                          31 -
+                          _diameter(words[i].weight) / 2,
+                      top: (positions[i].dy - minY) +
+                          31 -
+                          _diameter(words[i].weight) / 2,
+                      width: _diameter(words[i].weight),
+                      height: _diameter(words[i].weight),
+                      child: Transform.translate(
+                        offset: Offset(
+                          math.sin(t * _freqs[i] + _phases[i]) *
+                              _amplitudes[i],
+                          math.cos(t * _freqs[i] * 0.7 + _phases[i]) *
+                              _amplitudes[i] *
+                              0.8,
+                        ),
+                        child: bubble(words[i], _diameter(words[i].weight)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
