@@ -1716,6 +1716,8 @@ class _SelectedOverlayState extends State<_SelectedOverlay>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
+      // 收起（反向）动画更快，让抽屉收起干脆利落。
+      reverseDuration: const Duration(milliseconds: 150),
     );
     _anim = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     if (widget.active) _controller.forward();

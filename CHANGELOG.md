@@ -112,6 +112,7 @@
   `GlobalKey`，不再在选中切换时改变 key——此前 key 随选中态变化会销毁
   overlay 的 State（走 initState 而非 didUpdateWidget），导致 reverse
   （收起）动画从不触发
+- 收起（反向）动画加快（300ms → 150ms），抽屉收起更干脆利落
 - 选中浮层动画：开启动画 + **关闭动画**（反向收回）+ **换选角色重新播放**
   （用自持 AnimationController 的 `_SelectedOverlay`，始终挂载在卡片上，
   通过 `active` 驱动正/反向）
