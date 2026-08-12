@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/api_config.dart';
 import '../services/api_config_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/sub_page_backdrop.dart';
 import 'api_config_edit_page.dart';
@@ -98,7 +99,10 @@ class _ApiConfigPageState extends State<ApiConfigPage> {
               await ApiConfigService.deleteConfig(config.id);
               _loadConfigs();
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text(
+              '删除',
+              style: TextStyle(color: AppThemeTokens.of(ctx).danger),
+            ),
           ),
         ],
       ),
@@ -232,7 +236,9 @@ class _ApiConfigPageState extends State<ApiConfigPage> {
                           child: ListTile(
                             leading: Icon(
                               Icons.api,
-                              color: config.apiKey.isNotEmpty ? Colors.blue : Colors.grey,
+                              color: config.apiKey.isNotEmpty
+                                  ? AppThemeTokens.of(ctx).accent
+                                  : AppThemeTokens.of(ctx).textMuted,
                             ),
                             title: Text(config.name),
                             subtitle: Text(config.baseUrl),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/api_config.dart';
 import '../services/api_config_service.dart';
+import '../shared/theme/app_theme_tokens.dart';
 import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/sub_page_backdrop.dart';
@@ -449,19 +450,25 @@ class _ApiConfigEditPageState extends State<ApiConfigEditPage> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
+          color: AppThemeTokens.of(context).danger.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('获取模型列表失败', style: TextStyle(color: Colors.red.shade700)),
+            Text(
+              '获取模型列表失败',
+              style: TextStyle(color: AppThemeTokens.of(context).danger),
+            ),
             if (_testError != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   _testError!,
-                  style: const TextStyle(fontSize: 12, color: Colors.red),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppThemeTokens.of(context).danger,
+                  ),
                 ),
               ),
             const SizedBox(height: 8),
@@ -480,12 +487,16 @@ class _ApiConfigEditPageState extends State<ApiConfigEditPage> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: AppThemeTokens.of(context).surfaceElevated,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: const Text(
+      child: Text(
         '测试连接后，这里会显示可用模型；如果服务商不返回模型列表，也可以稍后手动填写模型名称。',
-        style: TextStyle(fontSize: 13, height: 1.4),
+        style: TextStyle(
+          fontSize: 13,
+          height: 1.4,
+          color: AppThemeTokens.of(context).textSecondary,
+        ),
       ),
     );
   }
