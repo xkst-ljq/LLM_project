@@ -18,6 +18,14 @@ class UpdateChecker {
 
     if (!context.mounted) return;
 
+    // 检查失败（网络异常 / 仓库无 Release）→ 提示失败，而非"已是最新"。
+    if (result.error) {
+      if (showUpToDate) {
+        _showCheckFailed(context);
+      }
+      return;
+    }
+
     if (!result.hasUpdate) {
       if (showUpToDate) {
         _showUpToDate(context);
@@ -34,6 +42,23 @@ class UpdateChecker {
       // 手动检查时，即使已提醒过也显示"有新版本"。
       _showUpdateDialog(context, result);
     }
+  }
+
+  static void _showCheckFailed(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.error_outline),
+        title: const Text('检查更新失败'),
+        content: const Text('无法连接到更新服务器，请检查网络后重试。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('好的'),
+          ),
+        ],
+      ),
+    );
   }
 
   static void _showUpToDate(BuildContext context) {

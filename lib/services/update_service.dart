@@ -15,10 +15,14 @@ class UpdateCheckResult {
   final bool hasUpdate;
   final String? latestTag; // 如 "v1.3.0"
   final String? releaseUrl;
+
+  /// 检查是否失败（网络异常 / 没有 Release / 读不到当前版本）。
+  final bool error;
   const UpdateCheckResult({
     required this.hasUpdate,
     this.latestTag,
     this.releaseUrl,
+    this.error = false,
   });
 }
 
@@ -85,16 +89,19 @@ class UpdateService {
   }
 
   /// 检查是否有新版本。结果不做记忆，只做单次判断。
+  ///
+  /// - [error] 为 true：网络失败 / 仓库无 Release / 读不到当前版本，
+  ///   此时无法判断是否有更新（不是"没有更新"）。
   static Future<UpdateCheckResult> check() async {
     final current = await _currentVersion();
     final latest = await _fetchLatestRelease();
     if (latest == null || current.isEmpty) {
-      return const UpdateCheckResult(hasUpdate: false);
+      return const UpdateCheckResult(hasUpdate: false, error: true);
     }
 
     final tagName = (latest['tag_name'] as String?) ?? '';
     if (tagName.isEmpty) {
-      return const UpdateCheckResult(hasUpdate: false);
+      return const UpdateCheckResult(hasUpdate: false, error: true);
     }
 
     final hasUpdate = !_versionGte(_parseVersion(current), _parseVersion(tagName));
