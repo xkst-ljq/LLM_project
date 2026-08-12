@@ -1392,19 +1392,15 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
   }
 
   void _openCharacterEdit(CharacterCard character, int index) {
-    final col = index % 2;
-    final row = index ~/ 2;
-    const cardWidth = 160.0;
-    const cardHeight = 240.0;
-    const crossSpacing = 12.0;
-    const mainSpacing = 12.0;
-    const padding = 16.0;
-
-    final cardLeft = padding + col * (cardWidth + crossSpacing);
-    final cardTop = kToolbarHeight +
-        MediaQuery.of(context).padding.top +
-        padding +
-        row * (cardHeight + mainSpacing);
+    // 从实际卡片 widget 读取矩形作为展开动画起点，而不是按 index 硬编码推算
+    // （硬编码的 160x240 与真实网格卡片尺寸不符时，展开动画会从错误位置弹出）。
+    Rect? cardRect;
+    final key = _cardKeys[character.id];
+    final ro = key?.currentContext?.findRenderObject();
+    if (ro is RenderBox && ro.hasSize) {
+      cardRect = ro.localToGlobal(Offset.zero) & ro.size;
+    }
+    cardRect ??= _fallbackCardRect(context);
 
     Navigator.of(context).push(
       PageRouteBuilder(
@@ -1412,11 +1408,11 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
         barrierDismissible: true,
         barrierColor: Colors.black54,
         barrierLabel: '关闭',
-        transitionDuration: const Duration(milliseconds: 220),
+        transitionDuration: const Duration(milliseconds: 240),
         reverseTransitionDuration: const Duration(milliseconds: 180),
         pageBuilder: (_, _, _) => CharacterEditOverlay(
           character: character,
-          cardRect: Rect.fromLTWH(cardLeft, cardTop, cardWidth, cardHeight),
+          cardRect: cardRect,
         ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(
