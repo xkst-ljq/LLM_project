@@ -2148,11 +2148,11 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                             ),
                             decoration: BoxDecoration(
                               color: _gradientSubTab == 'preview'
-                                  ? Theme.of(context).scaffoldBackgroundColor
+                                  ? AppThemeTokens.of(context).accent.withValues(alpha: 0.18)
                                   : AppThemeTokens.of(context).surfaceElevated,
                               borderRadius: BorderRadius.circular(8),
                               border: _gradientSubTab == 'preview'
-                                  ? Border.all(color: AppThemeTokens.of(context).outline)
+                                  ? Border.all(color: AppThemeTokens.of(context).accent.withValues(alpha: 0.5))
                                   : null,
                             ),
                             child: Text(
@@ -2160,7 +2160,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                               style: TextStyle(
                                 fontSize: 11,
                                 color: _gradientSubTab == 'preview'
-                                    ? Theme.of(context).primaryColor
+                                    ? AppThemeTokens.of(context).accent
                                     : AppThemeTokens.of(context).textSecondary,
                               ),
                             ),
