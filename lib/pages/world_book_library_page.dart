@@ -1126,9 +1126,10 @@ class _HoneycombCloudState extends State<_HoneycombCloud>
     _amplitudes = [
       for (var i = 0; i < widget.words.length; i++) 2.5 + rng.nextDouble() * 3,
     ];
+    // 用整数倍频（1 / 2 / 3）：sin/cos 在一个完整循环（t: 0→2π）后回到
+    // 相同值，动画 repeat 时位置连续，不会在重置瞬间闪烁。
     _freqs = [
-      for (var i = 0; i < widget.words.length; i++)
-        0.8 + rng.nextDouble() * 0.9,
+      for (var i = 0; i < widget.words.length; i++) 1 + rng.nextInt(3),
     ];
   }
 
@@ -1253,7 +1254,7 @@ class _HoneycombCloudState extends State<_HoneycombCloud>
                         offset: Offset(
                           math.sin(t * _freqs[i] + _phases[i]) *
                               _amplitudes[i],
-                          math.cos(t * _freqs[i] * 0.7 + _phases[i]) *
+                          math.cos(t * (_freqs[i] + 1) + _phases[i]) *
                               _amplitudes[i] *
                               0.8,
                         ),
