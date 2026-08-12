@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -655,6 +656,35 @@ class _MainMenuPageState extends State<MainMenuPage>
                   ),
                 ],
               ),
+            ),
+            // 进入设置页时，用高斯模糊遮盖屏幕左半的主页区域，随滑出动画
+            // 渐强；主页被盖住不可点击（点击无反应，只能滑动/返回键收起）。
+            AnimatedBuilder(
+              animation: _animationController,
+              builder: (context, _) {
+                final v = _animationController.value;
+                return Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  right: panelW * v,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: (v * 0.95).clamp(0.0, 1.0),
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                          child: ColoredBox(
+                            color: AppThemeTokens.of(context)
+                                .scrim
+                                .withValues(alpha: 0.12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
             if (_guidePhase == _MainGuidePhase.home)
               PageGuideOverlay(
