@@ -2988,7 +2988,7 @@ class _EdgeGestureHintState extends State<_EdgeGestureHint>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3800),
+      duration: const Duration(milliseconds: 6000),
     );
   }
 
@@ -3013,34 +3013,65 @@ class _EdgeGestureHintState extends State<_EdgeGestureHint>
 
   @override
   Widget build(BuildContext context) {
+    // 发光色：Day 青蓝、Night 浅紫。
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    final glowColor =
+        isNight ? const Color(0xFFB8A8FF) : const Color(0xFF3FC6C2);
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
         final phase = _controller.value;
+        // 呼吸脉冲：0.15（低强度）到 0.9（高强度），整体强度下降、更慢。
         double pulse;
-        if (phase < 0.7) {
-          pulse = 0.12;
-        } else if (phase < 0.84) {
-          pulse = 0.12 + 0.73 * (phase - 0.7) / 0.14;
+        if (phase < 0.72) {
+          pulse = 0.15;
+        } else if (phase < 0.86) {
+          pulse = 0.15 + 0.75 * (phase - 0.72) / 0.14;
         } else {
-          pulse = 0.85 - 0.73 * (phase - 0.84) / 0.16;
+          pulse = 0.90 - 0.75 * (phase - 0.86) / 0.14;
         }
+        // 整条低强度细线 + 中间一段高强度呼吸发光线，都贴右边界。
         return IgnorePointer(
           child: Container(
             width: 15,
-            // 铺满父容器高度（由 Positioned top:0/bottom:0 决定）。
             height: double.infinity,
             decoration: BoxDecoration(
               border: Border(right: BorderSide(color: widget.line)),
             ),
             child: Align(
-              // 呼吸线贴最右边界，正好落在主页与设置面板的交界线上。
               alignment: Alignment.centerRight,
-              child: Container(
-                width: 1,
-                // 呼吸线铺满全高，形成一条完整的细光带。
-                height: double.infinity,
-                color: widget.accent.withValues(alpha: pulse),
+              child: Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.none,
+                children: [
+                  // 低强度整条细线（背景分隔线）。
+                  Container(
+                    width: 1,
+                    height: double.infinity,
+                    color: widget.accent.withValues(alpha: 0.10),
+                  ),
+                  // 中间一段高强度呼吸发光线：占约 22% 高度、居中。
+                  FractionallySizedBox(
+                    alignment: Alignment.center,
+                    widthFactor: 1.0,
+                    heightFactor: 0.22,
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 1,
+                        height: double.infinity,
+                        color: glowColor.withValues(alpha: 0.35 + 0.55 * pulse),
+                        boxShadow: [
+                          BoxShadow(
+                            color: glowColor.withValues(alpha: 0.45 * pulse),
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
