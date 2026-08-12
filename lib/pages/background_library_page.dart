@@ -2295,7 +2295,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
+                    Text(
                       '背景名称',
                       style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textSecondary),
                     ),
@@ -2352,7 +2352,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
+                    Text(
                       '场景设定',
                       style: TextStyle(fontSize: 12, color: AppThemeTokens.of(context).textSecondary),
                     ),
