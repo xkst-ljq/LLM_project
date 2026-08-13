@@ -446,6 +446,14 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
   /// 这里直接原样返回即可。
   List<CharacterCard> get _selectableCharacters => _characters;
 
+  /// 当前选中角色在 [planes]（固定时间排序）里的索引，作为选择层打开时的停靠点。
+  int _initialDeckIndex(List<CharacterCard> planes) {
+    final id = _activeCharacter?.id;
+    if (id == null) return 0;
+    final i = planes.indexWhere((c) => c.id == id);
+    return i < 0 ? 0 : i;
+  }
+
   Widget _buildBrand(AppThemeTokens tokens) {
     return _Staggered(
       animation: _entrance,
@@ -877,6 +885,8 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
               height: roleHeight,
               child: _RoleSnapDeck(
                 characters: planes,
+                // 打开时停在当前角色所在位置（在固定时间排序列表里的索引）。
+                initialIndex: _initialDeckIndex(planes),
                 pendingRoleId: _pendingRoleId,
                 promotingRoleId: _promotingRoleId,
                 activeWidth: roleWidth,
@@ -1742,6 +1752,7 @@ class _AdaptiveNameText extends StatelessWidget {
 class _RoleSnapDeck extends StatefulWidget {
   const _RoleSnapDeck({
     required this.characters,
+    required this.initialIndex,
     required this.pendingRoleId,
     required this.promotingRoleId,
     required this.activeWidth,
@@ -1755,6 +1766,10 @@ class _RoleSnapDeck extends StatefulWidget {
   });
 
   final List<CharacterCard> characters;
+
+  /// 轨道打开时停靠的卡片索引（当前选中角色在固定时间排序列表中的位置），
+  /// 让选择层一开始就停在当前角色上，而不是固定第一张。
+  final int initialIndex;
   final String? pendingRoleId;
   final String? promotingRoleId;
   final double activeWidth;
@@ -1796,6 +1811,15 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   double _dragPosition = 0.0; // 手指按住期间跟手显示的格位（可越过 0..max）。
   bool _dragActive = false;
   int _lastSwipedIndex = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开选择层时停在当前角色所在格位（固定时间排序中的位置）。
+    _position = widget.initialIndex
+        .clamp(0, widget.characters.length - 1)
+        .toDouble();
+  }
 
   int get _count => widget.characters.length;
 
