@@ -18,6 +18,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Write latest/version.json from release
         env:
@@ -48,4 +51,4 @@ jobs:
             exit 0
           fi
           git commit -m "chore(release): update latest/version.json"
-          git push
+          git push origin HEAD:main
