@@ -1795,7 +1795,6 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   static const double _inactiveScale = 0.68;
   static const double _inactiveOpacity = 0.5;
   static const double _flingDistance = 48; // 判定"滑动翻页"的最小位移(px)。
-  static const double _overShoot = 56; // 大滑动时越过目标卡的距离(px)。
   static const double _tapSlop = 8; // 小于该位移当作点击，不翻页。
 
   late AnimationController _flipCtrl;
@@ -1927,18 +1926,15 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
       return;
     }
 
-    // 滑动距离大 → 初始力大 → 越过目标卡再回弹（刹车感）。
-    final strength = (absPx / (widget.activeWidth * 0.8)).clamp(0.0, 1.0);
-    final overshoot = _overShoot * strength;
+    // 用可靠的标准翻页动画（animateTo，与点击吸调用的是同一套机制）滑到目标格。
+    // 之前用自制的 _FlipSimulation 过冲模拟（animateWith），滑到后面的卡片时
+    // 会把轨道弹回中间格，导致第三张及之后的卡片无法停留、也就选不中。
     _flipCtrl
       ..value = _dragPosition
-      ..animateWith(
-        _FlipSimulation(
-          begin: _dragPosition,
-          end: target.toDouble(),
-          overshoot: overshoot / _step,
-          duration: const Duration(milliseconds: 420),
-        ),
+      ..animateTo(
+        target.toDouble(),
+        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 420),
       );
   }
 
@@ -2043,36 +2039,6 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
       ),
     );
   }
-}
-
-/// 过冲回弹的翻页模拟：先冲过目标格，再回弹到目标（刹车感）。
-class _FlipSimulation extends Simulation {
-  _FlipSimulation({
-    required this.begin,
-    required this.end,
-    required this.overshoot,
-    required Duration duration,
-  }) : _durationMs = duration.inMilliseconds;
-
-  final double begin;
-  final double end;
-  final double overshoot;
-  final int _durationMs;
-
-  @override
-  double x(double timeInSeconds) {
-    final t = (timeInSeconds * 1000 / _durationMs).clamp(0.0, 1.0);
-    if (t >= 1.0) return end;
-    // 在 easeOutCubic 基础上叠加过冲：前段快速冲向 end + overshoot，后段回落到 end。
-    final eased = Curves.easeOutCubic.transform(t);
-    return begin + (end - begin) * eased + overshoot * (1 - t) * (1 - t) * t * 4;
-  }
-
-  @override
-  bool isDone(double timeInSeconds) => timeInSeconds * 1000 >= _durationMs;
-
-  @override
-  double dx(double timeInSeconds) => 0;
 }
 
 class _RolePlane extends StatelessWidget {
