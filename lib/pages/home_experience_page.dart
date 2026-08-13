@@ -1798,11 +1798,11 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   static const double _tapSlop = 8; // 小于该位移当作点击，不翻页。
 
   late AnimationController _flipCtrl;
-  double _position = 0.0; // 翻页格：0 为最左，_count-1 为最右。
+  double _position = 0.0; // 选中/落点格位（确定性，由松手时直接写入）。
+  double _visualPos = 0.0; // 视觉格位（滑动动画用，与选中分离，避免动画干扰选中）。
   double _dragStartX = 0.0;
   double _dragPosition = 0.0; // 手指按住期间跟手显示的格位（可越过 0..max）。
   bool _dragActive = false;
-  bool _tapFocusing = false;
   int _lastSwipedIndex = -1;
 
   int get _count => widget.characters.length;
@@ -1819,7 +1819,8 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
       duration: const Duration(milliseconds: 420),
     )..addListener(() {
         if (!mounted) return;
-        setState(() => _position = _flipCtrl.value);
+        // 只驱动视觉格位，不动 _position——这样平滑滑动不会干扰「哪张卡被选中」。
+        setState(() => _visualPos = _flipCtrl.value);
       })
       ..addStatusListener(_onFlipStatus);
   }
@@ -1830,12 +1831,10 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
     super.dispose();
   }
 
-  /// 翻页动画结束：选中当前落点的卡。点击聚焦的动画（_tapFocusing）不选中，
-  /// 只有滑动翻页（或 reduceMotion 的立即切换）才触发选中。
+  /// 滑动动画结束。选中已由 _onDragEnd 确定性完成，这里不再参与选中判定，
+  /// 避免动画收尾时再算一次、把落点带回中间格。
   void _onFlipStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed || !mounted) return;
-    if (_tapFocusing) return;
-    _selectAt(_position.round().clamp(0, _count - 1));
+    // 动画完成即视觉到位，无需额外处理。
   }
 
   void _selectAt(int index) {
@@ -1881,25 +1880,24 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
 
   void _onDragEnd(DragEndDetails details) {
     if (!_dragActive) return;
+    final from = _dragPosition; // 手指松开时轨道所在的视觉格位。
     _dragActive = false;
     final start = _position.round().clamp(0, _count - 1);
     final totalPx = details.localPosition.dx - _dragStartX;
     final absPx = totalPx.abs();
     final maxPos = _count - 1;
 
-    // 越界（拉过头）：确定性回到边缘。之前用 easeOutBack 回弹，从被橡皮筋
-    // 拉得很远的值回弹时大幅过冲，把轨道甩到前面的卡片（最后一张再滑动会
-    // 弹到第二张，正是因为这里）。
+    // 越界（拉过头）：确定性回到边缘 + 平滑视觉回归。
+    // （之前用 easeOutBack 从被橡皮筋拉远的值回弹，大幅过冲把轨道甩到前面卡片。）
     if (_dragPosition < 0 || _dragPosition > maxPos) {
-      setState(() {
-        _position = _dragPosition < 0 ? 0.0 : maxPos.toDouble();
-      });
+      final edge = _dragPosition < 0 ? 0.0 : maxPos.toDouble();
+      _animateVisualTo(edge, from: from);
       return;
     }
 
     // 位移太小 → 当作点击，回原位。
     if (absPx < _tapSlop || absPx < _flingDistance) {
-      setState(() => _position = start.toDouble());
+      _animateVisualTo(start.toDouble(), from: from);
       return;
     }
 
@@ -1907,15 +1905,35 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
 
     if (target == start) {
       // 距离不足以换卡：回落到当前格。
-      setState(() => _position = start.toDouble());
+      _animateVisualTo(start.toDouble(), from: from);
       return;
     }
 
-    // 确定性落位 + 选中：松手直接把轨道定格到目标格并选中，不再用动画。
-    // 试过补平滑动画（animateTo），但动画完成回调会再算一次选中、把落点
-    // 带回中间格，导致第三张及以后又选不中。功能优先：定格即选中。
-    setState(() => _position = target.toDouble());
+    // 确定性选中（立即，动画不参与选中判定），再平滑滑动到目标格。
+    setState(() {
+      _position = target.toDouble();
+      _visualPos = from;
+    });
     _selectAt(target);
+    _flipCtrl
+      ..value = from
+      ..animateTo(
+        target.toDouble(),
+        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 380),
+      );
+  }
+
+  /// 平滑把视觉格位动画到 [to]；选中位置（_position）保持不动。
+  void _animateVisualTo(double to, {required double from}) {
+    setState(() => _visualPos = from);
+    _flipCtrl
+      ..value = from
+      ..animateTo(
+        to,
+        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 380),
+      );
   }
 
   /// 按滑动距离换算松手后的目标格。
@@ -1935,8 +1953,9 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   Widget build(BuildContext context) {
     if (_count == 0) return const SizedBox.shrink();
 
-    final p = _dragActive ? _dragPosition : _position;
-    final selectedIdx = p.round().clamp(0, _count - 1);
+    final p = _dragActive ? _dragPosition : _visualPos;
+    // 选中态跟确定性落点走（_position），滑动动画（_visualPos）不参与选中判定。
+    final selectedIdx = _position.round().clamp(0, _count - 1);
     final a = p.floor().toInt().clamp(0, _count - 1);
     final frac = (p - a).clamp(0.0, 1.0);
     final iw = _inactiveScale;
