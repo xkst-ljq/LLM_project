@@ -6,6 +6,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 const String kUpdateRepoOwner = 'xkst-ljq';
 const String kUpdateRepoName = 'LLM_project';
 
+/// Gitee 仓库信息（国内直连的更新信息源）。
+/// 发布 Release 时由 GitHub Actions 生成 `latest/version.json` 并提交仓库，
+/// 随 Gitee「自动同步 GitHub」一起同步到这里，App 从 Gitee raw 读取。
+const String kGiteeOwner = 'xkstljq';
+const String kGiteeRepo = 'LLM_project';
+const String kGiteeBranch = 'main';
+
+/// Gitee raw 上的最新版本信息文件地址。
+String kGiteeVersionUrl() =>
+    'https://gitee.com/$kGiteeOwner/$kGiteeRepo/raw/$kGiteeBranch/latest/version.json';
+
 /// GitHub Release 下载 / 查看页。
 String kReleasePageUrl() =>
     'https://github.com/$kUpdateRepoOwner/$kUpdateRepoName/releases/latest';
@@ -110,6 +121,26 @@ class UpdateService {
   ///   此时无法判断是否有更新（不是"没有更新"）。
   static Future<UpdateCheckResult> check() async {
     final current = await _currentVersion();
+
+    // 1) 首选 Gitee version.json（国内直连，无需 VPN）。
+    final gitee = await _fetchGiteeVersion();
+    if (gitee != null) {
+      final tagName = (gitee['version'] as String?) ?? '';
+      final releaseUrl = (gitee['downloadUrl'] as String?) ??
+          (gitee['releaseUrl'] as String?) ??
+          kReleasePageUrl();
+      if (tagName.isNotEmpty && current.isNotEmpty) {
+        final hasUpdate =
+            !_versionGte(_parseVersion(current), _parseVersion(tagName));
+        return UpdateCheckResult(
+          hasUpdate: hasUpdate,
+          latestTag: tagName,
+          releaseUrl: releaseUrl,
+        );
+      }
+    }
+
+    // 2) 备选：GitHub API（有 VPN 时可用）。
     final latest = await _fetchLatestRelease();
     if (latest == null || current.isEmpty) {
       return const UpdateCheckResult(hasUpdate: false, error: true);
@@ -126,6 +157,27 @@ class UpdateService {
       latestTag: tagName,
       releaseUrl: kReleasePageUrl(),
     );
+  }
+
+  /// 请求 Gitee raw 上的 version.json。
+  ///
+  /// 成功解析出 `version` 字段才返回，否则返回 null（走 GitHub 备选）。
+  static Future<Map<String, dynamic>?> _fetchGiteeVersion() async {
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ),
+    );
+    try {
+      final resp = await dio.get<Map<String, dynamic>>(kGiteeVersionUrl());
+      if (resp.statusCode == 200 && resp.data != null) {
+        return resp.data;
+      }
+    } catch (_) {
+      // Gitee 失败 → 回退 GitHub。
+    }
+    return null;
   }
 
   /// 是否该提醒（避免每次启动都弹）：距上次提醒的版本有更新才提醒。
