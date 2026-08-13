@@ -1831,12 +1831,12 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   /// 切换落定后播放一次轻微缩放脉冲，作为「已选中」的视觉反馈。
   /// 只缩放整条轨道，不改变卡片位置，也不参与选中判定。
   void _playSwitchPulse() {
-    _pulseCtrl
-      ..value = 1.0
-      ..forward()
-      ..whenComplete(() {
-        if (mounted) _pulseCtrl.reverse();
-      });
+    _pulseCtrl.value = 1.0;
+    // 先正向缩放，完成后反向收回（pulse 要的是 1.0→1.03→1.0）。
+    // 注意 completion 要挂在 forward() 返回的 TickerFuture 上，而不是控制器。
+    _pulseCtrl.forward().whenComplete(() {
+      if (mounted) _pulseCtrl.reverse();
+    });
   }
 
   void _selectAt(int index) {
