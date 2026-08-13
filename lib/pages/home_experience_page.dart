@@ -1911,23 +1911,11 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
       return;
     }
 
-    if (widget.reduceMotion) {
-      // 减少动效：直接定格到目标格，不过冲。
-      setState(() => _position = target.toDouble());
-      _selectAt(target);
-      return;
-    }
-
-    // 确定性选中（立即，不依赖动画完成回调——动画中途把轨道弹回中间格时
-    // 落点会停错卡），然后平滑滑动到目标格（纯视觉，easeOutCubic 不过冲）。
+    // 确定性落位 + 选中：松手直接把轨道定格到目标格并选中，不再用动画。
+    // 试过补平滑动画（animateTo），但动画完成回调会再算一次选中、把落点
+    // 带回中间格，导致第三张及以后又选不中。功能优先：定格即选中。
+    setState(() => _position = target.toDouble());
     _selectAt(target);
-    _flipCtrl
-      ..value = _dragPosition
-      ..animateTo(
-        target.toDouble(),
-        curve: Curves.easeOutCubic,
-        duration: const Duration(milliseconds: 380),
-      );
   }
 
   /// 按滑动距离换算松手后的目标格。
