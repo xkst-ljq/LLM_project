@@ -69,6 +69,8 @@ class _WalkthroughViewerState extends State<WalkthroughViewer> {
   int get _count => widget.walkthrough.steps.length;
 
   void _goTo(int index) {
+    // 空步骤时 clamp(0, -1) 下界>上界会抛 ArgumentError。
+    if (_count == 0) return;
     final i = index.clamp(0, _count - 1);
     _controller.animateToPage(
       i,

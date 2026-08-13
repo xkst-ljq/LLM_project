@@ -153,6 +153,74 @@ class CharacterCardAssetService {
     return result;
   }
 
+  /// 把 meta_json 里 UI 组件引用的本地图片嵌入 archive，并把 `assetPath`
+  /// 改写为 `assets/embedded/xxx`，使角色卡跨设备导入后组件图片不失效。
+  ///
+  /// UI 组件的 assetPath 是 JSON 值而非 `<img src>`，`_embedLocalImagesInText`
+  /// 的 HTML 正则匹配不到，需要单独递归处理。
+  static Future<String> _embedLocalImagesInMetaJson(
+    String metaJson,
+    Archive archive,
+    List<int> counter,
+  ) async {
+    if (metaJson.trim().isEmpty) return metaJson;
+    Object? root;
+    try {
+      root = jsonDecode(metaJson);
+    } catch (_) {
+      return metaJson;
+    }
+    if (root is! Map) return metaJson;
+
+    final changed = <String, bool>{};
+    await _embedAssetPaths(root, archive, counter, changed);
+    if (changed['any'] != true) return metaJson;
+    return jsonEncode(root);
+  }
+
+  static Future<void> _embedAssetPaths(
+    dynamic node,
+    Archive archive,
+    List<int> counter,
+    Map<String, bool> changed,
+  ) async {
+    if (node is Map) {
+      for (final entry in node.entries.toList()) {
+        final key = entry.key.toString();
+        if (key == 'assetPath' && entry.value is String) {
+          final path = entry.value.toString().trim();
+          if (path.isNotEmpty &&
+              !path.startsWith('http://') &&
+              !path.startsWith('https://') &&
+              !path.startsWith('data:') &&
+              !path.startsWith('assets/')) {
+            final file = File(path);
+            if (file.existsSync()) {
+              try {
+                final bytes = await file.readAsBytes();
+                final ext =
+                    p.extension(path).isEmpty ? '.png' : p.extension(path);
+                final assetPath = 'assets/embedded/img_${counter[0]}$ext';
+                counter[0]++;
+                archive.addFile(ArchiveFile(assetPath, bytes.length, bytes));
+                node[key] = assetPath;
+                changed['any'] = true;
+                continue;
+              } catch (e) {
+                debugPrint('打包 meta_json 图片失败: $path $e');
+              }
+            }
+          }
+        }
+        await _embedAssetPaths(entry.value, archive, counter, changed);
+      }
+    } else if (node is List) {
+      for (final item in node) {
+        await _embedAssetPaths(item, archive, counter, changed);
+      }
+    }
+  }
+
   static Future<Map<String, dynamic>?> _findWorldBookRaw(String id) async {
     if (id.trim().isEmpty) return null;
 
@@ -307,6 +375,12 @@ class CharacterCardAssetService {
     );
     characterJson['description'] = await _embedLocalImagesInText(
       characterJson['description']?.toString() ?? '',
+      archive,
+      embedCounter,
+    );
+    // UI 组件里的图片引用（assetPath）也要内嵌并改写，否则跨设备导入后失效。
+    characterJson['meta_json'] = await _embedLocalImagesInMetaJson(
+      characterJson['meta_json']?.toString() ?? '',
       archive,
       embedCounter,
     );
@@ -471,6 +545,8 @@ class CharacterCardAssetService {
     c['opening_greetings'] =
         _restoreAssetRefsInText(c['opening_greetings'], pathMap);
     c['description'] = _restoreAssetRefsInText(c['description'], pathMap);
+    // meta_json 里 UI 组件的图片引用同样重写为本地路径。
+    c['meta_json'] = _restoreAssetRefsInText(c['meta_json'], pathMap);
 
     // 如果包内包含世界书，则绑定新世界书 ID；否则清空，避免无效绑定
     c['world_book_id'] = worldBookIdMap[oldWorldBookId] ?? '';

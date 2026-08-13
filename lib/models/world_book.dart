@@ -32,8 +32,8 @@ class WorldBook {
 
   factory WorldBook.fromDb(Map<String, dynamic> data) {
     return WorldBook(
-      id: data['id'] as String,
-      name: data['name'] as String,
+      id: data['id']?.toString() ?? '',
+      name: data['name']?.toString() ?? '',
       description: data['description'] as String? ?? '',
       detailedSetting: data['detailed_setting'] as String? ?? '',
       entriesJson: data['entries_json'] as String? ?? '[]',

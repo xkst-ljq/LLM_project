@@ -1,6 +1,6 @@
 # LLM Project
 
-> **Demo 1.2.5** · 基于 Flutter 开发的本地 LLM 角色聊天 App  
+> **Demo 1.2.7** · 基于 Flutter 开发的本地 LLM 角色聊天 App  
 > 当前名称为临时开发名，正式名称将在 Demo 1.3.0 阶段确定。
 
 LLM Project 是一个面向 **LLM 角色聊天 / 角色卡创作 / 世界书设定 / 本地资产管理** 的 Android App。  
@@ -218,7 +218,7 @@ API Key 使用 `flutter_secure_storage` 保存在本地设备中。
 ## 🧭 当前版本定位
 
 ```text
-Demo 1.2.5
+Demo 1.2.7
 ```
 
 这是一个用于测试角色卡、世界书、背景、备份与资产流通能力的 Demo 版本。  

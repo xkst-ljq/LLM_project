@@ -260,12 +260,25 @@ class UIModule {
     'linkedSources': linkedSources,
   };
 
+  /// 安全地按索引读枚举：非法/越界值回落默认，避免第三方卡 JSON 崩溃。
+  static T _enumValue<T>(List<T> values, dynamic raw, {required T fallback}) {
+    if (raw is num &&
+        raw == raw.toInt() &&
+        raw.toInt() >= 0 &&
+        raw.toInt() < values.length) {
+      return values[raw.toInt()];
+    }
+    return fallback;
+  }
+
   factory UIModule.fromJson(Map<String, dynamic> json) => UIModule(
     id: json['id'] ?? 'unknown_id',
     name: json['name'] ?? '未命名组件',
     type: json['type'] ?? 'text',
-    material: UIModuleMaterial.values[json['material'] ?? 0],
-    shape: UIModuleShape.values[json['shape'] ?? 1],
+    material: _enumValue(UIModuleMaterial.values, json['material'],
+        fallback: UIModuleMaterial.glass),
+    shape: _enumValue(UIModuleShape.values, json['shape'],
+        fallback: UIModuleShape.rounded),
     color: Color(json['color'] ?? Colors.white.toARGB32()),
     opacity: (json['opacity'] ?? 1.0).toDouble(),
     borderRadius: (json['borderRadius'] ?? 12.0).toDouble(),

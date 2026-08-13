@@ -141,8 +141,8 @@ void main() {
     test('PHI 以肯定句说明可读，并解释结算时序', () {
       final out = StatusBarEngine.buildUpdateFormatInstruction(_fields, _values);
       expect(out, contains('你能够看到'));
-      expect(out, contains('如实回答'));
-      expect(out, contains('回复之后自动结算'));
+      expect(out, contains('如实写出'));
+      expect(out, contains('回复之后自动累加'));
     });
 
     test('PHI 区分可读字段与隐藏字段，避免规则被泛化', () {
@@ -210,7 +210,7 @@ void main() {
         },
       );
       // 敌方警觉度可写不可读，当前值绝不能出现。
-      final section = out.substring(out.indexOf('当前状态值'));
+      final section = out.substring(out.indexOf('最新状态值'));
       expect(section, isNot(contains('敌方警觉度：')));
     });
   });

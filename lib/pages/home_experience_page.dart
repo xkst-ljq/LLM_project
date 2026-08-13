@@ -1821,6 +1821,19 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
         .toDouble();
   }
 
+  @override
+  void didUpdateWidget(covariant _RoleSnapDeck oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 列表增删后格位可能越界或指向错误的卡片：clamp 回有效范围。
+    if (oldWidget.characters != widget.characters) {
+      _dragActive = false;
+      _lastSwipedIndex = -1;
+      final maxPos = math.max(0, _count - 1).toDouble();
+      _position = _position.clamp(0.0, maxPos).toDouble();
+      _dragPosition = _position;
+    }
+  }
+
   int get _count => widget.characters.length;
 
   /// 相邻两卡中心距：选中卡半宽 + 间距 + 未选中卡半宽。
@@ -1865,6 +1878,14 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
       return max + overshoot * overshoot * resist;
     }
     return value;
+  }
+
+  /// 手势被系统打断（后台 / 多指 / 系统返回）：复位拖动态，卡片落回选中格，
+  /// 避免冻结在 `_dragPosition` 导致轨道无法再滑动。
+  void _onDragCancel() {
+    if (!_dragActive) return;
+    _dragActive = false;
+    _dragPosition = _position;
   }
 
   void _onDragEnd(DragEndDetails details) {
@@ -1936,6 +1957,7 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
       onHorizontalDragStart: _onDragStart,
       onHorizontalDragUpdate: _onDragUpdate,
       onHorizontalDragEnd: _onDragEnd,
+      onHorizontalDragCancel: _onDragCancel,
       // TweenAnimationBuilder：把布局位置从当前平滑动画到 target。它只影响
       // 卡片怎么排，不触发任何选中逻辑（_selectAt 只在 _onDragEnd 里确定性调用）。
       child: TweenAnimationBuilder<double>(

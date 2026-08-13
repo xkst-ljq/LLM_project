@@ -19,9 +19,9 @@ class BackgroundCard {
 
   factory BackgroundCard.fromDb(Map<String, dynamic> data) {
     return BackgroundCard(
-      id: data['id'] as String,
-      name: data['name'] as String,
-      type: data['type'] as String,
+      id: data['id']?.toString() ?? '',
+      name: data['name']?.toString() ?? '',
+      type: data['type']?.toString() ?? '',
       colorValue: data['color_value'] as String? ?? '',
       originalImagePath: data['original_image_path'] as String? ?? '',
       sceneSetting: data['scene_setting'] as String? ?? '',

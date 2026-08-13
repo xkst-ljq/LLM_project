@@ -14,7 +14,9 @@ void main() {
 
     test('伴生 UI 宽度接近气泡', () {
       final size = UIAssemblyInfo.defaultPcbSizeFor('extra_companion');
-      expect(size.width, 320);
+      // 伴生内嵌在 AI 气泡里，宽度贴着气泡可显示上限（360*0.7-40=212），
+      // 否则运行时只能等比缩小，作者摆好的字号间距全变样。
+      expect(size.width, UIAssemblyInfo.companionMaxPcbWidth);
       expect(size.height, 200);
     });
 

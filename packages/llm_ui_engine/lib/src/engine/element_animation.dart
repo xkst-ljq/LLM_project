@@ -201,7 +201,9 @@ class ElementAnimation {
     final curveName = map['curve']?.toString();
     return ElementAnimation(
       type: type,
-      durationMs: (map['durationMs'] as num?)?.toInt() ?? type.defaultDurationMs,
+      // 负时长会让 Duration 构造抛 ArgumentError，畸形数据取绝对值兜底。
+      durationMs:
+          ((map['durationMs'] as num?)?.toInt() ?? type.defaultDurationMs).abs(),
       curve: ElementAnimationCurve.values.firstWhere(
         (c) => c.name == curveName,
         orElse: () => ElementAnimationCurve.easeInOut,

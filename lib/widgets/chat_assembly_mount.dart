@@ -112,11 +112,8 @@ class ChatAssemblyMount extends StatelessWidget {
       if (info.id.isEmpty) continue;
       if (info.mode != mode) continue;
       // 空方案没有任何页面内容，挂上去只会是一块空白。
-      if (info.pagesJson.trim().isEmpty || info.pagesJson.trim() == '[]') {
-        if (info.elementsJson.trim().isEmpty ||
-            info.elementsJson.trim() == '[]') {
-          continue;
-        }
+      if (!_hasAnyContent(info)) {
+        continue;
       }
       result = info;
       break;
@@ -129,6 +126,36 @@ class ChatAssemblyMount extends StatelessWidget {
       _resolveCache.remove(stale);
     }
     return result;
+  }
+
+  /// 该方案是否含有任何可渲染内容。
+  ///
+  /// 空方案（没有任何页面元素 / 手势 / 覆写）挂上去只会是一块空白，
+  /// 因此被当作「没有方案」跳过。仅判断 JSON 是否为 `[]` 不够——
+  /// 一个带空元素页面的方案同样不该挂载。
+  static bool _hasAnyContent(UIAssemblyInfo info) {
+    // 旧版单页结构：elements 非空即算有内容。
+    final legacy = info.elementsJson.trim();
+    if (legacy.isNotEmpty && legacy != '[]') return true;
+
+    final raw = info.pagesJson.trim();
+    if (raw.isEmpty || raw == '[]') return false;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return false;
+      for (final page in decoded.whereType<Map>()) {
+        final elements = page['elements'];
+        if (elements is List && elements.isNotEmpty) return true;
+        final gestures = page['gestures'];
+        if (gestures is List && gestures.isNotEmpty) return true;
+        final overrides = page['propertyOverrides'];
+        if (overrides is List && overrides.isNotEmpty) return true;
+      }
+    } catch (_) {
+      // 损坏数据：保守视为有内容，交由挂载路径兜底。
+      return true;
+    }
+    return false;
   }
 
   /// resolveAssembly 结果缓存（最近最多使用，命中即移到末尾）。

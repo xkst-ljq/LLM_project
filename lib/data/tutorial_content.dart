@@ -84,8 +84,8 @@ const Walkthrough _home = Walkthrough(
     WalkthroughStep(
       title: '当前角色入口卡',
       body: '主页正中是一张「当前角色」入口卡，显示角色名、简介和「继续体验 / 开始新体验」状态。\n\n'
-          '点击卡片会进入角色选择层，用来切换当前聊天对象；点击卡片右下角的播放按钮会直接进入聊天页与当前角色对话。',
-      imageHint: '主页角色入口卡 + 播放按钮',
+          '点击卡片会进入角色选择层，用来切换当前聊天对象；点击卡片右下角的箭头按钮会直接进入聊天页与当前角色对话。',
+      imageHint: '主页角色入口卡 + 进入箭头按钮',
     ),
     WalkthroughStep(
       title: '切换当前角色',
@@ -125,7 +125,7 @@ const Walkthrough _settings = Walkthrough(
           '• 角色与内容：用户设定、Prompt 策略\n'
           '• 外观与创作：UI 创作工作室、教程与导览\n'
           '• 关于：检查更新、关于\n\n'
-          '从主页向右滑打开设置页，再次向右滑返回主页。',
+          '从主页向左滑打开设置页，再次向右滑返回主页。',
       imageHint: '设置页整体分组',
     ),
     WalkthroughStep(

@@ -420,42 +420,6 @@ class BackupService {
     final backgroundIdMap = <String, String>{};
     final characterIdMap = <String, String>{};
 
-    final characters = _readJson(files, 'data/characters.json');
-    if (characters is List) {
-      for (int i = 0; i < characters.length; i++) {
-        final c = Map<String, dynamic>.from(characters[i] as Map);
-
-        final oldId = c['id']?.toString() ?? '';
-        final oldWorldBookId = c['world_book_id']?.toString() ?? '';
-        final oldBackgroundId = c['background_id']?.toString() ?? '';
-
-        c['avatar'] = _restorePath(c['avatar'], pathMap);
-        c['card_image_path'] = _restorePath(c['card_image_path'], pathMap);
-        c['user_avatar'] = _restorePath(c['user_avatar'], pathMap);
-
-        if (isMergeMode) {
-          final newId = IdUtils.timestampId(20000 + i);
-          characterIdMap[oldId] = newId;
-
-          c['id'] = newId;
-          c['name'] = await _uniqueName(
-            db,
-            'characters',
-            c['name']?.toString() ?? '导入角色卡',
-          );
-
-          c['world_book_id'] = worldBookIdMap[oldWorldBookId] ?? '';
-          c['background_id'] = backgroundIdMap[oldBackgroundId] ?? '';
-        }
-
-        await db.insert(
-          'characters',
-          c,
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-    }
-
     final worldBooks = _readJson(files, 'data/world_books.json');
     if (worldBooks is List) {
       for (int i = 0; i < worldBooks.length; i++) {
@@ -526,6 +490,43 @@ class BackupService {
       }
 
       BackgroundService.versionNotifier.value++;
+    }
+
+    // 角色依赖世界书/背景的旧→新 ID 映射，必须等上面两者导入后再执行。
+    final characters = _readJson(files, 'data/characters.json');
+    if (characters is List) {
+      for (int i = 0; i < characters.length; i++) {
+        final c = Map<String, dynamic>.from(characters[i] as Map);
+
+        final oldId = c['id']?.toString() ?? '';
+        final oldWorldBookId = c['world_book_id']?.toString() ?? '';
+        final oldBackgroundId = c['background_id']?.toString() ?? '';
+
+        c['avatar'] = _restorePath(c['avatar'], pathMap);
+        c['card_image_path'] = _restorePath(c['card_image_path'], pathMap);
+        c['user_avatar'] = _restorePath(c['user_avatar'], pathMap);
+
+        if (isMergeMode) {
+          final newId = IdUtils.timestampId(20000 + i);
+          characterIdMap[oldId] = newId;
+
+          c['id'] = newId;
+          c['name'] = await _uniqueName(
+            db,
+            'characters',
+            c['name']?.toString() ?? '导入角色卡',
+          );
+
+          c['world_book_id'] = worldBookIdMap[oldWorldBookId] ?? '';
+          c['background_id'] = backgroundIdMap[oldBackgroundId] ?? '';
+        }
+
+        await db.insert(
+          'characters',
+          c,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
     }
 
     if (!isMergeMode) {

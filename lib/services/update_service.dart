@@ -125,9 +125,9 @@ class UpdateService {
     // 1) 首选 Gitee version.json（国内直连，无需 VPN）。
     final gitee = await _fetchGiteeVersion();
     if (gitee != null) {
-      final tagName = (gitee['version'] as String?) ?? '';
-      final releaseUrl = (gitee['downloadUrl'] as String?) ??
-          (gitee['releaseUrl'] as String?) ??
+      final tagName = gitee['version']?.toString() ?? '';
+      final releaseUrl = gitee['downloadUrl']?.toString() ??
+          gitee['releaseUrl']?.toString() ??
           kReleasePageUrl();
       if (tagName.isNotEmpty && current.isNotEmpty) {
         final hasUpdate =

@@ -58,8 +58,12 @@ class AppFeedback {
     overlay.insert(entry);
 
     Timer(duration, () {
-      if (identical(_activeToast, entry)) _activeToast = null;
-      entry.remove();
+      // 已被更新的 toast 顶替时，旧 entry 在 `_activeToast?.remove()` 里
+      // 已经移除，这里不能再 remove（OverlayEntry 二次移除会崩溃）。
+      if (identical(_activeToast, entry)) {
+        _activeToast = null;
+        entry.remove();
+      }
     });
   }
 

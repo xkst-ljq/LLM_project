@@ -754,9 +754,9 @@ class UIRenderer {
   }
 
   static Widget _buildProgressBar(UIModule module, Size size) {
-    final double min = (module.properties['min'] ?? 0).toDouble();
-    final double max = (module.properties['max'] ?? 100).toDouble();
-    double current = (module.properties['current'] ?? min).toDouble();
+    final double min = (module.properties['min'] as num?)?.toDouble() ?? 0.0;
+    final double max = (module.properties['max'] as num?)?.toDouble() ?? 100.0;
+    double current = (module.properties['current'] as num?)?.toDouble() ?? min;
 
     final controls = LinkerService.resolveTargetControlState(module);
     final linkedVal = controls.frozen ? null : LinkerService.resolveTargetValue(module);
@@ -779,7 +779,10 @@ class UIRenderer {
       final double defaultSw = shortestSide * 0.12;
       final dynamic customSwProp = module.properties['strokeWidth'];
       double sw = (customSwProp != null && customSwProp is num) ? customSwProp.toDouble() : defaultSw;
-      sw = sw.clamp(2.0, shortestSide * 0.42).toDouble();
+      // 上限至少 2.0：元素短边过小时 `shortestSide * 0.42` 会小于下限 2.0，
+      // clamp 上下界倒挂会抛 ArgumentError。
+      final double maxSw = math.max(2.0, shortestSide * 0.42);
+      sw = sw.clamp(2.0, maxSw).toDouble();
       return CustomPaint(
         painter: _RingProgressBarPainter(progress: progress, fillColor: fillColor, trackColor: trackColor, strokeWidth: sw),
         size: size,
@@ -908,8 +911,8 @@ class UIRenderer {
     final bool isStudio = UISceneModeScope.of(context);
 
     Widget buildSliderWidget(double currentVal) {
-      final double min = (module.properties['min'] ?? 0).toDouble();
-      final double max = (module.properties['max'] ?? 100).toDouble();
+      final double min = (module.properties['min'] as num?)?.toDouble() ?? 0.0;
+      final double max = (module.properties['max'] as num?)?.toDouble() ?? 100.0;
       final double actualMin = min <= max ? min : max;
       final double actualMax = min <= max ? max : min;
       final double step =
@@ -999,8 +1002,9 @@ class UIRenderer {
     }
 
     if (isStudio) {
-      final double min = (module.properties['min'] ?? 0).toDouble();
-      double current = (module.properties['current'] ?? min).toDouble();
+      final double min = (module.properties['min'] as num?)?.toDouble() ?? 0.0;
+      double current =
+          (module.properties['current'] as num?)?.toDouble() ?? min;
       // A13-3：分配组件的值由玩家决定，编辑态不接收上游联动值。
       // 归零发生在配置连线时（见 `_zeroAllocationTargets`），
       // 此处 current 已经是 0，直接画即可。
@@ -1019,9 +1023,10 @@ class UIRenderer {
         if (snapshot != null) {
           LinkerService.installSnapshot(snapshot);
         }
-        final double min = (module.properties['min'] ?? 0).toDouble();
-        final double max = (module.properties['max'] ?? 100).toDouble();
-        double current = (module.properties['current'] ?? min).toDouble();
+        final double min = (module.properties['min'] as num?)?.toDouble() ?? 0.0;
+        final double max = (module.properties['max'] as num?)?.toDouble() ?? 100.0;
+        double current =
+            (module.properties['current'] as num?)?.toDouble() ?? min;
 
         // A13-3：作为配额分配组件时，值完全由玩家拖动决定，
         // 引擎只负责「不超过剩余额度」。归零已在配置连线时完成，
@@ -1291,7 +1296,7 @@ class UIRenderer {
       displayText = linkedValue;
     }
 
-    final double fs = (module.properties['fontSize'] ?? 14.0).toDouble().clamp(10.0, 72.0).toDouble();
+    final double fs = ((module.properties['fontSize'] as num?)?.toDouble() ?? 14.0).clamp(10.0, 72.0).toDouble();
     final String overflowMode = module.properties['overflow']?.toString() ?? 'ellipsis';
     final String alignStr = module.properties['textAlign']?.toString() ?? 'center';
 
@@ -1466,7 +1471,7 @@ class UIRenderer {
     }
     final String fitStr = props['fit']?.toString() ?? 'cover';
     final String shapeStr = props['shape']?.toString() ?? 'rectangle';
-    final double radiusVal = (props['borderRadius'] ?? 8.0).toDouble();
+    final double radiusVal = (props['borderRadius'] as num?)?.toDouble() ?? 8.0;
 
     final linkedVal = LinkerService.resolveTargetValue(module);
     if (linkedVal != null && linkedVal.toString().trim().isNotEmpty) {
@@ -3624,15 +3629,17 @@ class _MessageFlowListState extends State<_MessageFlowList> {
 
   _ParsedMessage _parseDynamicOptions(String rawContent) {
     final options = <_DynamicOption>[];
+    // 捕获外层标签名，用 `</\1>` 匹配同名闭合标签：
+    // 内嵌标签（如 `<a onclick=...><b>文本</b></a>`）不再被截断到内层 `</b>`。
     final optionRe = RegExp(
-      r'''<[^>]*onclick\s*=\s*['"]\s*send\(\s*['"]?(.*?)['"]?\s*\)\s*['"][^>]*>(.*?)</[^>]*>''',
+      r'''<([A-Za-z_][\w-]*)\s+[^>]*?onclick\s*=\s*['"]\s*send\(\s*['"]?(.*?)['"]?\s*\)\s*['"][^>]*>(.*?)</\1>''',
       dotAll: true,
       caseSensitive: false,
     );
 
     for (final m in optionRe.allMatches(rawContent)) {
-      final msg = m.group(1)?.trim() ?? '';
-      final label = m.group(2)?.trim() ?? '';
+      final msg = m.group(2)?.trim() ?? '';
+      final label = m.group(3)?.trim() ?? '';
       final cleanLabel = label.replaceAll(RegExp(r'<[^>]*>'), '').trim();
       if (msg.isNotEmpty && cleanLabel.isNotEmpty) {
         options.add(_DynamicOption(label: cleanLabel, message: msg));
@@ -3641,7 +3648,11 @@ class _MessageFlowListState extends State<_MessageFlowList> {
 
     var clean = rawContent;
     clean = clean.replaceAll(
-      RegExp(r'<[^>]*onclick[^>]*>.*?</[^>]*>\s*', dotAll: true, caseSensitive: false),
+      RegExp(
+        r'<([A-Za-z_][\w-]*)\s+[^>]*?onclick[^>]*>.*?</\1>\s*',
+        dotAll: true,
+        caseSensitive: false,
+      ),
       '',
     );
     clean = clean.replaceAll(

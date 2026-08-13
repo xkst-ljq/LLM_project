@@ -153,7 +153,9 @@ void main() {
       expect(injection, isEmpty);
     });
 
-    test('更新格式已移到 PHI，不再出现在 system 注入里', () {
+    test('状态字段交给状态栏引擎，不再出现在界面数据注入里', () {
+      // 状态字段是 SSOT：可读值与更新格式统一由 StatusBarEngine 注入，
+      // buildInjection 只处理会话变量 / 角色卡条目，避免同一字段注入两遍。
       final injection = DataChannelPromptBuilder.buildInjection([
         const DataChannelPromptItem(
           semanticLabel: '好感度',
@@ -165,8 +167,7 @@ void main() {
           rangeHint: '',
         ),
       ]);
-      expect(injection, contains('[界面数据]'));
-      expect(injection, isNot(contains('[界面数据更新格式')));
+      expect(injection, isEmpty);
     });
 
     test('可读通道注入带语义名的当前值，不出现裸值', () {

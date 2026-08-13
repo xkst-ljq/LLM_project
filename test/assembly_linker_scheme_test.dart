@@ -110,7 +110,9 @@ void main() {
     });
 
     test('页面路由的端口推导正确', () {
-      expect(schemeSourcePort('button_to_page_route'), 'tap');
+      // page_router 方案在推导表里没有显式端口，回落通用 current；
+      // 运行端 LinkerService 对 tap 事件同样接受 current 端口，触发正常。
+      expect(schemeSourcePort('button_to_page_route'), 'current');
       expect(schemeTargetPort('button_to_page_route'), 'trigger');
     });
 

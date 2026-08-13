@@ -31,6 +31,7 @@ import '../services/status_bar_engine.dart';
 import '../services/ui_engine/data_channel_prompt_builder.dart';
 import '../services/ui_engine/data_channel_update_engine.dart';
 import '../services/ui_engine/status_notification.dart';
+import '../services/ui_engine/streaming_strip.dart';
 import '../widgets/status_notification_layer.dart';
 import '../widgets/sub_page_backdrop.dart';
 import '../services/user_service.dart';
@@ -742,7 +743,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
     return stripped;
   }
-
 
   List<CharacterCard> _selectableCharacters = [];
 
@@ -1826,6 +1826,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       MediaQuery.of(context).size.width * _panelWidthFraction;
   bool _isLoading = false;
   StreamSubscription<String>? _aiReplySub;
+  /// 流式输出期间正在实时显示的 assistant 消息索引；无流式时为 -1。
+  int _streamingIndex = -1;
   bool _showFanPanel = false;
   late AnimationController _fanPanelAnimController;
   late Animation<double> _fanPanelFadeAnim;
@@ -2235,6 +2237,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     setState(() {
       _messages.clear();
+      _streamingIndex = -1;
       _messages.add({
         'id': newId.toString(),
         'role': 'assistant',
@@ -2309,6 +2312,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     setState(() {
       _messages.clear();
+      _streamingIndex = -1;
     });
 
     // 先加载历史
@@ -2842,6 +2846,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     setState(() {
       _messages.clear();
+      _streamingIndex = -1;
     });
 
     // 关掉设置面板再走后续（用户反馈）。
@@ -4260,7 +4265,11 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                                 .bottom,
                                       ),
                                       itemCount:
-                                      _messages.length + (_isLoading ? 1 : 0),
+                                      _messages.length +
+                                          ((_isLoading &&
+                                                  _streamingIndex < 0)
+                                              ? 1
+                                              : 0),
                                       itemBuilder: (ctx, index) {
                                         if (index < _messages.length) {
                                           final msg = _messages[index];
@@ -6153,14 +6162,14 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   Future<void> _requestAiReply() async {
     final config = await ApiConfigService.getActiveConfig();
     if (config == null || config.apiKey.isEmpty) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('请先配置 API')));
-      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先配置 API')));
       return;
     }
+    if (!mounted) return;
     final module = context.read<ChatModule>();
 
     // 构建请求消息列表（基于当前对话）
@@ -6174,13 +6183,19 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         .toList();
 
     String finalSystemPrompt = await _buildFinalSystemPrompt();
+    if (!mounted) return;
 
     // 历史后注入：把角色卡的 post_history_instructions 追加到消息末尾
     final requestMessagesWithPhi =
         _withPostHistoryInstructions(requestMessages);
 
     String aiResponseContent = '';
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      // 流式占位消息：chunk 到达时实时更新，实现打字机式显示。
+      _messages.add({'role': 'assistant', 'content': ''});
+      _streamingIndex = _messages.length - 1;
+    });
 
     await _aiReplySub?.cancel();
     _aiReplySub = null;
@@ -6191,7 +6206,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         if (!mounted) return;
 
         aiResponseContent += chunk;
-        setState(() {});
+        // 增量剥离技术标签：完整块剥掉、未闭合块挂起，避免把半截标签
+        // 暴露给用户；onDone 再走完整解析。
+        final display = streamingStrip(aiResponseContent);
+        setState(() {
+          if (_streamingIndex >= 0 && _streamingIndex < _messages.length) {
+            _messages[_streamingIndex]['content'] = display;
+          }
+        });
+        _scrollToBottom(animated: false);
       },
       onDone: () async {
         if (!mounted) return;
@@ -6210,10 +6233,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         if (!mounted) return;
 
         setState(() {
-          _messages.add({
-            'role': 'assistant',
-            'content': displayContent,
-          });
+          if (_streamingIndex >= 0 && _streamingIndex < _messages.length) {
+            _messages[_streamingIndex]['content'] = displayContent;
+          } else {
+            _messages.add({
+              'role': 'assistant',
+              'content': displayContent,
+            });
+          }
+          _streamingIndex = -1;
           _isLoading = false;
         });
 
@@ -6236,6 +6264,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         _aiReplySub = null;
 
         setState(() {
+          if (_streamingIndex >= 0 && _streamingIndex < _messages.length) {
+            _messages.removeAt(_streamingIndex);
+          }
+          _streamingIndex = -1;
           _messages.add({
             'role': 'assistant',
             'content': '错误: $e',
@@ -6293,6 +6325,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     setState(() {
       _messages.clear();
+      _streamingIndex = -1;
       _messages.addAll(processed.cast<Map<String, dynamic>>());
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -6361,6 +6394,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     // 关键：重新生成也必须使用完整系统提示词
     final systemPrompt = await _buildFinalSystemPrompt();
+    if (!mounted) return;
+
+    // 流式开始前捕获旧内容：onDone 初始化版本列表时要用它，
+    // 流式过程会把 oldAiMsg['content'] 覆盖成新回复。
+    final oldContent = oldAiMsg['content'];
+    final oldMsgId = oldAiMsg['id']?.toString() ?? '';
 
     // 关键：只取旧 AI 回复之前的上下文，保留之前的 assistant 历史
     final requestMessages = _messages
@@ -6375,19 +6414,39 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         .toList();
 
     String aiResponseContent = '';
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      // 流式显示新回复：清空旧内容，chunk 到达时实时填充。
+      oldAiMsg['content'] = '';
+      _streamingIndex = aiIndex;
+    });
 
-    module
+    await _aiReplySub?.cancel();
+    _aiReplySub = null;
+
+    _aiReplySub = module
         .sendMessage(
             systemPrompt, _withPostHistoryInstructions(requestMessages))
         .listen(
           (chunk) {
+        if (!mounted) return;
         aiResponseContent += chunk;
-        setState(() {});
+        final display = streamingStrip(aiResponseContent);
+        setState(() {
+          if (_streamingIndex >= 0 && _streamingIndex < _messages.length) {
+            _messages[_streamingIndex]['content'] = display;
+          }
+        });
+        _scrollToBottom(animated: false);
       },
       onDone: () async {
+        if (!mounted) return;
+        _aiReplySub = null;
         if (aiResponseContent.isEmpty) {
-          setState(() => _isLoading = false);
+          setState(() {
+            _streamingIndex = -1;
+            _isLoading = false;
+          });
           return;
         }
 
@@ -6406,11 +6465,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             version: newVersion,
           );
         }
+        if (!mounted) return;
 
         setState(() {
           if (oldAiMsg['versions'] == null) {
-            oldAiMsg['versions'] = <String>[oldAiMsg['content']];
-            oldAiMsg['versionIds'] = <String>[oldAiMsg['id'].toString()];
+            oldAiMsg['versions'] = <String>[oldContent];
+            oldAiMsg['versionIds'] = <String>[oldMsgId];
           }
 
           (oldAiMsg['versions'] as List<String>).add(displayContent);
@@ -6423,11 +6483,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           oldAiMsg['currentVersionIndex'] =
               (oldAiMsg['versions'] as List<String>).length - 1;
 
+          _streamingIndex = -1;
           _isLoading = false;
         });
       },
       onError: (e) {
+        if (!mounted) return;
+        _aiReplySub = null;
         setState(() {
+          _streamingIndex = -1;
           _isLoading = false;
         });
       },
@@ -6443,9 +6507,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     final module = context.read<ChatModule>();
     final systemPrompt = await _buildFinalSystemPrompt();
+    if (!mounted) return;
 
+    // 续写必须保留完整历史（含之前的 assistant 回复），
+    // 否则模型看不到上下文，续写内容与场景断裂。
     final requestMessages = _messages
-        .where((m) => m['role'] != null && m['role'] != 'assistant')
+        .take(aiIndex + 1)
+        .where((m) => m['role'] != null)
         .map(
           (m) => {
             'role': m['role'] as String,
@@ -6453,23 +6521,43 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           },
         )
         .toList();
-    requestMessages.add({'role': 'assistant', 'content': currentContent});
     requestMessages.add({'role': 'user', 'content': '请接着上面继续写，不要重复，直接续写'});
 
     String aiResponseContent = '';
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      // 续写：保留已有内容，流式增量实时追加显示。
+      _streamingIndex = aiIndex;
+    });
 
-    module
+    await _aiReplySub?.cancel();
+    _aiReplySub = null;
+
+    _aiReplySub = module
         .sendMessage(
             systemPrompt, _withPostHistoryInstructions(requestMessages))
         .listen(
           (chunk) {
+            if (!mounted) return;
             aiResponseContent += chunk;
-            setState(() {});
+            final display =
+                '$currentContent\n${streamingStrip(aiResponseContent)}';
+            setState(() {
+              if (_streamingIndex >= 0 &&
+                  _streamingIndex < _messages.length) {
+                _messages[_streamingIndex]['content'] = display;
+              }
+            });
+            _scrollToBottom(animated: false);
           },
           onDone: () async {
+            if (!mounted) return;
+            _aiReplySub = null;
             if (aiResponseContent.isEmpty) {
-              setState(() => _isLoading = false);
+              setState(() {
+                _streamingIndex = -1;
+                _isLoading = false;
+              });
               return;
             }
             // 续写：剥离续写部分可能出现的状态变化标记（不重复算账）。
@@ -6480,6 +6568,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             if (curId != null) {
               await DatabaseService.updateMessageContent(curId, newFullContent);
             }
+            if (!mounted) return;
             setState(() {
               aiMsg['content'] = newFullContent;
               if (aiMsg['versions'] != null) {
@@ -6490,11 +6579,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   aiMsg['versions'] = versions;
                 }
               }
+              _streamingIndex = -1;
               _isLoading = false;
             });
           },
           onError: (e) {
-            setState(() => _isLoading = false);
+            if (!mounted) return;
+            _aiReplySub = null;
+            setState(() {
+              _streamingIndex = -1;
+              _isLoading = false;
+            });
           },
         );
   }

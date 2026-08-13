@@ -262,7 +262,8 @@ class LinkerService {
     if (type == null) return;
 
     final duration =
-        (schemeParams['durationMs'] as num?)?.toInt() ?? type.defaultDurationMs;
+        ((schemeParams['durationMs'] as num?)?.toInt() ?? type.defaultDurationMs)
+            .abs();
     final flashColor = (schemeParams['flashColor'] as num?)?.toInt();
 
     ElementAnimation.writeConfig(
