@@ -1,0 +1,51 @@
+# 发布 Release 时，把最新版本信息写入 latest/version.json 并提交到仓库。
+#
+# 设计：version.json 是仓库的一部分，随 Gitee 的「自动同步 GitHub」机制
+# 一起同步到 Gitee，App 从 Gitee 读取该文件即可拿到最新版本（国内直连）。
+#
+# 只监听 release 事件，不会因自身 commit 触发而无限循环。
+name: Sync latest version.json
+
+on:
+  release:
+    types: [published, edited]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write latest/version.json from release
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          NOTES: ${{ github.event.release.body }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          mkdir -p latest
+          # 用 Python 生成合法 JSON，避免换行/引号破坏格式
+          python3 - <<'PY'
+          import json, os
+          data = {
+              "version": os.environ.get("TAG", "").lstrip("vV"),
+              "updateNotes": os.environ.get("NOTES", ""),
+              "downloadUrl": os.environ.get("RELEASE_URL", ""),
+          }
+          with open("latest/version.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+          PY
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest/version.json
+          if git diff --cached --quiet; then
+            echo "No changes to latest/version.json"
+            exit 0
+          fi
+          git commit -m "chore(release): update latest/version.json"
+          git push
