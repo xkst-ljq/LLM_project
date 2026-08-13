@@ -1392,6 +1392,44 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
     });
   }
 
+  /// 批量删除：删除所有被标记为删除状态的卡片。
+  Future<void> _confirmBatchDelete() async {
+    if (_deletingIds.isEmpty) return;
+
+    final ids = _deletingIds.toList();
+    final names = ids
+        .map((id) {
+          try {
+            return _characters.firstWhere((c) => c.id == id).name;
+          } catch (_) {
+            return '未命名';
+          }
+        })
+        .toList();
+
+    // 列出前几个名称，超过则提示省略。
+    final preview = names.take(3).map((n) => '• $n').join('\n');
+    final extra = names.length - 3;
+    final message = names.length == 1
+        ? '确定要删除角色“${names.first}”吗？删除后不可恢复。'
+        : '确定要删除已标记的 ${names.length} 个角色吗？删除后不可恢复。\n\n$preview'
+            '${extra > 0 ? '\n… 等共 ${names.length} 个' : ''}';
+
+    final ok = await showConfirmDeleteDialog(
+      context,
+      title: names.length == 1 ? '角色“${names.first}”' : '删除 ${names.length} 个角色',
+      message: message,
+      confirmLabel: '删除',
+    );
+    if (ok != true) return;
+
+    for (final id in ids) {
+      await DatabaseService.deleteCharacter(id);
+    }
+    _loadCharacters();
+    setState(() => _deletingIds.clear());
+  }
+
   void _openCharacterEdit(CharacterCard character, int index) {
     // 从实际卡片 widget 读取矩形作为展开动画起点，而不是按 index 硬编码推算
     // （硬编码的 160x240 与真实网格卡片尺寸不符时，展开动画会从错误位置弹出）。
@@ -1482,6 +1520,15 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
             appBar: AppBar(
         title: const Text('角色库'),
         actions: [
+          if (_deletingIds.isNotEmpty)
+            IconButton(
+              icon: Badge(
+                label: Text('${_deletingIds.length}'),
+                child: const Icon(Icons.delete_sweep),
+              ),
+              tooltip: '删除所有已标记的角色',
+              onPressed: _confirmBatchDelete,
+            ),
           _buildSortButton(key: _sortButtonKey),
           IconButton(
             key: _exportButtonKey,
