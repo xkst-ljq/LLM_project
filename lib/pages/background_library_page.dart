@@ -15,6 +15,7 @@ import '../services/background_asset_service.dart';
 import '../utils/id_utils.dart';
 import '../utils/app_feedback.dart';
 import '../services/image_pick_service.dart';
+import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/sub_page_backdrop.dart';
 
@@ -595,32 +596,16 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     await _loadBackgrounds();
   }
 
-  void _deleteBackground(BackgroundCard bg) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确定要删除背景“${bg.name}”吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await BackgroundService.delete(bg.id);
-              _loadBackgrounds();
-              _expandedIds.remove(bg.id);
-            },
-            child: Text(
-              '删除',
-              style: TextStyle(color: AppThemeTokens.of(ctx).danger),
-            ),
-          ),
-        ],
-      ),
+  Future<void> _deleteBackground(BackgroundCard bg) async {
+    final ok = await showConfirmDeleteDialog(
+      context,
+      title: '背景“${bg.name}”',
+      message: '确定要删除背景“${bg.name}”吗？删除后不可恢复。',
     );
+    if (ok != true) return;
+    await BackgroundService.delete(bg.id);
+    _loadBackgrounds();
+    _expandedIds.remove(bg.id);
   }
   String _sortBy = 'time'; // 默认按创建时间
   bool _sortAscending = true;

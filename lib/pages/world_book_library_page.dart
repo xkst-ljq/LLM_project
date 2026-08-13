@@ -14,6 +14,7 @@ import '../shared/theme/app_theme_tokens.dart';
 import '../utils/app_feedback.dart';
 import '../utils/id_utils.dart';
 import '../widgets/page_guide_overlay.dart';
+import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/sub_page_backdrop.dart';
 import 'world_book_edit_overlay.dart';
 
@@ -924,29 +925,16 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
     );
   }
 
-  void _deleteWorldBook(WorldBook wb) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确定要删除世界书“${wb.name}”吗？'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await DatabaseService.deleteWorldBook(wb.id);
-              _loadWorldBooks();
-              _expandedIds.remove(wb.id);
-            },
-            child: Text(
-              '删除',
-              style: TextStyle(color: AppThemeTokens.of(ctx).danger),
-            ),
-          ),
-        ],
-      ),
+  Future<void> _deleteWorldBook(WorldBook wb) async {
+    final ok = await showConfirmDeleteDialog(
+      context,
+      title: '世界书“${wb.name}”',
+      message: '确定要删除世界书“${wb.name}”吗？删除后不可恢复。',
     );
+    if (ok != true) return;
+    await DatabaseService.deleteWorldBook(wb.id);
+    _loadWorldBooks();
+    _expandedIds.remove(wb.id);
   }
 
   void _openWorldBookEdit(WorldBook wb, int index) {

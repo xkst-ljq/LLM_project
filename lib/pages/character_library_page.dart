@@ -27,6 +27,7 @@ import '../shared/transition/home_transitions.dart';
 import '../utils/app_feedback.dart';
 import '../utils/default_image.dart';
 import '../utils/id_utils.dart';
+import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/sub_page_backdrop.dart';
 import 'character_edit_page.dart';
@@ -1628,24 +1629,13 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
                                 right: 8,
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('确认删除'),
-                                        content: Text('确定要删除角色“${character.name}”吗？'),
-                                        actions: [
-                                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                                          TextButton(
-                                            onPressed: () {
-                                              Navigator.pop(ctx);
-                                              _deleteCharacter(character.id);
-                                            },
-                                            child: const Text('删除', style: TextStyle(color: Colors.red)),
-                                          ),
-                                        ],
-                                      ),
+                                  onTap: () async {
+                                    final ok = await showConfirmDeleteDialog(
+                                      context,
+                                      title: '角色“${character.name}”',
+                                      message: '确定要删除角色“${character.name}”吗？删除后不可恢复。',
                                     );
+                                    if (ok == true) _deleteCharacter(character.id);
                                   },
                                   child: Container(
                                     padding: const EdgeInsets.all(6),
