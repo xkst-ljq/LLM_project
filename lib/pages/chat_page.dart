@@ -34,6 +34,7 @@ import '../services/ui_engine/status_notification.dart';
 import '../widgets/status_notification_layer.dart';
 import '../widgets/sub_page_backdrop.dart';
 import '../services/user_service.dart';
+import '../utils/app_feedback.dart';
 import '../utils/protagonist_setting_utils.dart';
 import '../widgets/chat_assembly_mount.dart';
 import '../widgets/keyboard_avoiding_stage.dart';
@@ -6025,9 +6026,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   Future<void> _saveEdit() async {
     if (_isLoading) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在生成回复，请稍候')),
-      );
+      AppFeedback.showSnack(context, '正在生成回复，请稍候', success: false);
       return;
     }
     if (_editingIndex == -1) return;
@@ -6099,9 +6098,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     final text = rawText.trim();
     if (text.isEmpty) return;
     if (_isLoading) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在生成回复，请稍候')),
-      );
+      AppFeedback.showSnack(context, '正在生成回复，请稍候', success: false);
       return;
     }
 
@@ -6122,9 +6119,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   Future<void> _sendMessage() async {
     if (_isLoading) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在生成回复，请稍候')),
-      );
+      AppFeedback.showSnack(context, '正在生成回复，请稍候', success: false);
       return;
     }
 

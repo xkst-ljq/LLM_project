@@ -151,9 +151,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
 
   Future<void> _exportSelectedCharacterCard() async {
     if (_expandedIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先点击一个角色卡片')),
-      );
+      AppFeedback.showSnack(context, '请先点击一个角色卡片', success: false);
       return;
     }
 
@@ -268,9 +266,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
-      );
+      AppFeedback.showSnack(context, '导出失败：$e', success: false);
     }
   }
 
@@ -286,9 +282,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
     final filePath = picked.files.single.path;
     if (filePath == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法读取该文件')),
-      );
+      AppFeedback.showSnack(context, '无法读取该文件', success: false);
       return;
     }
 
@@ -324,9 +318,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
       await _loadCharacters();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('角色卡导入成功')),
-      );
+      AppFeedback.showSnack(context, '角色卡导入成功', success: true);
     } catch (e) {
       if (!mounted) return;
       await AppFeedback.showErrorDialog(
@@ -353,9 +345,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
     final filePath = picked.files.single.path;
     if (filePath == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法读取该文件')),
-      );
+      AppFeedback.showSnack(context, '无法读取该文件', success: false);
       return;
     }
 
@@ -518,9 +508,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
 
       if (!mounted) return;
       Navigator.of(context).pop(); // 关闭进度框
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('转译完成：${current.characterName} 已加入角色库')),
-      );
+      AppFeedback.showSnack(context, '转译完成：${current.characterName} 已加入角色库', success: true);
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context).pop(); // 关闭进度框
@@ -538,9 +526,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
 
   Future<void> _exportSelectedCharacterCardPng() async {
     if (_expandedIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先点击一个角色卡片')),
-      );
+      AppFeedback.showSnack(context, '请先点击一个角色卡片', success: false);
       return;
     }
 
@@ -661,9 +647,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
-      );
+      AppFeedback.showSnack(context, '导出失败：$e', success: false);
     }
   }
 
@@ -934,9 +918,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
 
     final character = _getSelectedCharacter();
     if (character == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先点击一个角色卡片')),
-      );
+      AppFeedback.showSnack(context, '请先点击一个角色卡片', success: false);
       return;
     }
 
@@ -1069,9 +1051,7 @@ class _CharacterLibraryPageState extends State<CharacterLibraryPage>
     final character = _getSelectedCharacter();
 
     if (character == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先点击一个角色卡片')),
-      );
+      AppFeedback.showSnack(context, '请先点击一个角色卡片', success: false);
       return;
     }
 

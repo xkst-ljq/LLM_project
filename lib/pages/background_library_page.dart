@@ -359,9 +359,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
   Future<void> _exportBackgroundCard(BackgroundCard bg) async {
     try {
       if (bg.type != 'image') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('当前仅支持导出图片背景卡')),
-        );
+        AppFeedback.showSnack(context, '当前仅支持导出图片背景卡', success: false);
         return;
       }
 
@@ -467,9 +465,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     final path = picked.files.single.path;
     if (path == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法读取该文件')),
-      );
+      AppFeedback.showSnack(context, '无法读取该文件', success: false);
       return;
     }
 
@@ -500,9 +496,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
       await _loadBackgrounds();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('背景卡导入成功')),
-      );
+      AppFeedback.showSnack(context, '背景卡导入成功', success: true);
     } catch (e) {
       if (!mounted) return;
 
@@ -576,9 +570,7 @@ class _BackgroundLibraryPageState extends State<BackgroundLibraryPage> {
     if (!mounted) return;
 
     if (originalPath == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('未选择背景图片或保存失败')),
-      );
+      AppFeedback.showSnack(context, '未选择背景图片或保存失败', success: false);
       return;
     }
 
@@ -1414,9 +1406,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
       await BackgroundService.setCurrent(widget.background.id);
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('背景已更新')),
-      );
+      AppFeedback.showSnack(context, '背景已更新', success: true);
       Navigator.pop(context);
     }
   }
@@ -1449,9 +1439,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('背景已更新')),
-      );
+      AppFeedback.showSnack(context, '背景已更新', success: true);
       Navigator.pop(context);
     }
   }
@@ -1489,9 +1477,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
       await BackgroundService.setCurrent(widget.background.id);
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('背景已更新')),
-      );
+      AppFeedback.showSnack(context, '背景已更新', success: true);
       Navigator.pop(context);
     }
   }
@@ -1601,9 +1587,7 @@ class _BackgroundEditContentState extends State<_BackgroundEditContent>
     widget.background.sceneSetting = _descCtrl.text.trim();
     await BackgroundService.update(widget.background);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已保存')),
-      );
+      AppFeedback.showSnack(context, '已保存', success: true);
       Navigator.pop(context);
     }
   }

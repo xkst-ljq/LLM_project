@@ -458,9 +458,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
     final path = picked.files.single.path;
     if (path == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法读取该文件')),
-      );
+      AppFeedback.showSnack(context, '无法读取该文件', success: false);
       return;
     }
 
@@ -492,9 +490,7 @@ class _WorldBookLibraryPageState extends State<WorldBookLibraryPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('世界书导入成功')),
-      );
+      AppFeedback.showSnack(context, '世界书导入成功', success: true);
     } catch (e) {
       if (!mounted) return;
 
