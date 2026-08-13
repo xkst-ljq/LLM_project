@@ -441,22 +441,10 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
 
   /// 角色选择层展示的卡片：当前角色排在最前（吸附轨道初始以它为中心），
   /// 其余保持最近聊天优先顺序。吸附以位置驱动，不再重新排序卡片。
-  List<CharacterCard> get _selectableCharacters {
-    final activeId = _activeCharacter?.id;
-    final ordered = <CharacterCard>[];
-    if (activeId != null) {
-      for (final character in _characters) {
-        if (character.id == activeId) {
-          ordered.add(character);
-          break;
-        }
-      }
-    }
-    for (final character in _characters) {
-      if (character.id != activeId) ordered.add(character);
-    }
-    return ordered;
-  }
+  /// 角色选择层展示的卡片：固定按「最近对话时间」排序（最近在前，最晚在后），
+  /// 不随选中角色改变而重排。_characters 已在加载/轻量刷新时按该规则排好，
+  /// 这里直接原样返回即可。
+  List<CharacterCard> get _selectableCharacters => _characters;
 
   Widget _buildBrand(AppThemeTokens tokens) {
     return _Staggered(
