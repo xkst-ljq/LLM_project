@@ -880,7 +880,10 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
               ),
             ),
             Positioned(
-              left: 12,
+              // left:0 让卡片能一直滑到屏幕左缘再被裁剪；内部用 _leftPad 把
+              // 选中卡保持在 x=12，与角色入口对齐（之前 left:12 会把卡片带
+              // 在 x=12 处硬裁掉，卡片还没到屏幕边就消失）。
+              left: 0,
               right: 0,
               top: roleTop,
               height: roleHeight,
@@ -1795,6 +1798,9 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   static const double _inactiveScale = 0.68;
   static const double _inactiveOpacity = 0.5;
   static const double _flingDistance = 48; // 判定"滑动翻页"的最小位移(px)。
+  // 选中卡与角色入口的对齐内边距：deck 自身贴屏幕左缘（left:0），靠这个
+  // 偏移把选中卡保持在屏幕 x=12，同时让卡片能滑到 x=0 再被裁剪。
+  static const double _leftPad = 12;
   static const double _tapSlop = 8; // 小于该位移当作点击，不翻页。
 
   double _position = 0.0; // 选中/落点格位（确定性，由松手时直接写入，不参与动画）。
@@ -1979,7 +1985,10 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
                 final distance = (i - p).abs();
                 final opacity = 1.0 -
                     (1.0 - _inactiveOpacity) * distance.clamp(0.0, 1.0);
-                final center = stripLeft(i) + w / 2 + frame;
+                // 连续「活跃度」：1 完全选中 → 0 完全未选中。让去饱和/渐变压暗
+                // 随滑动连续变化，而不是在 p.round() 那一瞬间突然切换。
+                final activeness = (1.0 - distance).clamp(0.0, 1.0);
+                final center = stripLeft(i) + w / 2 + frame + _leftPad;
                 return Positioned(
                   left: center - aw / 2,
                   top: 0,
@@ -1988,6 +1997,7 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
                   child: _RolePlane(
                     character: widget.characters[i],
                     active: i == selectedIdx,
+                    activeness: activeness,
                     promoting: i == selectedIdx &&
                         widget.promotingRoleId == widget.characters[i].id,
                     scale: scale,
@@ -2015,6 +2025,7 @@ class _RolePlane extends StatelessWidget {
   const _RolePlane({
     required this.character,
     required this.active,
+    required this.activeness,
     required this.promoting,
     required this.scale,
     required this.opacity,
@@ -2028,6 +2039,10 @@ class _RolePlane extends StatelessWidget {
 
   final CharacterCard character;
   final bool active;
+
+  /// 连续「活跃度」0..1：1 完全选中 → 0 完全未选中。用来让去饱和 / 渐变压暗
+  /// 随滑动平滑过渡，而不是在选中翻转的瞬间突变。
+  final double activeness;
   final bool promoting;
 
   /// 由 _RoleSnapDeck 逐帧驱动的缩放与透明度：拖拽 / 吸附过程无需重建动画即可跟手。
@@ -2040,19 +2055,42 @@ class _RolePlane extends StatelessWidget {
   final bool reduceMotion;
   final VoidCallback onTap;
 
-  // 对齐 HTML `.picker-card` 未选中态 `filter: saturate(0.7)`。
-  static const List<double> _inactiveColorMatrix = <double>[
-    0.44882, 0.21456, 0.02166, 0, 0, //
-    0.06378, 0.80064, 0.02166, 0, 0, //
-    0.06378, 0.21456, 0.35054, 0, 0, //
+  // 未选中态去饱和矩阵。数值从「接近原色」向「轻度去饱和 + 轻微压暗」渐变，
+  // 强度由 activeness 线性插值——彻底选中时用单位矩阵（不改色），完全未选中
+  // 时用本矩阵（轻度灰化），避免封面颜色严重失真。
+  static const List<double> _identityColorMatrix = <double>[
+    1, 0, 0, 0, 0, //
+    0, 1, 0, 0, 0, //
+    0, 0, 1, 0, 0, //
     0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _inactiveColorMatrix = <double>[
+    0.85, 0.10, 0.05, 0, 0, //
+    0.05, 0.85, 0.10, 0, 0, //
+    0.05, 0.10, 0.85, 0, 0, //
+    0, 0, 0, 0.92, 0,
+  ];
+
+  /// 按强度 [s]（0 单位 / 1 完全未选中）在单位矩阵与去饱和矩阵之间插值。
+  static List<double> _blendColorMatrix(double s) => [
+    for (var k = 0; k < _identityColorMatrix.length; k++)
+      _identityColorMatrix[k] +
+          (_inactiveColorMatrix[k] - _identityColorMatrix[k]) * s,
   ];
 
   @override
   Widget build(BuildContext context) {
     final imagePath = character.cardImagePath;
     final hasImage = imagePath.isNotEmpty && File(imagePath).existsSync();
-    final fallback = active ? tokens.accent : tokens.surfaceElevated;
+    // 活跃度 0..1：驱动所有选中/未选中视觉的连续过渡。
+    final t = activeness.clamp(0.0, 1.0);
+    double lerp(double a, double b) => a + (b - a) * t;
+    Color lerpColor(Color a, Color b) => Color.lerp(a, b, t)!;
+
+    // 卡片底色 / 投影强度 / 文字颜色都随活跃度过渡。
+    final fallback = lerpColor(tokens.surfaceElevated, tokens.accent);
+    final elevation = lerp(1, 5);
 
     Widget card = GestureDetector(
       onTap: onTap,
@@ -2064,7 +2102,7 @@ class _RolePlane extends StatelessWidget {
           clipper: _SlantedSurfaceClipper(),
           color: fallback,
           shadowColor: tokens.shadow,
-          elevation: active ? 5 : 1,
+          elevation: elevation,
           clipBehavior: Clip.antiAlias,
           child: Stack(
             fit: StackFit.expand,
@@ -2075,25 +2113,28 @@ class _RolePlane extends StatelessWidget {
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: active
-                          ? [tokens.accent, tokens.accentStrong]
-                          : [
-                              tokens.surfaceElevated,
-                              tokens.surfaceInteractive,
-                            ],
+                      colors: [
+                        lerpColor(tokens.surfaceElevated, tokens.accent),
+                        lerpColor(tokens.surfaceInteractive, tokens.accentStrong),
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                   ),
                 ),
+              // 覆盖渐变：未选中时偏黑压暗，选中时偏主题色。
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      active
-                          ? tokens.accentStrong.withValues(alpha: 0.72)
-                          : Colors.black.withValues(alpha: 0.2),
-                      Colors.black.withValues(alpha: active ? 0.28 : 0.08),
+                      lerpColor(
+                        Colors.black.withValues(alpha: 0.2),
+                        tokens.accentStrong.withValues(alpha: 0.72),
+                      ),
+                      lerpColor(
+                        Colors.black.withValues(alpha: 0.08),
+                        Colors.black.withValues(alpha: 0.28),
+                      ),
                     ],
                     begin: const Alignment(-1, -0.55),
                     end: const Alignment(1, 0.55),
@@ -2112,7 +2153,9 @@ class _RolePlane extends StatelessWidget {
                         colors: [
                           Colors.white.withValues(alpha: 0.10),
                           Colors.transparent,
-                          Colors.black.withValues(alpha: active ? 0.18 : 0.35),
+                          Colors.black.withValues(
+                            alpha: lerp(0.35, 0.18),
+                          ),
                         ],
                         stops: const [0.0, 0.48, 1.0],
                       ),
@@ -2134,42 +2177,42 @@ class _RolePlane extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned(
-                      top: active ? 25 : 15,
-                      left: active ? 24 : 15,
+                      top: lerp(15, 25),
+                      left: lerp(15, 24),
                       child: Text(
                         recentLabel,
                         style: TextStyle(
-                          color: active ? Colors.white70 : tokens.textMuted,
-                          fontSize: active ? 9 : 8,
+                          color: lerpColor(tokens.textMuted, Colors.white70),
+                          fontSize: lerp(8, 9),
                           fontWeight: FontWeight.w800,
                           letterSpacing: 1.0,
                         ),
                       ),
                     ),
                     Positioned(
-                      top: active ? 44 : 32,
-                      left: active ? 24 : 15,
+                      top: lerp(32, 44),
+                      left: lerp(15, 24),
                       right: 12,
                       child: _AdaptiveNameText(
                         text: character.name,
-                        maxWidth: width - (active ? 24 : 15) - 12,
-                        fontSize: active ? 32 : 20,
-                        color: active ? Colors.white : tokens.textPrimary,
+                        maxWidth: width - lerp(15, 24) - 12,
+                        fontSize: lerp(20, 32),
+                        color: lerpColor(tokens.textPrimary, Colors.white),
                         fontWeight: FontWeight.w800,
-                        letterSpacing: active ? -1.5 : -0.6,
+                        letterSpacing: lerp(-0.6, -1.5),
                       ),
                     ),
                     Positioned(
-                      left: active ? 24 : 15,
+                      left: lerp(15, 24),
                       right: 12,
-                      bottom: active ? 20 : 13,
+                      bottom: lerp(13, 20),
                       child: Text(
                         '${character.name} · $recentLabel',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: active ? Colors.white70 : tokens.textMuted,
-                          fontSize: active ? 11 : 8,
+                          color: lerpColor(tokens.textMuted, Colors.white70),
+                          fontSize: lerp(8, 11),
                         ),
                       ),
                     ),
@@ -2182,14 +2225,12 @@ class _RolePlane extends StatelessWidget {
       ),
     );
 
-    // 未选中卡片淡化 + 去饱和：对齐 HTML `.picker-card` 的
-    // `opacity: 0.5; filter: saturate(0.7)`。
-    if (!active) {
-      card = ColorFiltered(
-        colorFilter: const ColorFilter.matrix(_inactiveColorMatrix),
-        child: card,
-      );
-    }
+    // 未选中卡片淡化 + 轻度去饱和：强度随活跃度连续变化，选中时回到原色，
+    // 未选中时只是轻度灰化，不再让封面颜色严重失真。
+    card = ColorFiltered(
+      colorFilter: ColorFilter.matrix(_blendColorMatrix(1 - t)),
+      child: card,
+    );
 
     // 点击聚焦时的提升动画：对应 HTML `.picker-card.promoting` 的
     // `picker-promote`，带回弹缩放与一次亮度闪光。
