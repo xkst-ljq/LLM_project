@@ -300,9 +300,9 @@ const Walkthrough _chat = Walkthrough(
     WalkthroughStep(
       title: '聊天页是什么',
       body: '聊天页是与当前角色对话的界面。\n\n'
-          '上方显示角色名称，中部是消息列表，底部是输入区。\n\n'
+          '中部是消息列表，底部是输入区；输入区上方还有一个当前角色名称胶囊。\n\n'
           '新聊天没有历史时，会自动插入开场白作为第一条角色消息。',
-      imageHint: '聊天页整体界面',
+      imageHint: '聊天页整体界面（消息列表 + 底部输入区）',
     ),
     WalkthroughStep(
       title: '输入与发送',
@@ -312,10 +312,11 @@ const Walkthrough _chat = Walkthrough(
       imageHint: '聊天输入区',
     ),
     WalkthroughStep(
-      title: '角色切换',
-      body: '顶部显示当前角色名称。\n\n'
-          '点击角色名称可以打开角色切换轮盘，切换当前聊天对象，不需要退出聊天页。',
-      imageHint: '角色切换轮盘',
+      title: '切换角色',
+      body: '聊天页底部的角色名称胶囊（输入区上方，输入框未展开时显示）显示当前角色名。\n\n'
+          '点击它会在屏幕下半部展开一个弧形角色轮盘，左右滑动浏览，点击某张卡即可切换当前聊天对象，不需要退出聊天页。\n\n'
+          '输入框展开时胶囊会淡出，收起后恢复。',
+      imageHint: '底部角色名称胶囊 + 弧形切换轮盘',
     ),
     WalkthroughStep(
       title: '侧滑打开聊天设置',
