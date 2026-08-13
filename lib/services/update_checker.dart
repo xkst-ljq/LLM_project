@@ -6,12 +6,29 @@ import 'update_service.dart';
 
 /// 更新检查的 UI 封装：弹更新提醒、跳转 Release 页。
 class UpdateChecker {
+  /// 是否正在检查（防重入：同一时刻只允许一次检查，避免重复点击弹多个弹窗）。
+  static bool _checking = false;
+
   /// 检查更新；有新版且需要提醒时弹出提示。
   ///
   /// [showUpToDate] 为 true 时，即使没更新也弹"已是最新版"（用于手动检查）。
+  /// 检查期间若再次调用会被忽略（防止快速点击弹多个弹窗）。
   static Future<void> checkAndPrompt(
     BuildContext context, {
     bool showUpToDate = false,
+  }) async {
+    if (_checking) return; // 进行中，忽略本次调用。
+    _checking = true;
+    try {
+      await _checkAndPromptInner(context, showUpToDate: showUpToDate);
+    } finally {
+      _checking = false;
+    }
+  }
+
+  static Future<void> _checkAndPromptInner(
+    BuildContext context, {
+    required bool showUpToDate,
   }) async {
     if (!context.mounted) return;
     final result = await UpdateService.check();

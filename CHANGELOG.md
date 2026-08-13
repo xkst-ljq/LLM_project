@@ -94,6 +94,8 @@
   失败」而非误报「已是最新」，便于排查网络问题
 - 更新检测多源重试：GitHub 官方 API 优先，失败后依次尝试 ghproxy 镜像
   （国内无 VPN 时尽力可直连）
+- 更新检查防重入：同一时刻只允许一次检查，快速点击「检查更新」不再叠加弹多个
+  弹窗；缩短网络超时（Gitee 6s / GitHub 8s），减少检查时的卡顿感
 - 更新检测改为**优先从 Gitee 读取 `latest/version.json`**（国内直连，无需 VPN），
   失败后再回退 GitHub API；发布 Release 时由 GitHub Actions 自动生成
   `latest/version.json` 提交到仓库，随 Gitee「自动同步 GitHub」同步过去

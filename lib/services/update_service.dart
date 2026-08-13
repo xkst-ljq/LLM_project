@@ -97,8 +97,8 @@ class UpdateService {
 
     final dio = Dio(
       BaseOptions(
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 10),
+        connectTimeout: const Duration(seconds: 8),
+        receiveTimeout: const Duration(seconds: 8),
       ),
     );
 
@@ -165,8 +165,8 @@ class UpdateService {
   static Future<Map<String, dynamic>?> _fetchGiteeVersion() async {
     final dio = Dio(
       BaseOptions(
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 10),
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 6),
       ),
     );
     try {
