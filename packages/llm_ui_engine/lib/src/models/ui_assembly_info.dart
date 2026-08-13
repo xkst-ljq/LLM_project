@@ -94,6 +94,12 @@ class UIAssemblyInfo {
   /// 键用 String 是为了直接进 JSON。
   Map<String, String> branchVariants;
 
+  /// 常驻 UI（extra_sticky）进入聊天时的初始状态是否折叠为悬浮球。
+  ///
+  /// 默认 false = 展开显示；true = 默认折叠成悬浮球。
+  /// 仅对常驻 UI 有意义，其它 mode 忽略。存进角色卡随 UI 方案保存。
+  bool stickyDefaultCollapsed;
+
   UIAssemblyInfo({
     required this.id,
     this.name = '未命名 UI',
@@ -105,6 +111,7 @@ class UIAssemblyInfo {
     this.pcbHeight = 800,
     this.pcbColorValue = 0xFFFFFFFF,
     this.pcbRadius = defaultPcbRadius,
+    this.stickyDefaultCollapsed = false,
     DateTime? createdAt,
   })  : branchVariants = branchVariants ?? <String, String>{},
         createdAt = createdAt ?? DateTime.now();
@@ -141,6 +148,8 @@ class UIAssemblyInfo {
     // 继续写出布尔字段：老版本读到新卡时仍能得到一个合理的圆角形态。
     'pcbRounded': pcbRadius > 0,
     'createdAt': createdAt.millisecondsSinceEpoch,
+    // 常驻 UI 默认折叠；非 sticky 不写这个字段，保持导出体积干净。
+    if (mode == 'extra_sticky') 'stickyDefaultCollapsed': stickyDefaultCollapsed,
     // 空表不落盘：单开场白的卡不该平白多一个空字段。
     if (branchVariants.isNotEmpty) 'branchVariants': branchVariants,
   };
@@ -164,6 +173,7 @@ class UIAssemblyInfo {
       (json['createdAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
     ),
     branchVariants: _readBranchVariants(json['branchVariants']),
+    stickyDefaultCollapsed: json['stickyDefaultCollapsed'] == true,
   );
 
   /// 读分支变体表。键必须是非负整数下标，脏数据一律丢弃。

@@ -361,6 +361,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   /// A10-2：常驻 UI 是否已折叠为悬浮球。
   bool _stickyCollapsed = false;
 
+  /// 读取角色常驻 UI 方案的「默认折叠」配置；没有常驻 UI 或未配置时默认展开。
+  bool _stickyDefaultCollapsedFor(CharacterCard char) {
+    final info = ChatAssemblyMount.resolveAssembly(char.meta, 'extra_sticky');
+    return info?.stickyDefaultCollapsed ?? false;
+  }
+
   /// 常驻 UI 相对默认位置的拖动偏移。
   /// 仅存在于本次会话，不持久化——位置属于临时观感，不值得写进角色卡。
   Offset _stickyOffset = Offset.zero;
@@ -2261,6 +2267,14 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _isLoading = false;
 
     if (char == null) return;
+
+    // 根据常驻 UI 的「默认折叠」配置重置初始状态。
+    // 每次进角色都按角色卡里的设置来，退出聊天不保存状态（本来就是本地会话态）。
+    _stickyCollapsed = _stickyDefaultCollapsedFor(char);
+    _stickyOffset = Offset.zero;
+    _ballPos = null;
+    _ballTucked = false;
+    _ballPeeking = false;
 
     _currentCharacter = char;
     // 与主页统一当前角色来源：聊天页内切换角色也回写同一把钥匙，

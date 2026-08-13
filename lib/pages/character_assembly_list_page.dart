@@ -318,46 +318,80 @@ class _UIAssemblyListPageState extends State<UIAssemblyListPage> {
                 final shadowed = _assemblies
                     .sublist(0, index)
                     .any((a) => a.mode == info.mode);
+                final isSticky = info.mode == 'extra_sticky';
                 return Card(
                   elevation: 0,
                   color: tokens.surface,
                   margin: const EdgeInsets.only(bottom: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: shadowed
-                          ? const Color(0xFFBDBDBD)
-                          : info.mode == 'opening'
-                          ? const Color(0xFF7E57C2)
-                          : info.mode == 'scene'
-                              ? const Color(0xFFE65100)
-                              : info.mode == 'extra_sticky'
-                                  ? const Color(0xFF00838F)
-                                  : const Color(0xFF00ACC1),
-                      child: Icon(info.modeIcon, color: Colors.white, size: 20),
-                    ),
-                    title: Text(info.name,
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: tokens.textPrimary)),
-                    subtitle: shadowed
-                        ? Text(
-                            '${info.modeLabel} · 不会生效：已有同类型 UI',
-                            style: const TextStyle(
-                                fontSize: 11, color: Color(0xFFD32F2F)),
-                          )
-                        : Text(info.modeLabel,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: shadowed
+                              ? const Color(0xFFBDBDBD)
+                              : info.mode == 'opening'
+                              ? const Color(0xFF7E57C2)
+                              : info.mode == 'scene'
+                                  ? const Color(0xFFE65100)
+                                  : info.mode == 'extra_sticky'
+                                      ? const Color(0xFF00838F)
+                                      : const Color(0xFF00ACC1),
+                          child: Icon(info.modeIcon, color: Colors.white, size: 20),
+                        ),
+                        title: Text(info.name,
                             style: TextStyle(
-                                fontSize: 11, color: tokens.textSecondary)),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (v) {
-                        if (v == 'delete') _deleteUI(index);
-                      },
-                      itemBuilder: (ctx) => [
-                        const PopupMenuItem(value: 'delete', child: Text('删除', style: TextStyle(color: Colors.red))),
-                      ],
-                    ),
-                    onTap: () => _editUI(info),
+                                fontWeight: FontWeight.bold,
+                                color: tokens.textPrimary)),
+                        subtitle: shadowed
+                            ? Text(
+                                '${info.modeLabel} · 不会生效：已有同类型 UI',
+                                style: const TextStyle(
+                                    fontSize: 11, color: Color(0xFFD32F2F)),
+                              )
+                            : Text(info.modeLabel,
+                                style: TextStyle(
+                                    fontSize: 11, color: tokens.textSecondary)),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (v) {
+                            if (v == 'delete') _deleteUI(index);
+                          },
+                          itemBuilder: (ctx) => [
+                            const PopupMenuItem(value: 'delete', child: Text('删除', style: TextStyle(color: Colors.red))),
+                          ],
+                        ),
+                        onTap: () => _editUI(info),
+                      ),
+                      // 常驻 UI：进入聊天时的初始状态（展开 / 默认折叠为悬浮球）。
+                      if (isSticky && !shadowed)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 12, 8),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.brightness_low_outlined,
+                                  size: 18, color: Color(0xFF00838F)),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  '进入聊天时默认折叠为悬浮球',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              Switch(
+                                value: info.stickyDefaultCollapsed,
+                                onChanged: (v) {
+                                  setState(() {
+                                    info.stickyDefaultCollapsed = v;
+                                    _assemblies[index] = info;
+                                  });
+                                  _save();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 );
               },
