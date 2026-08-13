@@ -52,6 +52,8 @@ const List<String> allTutorialKeys = [
   TutorialPageKey.home,
   TutorialPageKey.settings,
   TutorialPageKey.characterLibrary,
+  TutorialPageKey.characterEdit,
+  TutorialPageKey.statusBarHighlight,
   TutorialPageKey.worldBookLibrary,
   TutorialPageKey.backgroundLibrary,
   TutorialPageKey.chat,
@@ -59,6 +61,9 @@ const List<String> allTutorialKeys = [
   TutorialPageKey.userSettings,
   TutorialPageKey.promptSettings,
   TutorialPageKey.backupRestore,
+  TutorialPageKey.uiStudio,
+  TutorialPageKey.uiAssetGallery,
+  TutorialPageKey.uiAssembly,
 ];
 
 class _PageIntroCard extends StatelessWidget {

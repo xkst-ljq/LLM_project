@@ -14,6 +14,8 @@ class TutorialPageKey {
   static const home = 'home';
   static const settings = 'settings';
   static const characterLibrary = 'character_library';
+  static const characterEdit = 'character_edit';
+  static const statusBarHighlight = 'status_bar_highlight';
   static const worldBookLibrary = 'world_book_library';
   static const backgroundLibrary = 'background_library';
   static const chat = 'chat';
@@ -21,6 +23,9 @@ class TutorialPageKey {
   static const userSettings = 'user_settings';
   static const promptSettings = 'prompt_settings';
   static const backupRestore = 'backup_restore';
+  static const uiStudio = 'ui_studio';
+  static const uiAssetGallery = 'ui_asset_gallery';
+  static const uiAssembly = 'ui_assembly';
 }
 
 /// 有序的页面讲解列表（顺序即教程中心的展示顺序）。
@@ -28,6 +33,8 @@ final List<Walkthrough> allWalkthroughs = [
   _home,
   _settings,
   _characterLibrary,
+  _characterEdit,
+  _statusBarHighlight,
   _worldBookLibrary,
   _backgroundLibrary,
   _chat,
@@ -35,6 +42,9 @@ final List<Walkthrough> allWalkthroughs = [
   _userSettings,
   _promptSettings,
   _backupRestore,
+  _uiStudio,
+  _uiAssetGallery,
+  _uiAssembly,
 ];
 
 /// 页面 key → 讲解的映射。教程中心按 key 打开对应讲解。
@@ -42,6 +52,8 @@ final Map<String, Walkthrough> _byKey = {
   TutorialPageKey.home: _home,
   TutorialPageKey.settings: _settings,
   TutorialPageKey.characterLibrary: _characterLibrary,
+  TutorialPageKey.characterEdit: _characterEdit,
+  TutorialPageKey.statusBarHighlight: _statusBarHighlight,
   TutorialPageKey.worldBookLibrary: _worldBookLibrary,
   TutorialPageKey.backgroundLibrary: _backgroundLibrary,
   TutorialPageKey.chat: _chat,
@@ -49,6 +61,9 @@ final Map<String, Walkthrough> _byKey = {
   TutorialPageKey.userSettings: _userSettings,
   TutorialPageKey.promptSettings: _promptSettings,
   TutorialPageKey.backupRestore: _backupRestore,
+  TutorialPageKey.uiStudio: _uiStudio,
+  TutorialPageKey.uiAssetGallery: _uiAssetGallery,
+  TutorialPageKey.uiAssembly: _uiAssembly,
 };
 
 /// 按页面 key 查询讲解；未找到返回 null。
@@ -121,7 +136,7 @@ const Walkthrough _settings = Walkthrough(
     ),
     WalkthroughStep(
       title: '用户设定',
-      body: '用户设定用于设置「你是谁」。角色会参考这些信息与你互动，例如你的昵称、头像和个人简介。\n\n'
+      body: '用户设定用于设置「你是谁」。角色会参考这些信息与你互动，例如你的昵称和头像。\n\n'
           '新手可以先跳过，开始聊天后再补充。',
       imageHint: '用户设定页',
     ),
@@ -189,6 +204,13 @@ const Walkthrough _characterLibrary = Walkthrough(
       imageHint: '新建/导入/AI 转译 底部菜单',
     ),
     WalkthroughStep(
+      title: 'AI 智能转译',
+      body: '「AI 智能转译」可以把其他平台的角色卡（SillyTavern、TavernAI、PNG 内嵌角色卡）自动转换成本应用的角色。\n\n'
+          '选择文件后，可选择用哪个 AI 配置来转译，也可以关闭 AI 只做规则转译（更快，不调用模型）。\n\n'
+          '转译会自动完成：规则转译 → AI 智能归类 → AI 理解界面（生成 UI 与状态栏）→ 检查精修，完成后直接加入角色库。',
+      imageHint: 'AI 智能转译对话框',
+    ),
+    WalkthroughStep(
       title: '导出角色卡',
       body: '先点击一张角色卡选中它，再点击顶部的导出图标。\n\n'
           '可以导出：\n'
@@ -226,9 +248,21 @@ const Walkthrough _worldBookLibrary = Walkthrough(
     ),
     WalkthroughStep(
       title: '世界书卡片',
-      body: '世界书以列表卡片展示。\n\n'
+      body: '世界书以网格卡片展示，封面为程序生成的渐变色卡，中央是词云（由条目与关键词生成）。\n\n'
           '点击卡片进入世界书编辑页，可以编辑名称、描述和条目。',
-      imageHint: '世界书卡片',
+      imageHint: '世界书卡片（词云封面）',
+    ),
+    WalkthroughStep(
+      title: '编辑条目',
+      body: '世界书编辑页里可以添加多条条目。每条条目可设置：\n\n'
+          '• 条目名称与内容\n'
+          '• 触发关键词（支持中英文逗号、分号分隔多个）\n'
+          '• 启用 / 停用开关（停用的条目不触发）\n'
+          '• 常驻：始终注入，不依赖关键词\n'
+          '• 递归触发：已触发内容可继续激活其他条目\n'
+          '• 注入位置：角色设定之前或之后\n'
+          '• 注入优先级：数值越小越靠前，越靠前模型越重视',
+      imageHint: '世界书条目编辑器',
     ),
     WalkthroughStep(
       title: '排序',
@@ -307,9 +341,26 @@ const Walkthrough _chat = Walkthrough(
     WalkthroughStep(
       title: '输入与发送',
       body: '点击底部输入按钮展开输入框。\n\n'
-          '输入内容后点击发送按钮即可发送消息。\n\n'
+          '输入内容后点击发送按钮即可发送消息。输入框下方会实时显示估算的 Tokens 消耗。\n\n'
           '如果角色配置了 UI 场景组件，输入可能由场景组件接管；没有配置时使用底部原生输入框。',
       imageHint: '聊天输入区',
+    ),
+    WalkthroughStep(
+      title: 'AI 消息操作',
+      body: '最新一条 AI 消息下方有一排功能图标：\n\n'
+          '• 重新生成：丢弃当前回复，让模型重新回复一次\n'
+          '• 继续回复：在回复末尾继续往下写\n'
+          '• 多版本切换：重新生成后的历史版本会保留，用左右箭头在版本间切换\n\n'
+          '这些图标仅出现在最新一条 AI 消息上。',
+      imageHint: 'AI 消息功能图标行',
+    ),
+    WalkthroughStep(
+      title: '用户消息操作',
+      body: '用户消息支持两种操作：\n\n'
+          '• 点击消息气泡进入编辑，修改后保存会替换该消息并重建后续回复\n'
+          '• 最新一条用户消息旁有「撤回」图标，点击可删除这条用户消息及其后续所有回复\n\n'
+          '撤回常用于发错内容后回退对话。',
+      imageHint: '用户消息编辑 / 撤回',
     ),
     WalkthroughStep(
       title: '切换角色',
@@ -356,20 +407,21 @@ const Walkthrough _apiConfig = Walkthrough(
           '• API Key：服务商给你的调用密钥，不要分享给别人\n'
           '• Base URL：服务商的接口地址\n'
           '• 模型名：要调用的具体模型，例如 deepseek-chat\n\n'
-          '三个字段都正确填写后才能正常使用。',
-      imageHint: 'API 配置编辑表单',
+          '名称旁有「预设」按钮，可以一键填入 DeepSeek、OpenAI、Gemini、SiliconFlow 等常见服务商的 Base URL，再自己补上 Key 和模型名。',
+      imageHint: 'API 配置编辑表单 + 预设',
     ),
     WalkthroughStep(
       title: '启用配置',
       body: '可以有多个 API 配置。当前生效的那个是「当前启用配置」。\n\n'
-          '切换启用不同的配置即可切换模型服务。',
+          '列表里每条配置右侧的菜单可以编辑、删除或「设为当前」。切换启用不同的配置即可切换模型服务。',
       imageHint: '启用配置切换',
     ),
     WalkthroughStep(
       title: '测试连接',
       body: '编辑页提供测试连接功能，可以验证配置是否正确。\n\n'
+          '测试成功后会尝试拉取可用模型列表供你直接选择；测试失败时仍可手动输入模型名。\n\n'
           '如果测试失败，优先检查 API Key、Base URL 是否完整、账号是否有余额或模型权限、网络能否访问对应服务商。',
-      imageHint: '测试连接',
+      imageHint: '测试连接 + 模型列表',
     ),
   ],
 );
@@ -381,15 +433,16 @@ const Walkthrough _userSettings = Walkthrough(
   steps: [
     WalkthroughStep(
       title: '用户设定是什么',
-      body: '用户设定描述「你是谁」。角色会参考这些信息与你互动，例如你的昵称、头像、性格和背景。\n\n'
+      body: '用户设定描述「你是谁」。角色会参考这些信息与你互动，例如你的昵称和头像。\n\n'
           '新手可以先跳过，开始聊天后再补充。',
       imageHint: '用户设定页',
     ),
     WalkthroughStep(
       title: '用户信息字段',
-      body: '可以填写你的昵称、头像和个人简介。\n\n'
-          '设置后，发送给模型的提示会携带这些信息，让角色认识你。',
-      imageHint: '用户信息编辑',
+      body: '可以设置你的用户头像和昵称。\n\n'
+          '昵称留空时默认使用「我」。设置后，发送给模型的提示会携带这些信息，让角色认识你。\n\n'
+          '这里只保存全局默认信息；更详细的个人简介、以及针对某个角色的专属设定，在聊天页「用户设定」里的角色覆盖设定中填写。',
+      imageHint: '用户信息编辑（头像 + 昵称）',
     ),
   ],
 );
@@ -406,10 +459,23 @@ const Walkthrough _promptSettings = Walkthrough(
       imageHint: 'Prompt 策略页',
     ),
     WalkthroughStep(
-      title: '注入与分频',
-      body: '策略里可以控制角色设定、世界书、用户设定等内容的注入方式与频率。\n\n'
-          '熟悉基础聊天后再调整更稳妥。',
+      title: '策略项详解',
+      body: '策略页可以逐项控制注入内容与频率：\n\n'
+          '• 注入角色扮演规则：人物卡 / 系统卡各自的扮演规则文本\n'
+          '• 注入连续性提醒：每轮提醒模型保持角色身份与上下文\n'
+          '• 注入历史后指令：把角色卡的「历史后指令」放到对话最末尾，贴近模型回复，约束力更强\n'
+          '• 摘要设定注入间隔：每隔多少个用户回合注入一次行为摘要（0 关闭）\n'
+          '• 完整设定注入间隔：每隔多少个回合注入一次完整详细设定（0 关闭）\n'
+          '• 世界书扫描深度：用于触发世界书的最近消息条数，推荐 4\n\n'
+          '滑动条与数字框都可调，超出推荐范围会有提示。',
       imageHint: '注入与分频设置',
+    ),
+    WalkthroughStep(
+      title: '角色单独策略',
+      body: '从聊天页设置进入 Prompt 策略时，是针对当前角色的版本。\n\n'
+          '默认情况下角色沿用全局策略；开启「当前角色使用单独 Prompt 策略」后，改动才只影响这个角色。\n\n'
+          '调整前后可以点右上角眼睛图标预览实际发送给模型的 System Prompt。',
+      imageHint: '角色单独策略开关 + 预览',
     ),
   ],
 );
@@ -428,14 +494,211 @@ const Walkthrough _backupRestore = Walkthrough(
     WalkthroughStep(
       title: '导出备份',
       body: '点击导出备份，可以把全部数据（角色、世界书、背景、用户设定、Prompt 策略等）保存为一份备份文件。\n\n'
+          '导出内容可以勾选，默认不包含 API Key、聊天记录、角色用户覆盖设定等敏感项；勾选这些时会再弹一次提醒。\n\n'
           '导入大量资产或恢复前，建议先导出一份完整备份。',
-      imageHint: '导出备份',
+      imageHint: '导出备份（可勾选内容）',
     ),
     WalkthroughStep(
       title: '导入 / 恢复备份',
-      body: '点击恢复备份，选择之前导出的备份文件即可恢复全部数据。\n\n'
+      body: '点击恢复备份，选择之前导出的备份文件即可恢复数据。\n\n'
+          '导入时可以选择两种方式：\n'
+          '• 合并导入：生成新 ID、不覆盖现有数据（推荐）\n'
+          '• 恢复导入：保留原 ID、同 ID 覆盖现有数据\n\n'
           '恢复会覆盖当前数据，请谨慎操作，务必先确认备份内容。',
-      imageHint: '恢复备份',
+      imageHint: '恢复备份（选择导入方式）',
+    ),
+  ],
+);
+
+const Walkthrough _characterEdit = Walkthrough(
+  title: '角色编辑页',
+  subtitle: '角色卡创作核心：设定条目、开场白、角色信息与 UI 能力。',
+  icon: Icons.edit_outlined,
+  steps: [
+    WalkthroughStep(
+      title: '角色编辑页是什么',
+      body: '角色编辑页是浮层表单，点击角色卡即可进入。\n\n'
+          '从上到下依次是：头像、名称、简短描述、卡片类型、封面、绑定世界书、状态栏与 UI 入口、文本着色、设定条目、开场白、角色信息。\n\n'
+          '未保存的修改在退出时会静默存为草稿，下次进入同一条目会提示是否恢复。',
+      imageHint: '角色编辑页整体',
+    ),
+    WalkthroughStep(
+      title: '头像 / 名称 / 描述',
+      body: '点击头像可选择头像图片；名称不能与其他角色重复，重名会提示；简短描述会显示在卡片和主页入口卡上。',
+      imageHint: '头像 / 名称 / 描述编辑',
+    ),
+    WalkthroughStep(
+      title: '卡片类型',
+      body: '卡片分「人物卡」和「系统卡」两种：\n\n'
+          '• 人物卡：适合普通角色扮演对象，默认有名称、关系、身体、心理、背景等条目\n'
+          '• 系统卡：适合世界 / 游戏 / 剧本 / 系统流设定，默认有系统名称、概要、详情、主角设定、剧情等条目\n\n'
+          '切换类型会重置默认条目。系统卡启用「主角设定」后，聊天时可用主角设定作为你的默认设定。',
+      imageHint: '人物卡 / 系统卡切换',
+    ),
+    WalkthroughStep(
+      title: '设定条目',
+      body: '条目按「简单介绍」和「详细设定」分组，每个条目都有启用开关，可以展开内联编辑。\n\n'
+          '还可以添加自定义条目，自定义条目拥有独立编辑页。\n\n'
+          '条目内容会注入到发送给模型的提示中。',
+      imageHint: '设定条目列表',
+    ),
+    WalkthroughStep(
+      title: '开场白',
+      body: '开场白是角色对你的第一句话，支持添加多条。\n\n'
+          '点击条目可编辑内容，也可以插入本地图片（以 <img> 标签形式随角色卡导出）。\n\n'
+          '新对话没有历史时，自动插入第一条开场白；在聊天页可以对开场白消息切换不同版本。',
+      imageHint: '多开场白管理',
+    ),
+    WalkthroughStep(
+      title: '角色信息',
+      body: '角色信息区用于填写标签、作者、版本、作者备注和历史后指令。\n\n'
+          '• 标签：逗号分隔，角色库顶部的筛选栏据此显示\n'
+          '• 历史后指令：放在对话最末尾的强约束指令，如「只用中文、不要旁白」\n\n'
+          '这些信息默认不注入 Prompt（历史后指令除外），主要用于展示、筛选与资料保留。',
+      imageHint: '角色信息字段',
+    ),
+    WalkthroughStep(
+      title: '绑定世界书',
+      body: '在编辑页可以给角色绑定一份世界书。\n\n'
+          '绑定后，聊天时世界书中被关键词命中的条目会随提示注入，为角色补充世界观设定。',
+      imageHint: '绑定世界书面板',
+    ),
+    WalkthroughStep(
+      title: '未保存草稿',
+      body: '角色编辑页是浮层，点击外部就会关闭，改到一半很容易误关。\n\n'
+          '现在退出时会静默保存草稿（有效 24 小时），下次进入同一张卡时弹窗询问是否恢复，选择「不保存」才会彻底丢弃。',
+      imageHint: '恢复草稿对话框',
+    ),
+  ],
+);
+
+const Walkthrough _statusBarHighlight = Walkthrough(
+  title: '状态栏与文本着色',
+  subtitle: '角色卡顶部的玩法状态栏，以及消息文本的正则着色。',
+  icon: Icons.speed_outlined,
+  steps: [
+    WalkthroughStep(
+      title: '是什么',
+      body: '这是角色编辑页里的两个附属编辑器入口：\n\n'
+          '• 状态栏：在聊天页顶部定义一排玩法数值 / 文本（生命、好感、地点等），可由 AI 或 UI 组件读写\n'
+          '• 文本着色：用正则规则给消息里的台词、旁白等片段上色，只影响显示、不改写原文\n\n'
+          '两者都随角色卡保存、导入导出。',
+      imageHint: '角色编辑页里的入口',
+    ),
+    WalkthroughStep(
+      title: '定义状态栏字段',
+      body: '在状态栏字段页点击「添加字段」，每个字段可设置：\n\n'
+          '• 字段名称（如 生命、好感、地点）\n'
+          '• 类型：数值 或 文本\n'
+          '• 归属：玩家的属性 / 角色自己的属性 / 中立环境，注入时带上主语帮助 AI 判断增减\n'
+          '• 初始值，数值型可设最小 / 最大值\n\n'
+          '聊天时展开状态栏，每个块顶部有小滑块可固定它在长条的左 / 右侧。',
+      imageHint: '状态栏字段编辑',
+    ),
+    WalkthroughStep(
+      title: '文本着色规则',
+      body: '文本着色页用正则表达式匹配片段并着色。\n\n'
+          '每条规则可设名称、开关、正则、颜色（固定色板或沿用正文色）、加粗 / 斜体，并可用上下箭头调整优先级——靠前的规则先占位。\n\n'
+          '顶部有实时预览框，可以粘贴实际文本查看效果。没配过时使用内置默认规则。',
+      imageHint: '文本着色规则编辑',
+    ),
+  ],
+);
+
+const Walkthrough _uiStudio = Walkthrough(
+  title: 'UI 创作工作室',
+  subtitle: '拖拽式搭建自定义界面组件（按钮、滑块、进度条、定时器、联动）。',
+  icon: Icons.palette_outlined,
+  steps: [
+    WalkthroughStep(
+      title: '是什么',
+      body: 'UI 创作工作室（设置 → UI 创作工作室）是一个可视化搭建工具，用来制作自定义界面组件。\n\n'
+          '可以把它理解成「搭积木」：左侧原材料区有文本、按钮、滑块、进度条、输入框、开关、下拉、图片、定时器、计算节点等原子，拖到画布上摆放组合。\n\n'
+          '搭好的组件可保存到 UI 模组库，再在角色编辑页的「UI 拼装方案」里挂载到聊天页。',
+      imageHint: 'UI 工作台整体',
+    ),
+    WalkthroughStep(
+      title: '画布与拖放',
+      body: '工作台是带网格的无限画布。从左侧原材料区长按拖入元件，放在画布上。\n\n'
+          '选中元件后可以用 D-Pad 微调位置、编辑精确几何数值、调整图层顺序、复制或删除。画布顶部还有撤销 / 重做（最多 100 步）和清空画布。',
+      imageHint: '画布拖放元件',
+    ),
+    WalkthroughStep(
+      title: '编辑元件',
+      body: '双击元件打开编辑器，每种元件可配置项不同：\n\n'
+          '• 文本：字体、对齐、自适应宽度\n'
+          '• 滑块 / 进度条：范围、步长、形状\n'
+          '• 输入框：必填、多行、颜色\n'
+          '• 定时器：增量 / 开关 / 倒计时等触发方式\n'
+          '• 计算节点：加减乘除、比较逻辑\n\n'
+          '元件之间还可以用「联动器」连线，让一个元件的变化驱动另一个（例如滑块拖动带动进度条）。',
+      imageHint: '元件编辑器与联动',
+    ),
+    WalkthroughStep(
+      title: '保存为复合组件',
+      body: '搭好的界面可以点「保存为复合组件」，命名后存入 UI 模组库。\n\n'
+          '保存前需要有一个容器底面来承载元件。复合组件可以设置暴露端口，方便在别处复用和连接。\n\n'
+          '工作台会自动保存草稿，退出后重新进入可继续编辑。',
+      imageHint: '保存复合组件',
+    ),
+  ],
+);
+
+const Walkthrough _uiAssetGallery = Walkthrough(
+  title: 'UI 模组库',
+  subtitle: '查看、试用、导出、导入自定义 UI 组件。',
+  icon: Icons.widgets_outlined,
+  steps: [
+    WalkthroughStep(
+      title: '是什么',
+      body: 'UI 模组库（主页右下模块轨道里的「UI 模组库」）集中展示你保存的界面资产：\n\n'
+          '• 自定义模组：旧格式的模块\n'
+          '• 复合组件：在 UI 创作工作室保存的组件，按设计比例展示，可直接在卡片里点击、拖动试用交互\n\n'
+          '没有保存过资产时显示空状态提示。',
+      imageHint: 'UI 模组库列表',
+    ),
+    WalkthroughStep(
+      title: '导出 / 导入',
+      body: '每张复合组件卡片右下有导出和删除按钮。\n\n'
+          '导出会保存为 .llmui 文件（到下载目录），可分享或迁移；右上角可导入其他 .llmui 文件。\n\n'
+          '删除时提示「已经用到角色卡里的实例不受影响」——组件在角色卡里是值拷贝，删除模板不会让已摆好的界面变空。',
+      imageHint: '导出 / 导入复合组件',
+    ),
+  ],
+);
+
+const Walkthrough _uiAssembly = Walkthrough(
+  title: '角色 UI 拼装',
+  subtitle: '把 UI 组件挂载到聊天页：开场白弹窗、场景 UI、常驻 UI、伴生 UI。',
+  icon: Icons.dashboard_customize_outlined,
+  steps: [
+    WalkthroughStep(
+      title: '是什么',
+      body: '角色 UI 拼装（角色编辑页 → UI 入口）给角色设计「会动的聊天界面」。\n\n'
+          '可以新建四种 UI 方案，每种只能有一个：\n\n'
+          '• 开场白弹窗：首次进入聊天时全屏展现\n'
+          '• 场景 UI：全屏接管整个聊天页，替代对话气泡（适合战斗界面、养成面板）\n'
+          '• 常驻 UI：浮在聊天上方，可折叠为悬浮球（适合好感条、状态指示器）\n'
+          '• 伴生 UI：嵌入最新消息气泡下方跟随滚动（适合评论区、记录面板）\n\n'
+          '场景 UI 与伴生 UI 互斥。',
+      imageHint: 'UI 拼装方案列表 + 新建菜单',
+    ),
+    WalkthroughStep(
+      title: '拼装画布',
+      body: '选择 UI 类型后进入拼装画布，可以在 PCB 上拖放按钮、输入框、开关、滑块、进度条、图片等元件，用连线让它们与 LLM、角色卡数据联动。\n\n'
+          '画布可以建立平级页 / 叠加页，多页面切换；底部资产栏可拖入复合组件。\n\n'
+          '双击元件可编辑数据通道——配置组件读写的字段、AI 读写策略和通知方式。',
+      imageHint: '拼装画布',
+    ),
+    WalkthroughStep(
+      title: '在聊天页生效',
+      body: '保存 UI 方案后，进入聊天页即可看到效果：\n\n'
+          '• 开场白弹窗会在首次进入时弹出\n'
+          '• 场景 UI 接管整屏\n'
+          '• 常驻 UI 浮在聊天上方（可长按拖动、折叠）\n'
+          '• 伴生 UI 跟随最新消息\n\n'
+          '配置了场景 / 常驻 UI 时，输入可能由场景组件接管。',
+      imageHint: '聊天页中的 UI 效果',
     ),
   ],
 );
