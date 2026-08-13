@@ -137,27 +137,38 @@ class _WalkthroughViewerState extends State<WalkthroughViewer> {
                 child: const Text('上一步'),
               ),
             ),
-            // 页码圆点
+            // 页码指示：步骤少时显示圆点，步骤多时改用「第 x / y 步」文字，
+            // 避免圆点一排放不下溢出。
             Expanded(
               flex: 2,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 0; i < _count; i++)
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: i == _page ? 18 : 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: i == _page
-                            ? tokens.accent
-                            : tokens.outline.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(4),
+              child: _count <= 7
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < _count; i++)
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            width: i == _page ? 18 : 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: i == _page
+                                  ? tokens.accent
+                                  : tokens.outline.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                      ],
+                    )
+                  : Text(
+                      '${_page + 1} / $_count',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: tokens.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                ],
-              ),
             ),
             // 下一步 / 完成
             Expanded(
