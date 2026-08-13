@@ -1797,8 +1797,7 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   static const double _flingDistance = 48; // 判定"滑动翻页"的最小位移(px)。
   static const double _tapSlop = 8; // 小于该位移当作点击，不翻页。
 
-  late AnimationController _pulseCtrl; // 切换落定后的一次性轻微缩放脉冲（纯视觉，不动卡片位置）。
-  double _position = 0.0; // 选中/落点格位（确定性，由松手时直接写入）。
+  double _position = 0.0; // 选中/落点格位（确定性，由松手时直接写入，不参与动画）。
   double _dragStartX = 0.0;
   double _dragPosition = 0.0; // 手指按住期间跟手显示的格位（可越过 0..max）。
   bool _dragActive = false;
@@ -1809,35 +1808,6 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   /// 相邻两卡中心距：选中卡半宽 + 间距 + 未选中卡半宽。
   /// 卡片按原尺寸渲染，一格即一张卡的平移距离。
   double get _step => widget.activeWidth * (1 + _inactiveScale) / 2 + _spacing;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-      lowerBound: 1.0,
-      upperBound: 1.03,
-      value: 1.0,
-    );
-  }
-
-  @override
-  void dispose() {
-    _pulseCtrl.dispose();
-    super.dispose();
-  }
-
-  /// 切换落定后播放一次轻微缩放脉冲，作为「已选中」的视觉反馈。
-  /// 只缩放整条轨道，不改变卡片位置，也不参与选中判定。
-  void _playSwitchPulse() {
-    _pulseCtrl.value = 1.0;
-    // 先正向缩放，完成后反向收回（pulse 要的是 1.0→1.03→1.0）。
-    // 注意 completion 要挂在 forward() 返回的 TickerFuture 上，而不是控制器。
-    _pulseCtrl.forward().whenComplete(() {
-      if (mounted) _pulseCtrl.reverse();
-    });
-  }
 
   void _selectAt(int index) {
     if (index == _lastSwipedIndex) return;
@@ -1910,10 +1880,10 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
     }
 
     // 确定性落位 + 选中（不依赖任何动画完成回调——动画中途把轨道弹回中间格
-    // 时落点会停错卡，第三张及以后就选不中）。
+    // 时落点会停错卡，第三张及以后就选不中）。视觉上的平滑滑动由 build 里的
+    // TweenAnimationBuilder 完成，它只动画「布局位置」，与选中完全解耦。
     setState(() => _position = target.toDouble());
     _selectAt(target);
-    _playSwitchPulse();
   }
 
   /// 按滑动距离换算松手后的目标格。
@@ -1933,8 +1903,36 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   Widget build(BuildContext context) {
     if (_count == 0) return const SizedBox.shrink();
 
-    final p = _dragActive ? _dragPosition : _position;
-    // 视觉选中（哪张卡显示为大卡/高亮）跟随 p，保证大卡与卡片位置一致。
+    // 布局目标格位：拖动中跟手（_dragPosition），松手后落到确定性选中格（_position）。
+    // 动画只驱动这个「布局位置」，选中永远读 _position，二者完全解耦——
+    // 所以无论动画怎么播，第三张及以后的卡片都能稳定选中。
+    final target = _dragActive ? _dragPosition : _position;
+    // 拖动中即时跟手（零时长）；松手后平滑滑到目标（300ms）。减少动效则一直零时长。
+    final slideDuration = (_dragActive || widget.reduceMotion)
+        ? Duration.zero
+        : const Duration(milliseconds: 300);
+
+    return GestureDetector(
+      // translucent：卡片上的点击归卡片，行内空白处的点击穿透到背景遮罩取消。
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: _onDragStart,
+      onHorizontalDragUpdate: _onDragUpdate,
+      onHorizontalDragEnd: _onDragEnd,
+      // TweenAnimationBuilder：把布局位置从当前平滑动画到 target。它只影响
+      // 卡片怎么排，不触发任何选中逻辑（_selectAt 只在 _onDragEnd 里确定性调用）。
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: target, end: target),
+        duration: slideDuration,
+        curve: Curves.easeOutCubic,
+        builder: (context, p, _) {
+          return _buildDeckAt(p);
+        },
+      ),
+    );
+  }
+
+  /// 用布局位置 p 排布整条卡片轨道（位置 / 宽度 / 缩放 / 透明度都随 p 连续变化）。
+  Widget _buildDeckAt(double p) {
     final selectedIdx = p.round().clamp(0, _count - 1);
     final a = p.floor().toInt().clamp(0, _count - 1);
     final frac = (p - a).clamp(0.0, 1.0);
@@ -1970,63 +1968,44 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
     final cb = wAt(a) + _spacing + wAt(a + 1) / 2;
     final frame = aw / 2 - (ca * (1 - frac) + cb * frac);
 
-    return GestureDetector(
-      // translucent：卡片上的点击归卡片，行内空白处的点击穿透到背景遮罩取消。
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragStart: _onDragStart,
-      onHorizontalDragUpdate: _onDragUpdate,
-      onHorizontalDragEnd: _onDragEnd,
-      // 切换落定后的轻微缩放脉冲（_playSwitchPulse）：只缩放整条轨道，
-      // 不改变卡片位置，也不参与选中，纯视觉反馈。
-      child: AnimatedBuilder(
-        animation: _pulseCtrl,
-        builder: (context, child) {
-          return Transform.scale(
-            scale: _pulseCtrl.value,
-            alignment: Alignment.center,
-            child: child,
-          );
-        },
-        child: ClipRect(
-        child: Stack(
-          children: [
-            for (var i = 0; i < _count; i++)
-              Builder(
-                builder: (context) {
-                  final w = wAt(i);
-                  final scale = widthFactor(i);
-                  final distance = (i - p).abs();
-                  final opacity = 1.0 -
-                      (1.0 - _inactiveOpacity) * distance.clamp(0.0, 1.0);
-                  final center = stripLeft(i) + w / 2 + frame;
-                  return Positioned(
-                    left: center - aw / 2,
-                    top: 0,
+    return ClipRect(
+      child: Stack(
+        children: [
+          for (var i = 0; i < _count; i++)
+            Builder(
+              builder: (context) {
+                final w = wAt(i);
+                final scale = widthFactor(i);
+                final distance = (i - p).abs();
+                final opacity = 1.0 -
+                    (1.0 - _inactiveOpacity) * distance.clamp(0.0, 1.0);
+                final center = stripLeft(i) + w / 2 + frame;
+                return Positioned(
+                  left: center - aw / 2,
+                  top: 0,
+                  width: aw,
+                  height: widget.activeHeight,
+                  child: _RolePlane(
+                    character: widget.characters[i],
+                    active: i == selectedIdx,
+                    promoting: i == selectedIdx &&
+                        widget.promotingRoleId == widget.characters[i].id,
+                    scale: scale,
+                    opacity: opacity,
                     width: aw,
                     height: widget.activeHeight,
-                    child: _RolePlane(
-                      character: widget.characters[i],
-                      active: i == selectedIdx,
-                      promoting: i == selectedIdx &&
-                          widget.promotingRoleId == widget.characters[i].id,
-                      scale: scale,
-                      opacity: opacity,
-                      width: aw,
-                      height: widget.activeHeight,
-                      recentLabel: widget.recentLabel(widget.characters[i].id),
-                      tokens: widget.tokens,
-                      reduceMotion: widget.reduceMotion,
-                      onTap: () {
-                        // 点击任意卡片直接切换（单选，无需先聚焦再点一次确认）。
-                        widget.onConfirmed(widget.characters[i]);
-                      },
-                    ),
-                  );
-                },
-              ),
-          ],
-          ),
-        ),
+                    recentLabel: widget.recentLabel(widget.characters[i].id),
+                    tokens: widget.tokens,
+                    reduceMotion: widget.reduceMotion,
+                    onTap: () {
+                      // 点击任意卡片直接切换（单选，无需先聚焦再点一次确认）。
+                      widget.onConfirmed(widget.characters[i]);
+                    },
+                  ),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
