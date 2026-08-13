@@ -2850,7 +2850,19 @@ class _InputBlockWidgetState extends State<_InputBlockWidget> {
         textInputAction: multiline ? TextInputAction.newline : null,
         style: TextStyle(fontSize: 13, color: inputTextColor),
         decoration: InputDecoration(
+          // 输入框的外观由外层 Container（visualMode）统一负责，这里要
+          // 彻底屏蔽 App 全局 inputDecorationTheme 的注入——
+          // 全局主题设了 filled: true + 灰描边圆角框（surfaceElevated /
+          // outline），不显式关掉的话，TextField 会在引擎自绘的框之上
+          // 再叠一个「灰色描边白色实心的细长胶囊」，且换 visualMode
+          // 也没用（那个胶囊来自 TextField 自身，跟外框无关）。
+          filled: false,
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
           hintText: widget.placeholder,
           hintStyle: TextStyle(fontSize: 12, color: placeholderColor),
           isDense: true,
