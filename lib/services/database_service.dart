@@ -433,11 +433,16 @@ class DatabaseService {
   /// 获取每个角色最近一条消息的时间戳。
   ///
   /// 主页用它排序「最近体验」角色，同时避免为每个角色单独查询消息表。
+  ///
+  /// 只统计 role='user' 的消息（用户真正发起的对话/互动）。只进入角色页
+  /// 会自动插入的开场白（role='assistant'）不算「聊过」，避免一进页面就
+  /// 把该角色排到最前。
   static Future<Map<String, int>> getLatestMessageTimestamps() async {
     final db = await database;
     final rows = await db.rawQuery(
       'SELECT character_id, MAX(timestamp) AS latest_timestamp '
-      'FROM messages GROUP BY character_id',
+      'FROM messages WHERE role = ? GROUP BY character_id',
+      ['user'],
     );
     final result = <String, int>{};
     for (final row in rows) {
@@ -448,12 +453,15 @@ class DatabaseService {
     return result;
   }
 
-  /// 获取最近有对话记录的角色 ID
+  /// 获取最近有对话记录的角色 ID（只算用户真正发起过对话的角色，
+  /// 排除只进入页面自动插入的开场白）。
   static Future<String?> getLastActiveCharacterId() async {
     final db = await database;
     final result = await db.query(
       'messages',
       columns: ['character_id'],
+      where: 'role = ?',
+      whereArgs: ['user'],
       orderBy: 'timestamp DESC',
       limit: 1,
     );
