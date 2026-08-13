@@ -380,11 +380,13 @@ class _HomeExperiencePageState extends State<HomeExperiencePage>
 
   /// 第二次点击（或已聚焦时再点）：确认并替换主页当前角色（对应 HTML 第二次点击）。
   Future<void> _confirmRolePlane(CharacterCard character) async {
-    if (_pendingRoleId != character.id) {
-      _focusRolePlane(character);
-      return;
-    }
+    // 点击任意卡片 = 直接确认并切换（去掉「先聚焦、再点一次确认」的两步，
+    // 用户反馈之前要点两次才切得过去，容易误以为切换无效）。
     _promoteTimer?.cancel();
+    setState(() {
+      _pendingRoleId = character.id;
+      _promotingRoleId = null;
+    });
     await ActiveCharacterStore.write(character.id);
     if (!mounted) return;
     setState(() {
@@ -1845,20 +1847,6 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
     widget.onSwiped(character);
   }
 
-  /// 点击聚焦（非滑动）：动画结束后不触发滑动选中。
-  void _snapTo(int index) {
-    _flipCtrl.stop();
-    _tapFocusing = true;
-    _flipCtrl
-      ..value = _position
-      ..animateTo(
-        index.toDouble(),
-        curve: Curves.easeOutCubic,
-      ).whenComplete(() {
-        _tapFocusing = false;
-      });
-  }
-
   void _onDragStart(DragStartDetails details) {
     _flipCtrl.stop();
     _dragStartX = details.localPosition.dx;
@@ -1916,9 +1904,8 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
     }
 
     if (widget.reduceMotion) {
-      // 减少动效：直接定格到目标格，不过冲。
-      final dir = totalPx < 0 ? 1 : -1;
-      final target = (start + dir).clamp(0, _count - 1);
+      // 减少动效：直接定格到目标格，不过冲。按滑动距离可一次跨多张。
+      final target = _swipeTarget(start, totalPx);
       setState(() => _position = target.toDouble());
       _selectAt(target);
       return;
@@ -1932,8 +1919,7 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
       return;
     }
 
-    final dir = totalPx < 0 ? 1 : -1; // 左滑 +1（下一张），右滑 -1（上一张）。
-    final target = (start + dir).clamp(0, _count - 1);
+    final target = _swipeTarget(start, totalPx);
     if (target == start) {
       _flipCtrl
         ..value = _dragPosition
@@ -1954,6 +1940,19 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
           duration: const Duration(milliseconds: 420),
         ),
       );
+  }
+
+  /// 按滑动距离换算松手后的目标格。
+  ///
+  /// 滑动超过半格就按距离跨多张（一次手势可直接滑到后面的角色），
+  /// 不足半格但已越过翻页阈值时至少前进一格，方向由滑动方向决定。
+  int _swipeTarget(int start, double totalPx) {
+    final moved = (totalPx / _step).round();
+    var target = (start - moved).clamp(0, _count - 1);
+    if (target == start && moved == 0) {
+      target = (start + (totalPx < 0 ? 1 : -1)).clamp(0, _count - 1);
+    }
+    return target.toInt();
   }
 
   @override
@@ -2032,12 +2031,8 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
                       tokens: widget.tokens,
                       reduceMotion: widget.reduceMotion,
                       onTap: () {
-                        if (i == selectedIdx) {
-                          widget.onConfirmed(widget.characters[i]);
-                        } else {
-                          widget.onFocused(widget.characters[i]);
-                          _snapTo(i);
-                        }
+                        // 点击任意卡片直接切换（单选，无需先聚焦再点一次确认）。
+                        widget.onConfirmed(widget.characters[i]);
                       },
                     ),
                   );
