@@ -1920,22 +1920,18 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
 
     final target = _swipeTarget(start, totalPx);
     if (target == start) {
+      // 拖动距离不足以换卡：回落到当前格。
       _flipCtrl
         ..value = _dragPosition
         ..animateTo(start.toDouble(), curve: Curves.easeOutBack);
       return;
     }
 
-    // 用可靠的标准翻页动画（animateTo，与点击吸调用的是同一套机制）滑到目标格。
-    // 之前用自制的 _FlipSimulation 过冲模拟（animateWith），滑到后面的卡片时
-    // 会把轨道弹回中间格，导致第三张及之后的卡片无法停留、也就选不中。
-    _flipCtrl
-      ..value = _dragPosition
-      ..animateTo(
-        target.toDouble(),
-        curve: Curves.easeOutCubic,
-        duration: const Duration(milliseconds: 420),
-      );
+    // 确定性落位 + 选中：松手直接把轨道定格到目标格并选中，不再依赖动画完成
+    // 回调。此前依赖动画（无论 _FlipSimulation 还是 animateTo）完成后再选中，
+    // 动画中途把轨道弹回中间格时，落点就停留在第二张、选不中第三张及以后。
+    setState(() => _position = target.toDouble());
+    _selectAt(target);
   }
 
   /// 按滑动距离换算松手后的目标格。
