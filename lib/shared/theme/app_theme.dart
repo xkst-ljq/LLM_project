@@ -146,13 +146,22 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: tokens.surfaceElevated,
-        contentTextStyle: TextStyle(color: tokens.textPrimary),
+        // 半透明玻璃气泡：深浅主题都用 surfaceGlass，深色下自动变深。
+        backgroundColor: tokens.surfaceGlass.withValues(alpha: 0.92),
+        // 胶囊细长：窄边距 + 满圆角，让气泡细长不占空间。
+        width: 320,
+        insetPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentTextStyle: TextStyle(
+          color: tokens.textPrimary,
+          fontSize: 13,
+          height: 1.3,
+        ),
         actionTextColor: tokens.accentStrong,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusMedium),
-          side: BorderSide(color: tokens.outline),
+          borderRadius: BorderRadius.circular(tokens.radiusPill),
+          side: BorderSide(color: tokens.outline.withValues(alpha: 0.6)),
         ),
+        elevation: tokens.elevationHigh,
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
         color: tokens.accent,
