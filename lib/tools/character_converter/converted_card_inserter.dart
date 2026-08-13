@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../services/character_card_asset_service.dart';
 import '../../services/database_service.dart';
+import '../../services/world_book_import_helper.dart';
 import '../../utils/id_utils.dart';
 import 'conversion_models.dart';
 
@@ -35,44 +36,13 @@ class ConvertedCardInserter {
     return '$normalized ($index)';
   }
 
-  static Future<String> _uniqueWorldBookName(String baseName) async {
-    final all = await DatabaseService.getAllWorldBooks();
-    final names = all.map((e) => (e['name'] as String? ?? '').trim()).toSet();
-
-    final normalized = baseName.trim().isEmpty ? '导入世界书' : baseName.trim();
-    if (!names.contains(normalized)) return normalized;
-
-    var index = 1;
-    while (names.contains('$normalized ($index)')) {
-      index++;
-    }
-    return '$normalized ($index)';
-  }
-
   /// 把内嵌世界书写入库，返回 oldId -> newId 映射。
+  ///
+  /// 复用共享去重逻辑：同内容的世界书只保留一份，重复导入直接绑定已有那套。
   static Future<Map<String, String>> _insertWorldBooks(
     List<Map<String, dynamic>> worldBooks,
   ) async {
-    final idMap = <String, String>{};
-    for (int i = 0; i < worldBooks.length; i++) {
-      final wb = Map<String, dynamic>.from(worldBooks[i]);
-
-      final oldId = wb['id']?.toString() ?? '';
-      if (oldId.isEmpty) continue;
-
-      final newId = IdUtils.timestampId(i);
-      final oldName = wb['name']?.toString() ?? '导入世界书';
-      final newName = await _uniqueWorldBookName(oldName);
-
-      wb['id'] = newId;
-      wb['name'] = newName;
-      wb['cover_image_path'] = '';
-      wb['is_preset'] = 0;
-
-      await DatabaseService.insertWorldBook(wb);
-      idMap[oldId] = newId;
-    }
-    return idMap;
+    return WorldBookImportHelper.importDeduped(worldBooks);
   }
 
   /// 把封面图字节落地为本地文件，返回文件路径（无图返回空串）。

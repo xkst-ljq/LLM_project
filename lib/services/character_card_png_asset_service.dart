@@ -10,6 +10,7 @@ import '../models/character_card.dart';
 import '../services/android_download_service.dart';
 import '../services/character_card_asset_service.dart';
 import '../services/database_service.dart';
+import '../services/world_book_import_helper.dart';
 import '../utils/asset_magic.dart';
 import '../utils/id_utils.dart';
 
@@ -151,20 +152,6 @@ class CharacterCardPngAssetService {
     final names = all.map((e) => (e['name'] as String? ?? '').trim()).toSet();
 
     final normalized = baseName.trim().isEmpty ? '导入角色卡' : baseName.trim();
-    if (!names.contains(normalized)) return normalized;
-
-    var index = 1;
-    while (names.contains('$normalized ($index)')) {
-      index++;
-    }
-    return '$normalized ($index)';
-  }
-
-  static Future<String> _uniqueWorldBookName(String baseName) async {
-    final all = await DatabaseService.getAllWorldBooks();
-    final names = all.map((e) => (e['name'] as String? ?? '').trim()).toSet();
-
-    final normalized = baseName.trim().isEmpty ? '导入世界书' : baseName.trim();
     if (!names.contains(normalized)) return normalized;
 
     var index = 1;
@@ -498,37 +485,18 @@ class CharacterCardPngAssetService {
   static Future<Map<String, String>> _importWorldBookDependencies(
       Map<String, dynamic> root,
       ) async {
-    final idMap = <String, String>{};
-
     final payload = root['payload'];
-    if (payload is! Map) return idMap;
+    if (payload is! Map) return <String, String>{};
 
     final dependencies = payload['dependencies'];
-    if (dependencies is! Map) return idMap;
+    if (dependencies is! Map) return <String, String>{};
 
     final worldBooks = dependencies['world_books'];
-    if (worldBooks is! List) return idMap;
+    if (worldBooks is! List) return <String, String>{};
 
-    for (int i = 0; i < worldBooks.length; i++) {
-      final wb = Map<String, dynamic>.from(worldBooks[i] as Map);
-
-      final oldId = wb['id']?.toString() ?? '';
-      if (oldId.isEmpty) continue;
-
-      final newId = IdUtils.timestampId(i);
-      final oldName = wb['name']?.toString() ?? '导入世界书';
-      final newName = await _uniqueWorldBookName(oldName);
-
-      wb['id'] = newId;
-      wb['name'] = newName;
-      wb['cover_image_path'] = '';
-      wb['is_preset'] = 0;
-
-      await DatabaseService.insertWorldBook(wb);
-      idMap[oldId] = newId;
-    }
-
-    return idMap;
+    return WorldBookImportHelper.importDeduped(
+      worldBooks.map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+    );
   }
 
   static Future<void> importCharacterCardPng(File file) async {
