@@ -1887,51 +1887,47 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
     final absPx = totalPx.abs();
     final maxPos = _count - 1;
 
-    // 越界：拉过头了，松手弹回边缘。
+    // 越界（拉过头）：确定性回到边缘。之前用 easeOutBack 回弹，从被橡皮筋
+    // 拉得很远的值回弹时大幅过冲，把轨道甩到前面的卡片（最后一张再滑动会
+    // 弹到第二张，正是因为这里）。
     if (_dragPosition < 0 || _dragPosition > maxPos) {
-      final edge = _dragPosition < 0 ? 0.0 : maxPos.toDouble();
-      _flipCtrl
-        ..value = _dragPosition
-        ..animateTo(edge, curve: Curves.easeOutBack);
+      setState(() {
+        _position = _dragPosition < 0 ? 0.0 : maxPos.toDouble();
+      });
       return;
     }
 
-    // 位移太小 → 当作点击，不翻页。
-    if (absPx < _tapSlop) {
-      _flipCtrl.animateTo(start.toDouble());
+    // 位移太小 → 当作点击，回原位。
+    if (absPx < _tapSlop || absPx < _flingDistance) {
+      setState(() => _position = start.toDouble());
+      return;
+    }
+
+    final target = _swipeTarget(start, totalPx);
+
+    if (target == start) {
+      // 距离不足以换卡：回落到当前格。
+      setState(() => _position = start.toDouble());
       return;
     }
 
     if (widget.reduceMotion) {
-      // 减少动效：直接定格到目标格，不过冲。按滑动距离可一次跨多张。
-      final target = _swipeTarget(start, totalPx);
+      // 减少动效：直接定格到目标格，不过冲。
       setState(() => _position = target.toDouble());
       _selectAt(target);
       return;
     }
 
-    if (absPx < _flingDistance) {
-      // 未达到翻页阈值：松手回到原卡。
-      _flipCtrl
-        ..value = _dragPosition
-        ..animateTo(start.toDouble(), curve: Curves.easeOutCubic);
-      return;
-    }
-
-    final target = _swipeTarget(start, totalPx);
-    if (target == start) {
-      // 拖动距离不足以换卡：回落到当前格。
-      _flipCtrl
-        ..value = _dragPosition
-        ..animateTo(start.toDouble(), curve: Curves.easeOutBack);
-      return;
-    }
-
-    // 确定性落位 + 选中：松手直接把轨道定格到目标格并选中，不再依赖动画完成
-    // 回调。此前依赖动画（无论 _FlipSimulation 还是 animateTo）完成后再选中，
-    // 动画中途把轨道弹回中间格时，落点就停留在第二张、选不中第三张及以后。
-    setState(() => _position = target.toDouble());
+    // 确定性选中（立即，不依赖动画完成回调——动画中途把轨道弹回中间格时
+    // 落点会停错卡），然后平滑滑动到目标格（纯视觉，easeOutCubic 不过冲）。
     _selectAt(target);
+    _flipCtrl
+      ..value = _dragPosition
+      ..animateTo(
+        target.toDouble(),
+        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 380),
+      );
   }
 
   /// 按滑动距离换算松手后的目标格。
