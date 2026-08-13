@@ -12,8 +12,6 @@ import 'user_settings_page.dart';
 
 
 class SettingsMenuPage extends StatelessWidget {
-  final VoidCallback? onStartNewUserGuide;
-  final VoidCallback? onStartSettingsGuide;
   final GlobalKey? apiConfigTileKey;
   final GlobalKey? userSettingsTileKey;
   final GlobalKey? promptSettingsTileKey;
@@ -27,8 +25,6 @@ class SettingsMenuPage extends StatelessWidget {
 
   const SettingsMenuPage({
     super.key,
-    this.onStartNewUserGuide,
-    this.onStartSettingsGuide,
     this.apiConfigTileKey,
     this.userSettingsTileKey,
     this.promptSettingsTileKey,
@@ -256,10 +252,7 @@ class SettingsMenuPage extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => TutorialHomePage(
-                          onStartNewUserGuide: onStartNewUserGuide,
-                          onStartSettingsGuide: onStartSettingsGuide,
-                        ),
+                        builder: (_) => const TutorialHomePage(),
                       ),
                     );
                   },

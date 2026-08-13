@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../data/tutorial_content.dart';
 import '../services/background_service.dart';
 import '../services/tutorial_service.dart';
 import '../services/update_checker.dart';
@@ -11,6 +12,7 @@ import '../shared/theme/app_theme_tokens.dart';
 import '../widgets/page_guide_overlay.dart';
 import '../widgets/simple_page_guide_scope.dart';
 import '../widgets/sub_page_backdrop.dart';
+import '../widgets/walkthrough_viewer.dart';
 import 'api_config_page.dart';
 import 'background_library_page.dart';
 import 'backup_restore_page.dart';
@@ -142,28 +144,36 @@ class _MainMenuPageState extends State<MainMenuPage>
 
   void _startNewUserGuide() {
     _closePanel();
-    setState(() {
-      _guidePhase = _MainGuidePhase.home;
-    });
+    // 用图文讲解作为新用户导览：直接打开「主页」分步讲解，替代旧的页面高光叠层。
+    final w = walkthroughForPage(TutorialPageKey.home);
+    if (w == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => WalkthroughViewer(walkthrough: w)),
+    );
   }
 
   void _startSettingsGuide() {
+    // 用图文讲解作为设置页导览。
     _openPanel();
+    final w = walkthroughForPage(TutorialPageKey.settings);
+    if (w == null) return;
     Future.delayed(const Duration(milliseconds: 320), () {
       if (!mounted) return;
-      setState(() {
-        _guidePhase = _MainGuidePhase.settings;
-      });
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => WalkthroughViewer(walkthrough: w)),
+      );
     });
   }
 
   void _returnToHomeGuide() {
     _closePanel();
+    final w = walkthroughForPage(TutorialPageKey.home);
+    if (w == null) return;
     Future.delayed(const Duration(milliseconds: 320), () {
       if (!mounted) return;
-      setState(() {
-        _guidePhase = _MainGuidePhase.home;
-      });
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => WalkthroughViewer(walkthrough: w)),
+      );
     });
   }
 
@@ -499,12 +509,9 @@ class _MainMenuPageState extends State<MainMenuPage>
       actionLabel: '进入教程中心',
       onAction: () {
         _pushGuidedPage(
-          page: TutorialHomePage(
-            onStartNewUserGuide: _startNewUserGuide,
-            onStartSettingsGuide: _startSettingsGuide,
-          ),
+          page: const TutorialHomePage(),
           pageName: '教程与导览页',
-          pageDescription: '这里可以重新开始新用户快速导览，也可以查看各页面导览入口。',
+          pageDescription: '这里可以查看每个页面的图文讲解。',
         );
       },
     );
@@ -613,8 +620,6 @@ class _MainMenuPageState extends State<MainMenuPage>
                         children: [
                           // 设置内容
                           SettingsMenuPage(
-                            onStartNewUserGuide: _startNewUserGuide,
-                            onStartSettingsGuide: _startSettingsGuide,
                             apiConfigTileKey: _apiConfigTileKey,
                             userSettingsTileKey: _userSettingsTileKey,
                             promptSettingsTileKey: _promptSettingsTileKey,
