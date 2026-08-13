@@ -1797,9 +1797,8 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   static const double _flingDistance = 48; // 判定"滑动翻页"的最小位移(px)。
   static const double _tapSlop = 8; // 小于该位移当作点击，不翻页。
 
-  late AnimationController _flipCtrl;
+  late AnimationController _pulseCtrl; // 切换落定后的一次性轻微缩放脉冲（纯视觉，不动卡片位置）。
   double _position = 0.0; // 选中/落点格位（确定性，由松手时直接写入）。
-  double _visualPos = 0.0; // 视觉格位（滑动动画用，与选中分离，避免动画干扰选中）。
   double _dragStartX = 0.0;
   double _dragPosition = 0.0; // 手指按住期间跟手显示的格位（可越过 0..max）。
   bool _dragActive = false;
@@ -1814,27 +1813,30 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   @override
   void initState() {
     super.initState();
-    _flipCtrl = AnimationController(
+    _pulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
-    )..addListener(() {
-        if (!mounted) return;
-        // 只驱动视觉格位，不动 _position——这样平滑滑动不会干扰「哪张卡被选中」。
-        setState(() => _visualPos = _flipCtrl.value);
-      })
-      ..addStatusListener(_onFlipStatus);
+      duration: const Duration(milliseconds: 200),
+      lowerBound: 1.0,
+      upperBound: 1.03,
+      value: 1.0,
+    );
   }
 
   @override
   void dispose() {
-    _flipCtrl.dispose();
+    _pulseCtrl.dispose();
     super.dispose();
   }
 
-  /// 滑动动画结束。选中已由 _onDragEnd 确定性完成，这里不再参与选中判定，
-  /// 避免动画收尾时再算一次、把落点带回中间格。
-  void _onFlipStatus(AnimationStatus status) {
-    // 动画完成即视觉到位，无需额外处理。
+  /// 切换落定后播放一次轻微缩放脉冲，作为「已选中」的视觉反馈。
+  /// 只缩放整条轨道，不改变卡片位置，也不参与选中判定。
+  void _playSwitchPulse() {
+    _pulseCtrl
+      ..value = 1.0
+      ..forward()
+      ..whenComplete(() {
+        if (mounted) _pulseCtrl.reverse();
+      });
   }
 
   void _selectAt(int index) {
@@ -1846,7 +1848,6 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   }
 
   void _onDragStart(DragStartDetails details) {
-    _flipCtrl.stop();
     _dragStartX = details.localPosition.dx;
     _dragPosition = _position;
     _dragActive = true;
@@ -1880,24 +1881,23 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
 
   void _onDragEnd(DragEndDetails details) {
     if (!_dragActive) return;
-    final from = _dragPosition; // 手指松开时轨道所在的视觉格位。
     _dragActive = false;
     final start = _position.round().clamp(0, _count - 1);
     final totalPx = details.localPosition.dx - _dragStartX;
     final absPx = totalPx.abs();
     final maxPos = _count - 1;
 
-    // 越界（拉过头）：确定性回到边缘 + 平滑视觉回归。
-    // （之前用 easeOutBack 从被橡皮筋拉远的值回弹，大幅过冲把轨道甩到前面卡片。）
+    // 越界（拉过头）：确定性回到边缘。
+    // （试过 easeOutBack 回弹，从被橡皮筋拉远的值回弹时大幅过冲，把轨道甩到
+    //  前面的卡片——最后一张再滑动会弹到第二张，正是因为这里。）
     if (_dragPosition < 0 || _dragPosition > maxPos) {
-      final edge = _dragPosition < 0 ? 0.0 : maxPos.toDouble();
-      _animateVisualTo(edge, from: from);
+      setState(() => _position = _dragPosition < 0 ? 0.0 : maxPos.toDouble());
       return;
     }
 
     // 位移太小 → 当作点击，回原位。
     if (absPx < _tapSlop || absPx < _flingDistance) {
-      _animateVisualTo(start.toDouble(), from: from);
+      setState(() => _position = start.toDouble());
       return;
     }
 
@@ -1905,35 +1905,15 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
 
     if (target == start) {
       // 距离不足以换卡：回落到当前格。
-      _animateVisualTo(start.toDouble(), from: from);
+      setState(() => _position = start.toDouble());
       return;
     }
 
-    // 确定性选中（立即，动画不参与选中判定），再平滑滑动到目标格。
-    setState(() {
-      _position = target.toDouble();
-      _visualPos = from;
-    });
+    // 确定性落位 + 选中（不依赖任何动画完成回调——动画中途把轨道弹回中间格
+    // 时落点会停错卡，第三张及以后就选不中）。
+    setState(() => _position = target.toDouble());
     _selectAt(target);
-    _flipCtrl
-      ..value = from
-      ..animateTo(
-        target.toDouble(),
-        curve: Curves.easeOutCubic,
-        duration: const Duration(milliseconds: 380),
-      );
-  }
-
-  /// 平滑把视觉格位动画到 [to]；选中位置（_position）保持不动。
-  void _animateVisualTo(double to, {required double from}) {
-    setState(() => _visualPos = from);
-    _flipCtrl
-      ..value = from
-      ..animateTo(
-        to,
-        curve: Curves.easeOutCubic,
-        duration: const Duration(milliseconds: 380),
-      );
+    _playSwitchPulse();
   }
 
   /// 按滑动距离换算松手后的目标格。
@@ -1953,10 +1933,8 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
   Widget build(BuildContext context) {
     if (_count == 0) return const SizedBox.shrink();
 
-    final p = _dragActive ? _dragPosition : _visualPos;
-    // 视觉选中（哪张卡显示为大卡/高亮）跟随视觉格位 p，保证滑动过程中
-    // 大卡与卡片位置一致、封面不错位；真正的选中结果由 _onDragEnd 用
-    // _position 确定性写入，不受这里的视觉高亮影响。
+    final p = _dragActive ? _dragPosition : _position;
+    // 视觉选中（哪张卡显示为大卡/高亮）跟随 p，保证大卡与卡片位置一致。
     final selectedIdx = p.round().clamp(0, _count - 1);
     final a = p.floor().toInt().clamp(0, _count - 1);
     final frac = (p - a).clamp(0.0, 1.0);
@@ -1998,7 +1976,18 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
       onHorizontalDragStart: _onDragStart,
       onHorizontalDragUpdate: _onDragUpdate,
       onHorizontalDragEnd: _onDragEnd,
-      child: ClipRect(
+      // 切换落定后的轻微缩放脉冲（_playSwitchPulse）：只缩放整条轨道，
+      // 不改变卡片位置，也不参与选中，纯视觉反馈。
+      child: AnimatedBuilder(
+        animation: _pulseCtrl,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: _pulseCtrl.value,
+            alignment: Alignment.center,
+            child: child,
+          );
+        },
+        child: ClipRect(
         child: Stack(
           children: [
             for (var i = 0; i < _count; i++)
@@ -2036,6 +2025,7 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
                 },
               ),
           ],
+          ),
         ),
       ),
     );
