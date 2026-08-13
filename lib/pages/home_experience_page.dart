@@ -1954,8 +1954,10 @@ class _RoleSnapDeckState extends State<_RoleSnapDeck>
     if (_count == 0) return const SizedBox.shrink();
 
     final p = _dragActive ? _dragPosition : _visualPos;
-    // 选中态跟确定性落点走（_position），滑动动画（_visualPos）不参与选中判定。
-    final selectedIdx = _position.round().clamp(0, _count - 1);
+    // 视觉选中（哪张卡显示为大卡/高亮）跟随视觉格位 p，保证滑动过程中
+    // 大卡与卡片位置一致、封面不错位；真正的选中结果由 _onDragEnd 用
+    // _position 确定性写入，不受这里的视觉高亮影响。
+    final selectedIdx = p.round().clamp(0, _count - 1);
     final a = p.floor().toInt().clamp(0, _count - 1);
     final frac = (p - a).clamp(0.0, 1.0);
     final iw = _inactiveScale;
