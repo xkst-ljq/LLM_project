@@ -367,6 +367,17 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     return info?.stickyDefaultCollapsed ?? false;
   }
 
+  /// 进入角色后，根据持久化的折叠状态（或回落作者默认）设置常驻 UI 初始状态。
+  ///
+  /// 会话副本里记录了玩家上次的折叠状态就用它（退出再进记住）；
+  /// 没有记录（首次 / 清空历史后）则用作者在角色卡里配的「默认折叠」。
+  void _applyStickyCollapsedFromSession() {
+    final persisted = _sessionState.stickyCollapsed;
+    final char = _currentCharacter;
+    _stickyCollapsed =
+        persisted ?? (char == null ? false : _stickyDefaultCollapsedFor(char));
+  }
+
   /// 常驻 UI 相对默认位置的拖动偏移。
   /// 仅存在于本次会话，不持久化——位置属于临时观感，不值得写进角色卡。
   Offset _stickyOffset = Offset.zero;
@@ -2268,9 +2279,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
     if (char == null) return;
 
-    // 根据常驻 UI 的「默认折叠」配置重置初始状态。
-    // 每次进角色都按角色卡里的设置来，退出聊天不保存状态（本来就是本地会话态）。
-    _stickyCollapsed = _stickyDefaultCollapsedFor(char);
+    // 折叠悬浮球位置等临时态随角色切换重置。
     _stickyOffset = Offset.zero;
     _ballPos = null;
     _ballTucked = false;
@@ -2293,6 +2302,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     // 反过来说，先读它就能在第一帧之前定下「这张卡该不该显示开场白」，
     // 既不闪也不等。
     await _loadSessionState();
+    _applyStickyCollapsedFromSession();
 
     await _loadPromptSettings();
 
@@ -2810,6 +2820,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     _sessionState = SessionState();
     // 会话副本重建 → 开场白应重新出现。
     _openingDismissed = false;
+
+    // 重置后常驻 UI 还原为作者在角色卡里配置的「默认折叠」状态。
+    _applyStickyCollapsedFromSession();
 
     if (resetUserSetting) {
       await DatabaseService.updateCharacter({
@@ -3936,6 +3949,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       );
     });
     _snapBallToEdge(screen);
+    _persistStickyCollapsed();
+  }
+
+  /// 把常驻 UI 当前折叠状态写回会话副本并落盘，实现退出再进记住。
+  void _persistStickyCollapsed() {
+    _sessionState.stickyCollapsed = _stickyCollapsed;
+    _saveSessionState();
   }
 
   /// 折叠悬浮球层。独立于挂件层，可自由拖动并吸附到屏幕两侧。
@@ -3987,6 +4007,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                     // 展开后 UI 出现在球的附近，位置连续。
                     _stickyOffset = _stickyOffsetForBall(pos, screen);
                   });
+                  _persistStickyCollapsed();
                 };
               },
             ),

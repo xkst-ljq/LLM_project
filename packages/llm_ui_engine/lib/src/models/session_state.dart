@@ -49,11 +49,23 @@ class SessionState {
   /// 作者没有单独设计某分支时，照搬主支路（下标 0）。
   int branchIndex;
 
+  /// 常驻 UI 是否折叠为悬浮球（玩家最后一次操作的状态）。
+  ///
+  /// `null` 表示「未记录」（首次 / 清空历史后），此时进入聊天应回落到
+  /// 作者在角色卡里设的 `stickyDefaultCollapsed`。
+  ///
+  /// ## 为什么持久化
+  ///
+  /// 常驻 UI 的展开/折叠是玩家关心的状态：退出聊天再进来应当记住。
+  /// 存进会话副本后，随角色一起保存、清空历史时重置。
+  bool? stickyCollapsed;
+
   SessionState({
     Map<String, String>? vars,
     Map<String, String>? statusValues,
     Map<String, dynamic>? overrides,
     this.branchIndex = 0,
+    this.stickyCollapsed,
   })  : vars = vars ?? <String, String>{},
         statusValues = statusValues ?? <String, String>{},
         overrides = overrides ?? <String, dynamic>{};
@@ -66,7 +78,8 @@ class SessionState {
       vars.isEmpty &&
       statusValues.isEmpty &&
       overrides.isEmpty &&
-      branchIndex == 0;
+      branchIndex == 0 &&
+      stickyCollapsed == null;
 
   factory SessionState.fromJson(Map<String, dynamic> json) {
     Map<String, String> readVars(dynamic v) {
@@ -97,6 +110,7 @@ class SessionState {
         // 历史存档没有这个键 → 主支路。
         _ => 0,
       },
+      stickyCollapsed: json['sticky_collapsed'] as bool?,
     );
   }
 
@@ -121,6 +135,8 @@ class SessionState {
       'status_values': statusValues,
       'overrides': overrides,
       'branch_index': branchIndex,
+      // 未记录（null）就不落盘，保持存档干净。
+      if (stickyCollapsed != null) 'sticky_collapsed': stickyCollapsed,
     };
   }
 
