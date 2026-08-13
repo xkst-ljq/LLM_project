@@ -40,20 +40,18 @@ class AppFeedback {
     // 收起上一次的提示，保证「顶层最优先」只显示最新一条。
     _activeToast?.remove();
 
-    // 用半透明玻璃色：跟随当前主题（深浅自动）。
-    final isNight = Theme.of(context).brightness == Brightness.dark;
+    // 半透明玻璃色：成功青绿、普通深灰。
     final bg = (success ? const Color(0xFF3FC6C2) : const Color(0xFF3A4158))
         .withValues(alpha: 0.86);
     final fg = Colors.white;
 
-    final entry = OverlayEntry(
+    // 用 late 让闭包（onDismissed）可以引用 entry 自身。
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
       builder: (_) => _ToastBubble(
         message: message,
         bg: bg,
         fg: fg,
-        onDismissed: () {
-          if (identical(_activeToast, entry)) _activeToast = null;
-        },
       ),
     );
     _activeToast = entry;
@@ -130,13 +128,11 @@ class _ToastBubble extends StatefulWidget {
   final String message;
   final Color bg;
   final Color fg;
-  final VoidCallback onDismissed;
 
   const _ToastBubble({
     required this.message,
     required this.bg,
     required this.fg,
-    required this.onDismissed,
   });
 
   @override
@@ -161,13 +157,6 @@ class _ToastBubbleState extends State<_ToastBubble>
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  void _dismiss() {
-    if (!mounted) return;
-    _controller.reverse().whenComplete(() {
-      widget.onDismissed();
-    });
   }
 
   @override
